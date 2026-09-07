@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   canViewWorkerDistribution,
@@ -5,8 +6,11 @@ import {
 } from "@/hooks/useDistributionAccess";
 import {
   assignCheckedInDistribution,
+  buildDistributionCompanyColors,
   classifyDistributionFix,
   defaultGeneralZone,
+  distributionCompanyColor,
+  distributionCompanyKey,
   distributionDotJitter,
   distributionFixLabel,
   distributionImagePoint,
@@ -210,6 +214,26 @@ describe("classifyDistributionFix", () => {
         now,
       }),
     ).toBe("stale");
+  });
+
+  it("shows company colors on the distribution table and legend", () => {
+    const src = readFileSync("src/pages/WorkerDistribution.tsx", "utf8");
+    expect(src).toContain("buildDistributionCompanyColors");
+    expect(src).toContain("점 색 = 회사");
+    expect(src).toContain("테두리 = 위치 신선도");
+    expect(src).not.toMatch(/COMPANY_DOT\[/);
+  });
+
+  it("assigns the same company color on the map and in the table", () => {
+    expect(distributionCompanyKey({ companyId: "c-jin" })).toBe("c-jin");
+    expect(distributionCompanyKey({ companyId: null, companyName: "대웅CT" })).toBe("unknown");
+    const a = buildDistributionCompanyColors(["c-dae", "c-jin"]);
+    const b = buildDistributionCompanyColors(["c-jin", "c-dae", "c-dae"]);
+    expect(a["c-dae"]).toBe(b["c-dae"]);
+    expect(a["c-jin"]).toBe(b["c-jin"]);
+    expect(a["c-dae"]).toBe(distributionCompanyColor(0));
+    expect(a["c-jin"]).toBe(distributionCompanyColor(1));
+    expect(a["c-dae"]).not.toBe(a["c-jin"]);
   });
 
   it("counts missing check-ins separately from plotted dots", () => {

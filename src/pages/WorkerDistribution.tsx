@@ -10,13 +10,15 @@ import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 import {
   assignCheckedInDistribution,
+  buildDistributionCompanyColors,
   classifyDistributionFix,
+  DISTRIBUTION_FIX_KIND_STROKE,
+  distributionCompanyKey,
   distributionDotJitter,
   distributionFixLabel,
   distributionImagePoint,
   summarizeDistributionFixes,
   zoneCategoryToType,
-  type DistributionFixKind,
 } from "@/lib/workerDistribution";
 
 type SiteMap = AnchorMap & { id: string; name: string; image_url: string | null };
@@ -56,13 +58,6 @@ const ZONE_LABEL: Record<Zone["zone_type"], string> = {
   work: "작업구역",
   restricted: "제한구역",
   danger: "위험구역",
-};
-const COMPANY_DOT = ["#0ea5e9", "#a855f7", "#f97316", "#14b8a6", "#e11d48", "#6366f1"];
-const FIX_KIND_STROKE: Record<DistributionFixKind, string> = {
-  live: "#ffffff",
-  recent: "#e2e8f0",
-  checkin: "#f59e0b",
-  stale: "#94a3b8",
 };
 
 function formatAgo(ms: number): string {
@@ -315,15 +310,21 @@ export default function WorkerDistribution() {
 
   const corners = useMemo(() => (activeMap ? loadCornersFromMap(activeMap) : null), [activeMap]);
 
+  const companyColors = useMemo(() => {
+    const keys = [
+      ...Object.keys(byCompany),
+      ...positions.map((p) => distributionCompanyKey({ companyId: p.company_id })),
+    ];
+    return buildDistributionCompanyColors(keys);
+  }, [byCompany, positions]);
+
   const dots = useMemo(() => {
     if (!corners) return [];
-    const companyIndex = new Map<string, number>();
     return positions
       .map((p, i) => {
         const pt = distributionImagePoint(p.lat, p.lng, corners);
         if (!pt) return null;
-        const key = p.company_id || p.company_name || "?";
-        if (!companyIndex.has(key)) companyIndex.set(key, companyIndex.size);
+        const companyKey = distributionCompanyKey({ companyId: p.company_id });
         const j = distributionDotJitter(i);
         const kind = classifyDistributionFix({
           source: p.source,
@@ -335,7 +336,8 @@ export default function WorkerDistribution() {
           x: pt.x + j.dx,
           y: pt.y + j.dy,
           company: p.company_name || "(미지정)",
-          color: COMPANY_DOT[companyIndex.get(key)! % COMPANY_DOT.length],
+          companyKey,
+          color: companyColors[companyKey] || companyColors.unknown,
           kind,
           stale: kind === "checkin" || kind === "stale",
           ago: p.updated_at ? formatAgo(nowTick - new Date(p.updated_at).getTime()) : "",
@@ -343,7 +345,7 @@ export default function WorkerDistribution() {
         };
       })
       .filter((d): d is NonNullable<typeof d> => d != null);
-  }, [positions, corners, nowTick]);
+  }, [positions, corners, nowTick, companyColors]);
 
   const freshness = useMemo(
     () => summarizeDistributionFixes(positions, nowTick, totalIn),
@@ -378,7 +380,7 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">
-            오늘 출근자 집계 · 점은 실시간/출근 위치로 구분 · 이름·전화 비노출
+            오늘 출근자 집계 · 점 색은 회사, 테두리는 실시간/출근 위치 · 이름·전화 비노출
             {" · "}
             {scopeLabel}
           </p>
@@ -549,7 +551,7 @@ export default function WorkerDistribution() {
                         cy={d.y}
                         r={1.7}
                         fill={d.color}
-                        stroke={FIX_KIND_STROKE[d.kind]}
+                        stroke={DISTRIBUTION_FIX_KIND_STROKE[d.kind]}
                         strokeWidth={d.kind === "checkin" || d.kind === "stale" ? 0.7 : 0.45}
                         vectorEffect="non-scaling-stroke"
                       />
@@ -579,22 +581,45 @@ export default function WorkerDistribution() {
                   : " · 출근자는 일반 구역, 작업·위험 폴리곤 안이면 그 구역"}
               </div>
             )}
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              {(["normal", "work", "restricted", "danger"] as const).map((t) => (
-                <span key={t} className="inline-flex items-center gap-1">
-                  <span className="w-3 h-3 rounded" style={{ background: ZONE_COLOR[t], opacity: 0.6 }} />
-                  {ZONE_LABEL[t]}
-                </span>
-              ))}
-              {(["live", "recent", "checkin", "stale"] as const).map((k) => (
-                <span key={k} className="inline-flex items-center gap-1">
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ background: "#0ea5e9", border: `2px solid ${FIX_KIND_STROKE[k]}` }}
-                  />
-                  {distributionFixLabel(k)}
-                </span>
-              ))}
+            <div className="mt-3 space-y-2 text-xs">
+              <div className="flex flex-wrap gap-2">
+                <span className="text-muted-foreground w-full sm:w-auto">구역</span>
+                {(["normal", "work", "restricted", "danger"] as const).map((t) => (
+                  <span key={t} className="inline-flex items-center gap-1">
+                    <span className="w-3 h-3 rounded" style={{ background: ZONE_COLOR[t], opacity: 0.6 }} />
+                    {ZONE_LABEL[t]}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="text-muted-foreground w-full sm:w-auto">점 색 = 회사</span>
+                {Object.entries(byCompany)
+                  .sort((a, b) => a[1].name.localeCompare(b[1].name, "ko"))
+                  .map(([id, c]) => (
+                    <span key={id} className="inline-flex items-center gap-1">
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{ background: companyColors[id] || companyColors.unknown }}
+                      />
+                      {c.name}
+                    </span>
+                  ))}
+                {Object.keys(byCompany).length === 0 && (
+                  <span className="text-muted-foreground">출근 회사가 없습니다</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="text-muted-foreground w-full sm:w-auto">테두리 = 위치 신선도</span>
+                {(["live", "recent", "checkin", "stale"] as const).map((k) => (
+                  <span key={k} className="inline-flex items-center gap-1">
+                    <span
+                      className="w-3 h-3 rounded-full bg-slate-400"
+                      style={{ border: `2px solid ${DISTRIBUTION_FIX_KIND_STROKE[k]}` }}
+                    />
+                    {distributionFixLabel(k)}
+                  </span>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -657,14 +682,23 @@ export default function WorkerDistribution() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.values(byCompany)
-                    .sort((a, b) => b.total - a.total)
-                    .flatMap((c) =>
+                  {Object.entries(byCompany)
+                    .sort((a, b) => b[1].total - a[1].total)
+                    .flatMap(([companyId, c]) =>
                       c.zones
                         .sort((a, b) => b.count - a.count)
                         .map((z, i) => (
-                          <tr key={`${c.name}-${z.zoneId}-${i}`} className="border-t">
-                            <td className="p-2 font-medium">{c.name}</td>
+                          <tr key={`${companyId}-${z.zoneId}-${i}`} className="border-t">
+                            <td className="p-2 font-medium">
+                              <span className="inline-flex items-center gap-2">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10"
+                                  style={{ background: companyColors[companyId] || companyColors.unknown }}
+                                  title="맵 점 색"
+                                />
+                                {c.name}
+                              </span>
+                            </td>
                             <td className="p-2">{z.zoneId ? (zoneById[z.zoneId]?.name || "일반") : "일반"}</td>
                             <td className="p-2 text-right">{z.count}</td>
                           </tr>

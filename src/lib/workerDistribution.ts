@@ -163,6 +163,48 @@ export function distributionFixLabel(kind: DistributionFixKind): string {
   return "오래된 위치";
 }
 
+/** 맵 점 안쪽 색 = 회사. 테두리만 실시간/출근 구분. */
+export const DISTRIBUTION_COMPANY_DOTS = [
+  "#0ea5e9",
+  "#a855f7",
+  "#f97316",
+  "#14b8a6",
+  "#e11d48",
+  "#6366f1",
+] as const;
+
+export const DISTRIBUTION_FIX_KIND_STROKE: Record<DistributionFixKind, string> = {
+  live: "#ffffff",
+  recent: "#e2e8f0",
+  checkin: "#f59e0b",
+  stale: "#94a3b8",
+};
+
+export function distributionCompanyKey(opts: {
+  companyId?: string | null;
+  companyName?: string | null;
+}): string {
+  const id = String(opts.companyId || "").trim();
+  if (id) return id;
+  return "unknown";
+}
+
+export function distributionCompanyColor(index: number): string {
+  const n = DISTRIBUTION_COMPANY_DOTS.length;
+  return DISTRIBUTION_COMPANY_DOTS[((index % n) + n) % n];
+}
+
+/** Stable company → fill color so the table matches the map. */
+export function buildDistributionCompanyColors(keys: string[]): Record<string, string> {
+  const unique = [...new Set(keys.map((k) => String(k || "unknown")))];
+  unique.sort((a, b) => a.localeCompare(b, "ko"));
+  const out: Record<string, string> = {};
+  unique.forEach((key, i) => {
+    out[key] = distributionCompanyColor(i);
+  });
+  return out;
+}
+
 export function summarizeDistributionFixes(
   positions: Array<{ source?: string | null; updated_at?: string | Date | null }>,
   now = Date.now(),

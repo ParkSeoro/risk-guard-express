@@ -5,6 +5,7 @@ import {
   canMarkNativePermissionsDone,
   checkInBlockedByLocation,
   isForegroundLocationGranted,
+  locationPermissionTriState,
   isPushGranted,
   locationTapStepsKo,
   shouldShowGpsConsentCoach,
@@ -17,6 +18,10 @@ describe("nativePermissionGate", () => {
       isForegroundLocationGranted({ location: "denied", coarseLocation: "granted" }),
     ).toBe(false);
     expect(isForegroundLocationGranted({ location: "prompt" })).toBe(false);
+    expect(locationPermissionTriState({ location: "granted" })).toBe(true);
+    expect(locationPermissionTriState({ location: "denied" })).toBe(false);
+    expect(locationPermissionTriState({ location: "prompt" })).toBeNull();
+    expect(locationPermissionTriState({ location: "prompt-with-rationale" })).toBeNull();
   });
 
   it("does not mark onboarding done without location", () => {
@@ -74,6 +79,13 @@ describe("nativePermissionGate", () => {
         osLocationGranted: true,
         isCheckedIn: true,
         alwaysAllowDismissedToday: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowGpsConsentCoach({
+        osLocationGranted: null,
+        isCheckedIn: false,
+        alwaysAllowDismissedToday: false,
       }),
     ).toBe(false);
   });

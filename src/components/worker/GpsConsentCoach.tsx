@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { isNativeApp } from "@/lib/native/isNativeApp";
 import {
   checkInBlockedByLocation,
-  isForegroundLocationGranted,
+  locationPermissionTriState,
   locationTapStepsKo,
   shouldShowGpsConsentCoach,
 } from "@/lib/native/nativePermissionGate";
@@ -59,7 +59,7 @@ export default function GpsConsentCoach({
       try {
         const cur = await Geolocation.checkPermissions();
         if (cancelled) return;
-        const granted = isForegroundLocationGranted(cur);
+        const granted = locationPermissionTriState(cur);
         setOsGranted(granted);
         onOsLocationChange?.(granted);
       } catch {

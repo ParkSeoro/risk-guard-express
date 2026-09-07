@@ -29,5 +29,7 @@ describe('generate-pdf RA table layout', () => {
     expect(src).toMatch(/assessment_feedback/);
     expect(src).toMatch(/isPdfAttachmentUrl/);
     expect(src).toMatch(/PDF 첨부/);
+    expect(src).toMatch(/등록된 이행 확인이 없습니다/);
+    expect(src).toMatch(/showEmptyFeedbackSection/);
   });
 });

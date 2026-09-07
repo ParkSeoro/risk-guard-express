@@ -632,8 +632,16 @@ Deno.serve(async (req) => {
       sourceRun: any | null,
       rows: any[],
       labelItems: any[],
+      opts?: { showEmpty?: boolean },
     ): string {
-      if (!rows.length) return "";
+      const period = sourceRun?.period_label ? ` (${sourceRun.period_label})` : "";
+      if (!rows.length) {
+        if (!opts?.showEmpty) return "";
+        return `
+        <div class="page-break"></div>
+        <div class="section-header">${title}${period}</div>
+        <div class="summary-text">등록된 이행 확인이 없습니다.</div>`;
+      }
       const fbRows = rows.map((fb: any, idx: number) => {
         const item = (labelItems || []).find((i: any) => i.id === fb.risk_item_id);
         const itemLabel = item ? `${item.process} – ${item.sub_task || ""}` : "(전체)";
@@ -669,7 +677,6 @@ Deno.serve(async (req) => {
           </tr>${imagesHtml}`;
       }).join("");
 
-      const period = sourceRun?.period_label ? ` (${sourceRun.period_label})` : "";
       const done = rows.filter((f: any) => f.status === "완료").length;
       const open = rows.filter((f: any) => f.status === "미조치").length;
       return `
@@ -682,9 +689,11 @@ Deno.serve(async (req) => {
         </table>`;
     }
 
+    const showEmptyFeedbackSection = jeonhoeWithImages.length > 0 || geumjuWithImages.length > 0
+      || printMode === "feedback";
     const feedbackSection =
-      renderFeedbackSection("전회차 이행 확인", jeonhoeRun, jeonhoeWithImages, jeonhoeLabelItems) +
-      renderFeedbackSection("금주 이행 확인", geumjuRun, geumjuWithImages, geumjuLabelItems);
+      renderFeedbackSection("전회차 이행 확인", jeonhoeRun, jeonhoeWithImages, jeonhoeLabelItems, { showEmpty: showEmptyFeedbackSection }) +
+      renderFeedbackSection("금주 이행 확인", geumjuRun, geumjuWithImages, geumjuLabelItems, { showEmpty: showEmptyFeedbackSection });
 
     // Validation section
     let validationSection = "";

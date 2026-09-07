@@ -37,6 +37,8 @@ export function mobileEntityPath(
   switch (entityType) {
     case "assessment_run":
       return { path: id ? `${WORKER}/risk-assessment/${id}` : `${WORKER}/risk-assessment` };
+    case "assessment_run_feedback":
+      return { path: id ? `${WORKER}/risk-assessment/${id}?tab=feedback` : `${WORKER}/risk-assessment` };
     case "work_plan":
       return { path: id ? `${WORKER}/work-plans/${id}` : `${WORKER}/work-plans` };
     case "work_permit":

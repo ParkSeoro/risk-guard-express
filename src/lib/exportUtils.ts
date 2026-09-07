@@ -51,7 +51,7 @@ interface RunInfo {
 // If omitted we still try to open here as a best-effort fallback.
 export async function exportToPDFServer(
   runId: string,
-  type: 'assessment' | 'validation' = 'assessment',
+  type: 'assessment' | 'validation' | 'assessment_feedback' | 'feedback' = 'assessment',
   mode: 'print' | 'download' = 'print',
   preOpenedWindow?: Window | null,
   options?: { previousRunId?: string | null },

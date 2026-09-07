@@ -8,7 +8,7 @@ import { Bell, CheckCheck, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
-import { notificationPreview } from "@/lib/notificationText";
+import { notificationPreview, notificationTitle } from "@/lib/notificationText";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 
 export default function MobileAlerts() {
@@ -82,7 +82,7 @@ export default function MobileAlerts() {
           <Card key={n.id} className={!n.is_read ? "border-primary/50 bg-primary/5" : ""}>
             <CardContent className="pt-3 pb-3 cursor-pointer active:bg-muted" onClick={() => handle(n)}>
               <div className="flex justify-between items-start gap-2">
-                <div className="font-semibold text-sm">{n.title}</div>
+                <div className="font-semibold text-sm">{notificationTitle(n)}</div>
                 {!n.is_read && <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />}
               </div>
               {notificationPreview(n) && (

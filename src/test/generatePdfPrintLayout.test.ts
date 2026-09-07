@@ -22,4 +22,12 @@ describe('generate-pdf RA table layout', () => {
     expect(src).toMatch(/run\.previous_run_id/);
     expect(src).toMatch(/overrideId/);
   });
+
+  it('prints 전회차 and 금주 이행 확인, and does not embed PDFs as images', () => {
+    expect(src).toMatch(/전회차 이행 확인/);
+    expect(src).toMatch(/금주 이행 확인/);
+    expect(src).toMatch(/assessment_feedback/);
+    expect(src).toMatch(/isPdfAttachmentUrl/);
+    expect(src).toMatch(/PDF 첨부/);
+  });
 });

@@ -145,9 +145,12 @@ export async function invokeErrorMessage(err: unknown, data: any): Promise<strin
 
 export const PRINT_INVOKE_TIMEOUT_MS = 25_000;
 
-export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
+export async function fetchAssessmentPrintHtml(
+  runId: string,
+  opts?: { mode?: "assessment" | "assessment_feedback" },
+): Promise<string> {
   const resp = await supabase.functions.invoke("generate-pdf", {
-    body: { runId, type: "assessment" },
+    body: { runId, type: opts?.mode === "assessment_feedback" ? "assessment_feedback" : "assessment" },
     timeout: PRINT_INVOKE_TIMEOUT_MS,
   });
   const html = resp.data?.html;

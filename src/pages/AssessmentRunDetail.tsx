@@ -841,6 +841,8 @@ const AssessmentRunDetail = () => {
   const activeItems = useMemo(() => (items || []).filter(i => !(i as any).is_excluded), [items]);
   const excludedItems = useMemo(() => (items || []).filter(i => (i as any).is_excluded), [items]);
   const executionItems = executionIsPrevious ? previousItems : activeItems;
+  const assessmentPrintType =
+    run && executionRun && run.id === executionRun.id ? 'assessment_feedback' : 'assessment';
   const executionTabCount = executionFeedbackCount({
     executionId: executionRun?.id,
     previousId: previousRun?.id,
@@ -1849,7 +1851,7 @@ const AssessmentRunDetail = () => {
     }
     toast({ title: '인쇄용 HTML 생성 중...', description: '잠시 기다려주세요.' });
     try {
-      await exportToPDFServer(runId!, 'assessment', 'download', undefined, {
+      await exportToPDFServer(runId!, assessmentPrintType, 'download', undefined, {
         previousRunId: previousRun?.id ?? null,
       });
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
@@ -1888,7 +1890,7 @@ const AssessmentRunDetail = () => {
     }
     toast({ title: '인쇄용 문서 생성 중...' });
     try {
-      await exportToPDFServer(runId!, 'assessment', 'print', printWindow, {
+      await exportToPDFServer(runId!, assessmentPrintType, 'print', printWindow, {
         previousRunId: previousRun?.id ?? null,
       });
     } catch (err) {
@@ -2162,7 +2164,7 @@ const AssessmentRunDetail = () => {
 
   // Mobile: never render authoring UI — read-only print preview + summary
   if (isMobile && !isForceDesktop()) {
-    return <MobileAssessmentViewer runId={runId} />;
+    return <MobileAssessmentViewer runId={runId} printMode={assessmentPrintType} />;
   }
 
   // ===== CTA conditions (strict state machine) =====

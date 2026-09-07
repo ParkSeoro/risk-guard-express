@@ -26,6 +26,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   announcement: (id) => (id ? `${ADMIN}/announcements?id=${id}` : `${ADMIN}/announcements`),
   work_permit: (id) => (id ? `${ADMIN}/work-permits/${id}` : `${ADMIN}/work-permits`),
   assessment_run: (id) => (id ? `${ADMIN}/assessment-run/${id}` : `${ADMIN}/risk-assessment`),
+  assessment_run_feedback: (id) => (id ? `${ADMIN}/assessment-run/${id}?tab=feedback` : `${ADMIN}/risk-assessment`),
   approval: () => `${ADMIN}/approvals`,
   safety_cost: () => `${ADMIN}/safety-cost`,
   safety_inspection: (id) =>
@@ -53,6 +54,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   work_permit: (id) =>
     id ? `${WORKER}/approvals` : `${WORKER}/permits`,
   assessment_run: (id) => (id ? `${WORKER}/risk-assessment/${id}` : `${WORKER}/risk-assessment`),
+  assessment_run_feedback: (id) => (id ? `${WORKER}/risk-assessment/${id}?tab=feedback` : `${WORKER}/risk-assessment`),
   approval: (id) => (id ? `${WORKER}/approvals/${id}` : `${WORKER}/approvals`),
   safety_inspection: (id) => (id ? `${WORKER}/inspect?id=${id}` : `${WORKER}/inspect`),
   incident: () => `${WORKER}/incident`,

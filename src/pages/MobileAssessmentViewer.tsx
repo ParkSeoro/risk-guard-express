@@ -41,7 +41,13 @@ const GRADE_STYLE: Record<string, string> = {
  * Mobile read-only viewer for risk assessments (including in-approval docs).
  * Print-HTML preview with pinch-zoom + large-type hazard summary.
  */
-export default function MobileAssessmentViewer({ runId: propRunId }: { runId?: string } = {}) {
+export default function MobileAssessmentViewer({
+  runId: propRunId,
+  printMode,
+}: {
+  runId?: string;
+  printMode?: "assessment" | "assessment_feedback";
+} = {}) {
   const params = useParams<{ runId: string }>();
   const runId = propRunId || params.runId;
   const navigate = useNavigate();
@@ -102,7 +108,11 @@ export default function MobileAssessmentViewer({ runId: propRunId }: { runId?: s
 
       setPrintLoading(true);
       try {
-        const html = await fetchAssessmentPrintHtml(runId);
+        const tab = searchParams.get("tab");
+        const mode =
+          printMode ||
+          (tab === "feedback" || tab === "execution" ? "assessment_feedback" : "assessment");
+        const html = await fetchAssessmentPrintHtml(runId, { mode });
         if (!cancelled) setPrintHtml(html);
       } catch (e: any) {
         if (!cancelled) setPrintError(e?.message || "인쇄 문서를 불러오지 못했습니다");
@@ -113,7 +123,7 @@ export default function MobileAssessmentViewer({ runId: propRunId }: { runId?: s
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runId, printMode, searchParams]);
 
   return (
     <div className="h-dvh overflow-hidden bg-slate-950 text-white flex flex-col">

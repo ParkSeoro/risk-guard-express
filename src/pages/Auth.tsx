@@ -25,7 +25,7 @@ import {
   workerPhoneSchema,
   workerPinSchema,
 } from '@/lib/workerAuth';
-import { rememberWorkerLoginOnDevice, workerLoginPrefill } from '@/lib/workerLoginMemory';
+import { rememberWorkerLoginOnDevice, workerLoginPrefill, loadWorkerLoginMemory } from '@/lib/workerLoginMemory';
 import { Checkbox } from '@/components/ui/checkbox';
 import { writeLoginIntent } from '@/components/AuthGuard';
 import { isNativeApp } from '@/lib/native/isNativeApp';
@@ -86,7 +86,7 @@ const Auth = () => {
     workerQrContext || isNativeApp() ? 'worker' : 'manager',
   );
   const [loginAudience, setLoginAudience] = useState<Audience>(() =>
-    isNativeApp() || workerQrContext ? 'worker' : 'manager',
+    isNativeApp() || workerQrContext || !!loadWorkerLoginMemory()?.phone ? 'worker' : 'manager',
   );
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
 

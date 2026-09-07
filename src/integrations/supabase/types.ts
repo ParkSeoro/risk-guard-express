@@ -10077,6 +10077,14 @@ export type Database = {
         Args: { _permit_id: string; _tbm_session_id: string }
         Returns: string
       }
+      list_company_period_assessment_run_ids: {
+        Args: {
+          _company_id: string
+          _day?: string
+          _project_id: string
+        }
+        Returns: string[]
+      }
       list_joinable_projects: {
         Args: never
         Returns: {

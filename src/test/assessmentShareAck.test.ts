@@ -16,9 +16,14 @@ const run = (partial: Partial<ShareAckRun> & { id: string }): ShareAckRun => ({
 });
 
 describe("runAppliesToCompany", () => {
-  it("treats empty targets as project-wide", () => {
-    expect(runAppliesToCompany({ target_company_ids: [] }, "co-a")).toBe(true);
-    expect(runAppliesToCompany({ target_company_ids: null }, "co-a")).toBe(true);
+  it("does not treat empty targets as the whole site", () => {
+    expect(runAppliesToCompany({ target_company_ids: [] }, "co-a")).toBe(false);
+    expect(runAppliesToCompany({ target_company_ids: null }, "co-a")).toBe(false);
+  });
+
+  it("falls back to the author company when targets are empty", () => {
+    expect(runAppliesToCompany({ target_company_ids: [], author_company_id: "co-a" }, "co-a")).toBe(true);
+    expect(runAppliesToCompany({ target_company_ids: [], author_company_id: "co-a" }, "co-b")).toBe(false);
   });
 
   it("matches only listed companies", () => {

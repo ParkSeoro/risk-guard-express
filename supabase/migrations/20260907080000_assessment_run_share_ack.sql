@@ -91,12 +91,36 @@ LANGUAGE sql
 IMMUTABLE
 AS $fn$
   SELECT
-    COALESCE(array_length(_target_company_ids, 1), 0) = 0
-    OR EXISTS (
+    COALESCE(array_length(_target_company_ids, 1), 0) > 0
+    AND EXISTS (
       SELECT 1
         FROM unnest(_target_company_ids) t
        WHERE t = ANY (_user_company_ids)
     );
+$fn$;
+
+-- Empty target_company_ids → 작성자 소속 회사 (현장 전체 배포 금지).
+CREATE OR REPLACE FUNCTION public.assessment_run_effective_company_ids(_run public.assessment_runs)
+RETURNS uuid[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $fn$
+  SELECT CASE
+    WHEN COALESCE(array_length(_run.target_company_ids, 1), 0) > 0 THEN _run.target_company_ids
+    ELSE COALESCE(
+      (
+        SELECT ARRAY[pm.company_id]
+          FROM public.project_members pm
+         WHERE pm.project_id = _run.project_id
+           AND pm.user_id = COALESCE(_run.author_user_id, _run.created_by)
+           AND pm.company_id IS NOT NULL
+         LIMIT 1
+      ),
+      ARRAY[]::uuid[]
+    )
+  END;
 $fn$;
 
 CREATE OR REPLACE FUNCTION public.assessment_share_summary(_run_id uuid)
@@ -209,7 +233,7 @@ BEGIN
       WHERE pm.user_id = _uid AND pm.project_id = ar.project_id
     )
     AND public.assessment_run_applies_to_companies(
-      ar.target_company_ids,
+      public.assessment_run_effective_company_ids(ar),
       public.user_company_ids_for_project(_uid, ar.project_id)
     )
     AND NOT EXISTS (
@@ -294,7 +318,10 @@ BEGIN
 
   _user_companies := public.user_company_ids_for_project(_uid, _run.project_id);
   IF NOT public.is_master(_uid)
-     AND NOT public.assessment_run_applies_to_companies(_run.target_company_ids, _user_companies) THEN
+     AND NOT public.assessment_run_applies_to_companies(
+       public.assessment_run_effective_company_ids(_run),
+       _user_companies
+     ) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'WRONG_COMPANY');
   END IF;
 
@@ -399,8 +426,14 @@ DECLARE
   _body text;
   _notice_id uuid;
   _summary text;
+  _share_cos uuid[];
 BEGIN
   IF _run.id IS NULL OR _run.status IS DISTINCT FROM '승인완료' THEN
+    RETURN 0;
+  END IF;
+
+  _share_cos := public.assessment_run_effective_company_ids(_run);
+  IF COALESCE(array_length(_share_cos, 1), 0) = 0 THEN
     RETURN 0;
   END IF;
 
@@ -435,7 +468,7 @@ BEGIN
          AND pm.user_id IS NOT NULL
          AND COALESCE(pr.account_status, 'active') = 'active'
          AND public.assessment_run_applies_to_companies(
-               _run.target_company_ids,
+               _share_cos,
                CASE WHEN pm.company_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[pm.company_id] END
              )
       UNION
@@ -448,7 +481,7 @@ BEGIN
          AND COALESCE(w.is_active, true) = true
          AND COALESCE(pr.account_status, 'active') = 'active'
          AND public.assessment_run_applies_to_companies(
-               _run.target_company_ids,
+               _share_cos,
                CASE WHEN w.company_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[w.company_id] END
              )
     ) r
@@ -468,6 +501,63 @@ $fn$;
 
 REVOKE ALL ON FUNCTION public.notify_assessment_run_share(public.assessment_runs) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.notify_assessment_run_share(public.assessment_runs) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.list_company_period_assessment_run_ids(
+  _project_id uuid,
+  _company_id uuid,
+  _day date DEFAULT ((now() AT TIME ZONE 'Asia/Seoul')::date)
+)
+RETURNS uuid[]
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $fn$
+DECLARE
+  _ids uuid[];
+  _latest uuid;
+BEGIN
+  IF _project_id IS NULL OR _company_id IS NULL THEN
+    RETURN ARRAY[]::uuid[];
+  END IF;
+
+  SELECT array_agg(ar.id) INTO _ids
+    FROM public.assessment_runs ar
+   WHERE ar.project_id = _project_id
+     AND ar.status = '승인완료'
+     AND COALESCE(ar.is_deleted, false) = false
+     AND public.assessment_run_applies_to_companies(
+           public.assessment_run_effective_company_ids(ar),
+           ARRAY[_company_id]
+         )
+     AND (ar.start_date IS NULL OR ar.start_date <= _day)
+     AND (ar.end_date IS NULL OR ar.end_date >= _day);
+
+  IF COALESCE(array_length(_ids, 1), 0) > 0 THEN
+    RETURN _ids;
+  END IF;
+
+  SELECT ar.id INTO _latest
+    FROM public.assessment_runs ar
+   WHERE ar.project_id = _project_id
+     AND ar.status = '승인완료'
+     AND COALESCE(ar.is_deleted, false) = false
+     AND public.assessment_run_applies_to_companies(
+           public.assessment_run_effective_company_ids(ar),
+           ARRAY[_company_id]
+         )
+   ORDER BY ar.start_date DESC NULLS LAST, ar.created_at DESC
+   LIMIT 1;
+
+  IF _latest IS NULL THEN
+    RETURN ARRAY[]::uuid[];
+  END IF;
+  RETURN ARRAY[_latest];
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION public.list_company_period_assessment_run_ids(uuid, uuid, date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_company_period_assessment_run_ids(uuid, uuid, date) TO authenticated, service_role;
 
 -- Keep permit/TBM operational alerts; add company-wide share fan-out.
 CREATE OR REPLACE FUNCTION public.trg_assessment_run_approved_notify()

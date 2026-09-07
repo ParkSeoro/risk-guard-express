@@ -18,6 +18,7 @@ export type ShareAckRun = {
   end_date?: string | null;
   created_at?: string | null;
   target_company_ids?: string[] | null;
+  author_company_id?: string | null;
   period_label?: string | null;
   is_deleted?: boolean | null;
 };
@@ -44,16 +45,17 @@ export type AssessmentShareAck = {
   source: string | null;
 };
 
-/** Project-wide when the run has no company filter. */
+/** Prefer explicit targets; empty means unknown, not the whole site. */
 export function runAppliesToCompany(
-  run: { target_company_ids?: string[] | null },
+  run: { target_company_ids?: string[] | null; author_company_id?: string | null },
   companyId?: string | null,
 ): boolean {
   const targets = normalizeCompanyIds(run.target_company_ids);
-  if (targets.length === 0) return true;
+  const effective = targets.length > 0 ? targets : normalizeCompanyIds(run.author_company_id ? [run.author_company_id] : []);
+  if (effective.length === 0) return false;
   const id = String(companyId || "").trim();
   if (!id) return false;
-  return targets.includes(id);
+  return effective.includes(id);
 }
 
 export function runCoversDate(
@@ -119,7 +121,16 @@ export async function fetchCompanyPeriodRunIds(
   companyId: string | null | undefined,
   day = todaySeoulDate(),
 ): Promise<string[]> {
-  const { data, error } = await supabase
+  if (!companyId) return [];
+  const { data, error } = await supabase.rpc("list_company_period_assessment_run_ids", {
+    _project_id: projectId,
+    _company_id: companyId,
+    _day: day,
+  });
+  if (!error && Array.isArray(data)) {
+    return (data as string[]).filter(Boolean);
+  }
+  const { data: rows } = await supabase
     .from("assessment_runs")
     .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
     .eq("project_id", projectId)
@@ -127,8 +138,7 @@ export async function fetchCompanyPeriodRunIds(
     .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .limit(40);
-  if (error) return [];
-  return pickCompanyPeriodRuns((data || []) as ShareAckRun[], companyId, day).map((r) => r.id);
+  return pickCompanyPeriodRuns((rows || []) as ShareAckRun[], companyId, day).map((r) => r.id);
 }
 
 export async function listPendingAssessmentShares(

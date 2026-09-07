@@ -146,6 +146,6 @@ export const REQUIRED_RPCS: Array<{ name: string; sample_args: any }> = [
   { name: "worker_exit", sample_args: { _token: "__qa__", _signature: "", _no_accident: false } },
   { name: "process_invite_code", sample_args: { _user_id: "00000000-0000-0000-0000-000000000000", _invite_code: "__qa__" } },
   { name: "ack_project_announcement", sample_args: { _announcement_id: "00000000-0000-0000-0000-000000000000" } },
-  { name: "list_my_pending_assessment_shares", sample_args: { _project_id: null } },
+  { name: "list_company_period_assessment_run_ids", sample_args: { _project_id: "00000000-0000-0000-0000-000000000000", _company_id: "00000000-0000-0000-0000-000000000000", _day: "2026-09-07" } },
   { name: "ack_assessment_run_share", sample_args: { _run_id: "00000000-0000-0000-0000-000000000000", _signature_data: "", _worker_id: null, _source: "notice" } },
 ];

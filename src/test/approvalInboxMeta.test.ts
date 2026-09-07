@@ -1,5 +1,20 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
+
+describe("get_my_pending_entity_approvals company_name", () => {
+  it("uses the document author company, not the current approver company", () => {
+    const src = readFileSync(
+      "supabase/migrations/20260907070000_pending_inbox_author_company.sql",
+      "utf8",
+    );
+    expect(src).toMatch(/wpc\.name/);
+    expect(src).toMatch(/author_user_id/);
+    expect(src).toMatch(/contractor_company/);
+    expect(src).toContain("WHEN a.entity_type='work_plan' THEN COALESCE(NULLIF(wpc.name,''), NULLIF(author_co.name,''), a.company_name, '')");
+    expect(src).toContain("WHEN a.entity_type IN ('assessment_run', 'assessment_run_feedback') THEN COALESCE(NULLIF(author_co.name,''), a.company_name, '')");
+  });
+});
 
 describe("formatPendingApprovalMeta", () => {
   it("distinguishes two same-title permits by company, crew, and resubmit", () => {

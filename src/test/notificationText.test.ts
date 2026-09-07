@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { notificationPreview } from "@/lib/notificationText";
+import {
+  localizeNotificationText,
+  notificationPreview,
+  notificationTitle,
+} from "@/lib/notificationText";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 
 describe("notificationPreview", () => {
@@ -9,6 +13,21 @@ describe("notificationPreview", () => {
       "위험상황, 개선대책 누락",
     );
     expect(notificationPreview({ message: "  ", body: "  " })).toBe("");
+  });
+
+  it("rewrites raw assessment_run_feedback keys to the approval-screen label", () => {
+    expect(localizeNotificationText("assessment_run_feedback 결재 요청")).toBe(
+      "위험성평가 피드백(조치) 결재 요청",
+    );
+    expect(
+      notificationTitle({ title: "assessment_run_feedback 결재 요청" }),
+    ).toBe("위험성평가 피드백(조치) 결재 요청");
+    expect(
+      notificationPreview({
+        message: "결재 요청: assessment_run_feedback이(가) 도착했습니다.",
+      }),
+    ).toBe("결재 요청: 위험성평가 피드백(조치)이(가) 도착했습니다.");
+    expect(localizeNotificationText("assessment_run 결재 요청")).toBe("위험성평가 결재 요청");
   });
 });
 
@@ -32,5 +51,14 @@ describe("approval reject notification routes", () => {
     expect(
       resolveNotificationRoute({ type: "approval_rejected" }, { mobileShell: true }),
     ).toBe("/app/worker/approvals");
+  });
+
+  it("opens the risk assessment document for feedback approval alerts", () => {
+    expect(
+      resolveNotificationRoute(
+        { type: "approval_request", related_type: "assessment_run_feedback", related_id: "run-1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/risk-assessment/run-1?tab=feedback");
   });
 });

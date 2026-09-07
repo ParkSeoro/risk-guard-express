@@ -164,6 +164,9 @@ describe("notification + entity mobile routes", () => {
     expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/permits?id=p1");
     expect(mobileEntityPath("work_permit").path).toBe("/app/worker/permits");
     expect(mobileEntityPath("assessment_run", "r1").path).toBe("/app/worker/risk-assessment/r1");
+    expect(mobileEntityPath("assessment_run_feedback", "r1").path).toBe(
+      "/app/worker/risk-assessment/r1?tab=feedback",
+    );
   });
 
   it("mobileDocumentPath keeps 문서 보기 on permits with inbox return", () => {

@@ -28,6 +28,8 @@ import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, g
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
+  approvalAssessmentPrintType,
+  approvalPreviewEntityType,
   desktopApprovalEntityPath,
   type ApprovalPreviewTarget,
 } from "@/lib/approvalInboxPreview";
@@ -65,7 +67,8 @@ function resolveLinkedRun(
 
 function documentCardTitle(run: any | null, steps: any[]): string {
   if (run) {
-    return `[${entityTypeLabel('assessment_run')}] ${run.period_label || run.type || ''}`.trim();
+    const typeLabel = entityTypeLabel(steps[0]?.entity_type || 'assessment_run');
+    return `[${typeLabel}] ${run.period_label || run.type || ''}`.trim();
   }
   const first = steps[0];
   const typeLabel = entityTypeLabel(first?.entity_type);
@@ -457,7 +460,7 @@ const Approvals = () => {
     fetchEntityPending();
   };
 
-  const handleDownloadRunPDF = async (runId: string) => {
+  const handleDownloadRunPDF = async (runId: string, entityType?: string | null) => {
     // Must open the window in the click gesture — then fill with generate-pdf HTML
     // (jsPDF fallback has no Korean font and no approval signature table).
     const printWindow = window.open('', '_blank', 'width=1100,height=800');
@@ -471,7 +474,7 @@ const Approvals = () => {
     }
     toast({ title: '인쇄용 문서 생성 중...' });
     try {
-      await exportToPDFServer(runId, 'assessment', 'print', printWindow);
+      await exportToPDFServer(runId, approvalAssessmentPrintType(entityType), 'print', printWindow);
     } catch (err) {
       toast({ title: 'PDF 생성 실패', description: String(err), variant: 'destructive' });
     }
@@ -654,13 +657,13 @@ const Approvals = () => {
               const run = resolveLinkedRun(runs, groupKey, activeSteps.length ? activeSteps : allSteps);
               const cardTitle = documentCardTitle(run, activeSteps.length ? activeSteps : allSteps);
               const firstStep = (activeSteps[0] || allSteps[0]) as any;
-              const docHref = run
-                ? `/assessment-run/${run.id}`
-                : ENTITY_LINK(firstStep?.entity_type, firstStep?.entity_id);
-              const previewType = run
-                ? "assessment_run"
-                : firstStep?.entity_type;
-              const previewId = run ? run.id : firstStep?.entity_id;
+              const docHref = firstStep?.entity_type && firstStep?.entity_id
+                ? ENTITY_LINK(firstStep.entity_type, firstStep.entity_id)
+                : run
+                  ? `/assessment-run/${run.id}`
+                  : null;
+              const previewType = approvalPreviewEntityType(firstStep?.entity_type, run);
+              const previewId = firstStep?.entity_id || run?.id;
 
               const renderStepChip = (step: any, sectionSteps: any[], i: number, sectionLen: number) => {
                 const displayStatus = sequentialDisplayStatus(sectionSteps, step);
@@ -750,7 +753,7 @@ const Approvals = () => {
                           ) : null;
                         })()}
                         {run && (
-                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(run.id)}>
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(run.id, firstStep?.entity_type)}>
                             <FileText className="h-3 w-3" /> PDF
                           </Button>
                         )}

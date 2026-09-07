@@ -234,6 +234,7 @@ describe("approval timeline helpers — self-lock / sequential", () => {
 
   it("entityTypeLabel covers all approval document types", () => {
     expect(entityTypeLabel("assessment_run")).toBe("위험성평가");
+    expect(entityTypeLabel("assessment_run_feedback")).toBe("위험성평가 피드백(조치)");
     expect(entityTypeLabel("work_permit")).toBe("작업허가서");
     expect(entityTypeLabel("work_plan")).toBe("작업계획서");
     expect(entityTypeLabel("safety_cost")).toBe("산업안전보건관리비");

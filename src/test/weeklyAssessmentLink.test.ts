@@ -10,6 +10,7 @@ import {
   resolveExecutionFeedbackTarget,
   resolvePreviousRun,
   resolvePrintFeedbackRun,
+  resolvePrintFeedbackSections,
   unresolvedFeedbackCount,
   type WeeklyLinkRun,
 } from '@/lib/weeklyAssessmentLink';
@@ -305,6 +306,37 @@ describe('resolvePrintFeedbackRun', () => {
       current: { ...next, status: '승인완료' },
       previous: null,
     })?.id).toBe('next');
+  });
+});
+
+describe('resolvePrintFeedbackSections', () => {
+  const older = run({ id: 'older', start_date: '2026-08-11', period_label: '전전주' });
+  const previous = run({ id: 'prev', start_date: '2026-08-18', period_label: '전회차' });
+  const next = run({
+    id: 'next',
+    status: '작성중',
+    start_date: '2026-08-25',
+    period_label: '차주',
+  });
+
+  it('assessment print: 금주=전회차, 전회차=그 이전', () => {
+    const s = resolvePrintFeedbackSections({
+      current: next,
+      previous,
+      previousOfPrevious: older,
+    });
+    expect(s.geumju?.id).toBe('prev');
+    expect(s.jeonhoe?.id).toBe('older');
+  });
+
+  it('feedback approval print: this run is 금주, previous is 전회차', () => {
+    const s = resolvePrintFeedbackSections({
+      current: previous,
+      previous: older,
+      mode: 'feedback',
+    });
+    expect(s.geumju?.id).toBe('prev');
+    expect(s.jeonhoe?.id).toBe('older');
   });
 });
 

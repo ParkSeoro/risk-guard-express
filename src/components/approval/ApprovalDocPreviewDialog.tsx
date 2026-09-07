@@ -104,7 +104,9 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           entityType === "assessment_run_feedback"
         ) {
           setPageWidth(A4_LANDSCAPE_PX);
-          const doc = await fetchAssessmentPrintHtml(entityId);
+          const doc = await fetchAssessmentPrintHtml(entityId, {
+            mode: entityType === "assessment_run_feedback" ? "assessment_feedback" : "assessment",
+          });
           if (cancelled) return;
           setHtml(doc);
         }

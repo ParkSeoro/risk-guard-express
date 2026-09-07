@@ -75,3 +75,19 @@ export function canInlineApprovalPreview(entityType?: string | null): boolean {
     entityType === "work_permit"
   );
 }
+
+/** 결재 카드의 entity_type을 미리보기/인쇄에 그대로 쓴다. 회차가 연결되어도 피드백을 assessment_run으로 덮지 않는다. */
+export function approvalPreviewEntityType(
+  entityType?: string | null,
+  linkedRun?: { id?: string } | null,
+): string | null {
+  const t = String(entityType || "").trim();
+  if (t) return t;
+  return linkedRun?.id ? "assessment_run" : null;
+}
+
+export function approvalAssessmentPrintType(
+  entityType?: string | null,
+): "assessment" | "assessment_feedback" {
+  return entityType === "assessment_run_feedback" ? "assessment_feedback" : "assessment";
+}

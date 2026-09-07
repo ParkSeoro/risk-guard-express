@@ -192,6 +192,29 @@ export function resolvePrintFeedbackRun(opts: {
   return null;
 }
 
+/**
+ * Print / 결재 미리보기 이행 확인 섹션.
+ * - assessment: 금주 = 전회차 사진, 전회차 = 그 이전 회차 사진
+ * - feedback: 결재 대상 회차 사진을 금주로, 그 이전을 전회차로
+ */
+export function resolvePrintFeedbackSections(opts: {
+  current: WeeklyLinkRun;
+  previous: WeeklyLinkRun | null;
+  previousOfPrevious?: WeeklyLinkRun | null;
+  mode?: 'assessment' | 'feedback';
+}): { geumju: WeeklyLinkRun | null; jeonhoe: WeeklyLinkRun | null } {
+  if (opts.mode === 'feedback') {
+    return { geumju: opts.current, jeonhoe: opts.previous };
+  }
+  if (opts.previous) {
+    return { geumju: opts.previous, jeonhoe: opts.previousOfPrevious || null };
+  }
+  if (opts.current.status === '승인완료') {
+    return { geumju: opts.current, jeonhoe: null };
+  }
+  return { geumju: null, jeonhoe: null };
+}
+
 export function isManagedResidualHigh(item: { improved_risk_grade?: string | null }): boolean {
   return item.improved_risk_grade === '상';
 }

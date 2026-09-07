@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Camera, CheckCircle2, Clock, AlertTriangle, Image as ImageIcon, Send } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import FeedbackAttachmentThumb from '@/components/feedback/FeedbackAttachmentThumb';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 interface FeedbackItem {
@@ -323,7 +324,7 @@ export default function FeedbackPanel({
                 {fb.before_image_urls?.length > 0 && (
                   <div className="flex gap-1">
                     {fb.before_image_urls.slice(0, 2).map((url, i) => (
-                      <img key={i} src={url} alt="before" className="w-10 h-10 rounded object-cover border" />
+                      <FeedbackAttachmentThumb key={i} url={url} label="조치 전" className="w-10 h-10" />
                     ))}
                   </div>
                 )}
@@ -527,7 +528,7 @@ export default function FeedbackPanel({
                         <span className="text-[9px] text-muted-foreground">조치 전</span>
                         <div className="flex gap-1">
                           {fb.before_image_urls.map((url, i) => (
-                            <img key={i} src={url} alt="before" className="w-12 h-12 rounded object-cover border" onClick={e => { e.stopPropagation(); window.open(url, '_blank'); }} />
+                            <FeedbackAttachmentThumb key={i} url={url} label="조치 전" />
                           ))}
                         </div>
                       </div>
@@ -537,7 +538,7 @@ export default function FeedbackPanel({
                         <span className="text-[9px] text-muted-foreground">조치 후</span>
                         <div className="flex gap-1">
                           {fb.after_image_urls.map((url, i) => (
-                            <img key={i} src={url} alt="after" className="w-12 h-12 rounded object-cover border" onClick={e => { e.stopPropagation(); window.open(url, '_blank'); }} />
+                            <FeedbackAttachmentThumb key={i} url={url} label="조치 후" />
                           ))}
                         </div>
                       </div>
@@ -629,11 +630,18 @@ export default function FeedbackPanel({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><Camera className="h-3.5 w-3.5" /> 조치 전 사진 <span className="text-destructive text-[10px]">*필수</span></Label>
-                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormBeforeFiles, setFormBeforePreviews)} />
+                <Input type="file" accept="image/*,application/pdf,.pdf" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormBeforeFiles, setFormBeforePreviews)} />
                 {formBeforePreviews.length > 0 && (
                   <div className="flex gap-1 flex-wrap">
                     {formBeforePreviews.map((url, i) => (
-                      <img key={i} src={url} alt={`before-preview-${i}`} className="w-14 h-14 rounded object-cover border" />
+                      <FeedbackAttachmentThumb
+                        key={i}
+                        url={url}
+                        label="조치 전"
+                        mime={formBeforeFiles[i]?.type}
+                        name={formBeforeFiles[i]?.name}
+                        className="w-14 h-14"
+                      />
                     ))}
                   </div>
                 )}
@@ -644,7 +652,7 @@ export default function FeedbackPanel({
                       <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진</p>
                       <div className="flex gap-1">
                         {existing.before_image_urls.map((url, i) => (
-                          <img key={i} src={url} alt="existing-before" className="w-10 h-10 rounded object-cover border" />
+                          <FeedbackAttachmentThumb key={i} url={url} label="조치 전" className="w-10 h-10" />
                         ))}
                       </div>
                     </div>
@@ -653,11 +661,18 @@ export default function FeedbackPanel({
               </div>
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> 조치 후 사진 {formStatus === '완료' && <span className="text-destructive text-[10px]">*필수</span>}</Label>
-                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormAfterFiles, setFormAfterPreviews)} />
+                <Input type="file" accept="image/*,application/pdf,.pdf" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormAfterFiles, setFormAfterPreviews)} />
                 {formAfterPreviews.length > 0 && (
                   <div className="flex gap-1 flex-wrap">
                     {formAfterPreviews.map((url, i) => (
-                      <img key={i} src={url} alt={`after-preview-${i}`} className="w-14 h-14 rounded object-cover border" />
+                      <FeedbackAttachmentThumb
+                        key={i}
+                        url={url}
+                        label="조치 후"
+                        mime={formAfterFiles[i]?.type}
+                        name={formAfterFiles[i]?.name}
+                        className="w-14 h-14"
+                      />
                     ))}
                   </div>
                 )}
@@ -668,7 +683,7 @@ export default function FeedbackPanel({
                       <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진</p>
                       <div className="flex gap-1">
                         {existing.after_image_urls.map((url, i) => (
-                          <img key={i} src={url} alt="existing-after" className="w-10 h-10 rounded object-cover border" />
+                          <FeedbackAttachmentThumb key={i} url={url} label="조치 후" className="w-10 h-10" />
                         ))}
                       </div>
                     </div>

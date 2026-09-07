@@ -118,6 +118,35 @@ function resolvePrintFeedbackRun(current: any, previous: any | null): any | null
   return null;
 }
 
+function resolvePrintFeedbackSections(
+  current: any,
+  previous: any | null,
+  previousOfPrevious: any | null,
+  mode: string,
+): { geumju: any | null; jeonhoe: any | null } {
+  if (mode === "assessment_feedback" || mode === "feedback") {
+    return { geumju: current, jeonhoe: previous };
+  }
+  if (previous) return { geumju: previous, jeonhoe: previousOfPrevious };
+  if (current?.status === "승인완료") return { geumju: current, jeonhoe: null };
+  return { geumju: null, jeonhoe: null };
+}
+
+function isPdfAttachmentUrl(url: string): boolean {
+  const path = String(url || "").split("?")[0].split("#")[0];
+  return /\.pdf$/i.test(path);
+}
+
+function attachmentFileName(url: string): string {
+  const path = String(url || "").split("?")[0].split("#")[0];
+  const raw = path.split("/").pop() || "첨부";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 const JOB_TITLE_LABELS: Record<string, string> = {
   contractor_supervisor: "관리감독자",
   contractor_pic: "관리감독자",
@@ -341,14 +370,26 @@ Deno.serve(async (req) => {
         }
       }
     }
-    const printFeedbackRun = resolvePrintFeedbackRun(run, previousRun);
-    const printFeedbackRunId = printFeedbackRun?.id || runId;
+    const previousOfPrevious = previousRun
+      ? pickPreviousApprovedRun(previousRun, (prevCandidates || []).filter((c: any) => c.id !== previousRun.id))
+      : null;
+    const printMode = type === "assessment_feedback" || type === "feedback" ? "feedback" : "assessment";
+    const printSections = resolvePrintFeedbackSections(run, previousRun, previousOfPrevious, printMode);
+    const geumjuRun = printSections.geumju;
+    const jeonhoeRun = printSections.jeonhoe;
+    const geumjuId = geumjuRun?.id || null;
+    const jeonhoeId = jeonhoeRun?.id || null;
 
-    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes, printFbItemsRes, opinionsRes, accidentsRes, healthRes] = await Promise.all([
+    const [projectRes, itemsRes, participantsRes, feedbackGeumjuRes, feedbackJeonhoeRes, validationRes, approvalsRes, companyLinksRes, geumjuItemsRes, jeonhoeItemsRes, opinionsRes, accidentsRes, healthRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).eq("is_deleted", false).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
-      supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", printFeedbackRunId),
+      geumjuId
+        ? supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", geumjuId)
+        : Promise.resolve({ data: [] }),
+      jeonhoeId
+        ? supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", jeonhoeId)
+        : Promise.resolve({ data: [] }),
       type === "validation"
         ? supabase.from("validation_results").select("*").eq("run_id", runId)
         : Promise.resolve({ data: [] }),
@@ -357,8 +398,11 @@ Deno.serve(async (req) => {
         .select("company_id, parent_company_id, role_in_project, companies:company_id(id, name, type, parent_company_id, is_deleted)")
         .eq("project_id", run.project_id)
         .eq("is_deleted", false),
-      printFeedbackRunId !== runId
-        ? supabase.from("risk_items").select("*").eq("run_id", printFeedbackRunId).eq("is_deleted", false)
+      geumjuId && geumjuId !== runId
+        ? supabase.from("risk_items").select("*").eq("run_id", geumjuId).eq("is_deleted", false)
+        : Promise.resolve({ data: null }),
+      jeonhoeId
+        ? supabase.from("risk_items").select("*").eq("run_id", jeonhoeId).eq("is_deleted", false)
         : Promise.resolve({ data: null }),
       supabase.from("worker_opinions").select("*").eq("run_id", runId).order("created_at"),
       supabase.from("assessment_accidents").select("*").eq("run_id", runId).order("created_at"),
@@ -370,10 +414,12 @@ Deno.serve(async (req) => {
       (i: any) => !i?.is_deleted && !i?.is_excluded,
     );
     const participants = participantsRes.data || [];
-    const feedbackItems = feedbackRes.data || [];
-    const feedbackLabelItems = printFeedbackRunId !== runId
-      ? (printFbItemsRes.data || [])
+    const geumjuFeedbackItems = feedbackGeumjuRes.data || [];
+    const jeonhoeFeedbackItems = feedbackJeonhoeRes.data || [];
+    const geumjuLabelItems = geumjuId && geumjuId !== runId
+      ? (geumjuItemsRes.data || [])
       : items;
+    const jeonhoeLabelItems = jeonhoeItemsRes.data || [];
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
     const workerOpinions = (opinionsRes.data || []) as any[];
@@ -501,31 +547,37 @@ Deno.serve(async (req) => {
 
     const sigRowsHtml = sigRows.join("");
 
-    // ===== FEEDBACK IMAGES: No slicing, show ALL before AND after =====
-    const feedbackWithImages = await Promise.all(
-      feedbackItems.map(async (fb: any) => {
-        const beforeImages: string[] = [];
-        const afterImages: string[] = [];
-        // No .slice() — process ALL images
-        for (const url of (fb.before_image_urls || [])) {
-          try {
-            const b64 = await imageUrlToBase64(url);
-            beforeImages.push(b64 || url);
-          } catch {
-            beforeImages.push(url);
-          }
-        }
-        for (const url of (fb.after_image_urls || [])) {
-          try {
-            const b64 = await imageUrlToBase64(url);
-            afterImages.push(b64 || url);
-          } catch {
-            afterImages.push(url);
-          }
-        }
-        return { ...fb, beforeBase64: beforeImages, afterBase64: afterImages };
-      })
-    );
+    // ===== FEEDBACK IMAGES: No slicing, show ALL before AND after (PDF stays a chip) =====
+    type FeedbackPhoto = { label: string; kind: "image" | "pdf"; src: string; name?: string };
+
+    async function hydrateFeedbackPhotos(rows: any[]) {
+      return Promise.all(
+        (rows || []).map(async (fb: any) => {
+          const photos: FeedbackPhoto[] = [];
+          const pushUrls = async (urls: string[], label: string) => {
+            for (const url of urls || []) {
+              if (!url) continue;
+              if (isPdfAttachmentUrl(url)) {
+                photos.push({ label, kind: "pdf", src: url, name: attachmentFileName(url) });
+                continue;
+              }
+              try {
+                const b64 = await imageUrlToBase64(url);
+                photos.push({ label, kind: "image", src: b64 || url });
+              } catch {
+                photos.push({ label, kind: "image", src: url });
+              }
+            }
+          };
+          await pushUrls(fb.before_image_urls || [], "조치 전");
+          await pushUrls(fb.after_image_urls || [], "조치 후");
+          return { ...fb, photos };
+        }),
+      );
+    }
+
+    const geumjuWithImages = await hydrateFeedbackPhotos(geumjuFeedbackItems);
+    const jeonhoeWithImages = await hydrateFeedbackPhotos(jeonhoeFeedbackItems);
 
     // ===== WORKER IMAGES: No slicing — process ALL =====
     const workerImages: string[] = [];
@@ -575,22 +627,35 @@ Deno.serve(async (req) => {
         <td>${item.assignee || ""}</td>
       </tr>`).join("");
 
-    // Feedback section with ALL photos (before AND after)
-    let feedbackSection = "";
-    if (feedbackWithImages.length > 0) {
-      const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
-        const item = feedbackLabelItems.find((i: any) => i.id === fb.risk_item_id);
+    function renderFeedbackSection(
+      title: string,
+      sourceRun: any | null,
+      rows: any[],
+      labelItems: any[],
+      opts?: { showEmpty?: boolean },
+    ): string {
+      const period = sourceRun?.period_label ? ` (${sourceRun.period_label})` : "";
+      if (!rows.length) {
+        if (!opts?.showEmpty) return "";
+        return `
+        <div class="page-break"></div>
+        <div class="section-header">${title}${period}</div>
+        <div class="summary-text">등록된 이행 확인이 없습니다.</div>`;
+      }
+      const fbRows = rows.map((fb: any, idx: number) => {
+        const item = (labelItems || []).find((i: any) => i.id === fb.risk_item_id);
         const itemLabel = item ? `${item.process} – ${item.sub_task || ""}` : "(전체)";
         const statusColor = fb.status === "완료" ? "#16a34a" : fb.status === "진행중" ? "#d97706" : "#dc2626";
 
         let imagesHtml = "";
-        if (fb.beforeBase64.length > 0 || fb.afterBase64.length > 0) {
-          const allPhotos: { label: string; src: string }[] = [];
-          fb.beforeBase64.forEach((b64: string) => allPhotos.push({ label: "조치 전", src: b64 }));
-          fb.afterBase64.forEach((b64: string) => allPhotos.push({ label: "조치 후", src: b64 }));
-
-          const photoGrid = allPhotos.map((p) =>
-            `<div style="width:48%;page-break-inside:avoid;margin-bottom:4pt;">
+        if ((fb.photos || []).length > 0) {
+          const photoGrid = fb.photos.map((p: FeedbackPhoto) =>
+            p.kind === "pdf"
+              ? `<div style="width:48%;page-break-inside:avoid;margin-bottom:4pt;">
+              <div style="font-size:6pt;font-weight:600;color:#475569;margin-bottom:2pt;">▸ ${p.label} · PDF</div>
+              <div style="border:1px solid #cbd5e1;border-radius:3pt;padding:10pt 8pt;font-size:8pt;color:#334155;background:#f8fafc;">〔PDF 첨부〕 ${p.name || "문서"}</div>
+            </div>`
+              : `<div style="width:48%;page-break-inside:avoid;margin-bottom:4pt;">
               <div style="font-size:6pt;font-weight:600;color:#475569;margin-bottom:2pt;">▸ ${p.label}</div>
               <img src="${p.src}" style="width:100%;max-height:140pt;object-fit:contain;border:1px solid #cbd5e1;border-radius:3pt;" />
             </div>`
@@ -612,18 +677,23 @@ Deno.serve(async (req) => {
           </tr>${imagesHtml}`;
       }).join("");
 
-      const prevLabel = printFeedbackRun && printFeedbackRun.id !== runId
-        ? ` (전회차 ${printFeedbackRun.period_label || ""})`
-        : "";
-      feedbackSection = `
+      const done = rows.filter((f: any) => f.status === "완료").length;
+      const open = rows.filter((f: any) => f.status === "미조치").length;
+      return `
         <div class="page-break"></div>
-        <div class="section-header">금주 이행 확인${prevLabel}</div>
-        <div class="summary-text">전회차 실행 작업의 조치 전후 사진 · 총 ${feedbackWithImages.length}건 · 완료 ${feedbackWithImages.filter((f: any) => f.status === "완료").length}건 · 미조치 ${feedbackWithImages.filter((f: any) => f.status === "미조치").length}건</div>
+        <div class="section-header">${title}${period}</div>
+        <div class="summary-text">조치 전후 사진 · 총 ${rows.length}건 · 완료 ${done}건 · 미조치 ${open}건</div>
         <table>
           <thead><tr><th>No</th><th>관련 항목</th><th>조치 내용</th><th>상태</th><th>완료일</th></tr></thead>
           <tbody>${fbRows}</tbody>
         </table>`;
     }
+
+    const showEmptyFeedbackSection = jeonhoeWithImages.length > 0 || geumjuWithImages.length > 0
+      || printMode === "feedback";
+    const feedbackSection =
+      renderFeedbackSection("전회차 이행 확인", jeonhoeRun, jeonhoeWithImages, jeonhoeLabelItems, { showEmpty: showEmptyFeedbackSection }) +
+      renderFeedbackSection("금주 이행 확인", geumjuRun, geumjuWithImages, geumjuLabelItems, { showEmpty: showEmptyFeedbackSection });
 
     // Validation section
     let validationSection = "";

@@ -977,6 +977,59 @@ export type Database = {
           },
         ]
       }
+      assessment_run_share_acks: {
+        Row: {
+          company_id: string | null
+          company_name: string | null
+          created_at: string
+          id: string
+          project_id: string
+          run_id: string
+          signature_data: string
+          signed_at: string
+          source: string
+          user_id: string | null
+          worker_id: string | null
+          worker_name: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          company_name?: string | null
+          created_at?: string
+          id?: string
+          project_id: string
+          run_id: string
+          signature_data: string
+          signed_at?: string
+          source?: string
+          user_id?: string | null
+          worker_id?: string | null
+          worker_name?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          company_name?: string | null
+          created_at?: string
+          id?: string
+          project_id?: string
+          run_id?: string
+          signature_data?: string
+          signed_at?: string
+          source?: string
+          user_id?: string | null
+          worker_id?: string | null
+          worker_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_run_share_acks_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assessment_runs: {
         Row: {
           author_user_id: string | null
@@ -9741,6 +9794,15 @@ export type Database = {
         Args: { _notice_id: string }
         Returns: Json
       }
+      ack_assessment_run_share: {
+        Args: {
+          _run_id: string
+          _signature_data: string
+          _source?: string
+          _worker_id?: string | null
+        }
+        Returns: Json
+      }
       ack_project_announcement: {
         Args: { _announcement_id: string }
         Returns: Json
@@ -10015,6 +10077,14 @@ export type Database = {
         Args: { _permit_id: string; _tbm_session_id: string }
         Returns: string
       }
+      list_company_period_assessment_run_ids: {
+        Args: {
+          _company_id: string
+          _day?: string
+          _project_id: string
+        }
+        Returns: string[]
+      }
       list_joinable_projects: {
         Args: never
         Returns: {
@@ -10034,6 +10104,20 @@ export type Database = {
           require_ack: boolean
           published_at: string
           expires_at: string | null
+        }[]
+      }
+      list_my_pending_assessment_shares: {
+        Args: { _project_id?: string | null }
+        Returns: {
+          run_id: string
+          project_id: string
+          period_label: string
+          type: string
+          status: string
+          start_date: string | null
+          end_date: string | null
+          summary: string
+          notice_id: string | null
         }[]
       }
       lookup_auth_user_id_by_email: {

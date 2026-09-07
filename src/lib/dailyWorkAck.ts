@@ -95,9 +95,19 @@ export function buildWorkSummary(permits: DailyPermitBrief[]): string {
     .join("\n");
 }
 
-/** Pull top hazards from linked assessment runs (if any). */
-export async function buildRiskSummary(permits: DailyPermitBrief[]): Promise<string> {
-  const runIds = [...new Set(permits.map((p) => p.assessment_run_id).filter(Boolean))] as string[];
+/** Pull top hazards from linked assessment runs, then the company's period RA. */
+export async function buildRiskSummary(
+  permits: DailyPermitBrief[],
+  extraRunIds: string[] = [],
+): Promise<string> {
+  const runIds = [
+    ...new Set(
+      [
+        ...permits.map((p) => p.assessment_run_id),
+        ...extraRunIds,
+      ].filter(Boolean),
+    ),
+  ] as string[];
   if (runIds.length === 0) {
     return [
       "연결된 위험성평가가 배정되지 않았습니다. 아래 기본 안전수칙을 반드시 준수하세요.",

@@ -27,6 +27,10 @@ import {
   shouldForceDailyAckDialog,
   type DailyPermitBrief,
 } from "@/lib/dailyWorkAck";
+import {
+  fetchCompanyPeriodRunIds,
+  stampPendingSharesFromDailyAck,
+} from "@/lib/assessmentShareAck";
 import ResponsiveSignaturePad, {
   type ResponsiveSignaturePadHandle,
 } from "@/components/ResponsiveSignaturePad";
@@ -90,6 +94,7 @@ export default function WorkerDailyHome({
   const [ackDone, setAckDone] = useState(false);
   const [ackHydrated, setAckHydrated] = useState(false);
   const [dayPermits, setDayPermits] = useState<DailyPermitBrief[]>([]);
+  const [periodRunIds, setPeriodRunIds] = useState<string[]>([]);
   const [workSummary, setWorkSummary] = useState("");
   const [riskSummary, setRiskSummary] = useState("");
   const [ackWorkOk, setAckWorkOk] = useState(false);
@@ -156,12 +161,13 @@ export default function WorkerDailyHome({
     setCheckInFence(fence);
 
     let wid: string | null = null;
+    let workerCompanyId: string | null = null;
     if (profile?.phone) {
       const digits = profile.phone.replace(/\D/g, "");
       const { data: workers } = await supabase
         .from("workers")
         .select(
-          "id, phone, name, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind",
+          "id, phone, name, company_id, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind",
         )
         .eq("project_id", pid)
         .eq("is_active", true)
@@ -171,6 +177,7 @@ export default function WorkerDailyHome({
       ) as any;
       wid = matched?.id || null;
       setWorkerId(wid);
+      workerCompanyId = (matched?.company_id as string | null) || null;
       if (
         matched?.site_entry_suspended_until &&
         new Date(matched.site_entry_suspended_until).getTime() > Date.now()
@@ -187,7 +194,7 @@ export default function WorkerDailyHome({
 
     if (wid) {
       const day = seoulDayRange();
-      const [{ data: logs }, ack, permits] = await Promise.all([
+      const [{ data: logs }, ack, permits, extraRunIds] = await Promise.all([
         supabase
           .from("worker_entry_logs")
           .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
@@ -199,19 +206,22 @@ export default function WorkerDailyHome({
           .limit(1),
         fetchTodayAck(pid, wid),
         fetchWorkerDayPermits(pid, wid),
+        fetchCompanyPeriodRunIds(pid, workerCompanyId),
       ]);
       const log = (logs?.[0] as EntryLog) || null;
       const done = isDailyAckComplete({ hasAckRow: !!ack, tbmConfirmed: log?.tbm_confirmed });
       setTodayLog(log);
       setAckDone(done);
       setDayPermits(permits);
+      setPeriodRunIds(extraRunIds);
       setWorkSummary(buildWorkSummary(permits));
-      setRiskSummary(await buildRiskSummary(permits));
+      setRiskSummary(await buildRiskSummary(permits, extraRunIds));
       if (done) setAckOpen(false);
     } else {
       setTodayLog(null);
       setAckDone(false);
       setDayPermits([]);
+      setPeriodRunIds([]);
     }
 
     // Full GPS is owned by WorkerGlobalGps (checked-in workers / on-site managers only).
@@ -410,6 +420,12 @@ export default function WorkerDailyHome({
         signatureData,
       });
       if ("error" in saved) throw new Error(saved.error);
+      await stampPendingSharesFromDailyAck({
+        projectId,
+        workerId,
+        signatureData,
+        runIds: periodRunIds,
+      });
 
       const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
         _action: "ack",

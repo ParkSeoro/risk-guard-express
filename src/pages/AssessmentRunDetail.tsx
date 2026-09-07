@@ -113,6 +113,11 @@ import {
   unresolvedFeedback,
   type WeeklyLinkRun,
 } from '@/lib/weeklyAssessmentLink';
+import {
+  fetchAssessmentShareAcks,
+  isSafeSignatureDataUrl,
+  type AssessmentShareAck,
+} from '@/lib/assessmentShareAck';
 import PreviousRunPicker, { AUTO_PREVIOUS_VALUE } from '@/components/assessment/PreviousRunPicker';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -146,6 +151,7 @@ const AssessmentRunDetail = () => {
   const [project, setProject] = useState<any>(null);
   const [items, setItems] = useState<RiskItemRow[]>([]);
   const [participants, setParticipants] = useState<any[]>([]);
+  const [shareAcks, setShareAcks] = useState<AssessmentShareAck[]>([]);
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
   const [filterRiskGrade, setFilterRiskGrade] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -352,11 +358,12 @@ const AssessmentRunDetail = () => {
     if (!runId) return;
     // First load only — background refresh must not unmount the page/dialogs.
     if (!hasLoadedRef.current) setLoading(true);
-    const [runRes, itemsRes, partRes, profilesRes] = await Promise.all([
+    const [runRes, itemsRes, partRes, profilesRes, shareRes] = await Promise.all([
       supabase.from('assessment_runs').select('*').eq('id', runId).single(),
       supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order'),
       supabase.from('assessment_run_participants').select('*').eq('run_id', runId).order('created_at'),
       supabase.from('profiles').select('user_id, display_name, company, position'),
+      fetchAssessmentShareAcks(runId),
     ]);
     if (runRes.data) {
       setRun(runRes.data);
@@ -510,6 +517,7 @@ const AssessmentRunDetail = () => {
     }
     setItems(itemsRes.data || []);
     setParticipants(partRes.data || []);
+    setShareAcks(shareRes || []);
     setUserDirectory((profilesRes.data || []) as any);
 
     // Fetch latest approval records (run_id 또는 entity 키 — 둘 다 SSOT)
@@ -2596,6 +2604,67 @@ const AssessmentRunDetail = () => {
                     <td className="border px-2 py-1 text-muted-foreground">미상신</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {isApproved && (
+        <div className="space-y-2">
+          <span className="text-xs text-muted-foreground font-medium">근로자 참여 및 공유 서명</span>
+          <p className="text-[10px] text-muted-foreground">
+            결재 서명란과 별개입니다. 승인 후 앱 확인·출근 서명이 1회만 표기됩니다.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px] border-collapse">
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="border px-2 py-1 text-left font-medium">소속</th>
+                  <th className="border px-2 py-1 text-left font-medium">성명</th>
+                  <th className="border px-2 py-1 text-left font-medium">서명</th>
+                  <th className="border px-2 py-1 text-left font-medium">확인일시</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shareAcks.length === 0 ? (
+                  <tr>
+                    <td className="border px-2 py-2 text-muted-foreground text-center" colSpan={4}>
+                      아직 공유 확인 서명이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  shareAcks.map((a) => (
+                    <tr key={a.id}>
+                      <td className="border px-2 py-1">{a.company_name || "—"}</td>
+                      <td className="border px-2 py-1">{a.worker_name || "—"}</td>
+                      <td className="border px-2 py-1">
+                        {isSafeSignatureDataUrl(a.signature_data) ? (
+                          <img
+                            src={a.signature_data || ""}
+                            alt={`${a.worker_name || "서명"}`}
+                            className="h-8 max-w-[7rem] object-contain"
+                          />
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="border px-2 py-1">
+                        {a.signed_at
+                          ? new Date(a.signed_at).toLocaleString("ko-KR", {
+                              timeZone: "Asia/Seoul",
+                              hour12: false,
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

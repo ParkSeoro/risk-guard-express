@@ -12,16 +12,17 @@ import ResponsiveSignaturePad, {
   type ResponsiveSignaturePadHandle,
 } from "@/components/ResponsiveSignaturePad";
 import { usePendingAssessmentShares } from "@/hooks/usePendingAssessmentShares";
-import { ackAssessmentRunShare } from "@/lib/assessmentShareAck";
+import { ackAssessmentRunShare, shareTypeLabel } from "@/lib/assessmentShareAck";
 import { toast } from "sonner";
 import { ShieldAlert } from "lucide-react";
 /**
  * Blocking confirm after RA approval. Signature stamps 근로자 참여 및 공유 서명 once.
  */
 export default function ShellAssessmentShareAlert() {
-  const { current, reload } = usePendingAssessmentShares();
+  const { current, remainingCount, reload, dismiss } = usePendingAssessmentShares();
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
   const [busy, setBusy] = useState(false);
+  const typeLabel = shareTypeLabel(current?.type);
 
   const submit = async () => {
     if (!current) return;
@@ -43,6 +44,7 @@ export default function ShellAssessmentShareAlert() {
       });
       if (!res.ok) throw new Error(res.error || "확인 처리에 실패했습니다");
       sigRef.current.clear();
+      dismiss(current);
       toast.success(res.already ? "이미 확인된 회차입니다" : "위험성평가 공유 서명이 기록되었습니다");
       await reload();
     } catch (e: any) {
@@ -67,10 +69,13 @@ export default function ShellAssessmentShareAlert() {
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5" /> 위험성평가 결과 공유
+            <ShieldAlert className="h-5 w-5" /> {typeLabel} 결과 공유
           </DialogTitle>
           <DialogDescription>
-            {current?.period_label || "위험성평가"}가 승인되었습니다. 요지를 확인하고 서명해 주세요.
+            {current?.period_label || typeLabel}가 승인되었습니다. 요지를 확인하고 한 번만 서명해 주세요.
+            {remainingCount > 0
+              ? ` 서명 후 남은 공유 확인 ${remainingCount}건이 이어서 표시됩니다.`
+              : ""}
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-md bg-muted/60 border p-3 text-sm whitespace-pre-wrap max-h-48 overflow-y-auto">

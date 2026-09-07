@@ -35,6 +35,69 @@ export type PendingAssessmentShare = {
   notice_id: string | null;
 };
 
+/** One prompt bucket: same site + 상시/수시 + week start. */
+export function sharePromptGroupKey(item: {
+  project_id?: string | null;
+  type?: string | null;
+  start_date?: string | null;
+}): string {
+  return [
+    String(item.project_id || "").trim(),
+    String(item.type || "").trim(),
+    String(item.start_date || "").trim().slice(0, 10),
+  ].join("|");
+}
+
+export function shareTypeLabel(type?: string | null): string {
+  const t = String(type || "").trim();
+  if (t === "수시") return "수시 위험성평가";
+  if (t === "상시") return "정기(상시) 위험성평가";
+  return t ? `${t} 위험성평가` : "위험성평가";
+}
+
+/**
+ * Defense-in-depth for the share dialog:
+ * drop future weeks, collapse duplicate weekly copies, honor local dismissals.
+ */
+export function pickPendingSharePrompts(
+  items: PendingAssessmentShare[],
+  opts?: {
+    today?: string;
+    dismissedRunIds?: Iterable<string>;
+    dismissedGroupKeys?: Iterable<string>;
+  },
+): PendingAssessmentShare[] {
+  const today = opts?.today || todaySeoulDate();
+  const dismissedIds = new Set(
+    [...(opts?.dismissedRunIds || [])].map((id) => String(id || "").trim()).filter(Boolean),
+  );
+  const dismissedGroups = new Set(
+    [...(opts?.dismissedGroupKeys || [])].map((key) => String(key || "").trim()).filter(Boolean),
+  );
+  const typeRank = (t: string) => (t === "상시" ? 0 : t === "수시" ? 1 : 2);
+  const sorted = (items || [])
+    .filter((item) => item && item.run_id)
+    .slice()
+    .sort((a, b) => {
+      const as = String(a.start_date || "").slice(0, 10);
+      const bs = String(b.start_date || "").slice(0, 10);
+      if (as !== bs) return as < bs ? -1 : 1;
+      return typeRank(String(a.type || "")) - typeRank(String(b.type || ""));
+    });
+  const seen = new Set<string>();
+  const out: PendingAssessmentShare[] = [];
+  for (const item of sorted) {
+    if (dismissedIds.has(item.run_id)) continue;
+    const start = String(item.start_date || "").trim().slice(0, 10);
+    if (start && start > today) continue;
+    const key = sharePromptGroupKey(item);
+    if (dismissedGroups.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 export type AssessmentShareAck = {
   id: string;
   run_id: string;
@@ -148,7 +211,7 @@ export async function listPendingAssessmentShares(
     _project_id: projectId || null,
   });
   if (error) return [];
-  return (data || []) as PendingAssessmentShare[];
+  return pickPendingSharePrompts((data || []) as PendingAssessmentShare[]);
 }
 
 export async function ackAssessmentRunShare(opts: {

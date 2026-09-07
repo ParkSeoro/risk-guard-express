@@ -7,6 +7,12 @@ import {
   cornersToPersistPayload,
   loadCornersFromMap,
   anyMapHasGeoref,
+  parseSiteMapView,
+  parseGeoTransform,
+  mergeViewIntoGeoTransform,
+  georefCornersKey,
+  cornersEqual,
+  viewsEqual,
 } from "@/lib/mapBounds";
 
 describe("mapBounds corners / rotation", () => {
@@ -43,6 +49,47 @@ describe("mapBounds corners / rotation", () => {
     expect(p.geo_transform.opacity).toBe(0.7);
     expect(p.geo_transform.tl).toEqual(c.tl);
     expect(p.geo_anchor_nw_lat).toBe(37.6);
+  });
+
+  it("persist payload keeps camera view and source (walk/PC/photo share SSOT)", () => {
+    const c = swNeToCorners(box);
+    const view = { lat: 37.55, lng: 126.95, zoom: 18 };
+    const p = cornersToPersistPayload(c, 0.82, { view, source: "walk" });
+    expect(p.geo_transform.view).toEqual(view);
+    expect(p.geo_transform.source).toBe("walk");
+    const parsed = parseGeoTransform(p.geo_transform);
+    expect(parsed?.view).toEqual(view);
+    expect(parseSiteMapView(p.geo_transform)).toEqual(view);
+  });
+
+  it("mergeViewIntoGeoTransform does not drop TL/TR/BL", () => {
+    const c = swNeToCorners(box);
+    const base = cornersToPersistPayload(c, 0.8, { source: "seed" }).geo_transform;
+    const merged = mergeViewIntoGeoTransform(base, { lat: 34.85, lng: 127.7, zoom: 16 });
+    const parsed = parseGeoTransform(merged);
+    expect(parsed?.tl).toEqual(c.tl);
+    expect(parsed?.source).toBe("seed");
+    expect(parsed?.view).toEqual({ lat: 34.85, lng: 127.7, zoom: 16 });
+  });
+
+  it("georefCornersKey ignores camera view so saving zoom does not look like a new georef", () => {
+    const c = swNeToCorners(box);
+    const a = {
+      geo_anchor_nw_lat: 37.6,
+      geo_anchor_nw_lng: 126.9,
+      geo_anchor_se_lat: 37.5,
+      geo_anchor_se_lng: 127.0,
+      geo_transform: cornersToPersistPayload(c, 0.85).geo_transform,
+    };
+    const b = {
+      ...a,
+      geo_transform: cornersToPersistPayload(c, 0.85, {
+        view: { lat: 37.55, lng: 126.95, zoom: 19 },
+      }).geo_transform,
+    };
+    expect(georefCornersKey(a)).toBe(georefCornersKey(b));
+    expect(cornersEqual(c, loadCornersFromMap(b))).toBe(true);
+    expect(viewsEqual(parseSiteMapView(a.geo_transform), parseSiteMapView(b.geo_transform))).toBe(false);
   });
 
   it("anyMapHasGeoref treats walk geo_transform as done (not gps_calibration)", () => {

@@ -21,8 +21,26 @@ export type GeoCorners = {
   bl: LatLngLiteral;
 };
 
+/** Leaflet camera on the control map — restored after tab/route remount. */
+export type SiteMapView = {
+  lat: number;
+  lng: number;
+  zoom: number;
+};
+
+export const GEO_TRANSFORM_SOURCES = ["walk", "pc-satellite", "seed", "photo"] as const;
+export type GeoTransformSource = (typeof GEO_TRANSFORM_SOURCES)[number];
+
 export type GeoTransform = GeoCorners & {
   opacity?: number;
+  view?: SiteMapView;
+  /** Who last wrote TL/TR/BL — walk, PC satellite, seed overlay, or site photo. */
+  source?: GeoTransformSource;
+};
+
+export type PersistExtras = {
+  view?: SiteMapView | null;
+  source?: GeoTransformSource | null;
 };
 
 export type SwNeBounds = {
@@ -92,21 +110,58 @@ export function cornersToLeafletBounds(c: GeoCorners): L.LatLngBoundsExpression 
   ];
 }
 
-/** Persist NW/SE bbox (legacy) + full 3-corner transform. */
-export function cornersToPersistPayload(c: GeoCorners, opacity = 0.85) {
+/** Persist NW/SE bbox (legacy) + full 3-corner transform (+ optional camera). */
+export function cornersToPersistPayload(
+  c: GeoCorners,
+  opacity = 0.85,
+  extras?: PersistExtras,
+) {
   const box = cornersToSwNe(c);
+  const geo_transform: GeoTransform = {
+    tl: c.tl,
+    tr: c.tr,
+    bl: c.bl,
+    opacity,
+  };
+  if (extras?.view) geo_transform.view = extras.view;
+  if (extras?.source) geo_transform.source = extras.source;
   return {
     geo_anchor_nw_lat: box.ne.lat,
     geo_anchor_nw_lng: box.sw.lng,
     geo_anchor_se_lat: box.sw.lat,
     geo_anchor_se_lng: box.ne.lng,
-    geo_transform: {
-      tl: c.tl,
-      tr: c.tr,
-      bl: c.bl,
-      opacity,
-    } satisfies GeoTransform,
+    geo_transform,
   };
+}
+
+export function parseGeoTransformSource(raw: unknown): GeoTransformSource | null {
+  return typeof raw === "string" && (GEO_TRANSFORM_SOURCES as readonly string[]).includes(raw)
+    ? (raw as GeoTransformSource)
+    : null;
+}
+
+export function parseSiteMapView(raw: unknown): SiteMapView | null {
+  if (!raw || typeof raw !== "object") return null;
+  const v = (raw as Record<string, unknown>).view;
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const lat = Number(o.lat);
+  const lng = Number(o.lng);
+  const zoom = Number(o.zoom);
+  if (![lat, lng, zoom].every(Number.isFinite)) return null;
+  if (zoom < 1 || zoom > 22) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng, zoom };
+}
+
+/** Merge camera into existing geo_transform without dropping TL/TR/BL. */
+export function mergeViewIntoGeoTransform(existing: unknown, view: SiteMapView): unknown {
+  const tf = parseGeoTransform(existing);
+  if (tf) return { ...tf, view };
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    return { ...(existing as Record<string, unknown>), view };
+  }
+  return { view };
 }
 
 export function parseGeoTransform(raw: unknown): GeoTransform | null {
@@ -123,12 +178,59 @@ export function parseGeoTransform(raw: unknown): GeoTransform | null {
   ) {
     return null;
   }
+  const view = parseSiteMapView(o);
+  const source = parseGeoTransformSource(o.source);
   return {
     tl: { lat: tl.lat, lng: tl.lng },
     tr: { lat: tr.lat, lng: tr.lng },
     bl: { lat: bl.lat, lng: bl.lng },
     opacity: typeof o.opacity === "number" ? o.opacity : 0.85,
+    ...(view ? { view } : {}),
+    ...(source ? { source } : {}),
   };
+}
+
+/** Identity of overlay corners/opacity only — camera `view` must not trigger a remount/refit. */
+export function georefCornersKey(m: AnchorMap): string {
+  const tf = parseGeoTransform(m.geo_transform);
+  if (tf) {
+    return JSON.stringify({
+      tl: tf.tl,
+      tr: tf.tr,
+      bl: tf.bl,
+      opacity: tf.opacity ?? 0.85,
+    });
+  }
+  return JSON.stringify([
+    m.geo_anchor_nw_lat,
+    m.geo_anchor_nw_lng,
+    m.geo_anchor_se_lat,
+    m.geo_anchor_se_lng,
+  ]);
+}
+
+export function cornersEqual(
+  a: GeoCorners | null | undefined,
+  b: GeoCorners | null | undefined,
+  eps = 1e-8,
+): boolean {
+  if (!a || !b) return a == b;
+  const pts = (c: GeoCorners) => [c.tl, c.tr, c.bl];
+  return pts(a).every(
+    (p, i) => Math.abs(p.lat - pts(b)[i].lat) < eps && Math.abs(p.lng - pts(b)[i].lng) < eps,
+  );
+}
+
+export function viewsEqual(
+  a: SiteMapView | null | undefined,
+  b: SiteMapView | null | undefined,
+): boolean {
+  if (!a || !b) return a == b;
+  return (
+    Math.abs(a.lat - b.lat) < 1e-7 &&
+    Math.abs(a.lng - b.lng) < 1e-7 &&
+    Math.abs(a.zoom - b.zoom) < 0.05
+  );
 }
 
 /** Load corners from geo_transform or fall back to NW/SE rectangle. */

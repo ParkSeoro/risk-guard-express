@@ -50,7 +50,7 @@ const defaults: NotifPrefs = {
   event_return_request: true, event_validation_complete: false,
   event_safety_inspection: true, event_work_permit: true, event_tbm: false,
   event_health_warning: true, event_health_checkup_due: true,
-  event_todo_due: true, event_assessment_result: false, event_general: true,
+  event_todo_due: true, event_assessment_result: true, event_general: true,
   business_hours_only: false, push_quiet_start: '22:00', push_quiet_end: '07:00',
 };
 
@@ -62,6 +62,7 @@ const MANDATORY_EVENTS_ALL = [
   { key: 'danger_zone_entry',  label: '위험구역 진입',         desc: '지오펜스 경보 (사이렌 채널)', worker: true },
   { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림', worker: true },
   { key: 'announcement',       label: '현장 공지',             desc: '관리자가 게시한 현장 공지 (끌 수 없음)', worker: true },
+  { key: 'assessment_share',   label: '위험성평가 결과 공유',   desc: '회사별 평가 승인 시 소속 관리자·근로자 확인 서명 (끌 수 없음)', worker: true },
 ] as const;
 
 interface EmailLogEntry {
@@ -300,7 +301,7 @@ const SettingsNotifications = () => {
         { key: 'event_work_permit',         label: '작업허가서',            desc: '배정된 작업허가·현장 안내' },
         { key: 'event_tbm',                 label: 'TBM 세션',              desc: 'TBM 시작 알림 및 참여 요청' },
         { key: 'event_health_warning',      label: '건강 이상 안내',         desc: '일일 건강일지·이상소견 관련 안내' },
-        { key: 'event_assessment_result',   label: '위험성평가 결과 공유',    desc: '평가 완료 시 참가자에게' },
+        { key: 'event_assessment_result',   label: '위험성평가 반영 요청',    desc: '승인 후 허가서·TBM 작성자에게 반영 안내' },
         { key: 'event_general',             label: '일반 공지',              desc: '시스템 공지 / 운영 안내' },
       ]
     : [
@@ -312,7 +313,7 @@ const SettingsNotifications = () => {
         { key: 'event_health_warning',      label: '건강 경고 (유소견·미수검 출근)', desc: '안전관리자에게 출근 경고' },
         { key: 'event_health_checkup_due',  label: '건강검진 도래 / 만료',   desc: '대상자·관리자에게 사전 통지' },
         { key: 'event_todo_due',            label: '할 일 마감 임박',        desc: '법정 의무 작업 마감 알림' },
-        { key: 'event_assessment_result',   label: '위험성평가 결과 공유',    desc: '평가 완료 시 참가자에게' },
+        { key: 'event_assessment_result',   label: '위험성평가 반영 요청',    desc: '승인 후 허가서·TBM 작성자에게 반영 안내' },
         { key: 'event_general',             label: '일반 공지',              desc: '시스템 공지 / 운영 안내' },
       ];
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -29,6 +30,7 @@ export default function AssessmentNotices() {
   const { user } = useAuth();
   const { selectedProject } = useGlobalProjectAccess();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,6 +111,7 @@ export default function AssessmentNotices() {
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <CardTitle className="text-base">{n.title}</CardTitle>
                     <div className="flex items-center gap-2">
+                      {n.run_id && <Badge variant="outline">승인 자동공지</Badge>}
                       <Badge variant="secondary"><Users className="h-3 w-3 mr-1" />확인 {ackCount}</Badge>
                       {expired ? <Badge variant="outline">만료</Badge> : <Badge>게시중</Badge>}
                     </div>
@@ -121,9 +124,15 @@ export default function AssessmentNotices() {
                     {n.expires_at && <> · 만료 {format(new Date(n.expires_at), 'yyyy-MM-dd HH:mm')}</>}
                   </div>
                   <div>
-                    <Button size="sm" variant={acked ? 'secondary' : 'default'} disabled={acked} onClick={() => handleAcknowledge(n.id)}>
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> {acked ? '확인 완료' : '확인했습니다'}
-                    </Button>
+                    {n.run_id ? (
+                      <Button size="sm" variant="outline" onClick={() => navigate(`/assessment-run/${n.run_id}`)}>
+                        평가 문서 · 공유 서명 보기
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant={acked ? 'secondary' : 'default'} disabled={acked} onClick={() => handleAcknowledge(n.id)}>
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> {acked ? '확인 완료' : '확인했습니다'}
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

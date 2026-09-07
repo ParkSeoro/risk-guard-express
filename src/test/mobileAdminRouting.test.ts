@@ -127,6 +127,21 @@ describe("notification + entity mobile routes", () => {
     expect(toMobileShellPath("/app/admin/settings/account")).toBe("/app/worker/account");
   });
 
+  it("assessment_share notifications open the approved run", () => {
+    expect(
+      resolveNotificationRoute(
+        { type: "assessment_share", related_type: "assessment_run", related_id: "run-1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/risk-assessment/run-1");
+    expect(
+      resolveNotificationRoute(
+        { type: "assessment_share", related_id: "run-1" },
+        { mobileShell: false },
+      ),
+    ).toBe("/app/admin/assessment-run/run-1");
+  });
+
   it("announcement notifications open announcements list on phone and admin list on desktop", () => {
     expect(
       resolveNotificationRoute(

@@ -286,6 +286,34 @@ function htmlEsc(s: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
+function safeSignatureSrc(raw: unknown): string {
+  const s = String(raw ?? "").trim();
+  return /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=\s]+$/.test(s)
+    ? s.replace(/\s/g, "")
+    : "";
+}
+
+function shareAckCells(ack: any | null, n: number): string {
+  if (!ack) {
+    return `<td class="center" style="height:28pt;">${n}</td><td></td><td></td><td></td>`;
+  }
+  const src = safeSignatureSrc(ack.signature_data);
+  const img = src
+    ? `<img src="${src}" alt="서명" style="height:22pt;max-width:70pt;object-fit:contain;" />`
+    : "";
+  return `<td class="center" style="height:28pt;">${n}</td><td>${htmlEsc(ack.company_name || "")}</td><td>${htmlEsc(ack.worker_name || "")}</td><td class="center">${img}</td>`;
+}
+
+function buildShareSignatureRows(acks: any[]): string {
+  const list = Array.isArray(acks) ? acks : [];
+  const rowCount = Math.max(8, Math.ceil(list.length / 2));
+  const rows: string[] = [];
+  for (let i = 0; i < rowCount; i++) {
+    rows.push(`<tr>${shareAckCells(list[i * 2] || null, i * 2 + 1)}${shareAckCells(list[i * 2 + 1] || null, i * 2 + 2)}</tr>`);
+  }
+  return rows.join("");
+}
+
 function jwtSub(token: string): string | null {
   try {
     const seg = token.split(".")[1];
@@ -380,7 +408,7 @@ Deno.serve(async (req) => {
     const geumjuId = geumjuRun?.id || null;
     const jeonhoeId = jeonhoeRun?.id || null;
 
-    const [projectRes, itemsRes, participantsRes, feedbackGeumjuRes, feedbackJeonhoeRes, validationRes, approvalsRes, companyLinksRes, geumjuItemsRes, jeonhoeItemsRes, opinionsRes, accidentsRes, healthRes] = await Promise.all([
+    const [projectRes, itemsRes, participantsRes, feedbackGeumjuRes, feedbackJeonhoeRes, validationRes, approvalsRes, companyLinksRes, geumjuItemsRes, jeonhoeItemsRes, opinionsRes, accidentsRes, healthRes, shareAcksRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).eq("is_deleted", false).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
@@ -407,6 +435,7 @@ Deno.serve(async (req) => {
       supabase.from("worker_opinions").select("*").eq("run_id", runId).order("created_at"),
       supabase.from("assessment_accidents").select("*").eq("run_id", runId).order("created_at"),
       supabase.from("health_hazards").select("*").eq("run_id", runId).order("created_at"),
+      supabase.from("assessment_run_share_acks").select("worker_name, company_name, signature_data, signed_at").eq("run_id", runId).order("signed_at"),
     ]);
 
     const project = projectRes.data;
@@ -425,6 +454,7 @@ Deno.serve(async (req) => {
     const workerOpinions = (opinionsRes.data || []) as any[];
     const assessmentAccidents = (accidentsRes.data || []) as any[];
     const healthHazards = (healthRes.data || []) as any[];
+    const shareAcks = (shareAcksRes.data || []) as any[];
     let projectCompanies = mapProjectCompanies(companyLinksRes.data || []);
     if (projectCompanies.length === 0) {
       const { data: legacyCos, error: legacyErr } = await supabase
@@ -1005,11 +1035,7 @@ td, th { page-break-inside: auto; }
   <table>
     <thead><tr><th style="width:5%">No</th><th style="width:15%">소속</th><th style="width:15%">성명</th><th style="width:20%">서명</th><th style="width:5%">No</th><th style="width:15%">소속</th><th style="width:15%">성명</th><th style="width:20%">서명</th></tr></thead>
     <tbody>
-      ${Array.from({ length: 15 }, (_, i) => `
-        <tr>
-          <td class="center" style="height:28pt;">${i * 2 + 1}</td><td></td><td></td><td></td>
-          <td class="center" style="height:28pt;">${i * 2 + 2}</td><td></td><td></td><td></td>
-        </tr>`).join("")}
+      ${buildShareSignatureRows(shareAcks)}
     </tbody>
   </table>
 

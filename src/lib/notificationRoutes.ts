@@ -110,6 +110,8 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   health_checkup_due: () => `${ADMIN}/health/checkups`,
   announcement: (n) =>
     n.related_id ? `${ADMIN}/announcements?id=${n.related_id}` : `${ADMIN}/announcements`,
+  assessment_share: (n) =>
+    n.related_id ? `${ADMIN}/assessment-run/${n.related_id}` : `${ADMIN}/risk-assessment`,
   vision_safety_event: (n) =>
     n.related_id ? `${ADMIN}/vision-fleet?event=${n.related_id}` : `${ADMIN}/vision-fleet`,
   work_stop: () => `${ADMIN}/work-stop`,
@@ -150,6 +152,8 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   health_checkup_due: () => `${WORKER}/daily-health-log`,
   announcement: (n) =>
     n.related_id ? `${WORKER}/announcements?id=${n.related_id}` : `${WORKER}/announcements`,
+  assessment_share: (n) =>
+    n.related_id ? `${WORKER}/risk-assessment/${n.related_id}` : `${WORKER}/risk-assessment`,
   vision_safety_event: (n) =>
     n.related_id ? `${WORKER}/vision-events?event=${n.related_id}` : `${WORKER}/vision-events`,
   work_stop: () => `${WORKER}/work-stop`,

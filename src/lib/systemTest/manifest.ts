@@ -103,6 +103,8 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   profiles: ["user_id", "account_status", "display_name"],
   companies: ["id", "project_id", "name"],
   assessment_runs: ["id", "project_id", "type", "period_label", "status", "is_deleted", "author_user_id"],
+  assessment_notices: ["id", "project_id", "run_id", "title", "acknowledged_worker_ids"],
+  assessment_run_share_acks: ["id", "run_id", "project_id", "user_id", "worker_id", "signature_data"],
   risk_items: [
     "id",
     "project_id",
@@ -143,4 +145,7 @@ export const REQUIRED_RPCS: Array<{ name: string; sample_args: any }> = [
   { name: "worker_entry", sample_args: { _token: "__qa__", _work_permit_id: null, _signature: "", _ra_confirmed: false, _edu_confirmed: false, _tbm_confirmed: false } },
   { name: "worker_exit", sample_args: { _token: "__qa__", _signature: "", _no_accident: false } },
   { name: "process_invite_code", sample_args: { _user_id: "00000000-0000-0000-0000-000000000000", _invite_code: "__qa__" } },
+  { name: "ack_project_announcement", sample_args: { _announcement_id: "00000000-0000-0000-0000-000000000000" } },
+  { name: "list_my_pending_assessment_shares", sample_args: { _project_id: null } },
+  { name: "ack_assessment_run_share", sample_args: { _run_id: "00000000-0000-0000-0000-000000000000", _signature_data: "", _worker_id: null, _source: "notice" } },
 ];

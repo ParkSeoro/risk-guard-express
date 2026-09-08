@@ -17,17 +17,18 @@ describe("notificationPreview", () => {
 
   it("rewrites raw assessment_run_feedback keys to the approval-screen label", () => {
     expect(localizeNotificationText("assessment_run_feedback 결재 요청")).toBe(
-      "위험성평가 피드백(조치) 결재 요청",
+      "위험성평가 · 이행 확인 결재 요청",
     );
     expect(
       notificationTitle({ title: "assessment_run_feedback 결재 요청" }),
-    ).toBe("위험성평가 피드백(조치) 결재 요청");
+    ).toBe("위험성평가 · 이행 확인 결재 요청");
     expect(
       notificationPreview({
         message: "결재 요청: assessment_run_feedback이(가) 도착했습니다.",
       }),
-    ).toBe("결재 요청: 위험성평가 피드백(조치)이(가) 도착했습니다.");
-    expect(localizeNotificationText("assessment_run 결재 요청")).toBe("위험성평가 결재 요청");
+    ).toBe("결재 요청: 위험성평가 · 이행 확인이(가) 도착했습니다.");
+    expect(localizeNotificationText("assessment_run 결재 요청")).toBe("위험성평가 · 위평 작성 결재 요청");
+    expect(localizeNotificationText("위험성평가 피드백(조치) 반려")).toBe("위험성평가 · 이행 확인 반려");
   });
 });
 

@@ -119,6 +119,7 @@ import {
   type AssessmentShareAck,
 } from '@/lib/assessmentShareAck';
 import PreviousRunPicker, { AUTO_PREVIOUS_VALUE } from '@/components/assessment/PreviousRunPicker';
+import { feedbackStatusBadge } from '@/lib/assessmentApprovalPhase';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
@@ -2407,10 +2408,15 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 회사:</span><span>{docCompanies.authorCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">상태:</span>
+            <div className="flex gap-1 items-center flex-wrap"><span className="font-medium text-muted-foreground">상태:</span>
               <Badge variant="outline" className={`text-[9px] ${statusInfo.color}`}>
-                {run.status} {isApproved && <Lock className="h-3 w-3 ml-0.5 inline" />}
+                위평 {run.status} {isApproved && <Lock className="h-3 w-3 ml-0.5 inline" />}
               </Badge>
+              {executionApproved && feedbackStatusBadge(executionFeedbackStatus) && (
+                <Badge variant="outline" className="text-[9px]">
+                  {feedbackStatusBadge(executionFeedbackStatus)}
+                </Badge>
+              )}
             </div>
             {run.validation_score != null && (
               <div className="flex gap-1"><span className="font-medium text-muted-foreground">검증:</span><span>{run.validation_verdict} ({run.validation_score}점)</span></div>

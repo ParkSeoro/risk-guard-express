@@ -49,13 +49,19 @@ describe("pendingInboxTitle", () => {
         entity_type: "assessment_run_feedback",
         entity_title: "2026-09 주간",
       }),
-    ).toBe("2026-09 주간");
+    ).toBe("2026-09 주간 · 이행 확인");
     expect(
       pendingInboxTitle({
         entity_type: "assessment_run_feedback",
         entity_title: "",
       }),
-    ).toBe("위험성평가 피드백");
+    ).toBe("위험성평가 · 이행 확인");
+    expect(
+      pendingInboxTitle({
+        entity_type: "assessment_run",
+        entity_title: "2026-09 주간",
+      }),
+    ).toBe("2026-09 주간 · 위평 작성");
     expect(pendingInboxTitle({ entity_type: "work_permit", entity_title: "" })).toBe("-");
   });
 });
@@ -84,7 +90,7 @@ describe("groupedDocumentStatus", () => {
         { entity_type: "assessment_run_feedback", status: "승인" },
         { entity_type: "assessment_run_feedback", status: "승인" },
       ]),
-    ).toBe("조치 결재완료");
+    ).toBe("조치 확인 완료");
     expect(groupedDocumentStatus({ status: "승인완료" }, [{ entity_type: "assessment_run", status: "승인" }])).toBe(
       "승인완료",
     );

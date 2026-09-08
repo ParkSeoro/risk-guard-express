@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatWorkerBulkRowError, phonesEligibleForProvision } from "@/lib/workerBulk";
+import {
+  classifyBulkPhoneHit,
+  formatWorkerBulkRowError,
+  phonesEligibleForProvision,
+} from "@/lib/workerBulk";
 
 describe("phonesEligibleForProvision", () => {
   it("drops OTHER_COMPANY phones so login is not created without a roster row", () => {
@@ -25,5 +29,45 @@ describe("phonesEligibleForProvision", () => {
 describe("formatWorkerBulkRowError", () => {
   it("labels a cross-company phone", () => {
     expect(formatWorkerBulkRowError("OTHER_COMPANY")).toBe("다른 회사 소속 전화번호");
+  });
+});
+
+describe("classifyBulkPhoneHit", () => {
+  it("marks another company's roster row as transferable", () => {
+    expect(
+      classifyBulkPhoneHit(
+        {
+          worker_id: "w1",
+          company_id: "co-other",
+          company_name: "청원산기(주)",
+          is_active: true,
+        },
+        "co-jinnam",
+        "진남토건(주)",
+      ),
+    ).toEqual({
+      action: "transfer",
+      workerId: "w1",
+      sourceCompanyId: "co-other",
+      sourceCompanyName: "청원산기(주)",
+      isActive: true,
+    });
+  });
+
+  it("updates the same company and claims unlabeled orphans", () => {
+    expect(
+      classifyBulkPhoneHit(
+        { worker_id: "w2", company_id: "co-jinnam", company_name: "진남토건(주)" },
+        "co-jinnam",
+        "진남토건(주)",
+      ),
+    ).toEqual({ action: "update" });
+    expect(
+      classifyBulkPhoneHit(
+        { worker_id: "w3", company_id: null, company_name: "" },
+        "co-jinnam",
+        "진남토건(주)",
+      ),
+    ).toEqual({ action: "claim" });
   });
 });

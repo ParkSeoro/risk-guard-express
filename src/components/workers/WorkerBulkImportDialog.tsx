@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Download, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import {
   isStandardJobType,
@@ -12,8 +12,8 @@ import {
   STANDARD_JOB_TYPES,
 } from "@/lib/jobCategories";
 import { provisionWorkerAccounts } from "@/lib/provisionWorkerAccounts";
-import { isClaimableOrphanWorker } from "@/lib/companyLabel";
-import { formatWorkerBulkRowError, phonesEligibleForProvision } from "@/lib/workerBulk";
+import { classifyBulkPhoneHit, formatWorkerBulkRowError, phonesEligibleForProvision } from "@/lib/workerBulk";
+import { foreignRosterTransferPrompt } from "@/lib/workerCompanyTransfer";
 
 type Props = {
   projectId: string;
@@ -45,7 +45,11 @@ type Parsed = {
   _row: number;
   _error?: string;
   /** set after existing lookup preview */
-  _action?: "insert" | "update" | "claim";
+  _action?: "insert" | "update" | "claim" | "transfer";
+  _workerId?: string;
+  _sourceCompanyId?: string | null;
+  _sourceCompanyName?: string | null;
+  _sourceActive?: boolean | null;
 };
 
 const TEMPLATE_HEADERS = [
@@ -207,10 +211,13 @@ export default function WorkerBulkImportDialog({
     try {
       const variants = [...new Set(valid.flatMap((r) => phoneLookupVariants(r.phone)))];
       let existing: Array<{
+        id?: string;
+        worker_id?: string;
         phone?: string;
         phone_digits?: string;
         company_id: string | null;
         company_name: string | null;
+        is_active?: boolean | null;
       }> = [];
       const hits = await (supabase as any).rpc("list_project_worker_phone_hits", {
         _project_id: projectId,
@@ -221,47 +228,45 @@ export default function WorkerBulkImportDialog({
       } else {
         const { data, error } = await supabase
           .from("workers")
-          .select("id, phone, company_id, company_name")
+          .select("id, phone, company_id, company_name, is_active")
           .eq("project_id", projectId)
           .in("phone", variants);
         if (error) throw error;
         existing = (data || []) as typeof existing;
       }
-      const byDigits = new Map<
-        string,
-        { company_id: string | null; company_name: string | null }
-      >();
+      const byDigits = new Map<string, (typeof existing)[number]>();
       for (const w of existing) {
         const d = phoneDigits(w.phone_digits || w.phone || "");
-        if (d && !byDigits.has(d)) {
-          byDigits.set(d, {
-            company_id: w.company_id,
-            company_name: w.company_name,
-          });
-        }
+        if (d && !byDigits.has(d)) byDigits.set(d, w);
       }
       setRows(
         parsed.map((r) => {
           if (r._error) return r;
           const hit = byDigits.get(r.phoneDigits);
-          if (!hit) return { ...r, _action: "insert" as const };
-          if (hit.company_id == null) {
-            // Company-agnostic: claim only when orphan label empty or matches importer company
-            if (isClaimableOrphanWorker(hit, companyId, companyName)) {
-              return { ...r, _action: "claim" as const };
-            }
+          const classified = classifyBulkPhoneHit(
+            hit
+              ? {
+                  worker_id: hit.worker_id || hit.id,
+                  company_id: hit.company_id,
+                  company_name: hit.company_name,
+                  is_active: hit.is_active,
+                }
+              : null,
+            companyId,
+            companyName,
+          );
+          if ("error" in classified) return { ...r, _error: classified.error };
+          if (classified.action === "transfer") {
             return {
               ...r,
-              _error: "동일 연락처의 기존 근로자 업체명과 일치하지 않아 귀속할 수 없습니다",
+              _action: "transfer",
+              _workerId: classified.workerId,
+              _sourceCompanyId: classified.sourceCompanyId,
+              _sourceCompanyName: classified.sourceCompanyName,
+              _sourceActive: classified.isActive,
             };
           }
-          if (hit.company_id === companyId) {
-            return { ...r, _action: "update" as const };
-          }
-          return {
-            ...r,
-            _error: "동일 연락처가 다른 업체에 이미 등록되어 있습니다",
-          };
+          return { ...r, _action: classified.action };
         }),
       );
     } catch {
@@ -323,7 +328,7 @@ export default function WorkerBulkImportDialog({
       toast.error("소속 회사가 없습니다. 프로젝트 멤버 소속사를 확인하세요.");
       return;
     }
-    const valid = rows.filter((r) => !r._error);
+    const valid = rows.filter((r) => !r._error && r._action !== "transfer");
     if (valid.length === 0) {
       toast.error("유효한 행이 없습니다");
       return;
@@ -419,15 +424,59 @@ export default function WorkerBulkImportDialog({
     }
   };
 
-  const validCount = rows.filter((r) => !r._error).length;
-  const errorCount = rows.length - validCount;
+  const transferOne = async (row: Parsed) => {
+    if (!row._workerId || !companyId) return;
+    const ok = window.confirm(
+      foreignRosterTransferPrompt({
+        name: row.name,
+        source_company_name: row._sourceCompanyName,
+        dest_company_name: companyName,
+        is_active: row._sourceActive,
+      }),
+    );
+    if (!ok) return;
+    setImporting(true);
+    try {
+      const { data, error } = await (supabase as any).rpc("transfer_worker_company", {
+        _worker_id: row._workerId,
+        _to_company_id: companyId,
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
+      toast.success(`${row.name}님을 ${companyName || "우리 회사"} 명단으로 이관했습니다`);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.phoneDigits === row.phoneDigits
+            ? {
+                ...r,
+                _error: undefined,
+                _action: "update",
+                _workerId: undefined,
+                _sourceCompanyId: undefined,
+                _sourceCompanyName: undefined,
+                _sourceActive: undefined,
+              }
+            : r,
+        ),
+      );
+      onDone?.();
+    } catch (e: any) {
+      toast.error(e?.message || "이관에 실패했습니다");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const transferable = rows.filter((r) => !r._error && r._action === "transfer" && r._workerId);
+  const validCount = rows.filter((r) => !r._error && r._action !== "transfer").length;
+  const errorCount = rows.filter((r) => !!r._error).length;
   const updateCount = rows.filter((r) => !r._error && r._action === "update").length;
   const claimCount = rows.filter((r) => !r._error && r._action === "claim").length;
   const insertCount = rows.filter((r) => !r._error && r._action === "insert").length;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !importing && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" /> 근로자 엑셀 일괄 등록
@@ -480,7 +529,7 @@ export default function WorkerBulkImportDialog({
             <div>
               직종은 양식의 <strong>직종목록</strong> 시트에서 골라 입력하세요. 동일 전화번호는{" "}
               <strong>기존 근로자 업데이트</strong>합니다. 회사 미배정(고아) 명부는 자사로{" "}
-              <strong>인수</strong>됩니다.
+              <strong>인수</strong>됩니다. 다른 회사 명단에 있으면 <strong>이관</strong>한 뒤 등록합니다.
             </div>
             <div>
               등록 시 로그인 계정 자동 생성 — <strong>아이디=전화번호</strong>,{" "}
@@ -506,6 +555,11 @@ export default function WorkerBulkImportDialog({
                     고아인수 {claimCount}
                   </Badge>
                 )}
+                {transferable.length > 0 && (
+                  <Badge variant="outline" className="border-amber-500/50 text-amber-800">
+                    이관 필요 {transferable.length}
+                  </Badge>
+                )}
                 {errorCount > 0 && (
                   <Badge variant="destructive" className="gap-1">
                     <AlertCircle className="h-3 w-3" />
@@ -526,27 +580,61 @@ export default function WorkerBulkImportDialog({
                       <th className="text-left p-2">생년월일</th>
                       <th className="text-left p-2">입사일</th>
                       <th className="text-left p-2">상태</th>
+                      <th className="text-left p-2">이관</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((r, i) => (
-                      <tr key={i} className={`border-b ${r._error ? "bg-destructive/5" : ""}`}>
+                      <tr
+                        key={i}
+                        className={`border-b ${
+                          r._error
+                            ? "bg-destructive/5"
+                            : r._action === "transfer"
+                              ? "bg-amber-50/80 dark:bg-amber-950/20"
+                              : ""
+                        }`}
+                      >
                         <td className="p-2 text-muted-foreground">{r._row}</td>
                         <td className="p-2 font-medium">{r.name || "—"}</td>
                         <td className="p-2">{r.phone || "—"}</td>
-                        <td className="p-2">{companyName || "—"}</td>
+                        <td className="p-2">
+                          {r._action === "transfer" && r._sourceCompanyName
+                            ? r._sourceCompanyName
+                            : companyName || "—"}
+                        </td>
                         <td className="p-2">{r.job_type || "—"}</td>
                         <td className="p-2">{r.birth_date || "—"}</td>
                         <td className="p-2">{r.hire_date || "—"}</td>
                         <td className="p-2">
                           {r._error ? (
                             <span className="text-destructive">{r._error}</span>
+                          ) : r._action === "transfer" ? (
+                            <span className="text-amber-800">
+                              타사 소속{r._sourceCompanyName ? ` · ${r._sourceCompanyName}` : ""} · 이관 필요
+                            </span>
                           ) : r._action === "claim" ? (
                             <span className="text-amber-700 dark:text-amber-400">고아인수</span>
                           ) : r._action === "update" ? (
                             <span className="text-amber-700 dark:text-amber-400">업데이트</span>
                           ) : (
                             <span className="text-success">신규</span>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          {r._action === "transfer" && r._workerId ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-7 gap-1"
+                              disabled={importing}
+                              onClick={() => void transferOne(r)}
+                            >
+                              <ArrowRightLeft className="h-3.5 w-3.5" />
+                              이관
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </td>
                       </tr>
@@ -561,6 +649,16 @@ export default function WorkerBulkImportDialog({
             <Button variant="outline" onClick={onClose} disabled={importing}>
               취소
             </Button>
+            {transferable.length > 0 && (
+              <Button
+                variant="secondary"
+                disabled={importing || !companyId}
+                onClick={() => void transferOne(transferable[0])}
+              >
+                <ArrowRightLeft className="h-4 w-4 mr-1" />
+                {transferable[0].name} 이관
+              </Button>
+            )}
             <Button onClick={() => void doImport()} disabled={importing || validCount === 0 || !companyId}>
               {importing && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {validCount}명 등록/업데이트

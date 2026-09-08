@@ -55,6 +55,25 @@ export function shareTypeLabel(type?: string | null): string {
   return t ? `${t} 위험성평가` : "위험성평가";
 }
 
+/** Share confirm opens on the work week, not the approval instant. */
+export function shareRunIsOpen(
+  startDate?: string | null,
+  today = todaySeoulDate(),
+): boolean {
+  const start = String(startDate || "").trim().slice(0, 10);
+  return !start || start <= today;
+}
+
+export function shareAckErrorMessage(code?: string | null): string {
+  const raw = String(code || "").trim();
+  if (raw === "RUN_NOT_STARTED") {
+    return "이 회차는 시작일부터 근로자 확인 서명을 받습니다. 금주 승인 회차에 서명해 주세요.";
+  }
+  if (raw === "NOT_APPROVED") return "아직 승인되지 않은 회차입니다.";
+  if (raw === "WRONG_COMPANY") return "이 회차 대상 업체가 아닙니다.";
+  return raw || "확인 처리에 실패했습니다";
+}
+
 /**
  * Defense-in-depth for the share dialog:
  * drop future weeks, collapse duplicate weekly copies, honor local dismissals.
@@ -207,6 +226,11 @@ export async function fetchCompanyPeriodRunIds(
 export async function listPendingAssessmentShares(
   projectId?: string | null,
 ): Promise<PendingAssessmentShare[]> {
+  if (projectId) {
+    await supabase.rpc("flush_due_assessment_share_notices", {
+      _project_id: projectId,
+    });
+  }
   const { data, error } = await supabase.rpc("list_my_pending_assessment_shares", {
     _project_id: projectId || null,
   });
@@ -226,9 +250,9 @@ export async function ackAssessmentRunShare(opts: {
     _worker_id: opts.workerId || null,
     _source: opts.source || "notice",
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: shareAckErrorMessage(error.message) };
   const row = (data || {}) as { ok?: boolean; already?: boolean; error?: string };
-  if (row.error) return { ok: false, error: row.error };
+  if (row.error) return { ok: false, error: shareAckErrorMessage(row.error) };
   return { ok: row.ok !== false, already: !!row.already };
 }
 

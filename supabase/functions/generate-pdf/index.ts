@@ -837,6 +837,10 @@ Deno.serve(async (req) => {
       </table>` : "";
 
     const docTitle = `위험성평가표 [${run.type}] ${run.period_label}`;
+    const periodRange = [run.start_date, run.end_date].filter(Boolean).join("~");
+    const pdfFileName = periodRange
+      ? `위험성평가_${run.type}_${run.period_label}_${periodRange}.pdf`
+      : `위험성평가_${run.type}_${run.period_label}_${today}.pdf`;
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -958,7 +962,7 @@ td, th { page-break-inside: auto; }
   <!-- Report Header -->
   <div class="report-header">
     <div class="report-title">위험성평가표</div>
-    <div class="report-subtitle">[${run.type}] ${run.period_label || ""}</div>
+    <div class="report-subtitle">[${run.type}] ${run.period_label || ""}${periodRange ? ` (${periodRange.replace("~", " ~ ")})` : ""}</div>
     <div class="report-info">
       <div class="report-info-row">
         <div class="report-info-label">프로젝트명</div>
@@ -1047,7 +1051,7 @@ td, th { page-break-inside: auto; }
 
     return new Response(JSON.stringify({
       html, title: docTitle,
-      fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf`
+      fileName: pdfFileName,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

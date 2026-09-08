@@ -4,7 +4,9 @@ import {
   pickPendingSharePrompts,
   runAppliesToCompany,
   runCoversDate,
+  shareAckErrorMessage,
   sharePromptGroupKey,
+  shareRunIsOpen,
   shareSignatureRowCount,
   shareTypeLabel,
   pairShareAcks,
@@ -156,6 +158,21 @@ describe("pickPendingSharePrompts", () => {
   it("labels 상시 and 수시 so the second prompt is not identical", () => {
     expect(shareTypeLabel("상시")).toBe("정기(상시) 위험성평가");
     expect(shareTypeLabel("수시")).toBe("수시 위험성평가");
+  });
+});
+
+describe("shareRunIsOpen", () => {
+  it("waits until start_date even if the run is already approved", () => {
+    expect(shareRunIsOpen("2026-09-14", "2026-09-08")).toBe(false);
+    expect(shareRunIsOpen("2026-09-14", "2026-09-14")).toBe(true);
+    expect(shareRunIsOpen("2026-09-07", "2026-09-08")).toBe(true);
+    expect(shareRunIsOpen(null, "2026-09-08")).toBe(true);
+  });
+});
+
+describe("shareAckErrorMessage", () => {
+  it("explains a future-week signature instead of echoing the code", () => {
+    expect(shareAckErrorMessage("RUN_NOT_STARTED")).toContain("시작일부터");
   });
 });
 

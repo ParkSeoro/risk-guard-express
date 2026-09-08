@@ -9803,6 +9803,10 @@ export type Database = {
         }
         Returns: Json
       }
+      assessment_share_run_is_open: {
+        Args: { _start: string; _today?: string }
+        Returns: boolean
+      }
       ack_project_announcement: {
         Args: { _announcement_id: string }
         Returns: Json
@@ -10119,6 +10123,10 @@ export type Database = {
           summary: string
           notice_id: string | null
         }[]
+      }
+      flush_due_assessment_share_notices: {
+        Args: { _project_id?: string | null }
+        Returns: number
       }
       lookup_auth_user_id_by_email: {
         Args: { _email: string }

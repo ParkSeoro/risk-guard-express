@@ -88,6 +88,7 @@ describe("rollup / streak", () => {
       entryAt: "2026-09-07T08:00:00+09:00",
       exitAt: "2026-09-07T17:00:00+09:00",
       jobType: "용접공",
+      companyId: "11111111-1111-1111-1111-111111111111",
       companyName: "A사",
     }),
     buildWorkHourRow({
@@ -97,6 +98,7 @@ describe("rollup / streak", () => {
       entryAt: "2026-09-08T08:00:00+09:00",
       exitAt: "2026-09-08T17:00:00+09:00",
       jobType: "용접공",
+      companyId: "11111111-1111-1111-1111-111111111111",
       companyName: "A사",
     }),
     buildWorkHourRow({
@@ -129,6 +131,12 @@ describe("rollup / streak", () => {
   it("counts consecutive attendance days", () => {
     expect(consecutiveAttendanceDays(["2026-09-07", "2026-09-08", "2026-09-10"])).toBe(2);
     expect(consecutiveAttendanceDays(["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"])).toBe(4);
+  });
+
+  it("labels company rollups by company name, not id", () => {
+    const byCo = rollupWorkHours(rows, "company");
+    expect(byCo.map((r) => r.label).sort()).toEqual(["A사", "B사"]);
+    expect(byCo.every((r) => !r.label.includes("-"))).toBe(true);
   });
 
   it("flags empty job type as 미분류", () => {

@@ -268,11 +268,6 @@ BEGIN
       WHERE a.project_id = _project_id
         AND a.ack_date BETWEEN v_from AND v_to
         AND (_worker_id IS NULL OR a.worker_id = _worker_id)
-        AND (
-          public.is_master(v_uid)
-          OR w.id IS NULL
-          OR public.can_access_company_data(v_uid, _project_id, w.company_id)
-        )
 
       UNION ALL
 
@@ -294,10 +289,6 @@ BEGIN
         AND e.exit_signature_data IS NOT NULL
         AND (e.entry_at AT TIME ZONE 'Asia/Seoul')::date BETWEEN v_from AND v_to
         AND (_worker_id IS NULL OR e.worker_id = _worker_id)
-        AND (
-          public.is_master(v_uid)
-          OR public.can_access_company_data(v_uid, _project_id, w.company_id)
-        )
 
       UNION ALL
 
@@ -315,16 +306,10 @@ BEGIN
         s.tbm_date::text
       FROM public.tbm_participations p
       JOIN public.tbm_sessions s ON s.id = p.tbm_session_id
-      LEFT JOIN public.workers w ON w.id = p.worker_id
       WHERE s.project_id = _project_id
         AND COALESCE(s.is_deleted, false) = false
         AND s.tbm_date BETWEEN v_from AND v_to
         AND (_worker_id IS NULL OR p.worker_id = _worker_id)
-        AND (
-          public.is_master(v_uid)
-          OR w.id IS NULL
-          OR public.can_access_company_data(v_uid, _project_id, w.company_id)
-        )
 
       UNION ALL
 
@@ -341,42 +326,9 @@ BEGIN
         a.source,
         (a.signed_at AT TIME ZONE 'Asia/Seoul')::date::text
       FROM public.assessment_run_share_acks a
-      LEFT JOIN public.workers w ON w.id = a.worker_id
       WHERE a.project_id = _project_id
         AND (a.signed_at AT TIME ZONE 'Asia/Seoul')::date BETWEEN v_from AND v_to
         AND (_worker_id IS NULL OR a.worker_id = _worker_id)
-        AND (
-          public.is_master(v_uid)
-          OR w.id IS NULL
-          OR public.can_access_company_data(v_uid, _project_id, w.company_id)
-        )
-
-      UNION ALL
-
-      SELECT
-        e.id::text,
-        'ppe',
-        '보호구 수령',
-        e.worker_id,
-        e.worker_name,
-        NULL,
-        e.signature_data,
-        e.signed_at,
-        NULL,
-        e.item_name,
-        COALESCE(e.issued_at, (e.signed_at AT TIME ZONE 'Asia/Seoul')::date)::text
-      FROM public.safety_cost_ppe_ledger_entries e
-      LEFT JOIN public.workers w ON w.id = e.worker_id
-      WHERE e.project_id = _project_id
-        AND COALESCE(e.is_deleted, false) = false
-        AND e.signature_data IS NOT NULL
-        AND COALESCE(e.issued_at, (e.signed_at AT TIME ZONE 'Asia/Seoul')::date) BETWEEN v_from AND v_to
-        AND (_worker_id IS NULL OR e.worker_id = _worker_id)
-        AND (
-          public.is_master(v_uid)
-          OR w.id IS NULL
-          OR public.can_access_company_data(v_uid, _project_id, w.company_id)
-        )
     ) x
   ), '[]'::jsonb);
 END;

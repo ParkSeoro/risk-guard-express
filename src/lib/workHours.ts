@@ -265,9 +265,11 @@ export function rollupWorkHours(rows: WorkHourRow[], group: HoursRollupGroup): H
     const label =
       group === "worker"
         ? list[0]?.workerName || key
-        : group === "project"
-          ? "전체"
-          : key;
+        : group === "company"
+          ? list[0]?.companyName || key
+          : group === "project"
+            ? "전체"
+            : key;
     result.push({
       key,
       label,

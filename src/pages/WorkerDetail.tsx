@@ -14,7 +14,8 @@ import JobTypeSelect from "@/components/JobTypeSelect";
 import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
 import { addSeoulDays, buildWorkHourRow, formatWorkHours, seoulWeekStart, summarizeHours, week52Status } from "@/lib/workHours";
-import { hoursDisclaimer, syncWorkerProfileIdentity } from "@/lib/laborEvidence";
+import { fetchWorkHourRows, hoursDisclaimer, syncWorkerProfileIdentity } from "@/lib/laborEvidence";
+import type { WorkHourRow } from "@/lib/workHours";
 import { toast } from "sonner";
 import type { StandardJobType } from "@/lib/jobCategories";
 
@@ -46,6 +47,7 @@ export default function WorkerDetail() {
   });
   const [hoursFrom, setHoursFrom] = useState(() => addSeoulDays(todaySeoulDate(), -30));
   const [hoursTo, setHoursTo] = useState(() => todaySeoulDate());
+  const [periodRows, setPeriodRows] = useState<WorkHourRow[] | null>(null);
 
   const age = useMemo(() => calcAge(data?.worker?.birth_date), [data]);
   const w = data?.worker;
@@ -63,7 +65,23 @@ export default function WorkerDetail() {
     });
   }, [w]);
 
+  useEffect(() => {
+    if (!w?.project_id || !id) return;
+    let cancelled = false;
+    fetchWorkHourRows({ projectId: w.project_id, from: hoursFrom, to: hoursTo })
+      .then((rows) => {
+        if (!cancelled) setPeriodRows(rows.filter((r) => r.workerId === id));
+      })
+      .catch(() => {
+        if (!cancelled) setPeriodRows(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [w?.project_id, id, hoursFrom, hoursTo]);
+
   const hourRows = useMemo(() => {
+    if (periodRows) return periodRows;
     return (data?.recentEntries || [])
       .map((e: any) =>
         buildWorkHourRow({
@@ -76,7 +94,7 @@ export default function WorkerDetail() {
         }),
       )
       .filter((r) => r.workDate >= hoursFrom && r.workDate <= hoursTo);
-  }, [data, hoursFrom, hoursTo, id, w]);
+  }, [periodRows, data, hoursFrom, hoursTo, id, w]);
 
   const hourSummary = useMemo(() => summarizeHours(hourRows), [hourRows]);
   const weekMins = useMemo(() => {

@@ -79,7 +79,14 @@ const KIND_LABEL: Record<SignatureKind, string> = {
 
 function rpcMissing(message: string | undefined) {
   const m = String(message || "").toLowerCase();
-  return m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache");
+  return (
+    m.includes("does not exist") ||
+    m.includes("could not find") ||
+    m.includes("schema cache") ||
+    m.includes("timeout") ||
+    m.includes("canceling statement") ||
+    m.includes("statement timeout")
+  );
 }
 
 function asRows(data: unknown): any[] {

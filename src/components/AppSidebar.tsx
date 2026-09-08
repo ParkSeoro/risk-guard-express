@@ -1,5 +1,4 @@
-import { 
-  LayoutDashboard, FolderKanban, ShieldAlert, Database, 
+import { Bell, LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
@@ -40,6 +39,7 @@ const groups: Group[] = [
   {
     label: "핵심", key: "priority",
     items: [
+      { title: "알림", url: "/alerts", icon: Bell },
       { title: "현장 공지", url: "/announcements", icon: Megaphone },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
@@ -168,7 +168,7 @@ export function AppSidebar() {
     '/', '/approvals',
     '/work-plans', '/work-permits', '/tbm-logs',
     '/risk-assessment', '/ai-assistant', '/verification-center',
-    '/incidents', '/work-stop',
+    '/incidents', '/alerts', '/work-stop',
     '/workers',
     '/project-library', '/education-materials', '/worker-education',
     '/profile', '/settings/account', '/manual',

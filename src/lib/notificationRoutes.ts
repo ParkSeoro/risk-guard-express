@@ -36,8 +36,8 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   emergency_drill: () => `${ADMIN}/emergency-drills`,
   tbm: () => `${ADMIN}/tbm-logs`,
   todo: () => `${ADMIN}/todo`,
-  work_stop: () => `${ADMIN}/work-stop`,
-  work_stop_request: () => `${ADMIN}/work-stop`,
+  work_stop: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
+  work_stop_request: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
   safety_cost_report: () => `${ADMIN}/safety-cost`,
   education: () => `${ADMIN}/worker-education`,
   worker: () => `${ADMIN}/workers`,
@@ -60,8 +60,8 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   incident: () => `${WORKER}/incident`,
   incident_report: () => `${WORKER}/incident`,
   tbm: () => `${WORKER}/tbm`,
-  work_stop: () => `${WORKER}/work-stop`,
-  work_stop_request: () => `${WORKER}/work-stop`,
+  work_stop: (id) => (id ? `${WORKER}/work-stop?id=${id}` : `${WORKER}/work-stop`),
+  work_stop_request: (id) => (id ? `${WORKER}/work-stop?id=${id}` : `${WORKER}/work-stop`),
   // No dedicated mobile page yet → Today (avoid silent desktop jump)
   safety_cost: () => `${WORKER}/today`,
   safety_cost_report: () => `${WORKER}/today`,
@@ -114,8 +114,9 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${ADMIN}/assessment-run/${n.related_id}` : `${ADMIN}/risk-assessment`,
   vision_safety_event: (n) =>
     n.related_id ? `${ADMIN}/vision-fleet?event=${n.related_id}` : `${ADMIN}/vision-fleet`,
-  work_stop: () => `${ADMIN}/work-stop`,
-  work_stop_request: () => `${ADMIN}/work-stop`,
+  work_stop: (n) => (n.related_id ? `${ADMIN}/work-stop?id=${n.related_id}` : `${ADMIN}/work-stop`),
+  work_stop_request: (n) =>
+    n.related_id ? `${ADMIN}/work-stop?id=${n.related_id}` : `${ADMIN}/work-stop`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -156,8 +157,10 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${WORKER}/risk-assessment/${n.related_id}` : `${WORKER}/risk-assessment`,
   vision_safety_event: (n) =>
     n.related_id ? `${WORKER}/vision-events?event=${n.related_id}` : `${WORKER}/vision-events`,
-  work_stop: () => `${WORKER}/work-stop`,
-  work_stop_request: () => `${WORKER}/work-stop`,
+  work_stop: (n) =>
+    n.related_id ? `${WORKER}/work-stop?id=${n.related_id}` : `${WORKER}/work-stop`,
+  work_stop_request: (n) =>
+    n.related_id ? `${WORKER}/work-stop?id=${n.related_id}` : `${WORKER}/work-stop`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */
@@ -187,7 +190,14 @@ export function toMobileShellPath(path: string): string {
   }
   if (p.startsWith("/incidents")) return `${WORKER}/incident`;
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
-  if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;
+  if (p.startsWith("/work-stop")) {
+    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
+    return `${WORKER}/work-stop${q}`;
+  }
+  if (p.startsWith("/alerts")) {
+    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
+    return `${WORKER}/alerts${q}`;
+  }
   if (p.startsWith("/workers")) {
     const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
     return `${WORKER}/workers${q}`;
@@ -231,6 +241,21 @@ export function canonicalizeAppPath(path: string, opts?: { mobileShell?: boolean
   return path;
 }
 
+export function notificationInboxPath(opts?: { mobileShell?: boolean }): string {
+  const mobile = opts?.mobileShell ?? (typeof window !== "undefined" && prefersMobileAppShell());
+  return mobile ? `${WORKER}/alerts` : `${ADMIN}/alerts`;
+}
+
+/** Keep work-stop notification clicks on the received request, not the submit form. */
+export function attachWorkStopRequestId(path: string, relatedId?: string | null): string {
+  if (!relatedId) return path;
+  if (!path.includes("/work-stop")) return path;
+  if (/[?&]id=/.test(path)) return path;
+  const hashIdx = path.indexOf("#");
+  const hash = hashIdx >= 0 ? path.slice(hashIdx) : "";
+  const base = hashIdx >= 0 ? path.slice(0, hashIdx) : path;
+  return `${base}${base.includes("?") ? "&" : "?"}id=${encodeURIComponent(relatedId)}${hash}`;
+}
 export function resolveNotificationRoute(
   n: NotificationLike | null | undefined,
   opts?: { mobileShell?: boolean },
@@ -239,16 +264,22 @@ export function resolveNotificationRoute(
   const mobile = opts?.mobileShell ?? (typeof window !== "undefined" && prefersMobileAppShell());
 
   const explicit = (n.link || n.url || "").trim();
-  if (explicit) return canonicalizeAppPath(explicit, { mobileShell: mobile });
+  let path = explicit
+    ? canonicalizeAppPath(explicit, { mobileShell: mobile })
+    : null;
 
-  const entityMap = mobile ? MOBILE_ENTITY_ROUTES : ADMIN_ENTITY_ROUTES;
-  if (n.related_type && entityMap[n.related_type]) {
-    return entityMap[n.related_type](n.related_id, n.project_id);
+  if (!path) {
+    const entityMap = mobile ? MOBILE_ENTITY_ROUTES : ADMIN_ENTITY_ROUTES;
+    if (n.related_type && entityMap[n.related_type]) {
+      path = entityMap[n.related_type](n.related_id, n.project_id);
+    }
   }
-
-  const typeMap = mobile ? MOBILE_TYPE_ROUTES : ADMIN_TYPE_ROUTES;
-  if (n.type && typeMap[n.type]) {
-    return typeMap[n.type](n);
+  if (!path) {
+    const typeMap = mobile ? MOBILE_TYPE_ROUTES : ADMIN_TYPE_ROUTES;
+    if (n.type && typeMap[n.type]) {
+      path = typeMap[n.type](n);
+    }
   }
-  return `${WORKER}/alerts`;
+  if (!path) path = `${WORKER}/alerts`;
+  return attachWorkStopRequestId(path, n.related_id);
 }

@@ -139,6 +139,7 @@ function AdminAppRoutesInner() {
             <Route path="emergency-drills" element={<P.LazyEmergencyDrills />} />
             <Route path="worker-education" element={<P.LazyWorkerEducation />} />
             <Route path="safety-appointments" element={<P.LazySafetyAppointments />} />
+            <Route path="alerts" element={<P.LazyNotificationInbox />} />
             <Route path="work-stop" element={<P.LazyWorkStopRequests />} />
             <Route path="contractor-scorecard" element={<RoleGuard><P.LazyContractorScorecard /></RoleGuard>} />
             <Route path="assessment-notices" element={<RoleGuard><P.LazyAssessmentNotices /></RoleGuard>} />

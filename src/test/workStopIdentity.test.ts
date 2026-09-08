@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { resolveNotificationRoute } from "@/lib/notificationRoutes";
+import { resolveNotificationRoute, notificationInboxPath } from "@/lib/notificationRoutes";
 import {
   ANONYMOUS_REPORTER_LABEL,
   WORK_STOP_LEGAL_CITE,
   WORK_STOP_MAX_PHOTOS,
   WORK_STOP_OPEN_STATUSES,
+  applyRevealedWorkStopName,
   buildWorkStopInsert,
+  canRevealAnonymousWorkStopReporter,
   isWorkStopNotifyRecipient,
   isWorkStopOpenStatus,
   parseWorkStopPhotoUrls,
@@ -16,6 +18,7 @@ import {
   workStopDisplayName,
   workStopNotifyMessage,
 } from "@/lib/workStop";
+import { workStopIdsFromNotifications } from "@/lib/workStopReveal";
 
 describe("work-stop identity", () => {
   it("lets the reporter choose anonymous vs real name", () => {
@@ -59,6 +62,23 @@ describe("work-stop identity", () => {
         hazard_description: "가스 냄새",
       }),
     ).toBe(`${ANONYMOUS_REPORTER_LABEL} · 지하 2층 — 가스 냄새`);
+  });
+
+  it("reveals the legal name only when PM+ supplied it", () => {
+    expect(
+      workStopDisplayName(
+        { is_anonymous: true, reporter_name: "홍길동" },
+        { revealedLegalName: "홍길동" },
+      ),
+    ).toBe("홍길동 (익명 신고)");
+    expect(canRevealAnonymousWorkStopReporter({ role: "safety_manager" })).toBe(false);
+    expect(canRevealAnonymousWorkStopReporter({ role: "site_supervisor" })).toBe(false);
+    expect(canRevealAnonymousWorkStopReporter({ role: "project_admin" })).toBe(true);
+    expect(canRevealAnonymousWorkStopReporter({ isMaster: true })).toBe(true);
+    expect(canRevealAnonymousWorkStopReporter({ position: "OWNER_PM" })).toBe(true);
+    expect(
+      applyRevealedWorkStopName("익명 근로자 · 출입구 — 개방", "김근로"),
+    ).toBe("김근로 (익명 신고) · 출입구 — 개방");
   });
 
   it("requires a name only for real-name reports", () => {
@@ -196,9 +216,39 @@ describe("work-stop notification routes", () => {
         { related_type: "work_stop", related_id: "x" },
         { mobileShell: false },
       ),
-    ).toBe("/app/admin/work-stop");
+    ).toBe("/app/admin/work-stop?id=x");
     expect(
       resolveNotificationRoute({ type: "work_stop_request", link: "/work-stop" }, { mobileShell: true }),
     ).toBe("/app/worker/work-stop");
+  });
+
+  it("attaches the request id so clicks open the received case, not the submit form", () => {
+    expect(
+      resolveNotificationRoute(
+        { type: "work_stop_request", link: "/work-stop", related_id: "abc" },
+        { mobileShell: false },
+      ),
+    ).toBe("/app/admin/work-stop?id=abc");
+    expect(
+      resolveNotificationRoute(
+        { type: "work_stop", link: "/work-stop", related_id: "abc" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/work-stop?id=abc");
+  });
+
+  it("sends desktop 전체 보기 to the admin inbox, not the worker shell", () => {
+    expect(notificationInboxPath({ mobileShell: false })).toBe("/app/admin/alerts");
+    expect(notificationInboxPath({ mobileShell: true })).toBe("/app/worker/alerts");
+  });
+
+  it("collects work-stop ids from mixed notification rows", () => {
+    expect(
+      workStopIdsFromNotifications([
+        { type: "work_stop", related_id: "a" },
+        { related_type: "work_stop_request", related_id: "b" },
+        { type: "approval", related_id: "c" },
+      ]),
+    ).toEqual(["a", "b"]);
   });
 });

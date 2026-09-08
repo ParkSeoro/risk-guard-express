@@ -9,12 +9,15 @@ import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 import { notificationPreview, notificationTitle } from "@/lib/notificationText";
+import { applyRevealedWorkStopName } from "@/lib/workStop";
+import { fetchRevealedWorkStopNames, workStopIdsFromNotifications } from "@/lib/workStopReveal";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 
 export default function MobileAlerts() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [items, setItems] = useState<any[]>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
 
   const load = async () => {
     if (!user) return;
@@ -23,12 +26,14 @@ export default function MobileAlerts() {
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(100);
     if (error) {
       (await import("sonner")).toast.error("알림 불러오기 실패: " + error.message);
       return;
     }
-    setItems(data || []);
+    const rows = data || [];
+    setItems(rows);
+    setNames(await fetchRevealedWorkStopNames(workStopIdsFromNotifications(rows)));
   };
   useEffect(() => {
     load();
@@ -86,7 +91,9 @@ export default function MobileAlerts() {
                 {!n.is_read && <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />}
               </div>
               {notificationPreview(n) && (
-                <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">{notificationPreview(n)}</div>
+                <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">
+                  {applyRevealedWorkStopName(notificationPreview(n), names[String(n.related_id || "")])}
+                </div>
               )}
               <div className="text-[10px] text-muted-foreground mt-1">
                 {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ko })}

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
+import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
@@ -62,7 +63,11 @@ describe("MobileWorkStop photo field", () => {
     document.body.appendChild(el);
     root = createRoot(el);
     act(() => {
-      root!.render(<MobileWorkStop />);
+      root!.render(
+        <MemoryRouter>
+          <MobileWorkStop />
+        </MemoryRouter>,
+      );
     });
     const photo = el.querySelector('[data-testid="work-stop-photo"]');
     expect(photo?.textContent).toMatch(/현장 사진/);

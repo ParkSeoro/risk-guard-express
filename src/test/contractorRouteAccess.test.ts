@@ -27,6 +27,7 @@ describe("contractorRouteAccess", () => {
     expect(isAllowedForContractor("/app/admin/ai-assistant")).toBe(true);
     expect(isAllowedForContractor("/app/admin/verification-center")).toBe(true);
     expect(isAllowedForContractor("/app/admin/work-stop")).toBe(true);
+    expect(isAllowedForContractor("/app/admin/alerts")).toBe(true);
   });
 
   it("denies partner access to gc-only admin tools", () => {

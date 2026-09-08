@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,12 +28,29 @@ import {
   workStopDisplayName,
   type WorkStopIdentityMode,
 } from "@/lib/workStop";
+import { fetchRevealedWorkStopNames } from "@/lib/workStopReveal";
+
+type StopRow = {
+  id: string;
+  reporter_name: string;
+  is_anonymous?: boolean;
+  location: string | null;
+  hazard_description: string;
+  photo_url: string | null;
+  status: string;
+};
 
 export default function MobileWorkStop() {
   const { user, profile } = useAuth();
   const { projectId, role, isMaster } = useMobileAccess();
+  const [searchParams] = useSearchParams();
+  const focusId = searchParams.get("id");
   const blockWrite = usePreviewWriteBlock();
   const manager = isManagerMobileRole(role, isMaster);
+  const [legalNames, setLegalNames] = useState<Record<string, string>>({});
+  const [focused, setFocused] = useState<StopRow | null>(null);
+  const [focusLoading, setFocusLoading] = useState(() => Boolean(focusId));
+  const [showForm, setShowForm] = useState(() => !focusId);
 
   const [identity, setIdentity] = useState<WorkStopIdentityMode>("named");
   const [form, setForm] = useState({
@@ -45,17 +63,7 @@ export default function MobileWorkStop() {
   const [submitted, setSubmitted] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
-  const [openStops, setOpenStops] = useState<
-    {
-      id: string;
-      reporter_name: string;
-      is_anonymous?: boolean;
-      location: string | null;
-      hazard_description: string;
-      photo_url: string | null;
-      status: string;
-    }[]
-  >([]);
+  const [openStops, setOpenStops] = useState<StopRow[]>([]);
   const [loadingStops, setLoadingStops] = useState(false);
   const photoPreviews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
   useEffect(() => () => photoPreviews.forEach((u) => URL.revokeObjectURL(u)), [photoPreviews]);
@@ -79,7 +87,9 @@ export default function MobileWorkStop() {
         .order("created_at", { ascending: false })
         .limit(20);
       if (!cancelled) {
-        setOpenStops((data as typeof openStops) || []);
+        const list = (data as StopRow[]) || [];
+        setOpenStops(list);
+        setLegalNames(await fetchRevealedWorkStopNames(list.map((r) => r.id)));
         setLoadingStops(false);
       }
     })();
@@ -87,6 +97,34 @@ export default function MobileWorkStop() {
       cancelled = true;
     };
   }, [manager, projectId, submitted]);
+
+  useEffect(() => {
+    if (!focusId) {
+      setFocused(null);
+      setFocusLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFocusLoading(true);
+    (async () => {
+      const { data } = await supabase
+        .from("work_stop_requests")
+        .select("id, reporter_name, is_anonymous, location, hazard_description, photo_url, status, created_at")
+        .eq("id", focusId)
+        .maybeSingle();
+      if (cancelled) return;
+      const row = (data as StopRow) || null;
+      setFocused(row);
+      if (row) {
+        const extra = await fetchRevealedWorkStopNames([row.id]);
+        if (!cancelled) setLegalNames((prev) => ({ ...prev, ...extra }));
+      }
+      if (!cancelled) setFocusLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [focusId]);
 
   function onPickPhotos(files: FileList | null) {
     if (!files?.length) return;
@@ -194,6 +232,42 @@ export default function MobileWorkStop() {
         </p>
       </header>
 
+      {focusId && (
+        <Card className="border-destructive/60" data-testid="work-stop-request-detail">
+          <CardContent className="p-4 space-y-2">
+            <div className="text-sm font-semibold">접수된 작업중지 요청</div>
+            {focusLoading && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> 불러오는 중…
+              </p>
+            )}
+            {!focusLoading && !focused && (
+              <p className="text-xs text-muted-foreground">
+                요청을 찾을 수 없습니다. 권한이 없거나 삭제된 건일 수 있습니다.
+              </p>
+            )}
+            {focused && (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="destructive">{focused.status}</Badge>
+                  <span className="font-medium">
+                    {workStopDisplayName(focused, { revealedLegalName: legalNames[focused.id] })}
+                  </span>
+                </div>
+                <div className="text-sm text-muted-foreground">{focused.location || "위치 미기재"}</div>
+                <div className="text-sm whitespace-pre-wrap">{focused.hazard_description}</div>
+                <WorkStopPhotos urls={parseWorkStopPhotoUrls(focused.photo_url)} />
+              </>
+            )}
+            {!showForm && (
+              <Button variant="outline" className="w-full mt-1" onClick={() => setShowForm(true)}>
+                새 요청하기
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {manager && (
         <Card>
           <CardContent className="p-3 space-y-2">
@@ -208,7 +282,9 @@ export default function MobileWorkStop() {
               <div key={s.id} className="rounded-lg border p-2 text-xs space-y-1">
                 <div className="flex items-center gap-2">
                   <Badge variant="destructive">{s.status}</Badge>
-                  <span className="font-medium">{workStopDisplayName(s)}</span>
+                  <span className="font-medium">
+                    {workStopDisplayName(s, { revealedLegalName: legalNames[s.id] })}
+                  </span>
                 </div>
                 <div className="text-muted-foreground">{s.location || "위치 미기재"}</div>
                 <div className="line-clamp-2">{s.hazard_description}</div>
@@ -222,6 +298,7 @@ export default function MobileWorkStop() {
         </Card>
       )}
 
+      {showForm && (
       <Card>
         <CardContent className="p-4 space-y-3">
           <div>
@@ -246,7 +323,7 @@ export default function MobileWorkStop() {
             </div>
             <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
               {identity === "anonymous"
-                ? `관리자·알림에는 「${ANONYMOUS_REPORTER_LABEL}」로만 표시됩니다.`
+                ? `소속 관리자 알림에는 「${ANONYMOUS_REPORTER_LABEL}」로만 표시됩니다. 프로젝트 관리자 이상은 포상 등을 위해 실명을 볼 수 있습니다.`
                 : "이름과 함께 소속 회사·발주처 관리자에게 전달됩니다."}
             </p>
           </div>
@@ -353,6 +430,7 @@ export default function MobileWorkStop() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       <div className="text-xs text-muted-foreground p-1">
         사업주는 작업중지권 행사 근로자에게 해고·전보·임금삭감 등 어떠한 불리한 처우도 할 수

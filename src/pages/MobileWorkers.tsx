@@ -217,10 +217,9 @@ export default function MobileWorkers() {
               현장 근로자 명부입니다. QR 전용 포털은 종료되었고 계정 로그인이 필요합니다.
               관리자는 출입을 1일·3일·영구 정지할 수 있습니다. 출근은 앱 GPS로 합니다.
             </p>
-            {projectId && accessibleCompanyIds?.length === 1 && (
+            {projectId && canSuspend && (
               <ForeignRosterPanel
                 projectId={projectId}
-                companyId={accessibleCompanyIds[0]}
                 destCompanyName=""
                 compact
                 onTransferred={() => void loadRoster()}

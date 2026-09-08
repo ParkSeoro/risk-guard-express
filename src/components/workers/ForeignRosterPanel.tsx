@@ -92,7 +92,7 @@ export default function ForeignRosterPanel({
           <Badge variant="outline">{rows.length}명</Badge>
         </CardTitle>
         <p className="text-[11px] text-muted-foreground">
-          계정(로그인) 소속과 명단 소속이 다릅니다. 이관하면 로그인 회사 명단에 보이고, 원래 회사 명단에서는 빠집니다.
+          계정(로그인) 소속과 명단 소속이 다릅니다. 현장 관리자면 이관할 수 있습니다. 이관하면 로그인 회사 명단에 보이고, 원래 회사 명단에서는 빠집니다.
         </p>
       </CardHeader>
       <CardContent className={compact ? "px-3 pb-3 space-y-2" : "space-y-2"}>

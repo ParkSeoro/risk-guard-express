@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canTransferForeignRoster,
   foreignRosterBadgeLabel,
   foreignRosterTransferPrompt,
 } from "@/lib/workerCompanyTransfer";
@@ -25,6 +26,17 @@ describe("foreign roster copy", () => {
         dest_company_name: "진남토건(주)",
       }),
     ).toContain("「진남토건(주)」으로 이관할까요?");
+  });
+
+  it("lets every project admin transfer, not only the dest 현장대리인", () => {
+    expect(canTransferForeignRoster("site_manager")).toBe(true);
+    expect(canTransferForeignRoster("project_admin")).toBe(true);
+    expect(canTransferForeignRoster("safety_manager")).toBe(true);
+    expect(canTransferForeignRoster("supervisor")).toBe(true);
+    expect(canTransferForeignRoster("site_supervisor")).toBe(true);
+    expect(canTransferForeignRoster(null, true)).toBe(true);
+    expect(canTransferForeignRoster("worker")).toBe(false);
+    expect(canTransferForeignRoster("viewer")).toBe(false);
   });
 
   it("mentions reactivation when the other company row is inactive", () => {

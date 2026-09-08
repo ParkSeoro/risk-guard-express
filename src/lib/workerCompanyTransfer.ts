@@ -1,3 +1,16 @@
+import { ADMIN_PROJECT_ROLES } from "@/lib/permissions";
+
+/** 이관은 대상 회사 현장대리인만이 아니라 현장 관리자 전원이 한다. */
+export const FOREIGN_ROSTER_TRANSFER_ROLES = ADMIN_PROJECT_ROLES;
+
+export function canTransferForeignRoster(
+  role?: string | null,
+  isMaster?: boolean,
+): boolean {
+  if (isMaster || role === "master") return true;
+  return (FOREIGN_ROSTER_TRANSFER_ROLES as readonly string[]).includes(String(role || ""));
+}
+
 export type ForeignRosterWorker = {
   worker_id: string;
   name: string;

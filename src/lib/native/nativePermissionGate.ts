@@ -15,6 +15,19 @@ export function isForegroundLocationGranted(status: {
   return status.location === "granted";
 }
 
+/**
+ * `prompt` is not a denial. Treating it as false greys out 출근하기
+ * so the worker can never tap to open the system permission sheet.
+ */
+export function locationPermissionTriState(status: {
+  location?: CapPermissionState;
+  coarseLocation?: CapPermissionState;
+}): boolean | null {
+  if (status.location === "granted") return true;
+  if (status.location === "denied") return false;
+  return null;
+}
+
 export function isPushGranted(status: { receive?: CapPermissionState }): boolean {
   return status.receive === "granted";
 }

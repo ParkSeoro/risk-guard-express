@@ -17,6 +17,11 @@ import {
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
 import {
+  pickCheckInGpsFix,
+  rawCheckInFix,
+  readFreshCheckInFix,
+} from "@/lib/tracking/checkInGpsFix";
+import {
   buildRiskSummary,
   buildWorkSummary,
   fetchTodayAck,
@@ -114,7 +119,10 @@ export default function WorkerDailyHome({
     kind: string | null;
   } | null>(null);
 
-  const effectiveFix = lastGpsFix || probeFix;
+  const effectiveFix = useMemo(
+    () => pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix),
+    [lastGpsFix, probeFix],
+  );
 
   const distanceM = useMemo(() => {
     if (!checkInFence || !effectiveFix) return null;
@@ -324,6 +332,8 @@ export default function WorkerDailyHome({
       );
       return;
     }
+    setBusy(true);
+    try {
     let granted = osLocationGranted;
     if (isNativeApp() && granted !== true) {
       try {
@@ -341,13 +351,25 @@ export default function WorkerDailyHome({
         return;
       }
     }
-    if (checkInBlockedByLocation({ osLocationGranted: granted, hasFix: !!effectiveFix }).reason === "os") {
+    if (checkInBlockedByLocation({ osLocationGranted: granted, hasFix: true }).reason === "os") {
       toast.error("위치 권한을 허용해야 출근할 수 있습니다. 「정확한 위치」와 「항상 허용」을 누르세요.");
       return;
     }
-    if (!withinCheckIn || !checkInFence) {
-      const allow = checkInFence ? Math.round(checkInFence.radiusM) : SITE_CHECKIN_MIN_M;
-      toast.error(`현장 반경 ${allow}m 이내에서만 출근할 수 있습니다`);
+    const fresh = await readFreshCheckInFix();
+    if (fresh) setProbeFix(fresh);
+    const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
+    if (!checkInFence) {
+      toast.error("현장 좌표가 없습니다. 관리자에게 현장맵 지오레프 또는 주소핀을 요청하세요.");
+      return;
+    }
+    if (!fix) {
+      toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 출근하세요.");
+      return;
+    }
+    if (!isInsideCheckInFence(checkInFence, fix.lat, fix.lng, fix.accuracy)) {
+      const allow = Math.round(checkInFence.radiusM);
+      const d = Math.round(calculateDistance(checkInFence.lat, checkInFence.lng, fix.lat, fix.lng));
+      toast.error(`현장 반경 ${allow}m 이내에서만 출근할 수 있습니다 · 지금 ${d}m`);
       return;
     }
     if (!workerId || !projectId) {
@@ -362,6 +384,9 @@ export default function WorkerDailyHome({
     setAckPledgeOk(false);
     ackSigRef.current?.clear();
     setAckOpen(true);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleDailyAck = async () => {
@@ -725,17 +750,19 @@ export default function WorkerDailyHome({
             {!isCheckedIn && !checkedOut && (
               <Button
                 className="h-12 gap-2"
-                disabled={
-                  !withinCheckIn ||
-                  busy ||
-                  !workerId ||
-                  !!suspension ||
-                  osLocationGranted === false
-                }
+                disabled={busy || !!suspension || (!workerId && ackHydrated)}
                 onClick={() => void handleCheckIn()}
               >
                 <LogIn className="h-4 w-4" />
-                {suspension ? "출입 정지됨" : "출근하기"}
+                {suspension
+                  ? "출입 정지됨"
+                  : !workerId && ackHydrated
+                    ? "명부 없음 — 관리자 문의"
+                    : !effectiveFix
+                      ? "출근하기 · 위치 확인"
+                      : withinCheckIn
+                        ? "출근하기"
+                        : "출근하기 · 위치 다시 확인"}
               </Button>
             )}
             {isCheckedIn && (

@@ -13,7 +13,7 @@ import {
 } from "@/lib/jobCategories";
 import { provisionWorkerAccounts } from "@/lib/provisionWorkerAccounts";
 import { isClaimableOrphanWorker } from "@/lib/companyLabel";
-import { formatWorkerBulkRowError } from "@/lib/workerBulk";
+import { formatWorkerBulkRowError, phonesEligibleForProvision } from "@/lib/workerBulk";
 
 type Props = {
   projectId: string;
@@ -206,26 +206,35 @@ export default function WorkerBulkImportDialog({
     setResolving(true);
     try {
       const variants = [...new Set(valid.flatMap((r) => phoneLookupVariants(r.phone)))];
-      const { data: existing, error } = await supabase
-        .from("workers")
-        .select("id, phone, company_id, company_name")
-        .eq("project_id", projectId)
-        .in("phone", variants);
-      if (error) throw error;
-      const byDigits = new Map<
-        string,
-        { id: string; company_id: string | null; company_name: string | null }
-      >();
-      for (const w of (existing as {
-        id: string;
-        phone: string;
+      let existing: Array<{
+        phone?: string;
+        phone_digits?: string;
         company_id: string | null;
         company_name: string | null;
-      }[]) || []) {
-        const d = phoneDigits(w.phone);
-        if (!byDigits.has(d)) {
+      }> = [];
+      const hits = await (supabase as any).rpc("list_project_worker_phone_hits", {
+        _project_id: projectId,
+        _phones: valid.map((r) => r.phoneDigits),
+      });
+      if (!hits.error && Array.isArray(hits.data)) {
+        existing = hits.data;
+      } else {
+        const { data, error } = await supabase
+          .from("workers")
+          .select("id, phone, company_id, company_name")
+          .eq("project_id", projectId)
+          .in("phone", variants);
+        if (error) throw error;
+        existing = (data || []) as typeof existing;
+      }
+      const byDigits = new Map<
+        string,
+        { company_id: string | null; company_name: string | null }
+      >();
+      for (const w of existing) {
+        const d = phoneDigits(w.phone_digits || w.phone || "");
+        if (d && !byDigits.has(d)) {
           byDigits.set(d, {
-            id: w.id,
             company_id: w.company_id,
             company_name: w.company_name,
           });
@@ -346,15 +355,24 @@ export default function WorkerBulkImportDialog({
       const claimed = Number(res?.claimed || 0);
       const failed = Array.isArray(res?.failed) ? res.failed : [];
 
+      const eligibleDigits = new Set(
+        phonesEligibleForProvision({
+          validDigits: valid.map((r) => r.phoneDigits),
+          okPhones: Array.isArray(res?.ok_phones) ? res.ok_phones : [],
+          failedPhones: failed.map((f: { phone?: string }) => String(f.phone || "")),
+        }),
+      );
       const provision = await provisionWorkerAccounts({
         projectId,
         companyId,
         companyName,
-        workers: valid.map((r) => ({
-          phone: r.phone,
-          name: r.name,
-          job_type: r.job_type,
-        })),
+        workers: valid
+          .filter((r) => eligibleDigits.has(r.phoneDigits))
+          .map((r) => ({
+            phone: r.phone,
+            name: r.name,
+            job_type: r.job_type,
+          })),
       });
 
       const provisionMsg = provision.ok

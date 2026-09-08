@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
+import ForeignRosterPanel from "@/components/workers/ForeignRosterPanel";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
 import {
   formatSuspensionUntil,
@@ -339,6 +340,14 @@ export default function WorkerManagement() {
               </>
             )}
           </div>
+
+          {projectId && (
+            <ForeignRosterPanel
+              projectId={projectId}
+              destCompanyName=""
+              onTransferred={load}
+            />
+          )}
 
           {projectId && (
             <Card>

@@ -23,6 +23,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview, usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
+import ForeignRosterPanel from "@/components/workers/ForeignRosterPanel";
 import {
   formatSuspensionUntil,
   isWorkerCurrentlySuspended,
@@ -216,6 +217,14 @@ export default function MobileWorkers() {
               현장 근로자 명부입니다. QR 전용 포털은 종료되었고 계정 로그인이 필요합니다.
               관리자는 출입을 1일·3일·영구 정지할 수 있습니다. 출근은 앱 GPS로 합니다.
             </p>
+            {projectId && canSuspend && (
+              <ForeignRosterPanel
+                projectId={projectId}
+                destCompanyName=""
+                compact
+                onTransferred={() => void loadRoster()}
+              />
+            )}
             <div className="relative">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input

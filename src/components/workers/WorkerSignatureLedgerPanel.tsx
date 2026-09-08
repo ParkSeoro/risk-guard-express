@@ -34,9 +34,12 @@ const KINDS: Array<{ id: "all" | SignatureKind; label: string }> = [
 export default function WorkerSignatureLedgerPanel({
   workerId,
   projectId: projectIdProp,
+  embedded,
 }: {
   workerId?: string;
   projectId?: string;
+  /** 앱 탭처럼 상위 제목이 있을 때 원장 헤더를 숨긴다. */
+  embedded?: boolean;
 }) {
   const { projectId: activeProjectId } = useActiveProject();
   const projectId = projectIdProp || activeProjectId;
@@ -91,7 +94,7 @@ export default function WorkerSignatureLedgerPanel({
 
   return (
     <div className="space-y-4">
-      {!workerId && (
+      {!workerId && !embedded && (
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <PenLine className="h-5 w-5" /> 서명·서약 원장

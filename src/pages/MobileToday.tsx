@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   Crosshair,
   Bell,
-  Share,
+  LogIn,
+  PenLine,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
 import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
@@ -265,6 +266,25 @@ function ManagerToday({
             <div className="text-xl font-bold mt-0.5">{t.value == null ? "—" : t.value}</div>
           </button>
         ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Link
+          to="/app/worker/workers?tab=attendance"
+          className="rounded-xl border bg-background p-3 hover:border-primary/40 transition-colors"
+        >
+          <LogIn className="h-4 w-4 mb-2 text-emerald-600" />
+          <div className="text-sm font-medium">입퇴장 현황</div>
+          <div className="text-xs text-muted-foreground mt-0.5">오늘 출역·퇴근</div>
+        </Link>
+        <Link
+          to="/app/worker/workers?tab=signatures"
+          className="rounded-xl border bg-background p-3 hover:border-primary/40 transition-colors"
+        >
+          <PenLine className="h-4 w-4 mb-2 text-sky-600" />
+          <div className="text-sm font-medium">서명·서약</div>
+          <div className="text-xs text-muted-foreground mt-0.5">오늘 일일서약·TBM</div>
+        </Link>
       </div>
 
       <p className="text-[11px] text-muted-foreground text-center">

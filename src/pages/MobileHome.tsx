@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin, LogOut, Crosshair } from "lucide-react";
+import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin, LogOut, Crosshair, PenLine } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, isIosSafariTab, pushStatusLabel, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
@@ -343,7 +343,8 @@ const TILE_DEFS: Record<MobileTileKey, { icon: any; label: string; sub: string; 
   risk: { icon: ShieldAlert, label: "위험성평가", sub: "요약 보기", to: "/app/worker/risk-assessment" },
   "work-plans": { icon: ClipboardList, label: "작업계획", sub: "목록/상태", to: "/app/worker/work-plans" },
   workers: { icon: QrCode, label: "근로자 QR", sub: "발급/조회", to: "/app/worker/workers" },
-  attendance: { icon: HardHat, label: "입퇴장 현황", sub: "근로자 QR/명부", to: "/app/worker/workers" },
+  attendance: { icon: HardHat, label: "입퇴장 현황", sub: "오늘 출역·퇴근", to: "/app/worker/workers?tab=attendance" },
+  signatures: { icon: PenLine, label: "서명·서약", sub: "오늘 일일서약·TBM", to: "/app/worker/workers?tab=signatures" },
   "daily-health": { icon: HeartPulse, label: "일일 건강로그", sub: "오늘 컨디션", to: "/app/worker/daily-health-log" },
   manual: { icon: BookOpen, label: "사용 설명서", sub: "도움말", to: "/manual" },
   distribution: { icon: MapPin, label: "근로자 분포", sub: "출근·구역", to: "/app/worker/distribution" },

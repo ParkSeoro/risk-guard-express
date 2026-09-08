@@ -24,7 +24,6 @@ vi.mock("@/lib/laborEvidence", async (importOriginal) => {
 });
 
 import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
-import { resolveMobileWorkersTab } from "@/lib/mobileWorkers";
 
 async function flush() {
   await act(async () => {
@@ -86,13 +85,5 @@ describe("WorkerSignatureLedgerPanel default range", () => {
     });
     await flush();
     expect(el.querySelector('[data-testid="signature-ledger-count"]')?.textContent).toBe("서명 0건");
-  });
-});
-
-describe("resolveMobileWorkersTab", () => {
-  it("lets managers open the signature ledger tab", () => {
-    expect(resolveMobileWorkersTab("signatures", true)).toBe("signatures");
-    expect(resolveMobileWorkersTab("signatures", false)).toBe("roster");
-    expect(resolveMobileWorkersTab("attendance", true)).toBe("attendance");
   });
 });

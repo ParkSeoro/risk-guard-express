@@ -34,12 +34,9 @@ const KINDS: Array<{ id: "all" | SignatureKind; label: string }> = [
 export default function WorkerSignatureLedgerPanel({
   workerId,
   projectId: projectIdProp,
-  embedded,
 }: {
   workerId?: string;
   projectId?: string;
-  /** 모바일 탭 등 상위 제목이 있을 때 원장 헤더를 숨긴다. */
-  embedded?: boolean;
 }) {
   const { projectId: activeProjectId } = useActiveProject();
   const projectId = projectIdProp || activeProjectId;
@@ -92,12 +89,9 @@ export default function WorkerSignatureLedgerPanel({
     void log("view", "worker_signature", r.id, projectId || undefined, { kind: r.kind, workerId: r.workerId });
   };
 
-  const inWorkerShell =
-    typeof window !== "undefined" && window.location.pathname.startsWith("/app/worker");
-
   return (
     <div className="space-y-4">
-      {!workerId && !embedded && (
+      {!workerId && (
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <PenLine className="h-5 w-5" /> 서명·서약 원장
@@ -227,7 +221,7 @@ export default function WorkerSignatureLedgerPanel({
           {selected && (
             <div className="mt-4 space-y-3 text-sm">
               <div>
-                {selected.workerId && !inWorkerShell ? (
+                {selected.workerId ? (
                   <Link className="font-medium underline-offset-2 hover:underline" to={`/app/admin/workers/${selected.workerId}`}>
                     {selected.workerName}
                   </Link>
@@ -239,7 +233,7 @@ export default function WorkerSignatureLedgerPanel({
               <div className="text-xs text-muted-foreground">
                 {selected.signedAt ? new Date(selected.signedAt).toLocaleString("ko-KR") : selected.workDate}
               </div>
-              {selected.kind === "ra_share" && !inWorkerShell && (
+              {selected.kind === "ra_share" && (
                 <Button asChild variant="outline" size="sm">
                   <Link to="/app/admin/assessment-notices">위험성평가 공지</Link>
                 </Button>

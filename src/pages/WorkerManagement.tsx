@@ -14,6 +14,9 @@ import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSp
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
+import WorkerHoursPanel from "@/components/workers/WorkerHoursPanel";
+import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
+import WorkerExceptionBoard from "@/components/workers/WorkerExceptionBoard";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 import WorkerSingleRegisterDialog from "@/components/workers/WorkerSingleRegisterDialog";
 import ForeignRosterPanel from "@/components/workers/ForeignRosterPanel";
@@ -42,7 +45,8 @@ export default function WorkerManagement() {
   const access = useGlobalProjectAccessOptional();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const resolveTab = (v: string | null) => (v === "attendance" ? "attendance" : "register");
+  const resolveTab = (v: string | null) =>
+    v === "attendance" || v === "hours" || v === "signatures" || v === "exceptions" ? v : "register";
   const [tab, setTab] = useState<string>(resolveTab(tabParam));
 
   // URL → state 동기화. 레거시 일일/게시판 QR 탭은 앱 출근으로 대체 → 등록 탭으로 정리.
@@ -311,11 +315,14 @@ export default function WorkerManagement() {
       </h1>
 
       <Tabs value={tab} onValueChange={onTabChange}>
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="register" className="gap-2">
             등록 정보 {workers.length > 0 && <Badge variant="secondary">{workers.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="attendance">입퇴장 현황</TabsTrigger>
+          <TabsTrigger value="hours">기간 근로시간</TabsTrigger>
+          <TabsTrigger value="signatures">서명·서약</TabsTrigger>
+          <TabsTrigger value="exceptions">예외·미완료</TabsTrigger>
         </TabsList>
 
         <TabsContent value="register" className="space-y-4 mt-4">
@@ -546,6 +553,15 @@ export default function WorkerManagement() {
 
         <TabsContent value="attendance" className="mt-4">
           <WorkerAttendance />
+        </TabsContent>
+        <TabsContent value="hours" className="mt-4">
+          <WorkerHoursPanel />
+        </TabsContent>
+        <TabsContent value="signatures" className="mt-4">
+          <WorkerSignatureLedgerPanel />
+        </TabsContent>
+        <TabsContent value="exceptions" className="mt-4">
+          <WorkerExceptionBoard />
         </TabsContent>
       </Tabs>
 

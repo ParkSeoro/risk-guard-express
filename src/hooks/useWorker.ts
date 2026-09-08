@@ -57,7 +57,7 @@ export function useWorker(workerId: string | undefined) {
           .select("*")
           .eq("worker_id", workerId)
           .order("entry_at", { ascending: false })
-          .limit(30),
+          .limit(90),
         supabase.rpc("get_worker_health_warnings", { _worker_id: workerId }),
       ]);
 

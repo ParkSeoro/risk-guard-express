@@ -30,6 +30,7 @@ import {
   isWorkerCurrentlySuspended,
   suspensionKindLabel,
 } from "@/lib/workerSuspension";
+import { formatWorkHours, workMinutes } from "@/lib/workHours";
 
 type TabKey = "roster" | "attendance";
 
@@ -362,6 +363,9 @@ export default function MobileWorkers() {
                     <div className="text-xs text-muted-foreground">
                       입장 {fmtTime(r.entry_at)} · 퇴장 {fmtTime(r.exit_at)}
                       {r.tbm_at ? ` · TBM ${fmtTime(r.tbm_at)}` : ""}
+                      {r.exit_at
+                        ? ` · ${formatWorkHours(workMinutes(r.entry_at, r.exit_at))}`
+                        : " · 미퇴근"}
                     </div>
                   </CardContent>
                 </Card>

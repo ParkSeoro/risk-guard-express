@@ -1,12 +1,22 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWorker, calcAge, JOB_TYPE_LABELS, REQ_TYPE_LABELS } from "@/hooks/useWorker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ArrowLeft, HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, FlaskConical } from "lucide-react";
+import { ArrowLeft, HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, PenLine } from "lucide-react";
 import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
+import JobTypeSelect from "@/components/JobTypeSelect";
+import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
+import { todaySeoulDate } from "@/lib/dailyWorkAck";
+import { addSeoulDays, buildWorkHourRow, formatWorkHours, seoulWeekStart, summarizeHours, week52Status } from "@/lib/workHours";
+import { hoursDisclaimer, syncWorkerProfileIdentity } from "@/lib/laborEvidence";
+import { toast } from "sonner";
+import type { StandardJobType } from "@/lib/jobCategories";
 
 const statusBadge = (status: string, due?: string) => {
   if (status === "done") return <Badge variant="outline" className="bg-success/10 text-success border-success/40">완료</Badge>;
@@ -21,10 +31,58 @@ const statusBadge = (status: string, due?: string) => {
 export default function WorkerDetail() {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
+  const qc = useQueryClient();
   const { data, isLoading } = useWorker(id);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    jobType: "",
+    birthDate: "",
+    hireDate: "",
+    emergencyName: "",
+    emergencyPhone: "",
+  });
+  const [hoursFrom, setHoursFrom] = useState(() => addSeoulDays(todaySeoulDate(), -30));
+  const [hoursTo, setHoursTo] = useState(() => todaySeoulDate());
 
   const age = useMemo(() => calcAge(data?.worker?.birth_date), [data]);
   const w = data?.worker;
+
+  useEffect(() => {
+    if (!w) return;
+    setForm({
+      name: w.name || "",
+      phone: w.phone || "",
+      jobType: w.job_type || "",
+      birthDate: w.birth_date || "",
+      hireDate: w.hire_date || "",
+      emergencyName: w.emergency_name || "",
+      emergencyPhone: w.emergency_phone || "",
+    });
+  }, [w]);
+
+  const hourRows = useMemo(() => {
+    return (data?.recentEntries || [])
+      .map((e: any) =>
+        buildWorkHourRow({
+          entryLogId: e.id,
+          workerId: e.worker_id || id || "",
+          entryAt: e.entry_at,
+          exitAt: e.exit_at,
+          jobType: w?.job_type,
+          companyName: w?.company_name,
+        }),
+      )
+      .filter((r) => r.workDate >= hoursFrom && r.workDate <= hoursTo);
+  }, [data, hoursFrom, hoursTo, id, w]);
+
+  const hourSummary = useMemo(() => summarizeHours(hourRows), [hourRows]);
+  const weekMins = useMemo(() => {
+    const start = seoulWeekStart(todaySeoulDate());
+    return hourRows.filter((r) => r.workDate >= start && r.minutes != null).reduce((s, r) => s + (r.minutes || 0), 0);
+  }, [hourRows]);
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">로딩 중...</div>;
   if (!w) return <div className="p-8 text-center">근로자 정보를 찾을 수 없습니다.</div>;
@@ -69,16 +127,84 @@ export default function WorkerDetail() {
           <div><div className="text-xs text-muted-foreground">건강등급</div><div className="font-medium">{w.health_grade || w.health_checkup_status || "-"}</div></div>
           <div><div className="text-xs text-muted-foreground">옥외작업자</div><div className="font-medium">{w.outdoor_worker ? "예" : "아니오"}</div></div>
           <div><div className="text-xs text-muted-foreground">교육 확인</div><div className="font-medium">{w.education_confirmed_at ? "확인됨" : "미확인"}</div></div>
+          <div><div className="text-xs text-muted-foreground">비상연락</div><div className="font-medium">{w.emergency_name || "-"} {w.emergency_phone || ""}</div></div>
+        </CardContent>
+        <CardContent className="pt-0">
+          {editing ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm border-t pt-3">
+              <div>
+                <Label>이름</Label>
+                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>전화</Label>
+                <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              </div>
+              <div>
+                <Label>직종</Label>
+                <JobTypeSelect value={form.jobType} onValueChange={(v: StandardJobType) => setForm((f) => ({ ...f, jobType: v }))} />
+              </div>
+              <div>
+                <Label>생년월일</Label>
+                <Input type="date" value={form.birthDate} onChange={(e) => setForm((f) => ({ ...f, birthDate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>입사일</Label>
+                <Input type="date" value={form.hireDate} onChange={(e) => setForm((f) => ({ ...f, hireDate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>비상 연락처 이름</Label>
+                <Input value={form.emergencyName} onChange={(e) => setForm((f) => ({ ...f, emergencyName: e.target.value }))} />
+              </div>
+              <div>
+                <Label>비상 연락처 전화</Label>
+                <Input value={form.emergencyPhone} onChange={(e) => setForm((f) => ({ ...f, emergencyPhone: e.target.value }))} />
+              </div>
+              <div className="col-span-2 flex gap-2 items-end">
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true);
+                    const res = await syncWorkerProfileIdentity({
+                      workerId: w.id,
+                      name: form.name,
+                      phone: form.phone,
+                      jobType: form.jobType,
+                      birthDate: form.birthDate || null,
+                      hireDate: form.hireDate || null,
+                      emergencyName: form.emergencyName,
+                      emergencyPhone: form.emergencyPhone,
+                    });
+                    setSaving(false);
+                    if (!res.ok) {
+                      toast.error(res.error || "저장 실패");
+                      return;
+                    }
+                    toast.success("명부를 저장하고 계정 이름/전화와 맞췄습니다");
+                    setEditing(false);
+                    void qc.invalidateQueries({ queryKey: ["worker-detail", id] });
+                  }}
+                >
+                  {saving ? "저장 중…" : "저장"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>취소</Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>명부 수정</Button>
+          )}
         </CardContent>
       </Card>
 
       <Tabs defaultValue="overview">
-        <TabsList className="grid grid-cols-5 w-full">
+        <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="overview"><ScrollText className="h-4 w-4 mr-1" />개요</TabsTrigger>
           <TabsTrigger value="education"><GraduationCap className="h-4 w-4 mr-1" />법정교육</TabsTrigger>
           <TabsTrigger value="health"><Heart className="h-4 w-4 mr-1" />건강관리</TabsTrigger>
           <TabsTrigger value="daily" disabled={!w.requires_daily_health_log}>일일일지</TabsTrigger>
           <TabsTrigger value="attendance"><Calendar className="h-4 w-4 mr-1" />출퇴근</TabsTrigger>
+          <TabsTrigger value="signatures"><PenLine className="h-4 w-4 mr-1" />서명 이력</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-3 mt-4">
@@ -213,28 +339,58 @@ export default function WorkerDetail() {
 
         <TabsContent value="attendance" className="mt-4 space-y-3">
           <Card>
-            <CardHeader><CardTitle className="text-base">최근 출퇴근 (30건)</CardTitle></CardHeader>
-            <CardContent>
-              {data!.recentEntries.length === 0 ? (
-                <p className="text-sm text-muted-foreground">출퇴근 기록이 없습니다.</p>
+            <CardHeader>
+              <CardTitle className="text-base">출퇴근·근로시간</CardTitle>
+              <p className="text-xs text-muted-foreground font-normal">{hoursDisclaimer()}</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2 flex-wrap items-end">
+                <div>
+                  <Label>시작</Label>
+                  <Input type="date" value={hoursFrom} onChange={(e) => setHoursFrom(e.target.value)} />
+                </div>
+                <div>
+                  <Label>종료</Label>
+                  <Input type="date" value={hoursTo} onChange={(e) => setHoursTo(e.target.value)} />
+                </div>
+                <Badge variant={week52Status(weekMins) === "warn" ? "destructive" : "secondary"}>
+                  이번 주 {formatWorkHours(weekMins)} {week52Status(weekMins) === "warn" ? "· 주52 초과" : week52Status(weekMins) === "caution" ? "· 주52 주의" : ""}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <div>합계 {formatWorkHours(hourSummary.minutes)}</div>
+                <div>공수 {hourSummary.manDays.toFixed(2)}</div>
+                <div>미퇴근 {hourSummary.incompleteCount}건</div>
+              </div>
+              {hourRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">선택한 기간의 출퇴근 기록이 없습니다. (최근 30건 범위)</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-muted-foreground">
-                    <tr><th className="py-2">입장</th><th>퇴장</th><th>무사고</th></tr>
+                    <tr><th className="py-2">일자</th><th>입장</th><th>퇴장</th><th>시간</th><th>공수</th><th>무사고</th></tr>
                   </thead>
                   <tbody>
-                    {data!.recentEntries.map((e: any) => (
-                      <tr key={e.id} className="border-t">
-                        <td className="py-2">{e.entry_at ? new Date(e.entry_at).toLocaleString("ko-KR") : "-"}</td>
-                        <td>{e.exit_at ? new Date(e.exit_at).toLocaleString("ko-KR") : "근무중"}</td>
-                        <td>{e.no_accident_confirmed ? "✓" : "-"}</td>
-                      </tr>
-                    ))}
+                    {hourRows.map((r) => {
+                      const src = (data!.recentEntries as any[]).find((e) => e.id === r.entryLogId);
+                      return (
+                        <tr key={r.entryLogId} className="border-t">
+                          <td className="py-2">{r.workDate}</td>
+                          <td>{new Date(r.entryAt).toLocaleTimeString("ko-KR")}</td>
+                          <td>{r.exitAt ? new Date(r.exitAt).toLocaleTimeString("ko-KR") : "근무중"}</td>
+                          <td>{formatWorkHours(r.minutes)}</td>
+                          <td>{r.manDays == null ? "—" : r.manDays.toFixed(2)}</td>
+                          <td>{src?.no_accident_confirmed ? "✓" : "-"}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+        <TabsContent value="signatures" className="mt-4">
+          {w.project_id && <WorkerSignatureLedgerPanel workerId={id} projectId={w.project_id} />}
         </TabsContent>
       </Tabs>
     </div>

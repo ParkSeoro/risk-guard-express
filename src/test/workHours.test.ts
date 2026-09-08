@@ -9,9 +9,11 @@ import {
   nightMinutes,
   PLEDGE_HASHES,
   pledgeTextByHash,
+  filterWorkHourRows,
   rollupWorkHours,
   seoulWeekStart,
   summarizeHours,
+  summarizeVisibleHours,
   week52Status,
   workMinutes,
 } from "@/lib/workHours";
@@ -126,6 +128,20 @@ describe("rollup / streak", () => {
     expect(s.workerCount).toBe(2);
     expect(s.incompleteCount).toBe(1);
     expect(s.minutes).toBe(1080);
+  });
+
+  it("KPI totals follow company / job / search filters", () => {
+    const a = filterWorkHourRows(rows, { companyName: "A사" });
+    const aSum = summarizeVisibleHours(a);
+    expect(aSum.workerCount).toBe(1);
+    expect(aSum.incompleteCount).toBe(0);
+    expect(aSum.minutes).toBe(1080);
+    const weld = summarizeVisibleHours(filterWorkHourRows(rows, { jobType: "비계공" }));
+    expect(weld.workerCount).toBe(1);
+    expect(weld.incompleteCount).toBe(1);
+    expect(weld.minutes).toBe(0);
+    const named = filterWorkHourRows(rows, { search: "철수" });
+    expect(named.map((r) => r.workerName)).toEqual(["김철수"]);
   });
 
   it("counts consecutive attendance days", () => {

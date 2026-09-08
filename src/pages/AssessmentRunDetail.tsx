@@ -116,7 +116,6 @@ import {
 import {
   fetchAssessmentShareAcks,
   isSafeSignatureDataUrl,
-  shareRunIsOpen,
   type AssessmentShareAck,
 } from '@/lib/assessmentShareAck';
 import PreviousRunPicker, { AUTO_PREVIOUS_VALUE } from '@/components/assessment/PreviousRunPicker';
@@ -2621,10 +2620,7 @@ const AssessmentRunDetail = () => {
         <div className="space-y-2">
           <span className="text-xs text-muted-foreground font-medium">근로자 참여 및 공유 서명</span>
           <p className="text-[10px] text-muted-foreground">
-            결재 서명란과 별개입니다. 승인 후 앱 확인·출근 서명이 1회만 표기됩니다.
-            {!shareRunIsOpen(run.start_date)
-              ? ` 이 회차는 ${run.start_date}부터 근로자 확인 서명을 받습니다. 그 전에 서명하면 금주 회차가 아니라 다음 주 문서로 찍힙니다.`
-              : ""}
+            결재 서명란과 별개입니다. 승인된 그 회차에, 승인 당일 앱 확인·출근 서명이 1회만 표기됩니다.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-[10px] border-collapse">

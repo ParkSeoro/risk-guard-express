@@ -10,6 +10,9 @@ export function localizeNotificationText(text: string): string {
   for (const key of keys) {
     if (out.includes(key)) out = out.split(key).join(ENTITY_LABELS[key]);
   }
+  if (out.includes("위험성평가 피드백(조치)")) {
+    out = out.split("위험성평가 피드백(조치)").join(ENTITY_LABELS.assessment_run_feedback);
+  }
   return out;
 }
 

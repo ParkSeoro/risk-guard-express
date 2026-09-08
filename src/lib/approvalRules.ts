@@ -22,8 +22,8 @@ export type ApprovalEntityType =
   | 'safety_inspection';
 
 export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
-  assessment_run: '위험성평가',
-  assessment_run_feedback: '위험성평가 피드백(조치)',
+  assessment_run: '위험성평가 · 위평 작성',
+  assessment_run_feedback: '위험성평가 · 이행 확인',
   work_plan: '작업계획서',
   work_permit: '작업허가서',
   safety_cost: '산업안전보건관리비',

@@ -14,6 +14,7 @@ import { Plus, Camera, CheckCircle2, Clock, AlertTriangle, Image as ImageIcon, S
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import FeedbackAttachmentThumb from '@/components/feedback/FeedbackAttachmentThumb';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
+import { feedbackStatusBadge } from '@/lib/assessmentApprovalPhase';
 
 interface FeedbackItem {
   id: string;
@@ -338,8 +339,8 @@ export default function FeedbackPanel({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           {heading || '금주 이행 확인'} · {feedbackList.length}건
-          {feedbackPending && <Badge variant="outline" className="text-[10px]">결재진행</Badge>}
-          {feedbackClosed && <Badge className="text-[10px] bg-success/10 text-success border-success/30" variant="outline">조치 결재완료</Badge>}
+          {feedbackPending && <Badge variant="outline" className="text-[10px]">{feedbackStatusBadge('pending_approval')}</Badge>}
+          {feedbackClosed && <Badge className="text-[10px] bg-success/10 text-success border-success/30" variant="outline">{feedbackStatusBadge('closed')}</Badge>}
         </h3>
         <div className="flex gap-2 flex-wrap">
           {canEditFeedback && (
@@ -369,7 +370,7 @@ export default function FeedbackPanel({
                   setShowFeedbackApproval(true);
                 }}
               >
-                <Send className="h-3.5 w-3.5" /> 피드백 결재 상신
+                <Send className="h-3.5 w-3.5" /> 이행 확인 결재 상신
               </Button>
             </>
           )}
@@ -444,7 +445,7 @@ export default function FeedbackPanel({
         entityId={runId}
         projectId={projectId}
         submitterCompanyId={submitterCompanyId || null}
-        title="피드백(조치) 결재 상신"
+        title="이행 확인 결재 상신"
         onSubmitted={async () => {
           await supabase
             .from('assessment_runs')
@@ -452,7 +453,7 @@ export default function FeedbackPanel({
             .eq('id', runId);
           onFeedbackStatusChange?.('pending_approval');
           setShowFeedbackApproval(false);
-          toast({ title: '피드백 결재를 상신했습니다.' });
+          toast({ title: '이행 확인 결재를 상신했습니다.' });
         }}
       />
 

@@ -1,3 +1,5 @@
+import { inboxPeriodTitle, isFeedbackApprovalEntity } from "@/lib/assessmentApprovalPhase";
+
 export type PendingApprovalRow = {
   entity_type?: string | null;
   entity_date?: string | null;
@@ -14,8 +16,10 @@ export function pendingInboxTitle(e: {
   entity_title?: string | null;
 }): string {
   const title = String(e.entity_title || "").trim();
+  if (e.entity_type === "assessment_run" || isFeedbackApprovalEntity(e.entity_type)) {
+    return inboxPeriodTitle({ entityType: e.entity_type, periodLabel: title });
+  }
   if (title) return title;
-  if (e.entity_type === "assessment_run_feedback") return "위험성평가 피드백";
   return "-";
 }
 
@@ -66,7 +70,7 @@ export function groupedDocumentStatus(run: {
   const type = steps[0]?.entity_type;
   if (type === "assessment_run_feedback") {
     if (steps.some((s) => s.status === "진행중" || s.status === "대기")) return "조치 결재중";
-    if (steps.length > 0 && steps.every((s) => s.status === "승인")) return "조치 결재완료";
+    if (steps.length > 0 && steps.every((s) => s.status === "승인")) return "조치 확인 완료";
     return "조치 결재";
   }
   return run.status || null;

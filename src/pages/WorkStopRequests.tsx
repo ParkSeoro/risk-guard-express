@@ -31,7 +31,8 @@ const STATUS_VARIANT: Record<string, any> = {
 type Tab = 'pending' | 'done' | 'rejected' | 'all';
 
 export default function WorkStopRequests() {
-  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, isSiteManager } = useGlobalProjectAccess();
+  const { selectedProject: projectId, projects, isMaster, isProjectAdmin, isSafetyManager, isSiteManager } = useGlobalProjectAccess();
+  const projectName = projects.find((p) => p.id === projectId)?.name || "";
   const canHandle = isMaster || isProjectAdmin || isSafetyManager || isSiteManager;
   const [searchParams] = useSearchParams();
   const openedFromQuery = useRef<string | null>(null);
@@ -214,7 +215,11 @@ export default function WorkStopRequests() {
           {editing && (
             <div className="space-y-3">
               <div className="p-3 rounded bg-muted/50 text-sm space-y-2">
+                {projectName && <div className="text-xs font-medium text-primary">{projectName}</div>}
                 <div className="font-medium">{workStopDisplayName(editing, { revealedLegalName: legalNames[editing.id] })} · {editing.location || '위치 미상'}</div>
+                {editing.is_anonymous && legalNames[editing.id] && (
+                  <Badge variant="outline" className="text-xs">실명 공개 · 포상용</Badge>
+                )}
                 <div className="text-muted-foreground">{editing.hazard_description}</div>
                 <WorkStopPhotos urls={parseWorkStopPhotoUrls(editing.photo_url)} />
               </div>

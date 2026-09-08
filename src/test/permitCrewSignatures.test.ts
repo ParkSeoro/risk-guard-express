@@ -85,4 +85,19 @@ describe("permitCrewSignatures", () => {
     expect(filled[0].signature_data).toBe(SIG);
     expect(filled[1].signature_data).toBe(SIG);
   });
+
+  it("copies the daily-ack time onto roster-synced TBM rows", () => {
+    const filled = fillMissingTbmSignatures(
+      [
+        {
+          worker_id: "w1",
+          worker_phone: "01011111111",
+          signature_data: "",
+          participated_at: "2026-09-08T01:33:45.000Z",
+        },
+      ],
+      [{ worker_id: "w1", signature_data: SIG, updated_at: "2026-09-08T22:05:11.000Z" }],
+    );
+    expect(filled[0].participated_at).toBe("2026-09-08T22:05:11.000Z");
+  });
 });

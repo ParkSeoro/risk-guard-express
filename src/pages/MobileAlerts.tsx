@@ -8,9 +8,9 @@ import { Bell, CheckCheck, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
-import { notificationPreview, notificationTitle } from "@/lib/notificationText";
-import { applyRevealedWorkStopName } from "@/lib/workStop";
-import { fetchRevealedWorkStopNames, workStopIdsFromNotifications } from "@/lib/workStopReveal";
+import { notificationTitle } from "@/lib/notificationText";
+import { decorateWorkStopNotificationPreview, fetchRevealedWorkStopNames, workStopIdsFromNotifications } from "@/lib/workStopReveal";
+import { fetchProjectNames } from "@/lib/projectNames";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 
 export default function MobileAlerts() {
@@ -18,6 +18,7 @@ export default function MobileAlerts() {
   const navigate = useNavigate();
   const [items, setItems] = useState<any[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [projects, setProjects] = useState<Record<string, string>>({});
 
   const load = async () => {
     if (!user) return;
@@ -34,6 +35,7 @@ export default function MobileAlerts() {
     const rows = data || [];
     setItems(rows);
     setNames(await fetchRevealedWorkStopNames(workStopIdsFromNotifications(rows)));
+    setProjects(await fetchProjectNames(rows.map((n: any) => String(n.project_id || ""))));
   };
   useEffect(() => {
     load();
@@ -90,9 +92,9 @@ export default function MobileAlerts() {
                 <div className="font-semibold text-sm">{notificationTitle(n)}</div>
                 {!n.is_read && <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />}
               </div>
-              {notificationPreview(n) && (
+              {decorateWorkStopNotificationPreview(n, names, projects) && (
                 <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">
-                  {applyRevealedWorkStopName(notificationPreview(n), names[String(n.related_id || "")])}
+                  {decorateWorkStopNotificationPreview(n, names, projects)}
                 </div>
               )}
               <div className="text-[10px] text-muted-foreground mt-1">

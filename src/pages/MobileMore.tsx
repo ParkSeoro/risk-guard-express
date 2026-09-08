@@ -23,6 +23,8 @@ import {
   FolderOpen,
   Crosshair,
   MapPin,
+  LogIn,
+  PenLine,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -202,6 +204,8 @@ export default function MobileMore() {
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "비전 관제", to: "/app/worker/vision-events", icon: Video },
                 { label: "근로자·출입", to: "/app/worker/workers", icon: QrCode },
+                { label: "입퇴장 현황", to: "/app/worker/workers?tab=attendance", icon: LogIn },
+                { label: "서명·서약", to: "/app/worker/workers?tab=signatures", icon: PenLine },
                 { label: "근로자 분포", to: "/app/worker/distribution", icon: MapPin },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()

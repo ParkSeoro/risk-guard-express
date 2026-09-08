@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapHourRpcRow, resolvePledgeText } from "@/lib/laborEvidence";
+import { defaultSignatureLedgerRange, mapHourRpcRow, resolvePledgeText } from "@/lib/laborEvidence";
 import { PLEDGE_HASHES } from "@/lib/workHours";
 import { WORK_ACK_PLEDGE } from "@/lib/legal/dailyPledges";
 
@@ -18,6 +18,15 @@ describe("mapHourRpcRow", () => {
     expect(row.manDays).toBe(1);
     expect(row.jobType).toBe("용접공");
     expect(row.workDate).toBe("2026-09-07");
+  });
+});
+
+describe("defaultSignatureLedgerRange", () => {
+  it("defaults the ledger to a single Seoul day", () => {
+    expect(defaultSignatureLedgerRange("2026-09-08")).toEqual({
+      from: "2026-09-08",
+      to: "2026-09-08",
+    });
   });
 });
 

@@ -20,6 +20,11 @@ import { isWorkerCurrentlySuspended } from "@/lib/workerSuspension";
 
 export type SignatureKind = "daily_ack" | "no_accident" | "tbm" | "ra_share" | "ppe" | "consent";
 
+/** 서명 원장 기본 조회 구간 — 오늘 하루. 기간은 화면에서 늘릴 수 있다. */
+export function defaultSignatureLedgerRange(today: string): { from: string; to: string } {
+  return { from: today, to: today };
+}
+
 export type SignatureLedgerRow = {
   id: string;
   kind: SignatureKind;

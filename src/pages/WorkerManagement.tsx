@@ -341,11 +341,15 @@ export default function WorkerManagement() {
             )}
           </div>
 
-          {projectId && companyId && (
+          {projectId && (
             <ForeignRosterPanel
               projectId={projectId}
-              companyId={companyId}
-              destCompanyName={companies.find((c) => c.id === companyId)?.name || ""}
+              companyId={companyLocked ? companyId : ""}
+              destCompanyName={
+                companyLocked
+                  ? companies.find((c) => c.id === companyId)?.name || ""
+                  : ""
+              }
               onTransferred={load}
             />
           )}

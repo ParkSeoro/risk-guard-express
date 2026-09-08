@@ -19,8 +19,8 @@ export default function ForeignRosterPanel({
   onTransferred,
 }: {
   projectId: string;
-  companyId: string;
-  destCompanyName: string;
+  companyId?: string;
+  destCompanyName?: string;
   compact?: boolean;
   onTransferred?: () => void;
 }) {
@@ -28,13 +28,13 @@ export default function ForeignRosterPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!projectId || !companyId) {
+    if (!projectId) {
       setRows([]);
       return;
     }
     const { data, error } = await (supabase as any).rpc("list_foreign_company_roster_workers", {
       _project_id: projectId,
-      _company_id: companyId,
+      _company_id: companyId || null,
     });
     if (error) {
       setRows([]);
@@ -57,11 +57,16 @@ export default function ForeignRosterPanel({
       }),
     );
     if (!ok) return;
+    const toCompanyId = companyId || row.login_company_id;
+    if (!toCompanyId) {
+      toast.error("이관할 회사를 알 수 없습니다");
+      return;
+    }
     setBusyId(row.worker_id);
     try {
       const { data, error } = await (supabase as any).rpc("transfer_worker_company", {
         _worker_id: row.worker_id,
-        _to_company_id: companyId,
+        _to_company_id: toCompanyId,
       });
       if (error) throw error;
       if (data?.error) throw new Error(String(data.error));
@@ -77,17 +82,17 @@ export default function ForeignRosterPanel({
     }
   };
 
-  if (!projectId || !companyId || rows.length === 0) return null;
+  if (!projectId || rows.length === 0) return null;
 
   return (
     <Card className="border-amber-300/70 bg-amber-50/40">
       <CardHeader className={compact ? "pb-2 pt-3 px-3" : undefined}>
         <CardTitle className="text-sm flex items-center gap-2">
-          타사 소속 · 로그인만 우리 회사
+          타사 소속 · 로그인 회사와 명단이 다름
           <Badge variant="outline">{rows.length}명</Badge>
         </CardTitle>
         <p className="text-[11px] text-muted-foreground">
-          계정은 우리 회사이지만 명단 행이 다른 회사에 있습니다. 이관하면 우리 명단에 보이고, 원래 회사 명단에서는 빠집니다.
+          계정(로그인) 소속과 명단 소속이 다릅니다. 이관하면 로그인 회사 명단에 보이고, 원래 회사 명단에서는 빠집니다.
         </p>
       </CardHeader>
       <CardContent className={compact ? "px-3 pb-3 space-y-2" : "space-y-2"}>
@@ -109,6 +114,11 @@ export default function ForeignRosterPanel({
                 {row.is_active === false && (
                   <Badge variant="outline" className="text-[10px] text-amber-800">
                     비활성
+                  </Badge>
+                )}
+                {row.login_company_name && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    로그인 {row.login_company_name}
                   </Badge>
                 )}
               </div>

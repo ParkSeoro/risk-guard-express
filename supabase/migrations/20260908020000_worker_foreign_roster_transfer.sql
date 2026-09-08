@@ -27,7 +27,7 @@ AS $fn$
 DECLARE
   v_uid uuid := auth.uid();
 BEGIN
-  IF v_uid IS NULL OR _project_id IS NULL OR _company_id IS NULL THEN
+  IF v_uid IS NULL OR _project_id IS NULL THEN
     RETURN;
   END IF;
   IF NOT (
@@ -36,7 +36,7 @@ BEGIN
   ) THEN
     RETURN;
   END IF;
-  IF NOT (
+  IF _company_id IS NOT NULL AND NOT (
     public.is_master(v_uid)
     OR public.can_write_company_data(v_uid, _project_id, _company_id)
   ) THEN
@@ -64,8 +64,12 @@ BEGIN
   LEFT JOIN public.companies src ON src.id = w.company_id
   LEFT JOIN public.companies dest ON dest.id = pm.company_id
   WHERE w.project_id = _project_id
-    AND pm.company_id = _company_id
-    AND w.company_id IS DISTINCT FROM _company_id
+    AND (_company_id IS NULL OR pm.company_id = _company_id)
+    AND w.company_id IS DISTINCT FROM pm.company_id
+    AND (
+      public.is_master(v_uid)
+      OR public.can_write_company_data(v_uid, _project_id, pm.company_id)
+    )
   ORDER BY w.name, w.created_at;
 END;
 $fn$;

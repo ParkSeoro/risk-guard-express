@@ -31,6 +31,12 @@ import { toast } from "sonner";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import { useAuditLog } from "@/hooks/useAuditLog";
+import { buildWorkHourRow, formatWorkHours } from "@/lib/workHours";
+import { hoursDisclaimer, resolvePledgeText } from "@/lib/laborEvidence";
+import { NO_ACCIDENT_PLEDGE } from "@/lib/legal/dailyPledges";
+import SignaturePreview from "@/components/workers/SignaturePreview";
+import WorkerEntryCorrectForm from "@/components/workers/WorkerEntryCorrectForm";
 
 type ConsentInfo = {
   agreed_to_terms: boolean;
@@ -45,18 +51,24 @@ type EntryLog = {
   worker_id: string;
   entry_at: string;
   exit_at: string | null;
+  entry_method?: string | null;
+  entry_signature_data?: string | null;
+  exit_signature_data?: string | null;
   risk_assessment_confirmed?: boolean;
   education_confirmed?: boolean;
   tbm_confirmed?: boolean;
   no_accident_confirmed?: boolean;
-  workers?: { name?: string; phone?: string; company_name?: string };
+  workers?: { name?: string; phone?: string; company_name?: string; company_id?: string | null; job_type?: string | null };
   /** entry_log flag OR same-day tbm_participations hit */
   tbmAttended: boolean;
   tbmParticipationAt: string | null;
   consent: ConsentInfo | null;
+  dailyAck?: { signature_data?: string | null; pledge_text_hash?: string | null; work_summary?: string | null } | null;
+  lastFix?: { lat?: number; lng?: number; accuracy_m?: number } | null;
+  corrected?: boolean;
 };
 
-type StatusFilter = "all" | "inside" | "exited" | "incomplete" | "pledge_warn";
+type StatusFilter = "all" | "inside" | "exited" | "incomplete" | "pledge_warn" | "no_exit";
 
 function digits(phone?: string | null) {
   return (phone || "").replace(/\D/g, "");
@@ -90,6 +102,8 @@ export default function WorkerAttendance() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [selected, setSelected] = useState<EntryLog | null>(null);
   const { accessibleCompanyIds, seesAllCompanies, applyCompanyFilter, scopeStatus } = useGlobalProjectAccess();
+  const { log } = useAuditLog();
+  const [jobFilter, setJobFilter] = useState("all");
 
   useEffect(() => {
     supabase
@@ -107,7 +121,7 @@ export default function WorkerAttendance() {
       const { data, error } = await supabase
         .from("worker_entry_logs")
         .select(
-          "id, worker_id, entry_at, exit_at, risk_assessment_confirmed, education_confirmed, tbm_confirmed, no_accident_confirmed",
+          "id, worker_id, entry_at, exit_at, entry_method, entry_signature_data, exit_signature_data, risk_assessment_confirmed, education_confirmed, tbm_confirmed, no_accident_confirmed",
         )
         .eq("project_id", projectId)
         .gte("entry_at", dayRange.start)
@@ -126,7 +140,7 @@ export default function WorkerAttendance() {
       if (ids.length) {
         let wq = supabase
           .from("workers")
-          .select("id,name,phone,company_name,company_id")
+          .select("id,name,phone,company_name,company_id,job_type")
           .in("id", ids);
         wq = applyCompanyFilter(wq);
         const { data: ws } = await wq;
@@ -187,6 +201,36 @@ export default function WorkerAttendance() {
         }
       }
 
+      const { data: acks } = await supabase
+        .from("worker_daily_acks" as any)
+        .select("worker_id, signature_data, pledge_text_hash, work_summary")
+        .eq("project_id", projectId)
+        .eq("ack_date", date)
+        .limit(2000);
+      const ackByWorker = new Map<string, any>();
+      for (const a of (acks as any[]) || []) {
+        if (a.worker_id) ackByWorker.set(a.worker_id, a);
+      }
+
+      const { data: fixes } = ids.length
+        ? await supabase
+            .from("worker_last_positions" as any)
+            .select("worker_id, lat, lng, accuracy_m")
+            .eq("project_id", projectId)
+            .in("worker_id", ids)
+            .limit(2000)
+        : { data: [] as any[] };
+      const fixByWorker = new Map<string, any>();
+      for (const f of (fixes as any[]) || []) {
+        if (f.worker_id) fixByWorker.set(f.worker_id, f);
+      }
+
+      const { data: corrs } = await supabase
+        .from("worker_entry_corrections" as any)
+        .select("entry_log_id")
+        .in("entry_log_id", (data || []).map((l) => l.id));
+      const correctedIds = new Set(((corrs as any[]) || []).map((c) => c.entry_log_id));
+
       setLogs(
         (data || [])
           // Drop logs for workers outside company scope (workersMap already filtered)
@@ -202,6 +246,9 @@ export default function WorkerAttendance() {
               tbmAttended,
               tbmParticipationAt: tbmAt,
               consent: phoneDig ? consentByPhone.get(phoneDig) || null : null,
+              dailyAck: ackByWorker.get(l.worker_id) || null,
+              lastFix: fixByWorker.get(l.worker_id) || null,
+              corrected: correctedIds.has(l.id),
             } as EntryLog;
           }),
       );
@@ -232,6 +279,15 @@ export default function WorkerAttendance() {
       if (l.workers?.company_name) set.add(l.workers.company_name);
     });
     return Array.from(set).sort();
+  }, [logs]);
+
+  const jobTypes = useMemo(() => {
+    const set = new Set<string>();
+    logs.forEach((l) => {
+      const j = (l.workers?.job_type || "").trim() || "미분류";
+      set.add(j);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
   }, [logs]);
 
   const isIncomplete = (l: EntryLog) =>
@@ -272,6 +328,11 @@ export default function WorkerAttendance() {
       if (status === "exited" && !l.exit_at) return false;
       if (status === "incomplete" && !isIncomplete(l)) return false;
       if (status === "pledge_warn" && !isPledgeWarn(l)) return false;
+      if (status === "no_exit" && l.exit_at) return false;
+      if (jobFilter !== "all") {
+        const job = (l.workers?.job_type || "").trim() || "미분류";
+        if (job !== jobFilter) return false;
+      }
       if (!q) return true;
       return (
         (l.workers?.name || "").toLowerCase().includes(q) ||
@@ -279,30 +340,44 @@ export default function WorkerAttendance() {
         (l.workers?.company_name || "").toLowerCase().includes(q)
       );
     });
-  }, [scopedLogs, search, companyFilter, status]);
+  }, [scopedLogs, search, companyFilter, status, jobFilter]);
 
   const exportExcel = () => {
-    const rows = filteredLogs.map((l) => ({
-      이름: l.workers?.name || "",
-      전화: l.workers?.phone || "",
-      소속: l.workers?.company_name || "",
-      입장시각: new Date(l.entry_at).toLocaleString("ko-KR"),
-      퇴장시각: l.exit_at ? new Date(l.exit_at).toLocaleString("ko-KR") : "",
-      "TBM 참석": l.tbmAttended ? "Y" : "N",
-      "TBM 참석시각": l.tbmParticipationAt ? fmtTs(l.tbmParticipationAt) : "",
-      "무재해 서약": l.no_accident_confirmed ? "Y" : "N",
-      위험성평가확인: l.risk_assessment_confirmed ? "Y" : "N",
-      교육확인: l.education_confirmed ? "Y" : "N",
-      "위치정보 동의": l.consent?.agreed_to_location ? "Y" : "N",
-      "개인정보 동의": l.consent?.agreed_to_privacy ? "Y" : "N",
-      "이용약관 동의": l.consent?.agreed_to_terms ? "Y" : "N",
-      "법적동의 일시": l.consent?.consent_agreed_at ? fmtTs(l.consent.consent_agreed_at) : "",
-      비고: isPledgeWarn(l) ? "퇴근·무재해서약 불일치" : "",
-    }));
+    const rows = filteredLogs.map((l) => {
+      const hours = buildWorkHourRow({
+        entryLogId: l.id,
+        workerId: l.worker_id,
+        entryAt: l.entry_at,
+        exitAt: l.exit_at,
+      });
+      return {
+        일자: date,
+        성명: l.workers?.name || "",
+        전화: l.workers?.phone || "",
+        소속: l.workers?.company_name || "",
+        직종: (l.workers?.job_type || "").trim() || "미분류",
+        입장시각: new Date(l.entry_at).toLocaleString("ko-KR"),
+        퇴장시각: l.exit_at ? new Date(l.exit_at).toLocaleString("ko-KR") : "",
+        분: hours.minutes ?? "",
+        시간: formatWorkHours(hours.minutes),
+        공수: hours.manDays ?? "",
+        "TBM 참석": l.tbmAttended ? "Y" : "N",
+        "TBM 참석시각": l.tbmParticipationAt ? fmtTs(l.tbmParticipationAt) : "",
+        "무재해 서약": l.no_accident_confirmed ? "Y" : "N",
+        위험성평가확인: l.risk_assessment_confirmed ? "Y" : "N",
+        교육확인: l.education_confirmed ? "Y" : "N",
+        "위치정보 동의": l.consent?.agreed_to_location ? "Y" : "N",
+        "개인정보 동의": l.consent?.agreed_to_privacy ? "Y" : "N",
+        "이용약관 동의": l.consent?.agreed_to_terms ? "Y" : "N",
+        "법적동의 일시": l.consent?.consent_agreed_at ? fmtTs(l.consent.consent_agreed_at) : "",
+        비고: isPledgeWarn(l) ? "퇴근·무재해서약 불일치" : hours.incomplete ? "미퇴근" : "",
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "일일출역서약");
-    XLSX.writeFile(wb, `일일_출역_서약_대장_${date}.xlsx`);
+    XLSX.writeFile(wb, `출근부_${date}.xlsx`);
+    void log("export", "attendance_ledger", projectId || date, projectId || undefined, { date, count: rows.length });
     toast.success("엑셀 다운로드를 시작했습니다");
   };
 
@@ -314,6 +389,7 @@ export default function WorkerAttendance() {
             <ClipboardList className="h-6 w-6" /> 입퇴장 현황
           </h1>
           <p className="text-sm text-muted-foreground mt-1">일일 출역 및 법적 증빙 대시보드 · TBM·무재해 서약·동의 이력</p>
+          <p className="text-xs text-muted-foreground mt-1">{hoursDisclaimer()}</p>
         </div>
         <Button onClick={exportExcel} className="gap-2 shrink-0">
           <Download className="h-4 w-4" />
@@ -353,6 +429,22 @@ export default function WorkerAttendance() {
                 {companies.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>직종</Label>
+            <Select value={jobFilter} onValueChange={setJobFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체</SelectItem>
+                {jobTypes.map((j) => (
+                  <SelectItem key={j} value={j}>
+                    {j}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -432,6 +524,7 @@ export default function WorkerAttendance() {
               <TabsTrigger value="inside">입장중</TabsTrigger>
               <TabsTrigger value="exited">퇴장</TabsTrigger>
               <TabsTrigger value="incomplete">확인미완</TabsTrigger>
+              <TabsTrigger value="no_exit">미퇴근</TabsTrigger>
               <TabsTrigger value="pledge_warn">서약경고</TabsTrigger>
             </TabsList>
           </Tabs>
@@ -454,8 +547,11 @@ export default function WorkerAttendance() {
                   <tr>
                     <th className="text-left p-2">근로자</th>
                     <th className="text-left p-2">소속</th>
+                    <th className="text-left p-2">직종</th>
                     <th className="text-left p-2">입장</th>
                     <th className="text-left p-2">퇴장</th>
+                    <th className="text-left p-2">시간</th>
+                    <th className="text-left p-2">공수</th>
                     <th className="text-center p-2">TBM 참석</th>
                     <th className="text-center p-2">무재해 서약</th>
                     <th className="text-left p-2">기타 확인</th>
@@ -464,6 +560,12 @@ export default function WorkerAttendance() {
                 <tbody>
                   {filteredLogs.map((l) => {
                     const warn = isPledgeWarn(l);
+                    const hours = buildWorkHourRow({
+                      entryLogId: l.id,
+                      workerId: l.worker_id,
+                      entryAt: l.entry_at,
+                      exitAt: l.exit_at,
+                    });
                     return (
                       <tr
                         key={l.id}
@@ -475,12 +577,16 @@ export default function WorkerAttendance() {
                         <td className="p-2">
                           <div className="font-medium">{l.workers?.name || "—"}</div>
                           <div className="text-xs text-muted-foreground">{l.workers?.phone}</div>
+                          {l.corrected && <Badge variant="outline" className="text-[10px] mt-0.5">정정됨</Badge>}
                         </td>
                         <td className="p-2">{l.workers?.company_name || "-"}</td>
+                        <td className="p-2 text-xs">{(l.workers?.job_type || "").trim() || "미분류"}</td>
                         <td className="p-2 text-xs">{new Date(l.entry_at).toLocaleTimeString("ko-KR")}</td>
                         <td className="p-2 text-xs">
                           {l.exit_at ? new Date(l.exit_at).toLocaleTimeString("ko-KR") : <Badge>입장중</Badge>}
                         </td>
+                        <td className="p-2 text-xs">{formatWorkHours(hours.minutes)}</td>
+                        <td className="p-2 text-xs">{hours.manDays == null ? "—" : hours.manDays.toFixed(2)}</td>
                         <td className="p-2 text-center text-base">
                           <Mark ok={l.tbmAttended} />
                         </td>
@@ -530,6 +636,28 @@ export default function WorkerAttendance() {
                 <div className="text-xs text-muted-foreground">당일 출역</div>
                 <div>입장: {fmtTs(selected.entry_at)}</div>
                 <div>퇴장: {selected.exit_at ? fmtTs(selected.exit_at) : "입장중"}</div>
+                <div>
+                  근로시간: {formatWorkHours(buildWorkHourRow({
+                    entryLogId: selected.id,
+                    workerId: selected.worker_id,
+                    entryAt: selected.entry_at,
+                    exitAt: selected.exit_at,
+                  }).minutes)}
+                  {" · 공수 "}
+                  {(buildWorkHourRow({
+                    entryLogId: selected.id,
+                    workerId: selected.worker_id,
+                    entryAt: selected.entry_at,
+                    exitAt: selected.exit_at,
+                  }).manDays ?? "—")}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  방법: {selected.entry_method || "—"}
+                  {selected.corrected ? " · 정정됨" : ""}
+                  {selected.lastFix?.lat != null
+                    ? ` · 위치 ${Number(selected.lastFix.lat).toFixed(5)}, ${Number(selected.lastFix.lng).toFixed(5)} (±${selected.lastFix.accuracy_m ?? "?"}m)`
+                    : ""}
+                </div>
                 <div className="flex gap-3 pt-1">
                   <span>
                     TBM <Mark ok={selected.tbmAttended} />
@@ -539,6 +667,27 @@ export default function WorkerAttendance() {
                   </span>
                 </div>
               </div>
+
+              <SignaturePreview
+                data={selected.dailyAck?.signature_data}
+                label="일일 작업·위험 서약"
+                text={resolvePledgeText("daily_ack", selected.dailyAck?.pledge_text_hash)}
+              />
+              <SignaturePreview
+                data={selected.exit_signature_data}
+                label="퇴근·무재해 서약"
+                text={NO_ACCIDENT_PLEDGE}
+              />
+
+              <WorkerEntryCorrectForm
+                entryLogId={selected.id}
+                entryAt={selected.entry_at}
+                exitAt={selected.exit_at}
+                onDone={() => {
+                  setSelected(null);
+                  void load();
+                }}
+              />
 
               <div className="space-y-3">
                 <h3 className="font-semibold">앱 최초 로그인 동의 (profiles)</h3>

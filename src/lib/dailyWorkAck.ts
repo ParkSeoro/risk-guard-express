@@ -2,6 +2,7 @@
  * Daily work acknowledgment — confirm assigned permits + risk summary, sign once.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { PLEDGE_HASHES } from "@/lib/workHours";
 
 export type DailyPermitBrief = {
   id: string;
@@ -152,6 +153,7 @@ export async function saveDailyWorkAck(payload: DailyAckPayload): Promise<{ id: 
     confirmed_risk: true,
     signature_data: payload.signatureData,
     entry_log_id: payload.entryLogId || null,
+    pledge_text_hash: PLEDGE_HASHES.work,
     updated_at: new Date().toISOString(),
   };
 

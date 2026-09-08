@@ -329,6 +329,22 @@ export default function MobileInspect() {
     }
   };
 
+  const removeItemPhoto = async (item: any, index: number) => {
+    if (readOnly) return;
+    const next = (item.photos || []).filter((_: string, i: number) => i !== index);
+    await supabase.from("safety_inspection_items" as any).update({ photos: next }).eq("id", item.id);
+    setItems(prev => prev.map(x => x.id === item.id ? { ...x, photos: next } : x));
+  };
+
+  const removePatrolPhoto = async (slot: number) => {
+    if (readOnly || !inspectionId) return;
+    const next = [...patrolPhotos];
+    next[slot] = "";
+    const clipped = [next[0] || "", next[1] || ""];
+    setPatrolPhotos(clipped);
+    await supabase.from("safety_inspections" as any).update({ patrol_photos: clipped }).eq("id", inspectionId);
+  };
+
   const setNote = async (item: any, note: string) => {
     setItems(prev => prev.map(x => x.id === item.id ? { ...x, note } : x));
   };
@@ -679,7 +695,17 @@ export default function MobileInspect() {
                       {it.photos?.length > 0 && (
                         <div className="grid grid-cols-3 gap-1">
                           {it.photos.map((u: string, i: number) => (
-                            <img key={i} src={u} className="aspect-square object-cover rounded" />
+                            <div key={`${u}-${i}`} className="relative">
+                              <img src={u} className="aspect-square object-cover rounded w-full" />
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  aria-label="점검 사진 삭제"
+                                  className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-6 h-6 text-sm flex items-center justify-center"
+                                  onClick={() => void removeItemPhoto(it, i)}
+                                >×</button>
+                              )}
+                            </div>
                           ))}
                         </div>
                       )}
@@ -695,7 +721,8 @@ export default function MobileInspect() {
                   <Label>{PATROL_WALK_PHOTO_LABEL} (2장)</Label>
                   <div className="grid grid-cols-2 gap-2">
                     {[0, 1].map((slot) => (
-                      <label key={slot} className="border rounded p-2 text-center text-xs">
+                      <div key={slot} className="relative border rounded p-2 text-center text-xs">
+                      <label>
                         {patrolPhotos[slot] ? (
                           <img src={patrolPhotos[slot]} className="h-24 w-full object-cover rounded mb-1" />
                         ) : (
@@ -703,7 +730,7 @@ export default function MobileInspect() {
                         )}
                         {!readOnly && (
                           <>
-                            <Camera className="h-3 w-3 inline mr-1" />첨부
+                            <Camera className="h-3 w-3 inline mr-1" />{patrolPhotos[slot] ? "교체" : "첨부"}
                             <input type="file" accept="image/*" capture="environment" className="hidden" onChange={async (e) => {
                               const f = e.target.files?.[0];
                               if (!f || !inspectionId) return;
@@ -721,6 +748,15 @@ export default function MobileInspect() {
                           </>
                         )}
                       </label>
+                      {patrolPhotos[slot] && !readOnly && (
+                        <button
+                          type="button"
+                          aria-label="순회 사진 삭제"
+                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-6 h-6 text-sm flex items-center justify-center"
+                          onClick={() => void removePatrolPhoto(slot)}
+                        >×</button>
+                      )}
+                      </div>
                     ))}
                   </div>
                   <Label>날씨</Label>

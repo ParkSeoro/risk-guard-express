@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { OctagonAlert, AlertTriangle, CheckCircle2, Clock, Search, Smartphone, S
 import { toast } from "sonner";
 import { WorkStopPhotos } from "@/components/work-stop/WorkStopPhotos";
 import { parseWorkStopPhotoUrls, WORK_STOP_LEGAL_CITE, workStopDisplayName } from "@/lib/workStop";
+import { fetchRevealedWorkStopNames } from "@/lib/workStopReveal";
 
 type Row = {
   id: string; project_id: string; reporter_name: string; is_anonymous?: boolean;
@@ -31,7 +33,10 @@ type Tab = 'pending' | 'done' | 'rejected' | 'all';
 export default function WorkStopRequests() {
   const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, isSiteManager } = useGlobalProjectAccess();
   const canHandle = isMaster || isProjectAdmin || isSafetyManager || isSiteManager;
+  const [searchParams] = useSearchParams();
+  const openedFromQuery = useRef<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [legalNames, setLegalNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
@@ -46,6 +51,7 @@ export default function WorkStopRequests() {
       .eq("project_id", projectId).order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     setRows((data as Row[]) || []);
+    setLegalNames(await fetchRevealedWorkStopNames(((data as Row[]) || []).map((r) => r.id)));
     setLoading(false);
   }
   useEffect(() => { load(); }, [projectId]);
@@ -67,18 +73,41 @@ export default function WorkStopRequests() {
     if (!q.trim()) return base;
     const key = q.trim().toLowerCase();
     return base.filter(r =>
-      workStopDisplayName(r).toLowerCase().includes(key) ||
+      workStopDisplayName(r, { revealedLegalName: legalNames[r.id] }).toLowerCase().includes(key) ||
       (r.location || '').toLowerCase().includes(key) ||
       r.hazard_description?.toLowerCase().includes(key)
     );
-  }, [rows, tab, q]);
+  }, [rows, tab, q, legalNames]);
 
-  function openHandle(r: Row) {
-    if (!canHandle) { toast.error('처리 권한이 없습니다.'); return; }
+  function openView(r: Row) {
     setEditing(r);
     setForm({ status: r.status === '접수' ? '확인중' : r.status, resolution_note: r.resolution_note || "" });
     setOpen(true);
   }
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (!id || openedFromQuery.current === id) return;
+    const hit = rows.find((r) => r.id === id);
+    if (hit) {
+      openedFromQuery.current = id;
+      openView(hit);
+      return;
+    }
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("work_stop_requests").select("*").eq("id", id).maybeSingle();
+      if (cancelled || !data) return;
+      openedFromQuery.current = id;
+      const extra = await fetchRevealedWorkStopNames([id]);
+      if (cancelled) return;
+      setLegalNames((prev) => ({ ...prev, ...extra }));
+      openView(data as Row);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, searchParams, loading]);
   async function handle() {
     if (!editing) return;
     const payload: any = { status: form.status, resolution_note: form.resolution_note || null };
@@ -100,7 +129,7 @@ export default function WorkStopRequests() {
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><OctagonAlert className="text-destructive" /> 작업중지권 관리</h1>
-          <p className="text-sm text-muted-foreground">{WORK_STOP_LEGAL_CITE} — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다. 익명 신고는 이름이 표시되지 않습니다.</p>
+          <p className="text-sm text-muted-foreground">{WORK_STOP_LEGAL_CITE} — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다. 익명 신고는 소속 관리자 알림에는 이름이 가려지고, 프로젝트 관리자 이상만 포상 등을 위해 실명을 봅니다.</p>
         </div>
         <Button variant="outline" size="sm" asChild>
           <a href="/app/worker/work-stop" target="_blank" rel="noreferrer"><Smartphone className="size-4 mr-1"/> 모바일 신고 페이지</a>
@@ -152,7 +181,7 @@ export default function WorkStopRequests() {
                       {filtered.map(r => (
                         <tr key={r.id} className="border-t hover:bg-muted/30">
                           <td className="p-2 whitespace-nowrap text-xs">{new Date(r.created_at).toLocaleString('ko-KR')}</td>
-                          <td className="p-2">{workStopDisplayName(r)}</td>
+                          <td className="p-2">{workStopDisplayName(r, { revealedLegalName: legalNames[r.id] })}</td>
                           <td className="p-2">{r.location || '-'}</td>
                           <td className="p-2 max-w-md truncate" title={r.hazard_description}>{r.hazard_description}</td>
                           <td className="p-2">
@@ -166,7 +195,7 @@ export default function WorkStopRequests() {
                           <td className="p-2"><Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge></td>
                           <td className="p-2 whitespace-nowrap text-xs">{r.resumed_at ? new Date(r.resumed_at).toLocaleString('ko-KR') : <Clock className="size-3 inline text-muted-foreground"/>}</td>
                           <td className="p-2">
-                            <Button size="sm" variant="ghost" disabled={!canHandle} onClick={() => openHandle(r)}>처리</Button>
+                            <Button size="sm" variant="ghost" onClick={() => openView(r)}>{canHandle ? "처리" : "보기"}</Button>
                           </td>
                         </tr>
                       ))}
@@ -181,14 +210,16 @@ export default function WorkStopRequests() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>작업중지 처리</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{canHandle ? "작업중지 처리" : "작업중지 요청"}</DialogTitle></DialogHeader>
           {editing && (
             <div className="space-y-3">
               <div className="p-3 rounded bg-muted/50 text-sm space-y-2">
-                <div className="font-medium">{workStopDisplayName(editing)} · {editing.location || '위치 미상'}</div>
+                <div className="font-medium">{workStopDisplayName(editing, { revealedLegalName: legalNames[editing.id] })} · {editing.location || '위치 미상'}</div>
                 <div className="text-muted-foreground">{editing.hazard_description}</div>
                 <WorkStopPhotos urls={parseWorkStopPhotoUrls(editing.photo_url)} />
               </div>
+              {canHandle && (
+                <>
               <div>
                 <Label>처리 상태</Label>
                 <select className="w-full border rounded px-3 py-2 text-sm" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
@@ -198,12 +229,14 @@ export default function WorkStopRequests() {
                 </select>
               </div>
               <div><Label>처리 내용</Label><Textarea rows={3} value={form.resolution_note} onChange={e => setForm({ ...form, resolution_note: e.target.value })} /></div>
+                </>
+              )}
               <p className="text-xs text-destructive">⚠️ 작업중지권 행사 근로자에 대한 어떠한 불이익 처우도 금지됩니다 ({WORK_STOP_LEGAL_CITE}).</p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>
-            <Button onClick={handle} disabled={!canHandle}>처리</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{canHandle ? "취소" : "닫기"}</Button>
+            {canHandle && <Button onClick={handle}>처리</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>

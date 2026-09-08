@@ -40,11 +40,37 @@ export type WorkStopIdentityRow = {
   reporter_name?: string | null;
 };
 
-/** Admin / list / push display name. Never returns a stored legal name when anonymous. */
-export function workStopDisplayName(row: WorkStopIdentityRow): string {
-  if (row.is_anonymous) return ANONYMOUS_REPORTER_LABEL;
+/** Admin / list / push display name. Anonymous stays hidden unless PM+ supplied a revealed legal name. */
+export function workStopDisplayName(
+  row: WorkStopIdentityRow,
+  opts?: { revealedLegalName?: string | null },
+): string {
+  if (row.is_anonymous) {
+    const legal = (opts?.revealedLegalName || "").trim();
+    if (legal && legal !== ANONYMOUS_REPORTER_LABEL) {
+      return `${legal} (익명 신고)`;
+    }
+    return ANONYMOUS_REPORTER_LABEL;
+  }
   const name = (row.reporter_name || "").trim();
   return name || "근로자";
+}
+
+/** 프로젝트 관리자·마스터·발주처 PM만 익명 신고자의 실명을 본다. 소속 관리자 알림은 익명 유지. */
+export function canRevealAnonymousWorkStopReporter(opts: {
+  isMaster?: boolean;
+  role?: string | null;
+  position?: string | null;
+}): boolean {
+  if (opts.isMaster) return true;
+  if ((opts.role || "") === "project_admin") return true;
+  return (opts.position || "") === "OWNER_PM";
+}
+
+export function applyRevealedWorkStopName(preview: string, legalName: string | null | undefined): string {
+  const legal = (legalName || "").trim();
+  if (!legal || !preview.includes(ANONYMOUS_REPORTER_LABEL)) return preview;
+  return preview.split(ANONYMOUS_REPORTER_LABEL).join(`${legal} (익명 신고)`);
 }
 
 export function workStopNotifyMessage(row: WorkStopIdentityRow & {

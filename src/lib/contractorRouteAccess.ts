@@ -18,6 +18,7 @@ export const CONTRACTOR_ALLOWED_PREFIXES = [
   "/approvals",
   "/tbm-logs",
   "/incidents",
+  "/alerts",
   "/work-stop",
   "/workers",
   "/ai-assistant",

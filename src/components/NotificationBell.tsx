@@ -10,8 +10,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
-import { resolveNotificationRoute } from '@/lib/notificationRoutes';
+import { resolveNotificationRoute, notificationInboxPath } from '@/lib/notificationRoutes';
 import { notificationPreview, notificationTitle } from '@/lib/notificationText';
+import { applyRevealedWorkStopName } from '@/lib/workStop';
+import { fetchRevealedWorkStopNames, workStopIdsFromNotifications } from '@/lib/workStopReveal';
 
 const resolveRoute = (n: any): string | null => resolveNotificationRoute(n);
 
@@ -22,6 +24,7 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'unread' | 'all'>('unread');
+  const [nameById, setNameById] = useState<Record<string, string>>({});
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -32,6 +35,8 @@ export function NotificationBell() {
       .order('created_at', { ascending: false })
       .limit(30);
     setNotifications(data || []);
+    const revealed = await fetchRevealedWorkStopNames(workStopIdsFromNotifications(data || []));
+    setNameById(revealed);
   }, [user]);
 
   useEffect(() => {
@@ -147,7 +152,9 @@ export function NotificationBell() {
                     <div className="flex-1 min-w-0">
                       <p className={`text-xs ${!n.is_read ? 'font-semibold' : ''}`}>{notificationTitle(n)}</p>
                       {notificationPreview(n) && (
-                        <p className="text-[11px] text-muted-foreground line-clamp-2">{notificationPreview(n)}</p>
+                        <p className="text-[11px] text-muted-foreground line-clamp-2">
+                          {applyRevealedWorkStopName(notificationPreview(n), nameById[String(n.related_id || "")])}
+                        </p>
                       )}
                     </div>
                     {!n.is_read && <div className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1" />}
@@ -166,7 +173,7 @@ export function NotificationBell() {
             variant="ghost"
             size="sm"
             className="h-7 text-xs"
-            onClick={() => { navigate('/app/worker/alerts'); setOpen(false); }}
+            onClick={() => { navigate(notificationInboxPath()); setOpen(false); }}
           >
             전체 보기 →
           </Button>

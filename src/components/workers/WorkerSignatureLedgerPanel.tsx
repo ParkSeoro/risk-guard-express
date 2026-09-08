@@ -13,8 +13,8 @@ import { Link } from "react-router-dom";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
-import { addSeoulDays } from "@/lib/workHours";
 import {
+  defaultSignatureLedgerRange,
   fetchSignatureLedger,
   resolvePledgeText,
   type SignatureKind,
@@ -34,24 +34,31 @@ const KINDS: Array<{ id: "all" | SignatureKind; label: string }> = [
 export default function WorkerSignatureLedgerPanel({
   workerId,
   projectId: projectIdProp,
+  embedded,
 }: {
   workerId?: string;
   projectId?: string;
+  /** 모바일 탭 등 상위 제목이 있을 때 원장 헤더를 숨긴다. */
+  embedded?: boolean;
 }) {
   const { projectId: activeProjectId } = useActiveProject();
   const projectId = projectIdProp || activeProjectId;
   const { log } = useAuditLog();
   const today = todaySeoulDate();
-  const [from, setFrom] = useState(() => addSeoulDays(today, -30));
-  const [to, setTo] = useState(today);
+  const initialRange = defaultSignatureLedgerRange(today);
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   const [kind, setKind] = useState<(typeof KINDS)[number]["id"]>("all");
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SignatureLedgerRow[]>([]);
   const [selected, setSelected] = useState<SignatureLedgerRow | null>(null);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     fetchSignatureLedger({ projectId, workerId, from, to })
@@ -85,14 +92,17 @@ export default function WorkerSignatureLedgerPanel({
     void log("view", "worker_signature", r.id, projectId || undefined, { kind: r.kind, workerId: r.workerId });
   };
 
+  const inWorkerShell =
+    typeof window !== "undefined" && window.location.pathname.startsWith("/app/worker");
+
   return (
     <div className="space-y-4">
-      {!workerId && (
+      {!workerId && !embedded && (
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <PenLine className="h-5 w-5" /> 서명·서약 원장
           </h2>
-          <p className="text-xs text-muted-foreground mt-1">일일서약·무재해·TBM·위험성평가 공유·보호구 수령 서명을 한 곳에서 확인합니다.</p>
+          <p className="text-xs text-muted-foreground mt-1">일일서약·무재해·TBM·위험성평가 공유·보호구 수령 서명을 한 곳에서 확인합니다. 기본은 오늘입니다.</p>
         </div>
       )}
 
@@ -100,11 +110,21 @@ export default function WorkerSignatureLedgerPanel({
         <CardContent className="pt-4 flex gap-2 items-end flex-wrap">
           <div>
             <Label>시작</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              data-testid="signature-ledger-from"
+            />
           </div>
           <div>
             <Label>종료</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              data-testid="signature-ledger-to"
+            />
           </div>
           <div>
             <Label>종류</Label>
@@ -128,7 +148,9 @@ export default function WorkerSignatureLedgerPanel({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">서명 {filtered.length}건</CardTitle>
+          <CardTitle className="text-base" data-testid="signature-ledger-count">
+            {loading ? "서명 불러오는 중…" : `서명 ${filtered.length}건`}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -136,35 +158,63 @@ export default function WorkerSignatureLedgerPanel({
           ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">서명 기록이 없습니다.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted">
-                  <tr>
-                    <th className="text-left p-2">시각</th>
-                    {!workerId && <th className="text-left p-2">근로자</th>}
-                    <th className="text-left p-2">종류</th>
-                    <th className="text-left p-2">내용</th>
-                    <th className="text-left p-2">서명</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r) => (
-                    <tr key={`${r.kind}-${r.id}`} className="border-b cursor-pointer hover:bg-muted/40" onClick={() => openRow(r)}>
-                      <td className="p-2 text-xs">{r.signedAt ? new Date(r.signedAt).toLocaleString("ko-KR") : r.workDate}</td>
-                      {!workerId && (
-                        <td className="p-2">
-                          <div className="font-medium">{r.workerName || "—"}</div>
-                          <div className="text-xs text-muted-foreground">{r.companyName || ""}</div>
-                        </td>
-                      )}
-                      <td className="p-2"><Badge variant="outline">{r.kindLabel}</Badge></td>
-                      <td className="p-2 text-xs max-w-[240px] truncate">{r.detail || "—"}</td>
-                      <td className="p-2">{r.signatureData ? "있음" : "없음"}</td>
+            <>
+              <div className="md:hidden space-y-2">
+                {filtered.map((r) => (
+                  <button
+                    key={`${r.kind}-${r.id}`}
+                    type="button"
+                    className="w-full text-left rounded-lg border p-3 space-y-1 hover:bg-muted/40"
+                    onClick={() => openRow(r)}
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        {!workerId && (
+                          <div className="font-medium text-sm truncate">{r.workerName || "—"}</div>
+                        )}
+                        <div className="text-xs text-muted-foreground truncate">
+                          {r.companyName || ""}
+                          {r.companyName ? " · " : ""}
+                          {r.signedAt ? new Date(r.signedAt).toLocaleString("ko-KR") : r.workDate}
+                        </div>
+                      </div>
+                      <Badge variant="outline">{r.kindLabel}</Badge>
+                    </div>
+                    <div className="text-xs truncate">{r.detail || "—"}</div>
+                    <div className="text-[11px] text-muted-foreground">{r.signatureData ? "서명 있음" : "서명 없음"}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="text-left p-2">시각</th>
+                      {!workerId && <th className="text-left p-2">근로자</th>}
+                      <th className="text-left p-2">종류</th>
+                      <th className="text-left p-2">내용</th>
+                      <th className="text-left p-2">서명</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filtered.map((r) => (
+                      <tr key={`${r.kind}-${r.id}`} className="border-b cursor-pointer hover:bg-muted/40" onClick={() => openRow(r)}>
+                        <td className="p-2 text-xs">{r.signedAt ? new Date(r.signedAt).toLocaleString("ko-KR") : r.workDate}</td>
+                        {!workerId && (
+                          <td className="p-2">
+                            <div className="font-medium">{r.workerName || "—"}</div>
+                            <div className="text-xs text-muted-foreground">{r.companyName || ""}</div>
+                          </td>
+                        )}
+                        <td className="p-2"><Badge variant="outline">{r.kindLabel}</Badge></td>
+                        <td className="p-2 text-xs max-w-[240px] truncate">{r.detail || "—"}</td>
+                        <td className="p-2">{r.signatureData ? "있음" : "없음"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -177,7 +227,7 @@ export default function WorkerSignatureLedgerPanel({
           {selected && (
             <div className="mt-4 space-y-3 text-sm">
               <div>
-                {selected.workerId ? (
+                {selected.workerId && !inWorkerShell ? (
                   <Link className="font-medium underline-offset-2 hover:underline" to={`/app/admin/workers/${selected.workerId}`}>
                     {selected.workerName}
                   </Link>
@@ -189,7 +239,7 @@ export default function WorkerSignatureLedgerPanel({
               <div className="text-xs text-muted-foreground">
                 {selected.signedAt ? new Date(selected.signedAt).toLocaleString("ko-KR") : selected.workDate}
               </div>
-              {selected.kind === "ra_share" && (
+              {selected.kind === "ra_share" && !inWorkerShell && (
                 <Button asChild variant="outline" size="sm">
                   <Link to="/app/admin/assessment-notices">위험성평가 공지</Link>
                 </Button>

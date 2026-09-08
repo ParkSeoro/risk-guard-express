@@ -127,6 +127,13 @@ describe("notification + entity mobile routes", () => {
     expect(toMobileShellPath("/app/admin/settings/account")).toBe("/app/worker/account");
   });
 
+  it("toMobileShellPath keeps worker signature tab query on mobile", () => {
+    expect(toMobileShellPath("/app/admin/workers")).toBe("/app/worker/workers");
+    expect(toMobileShellPath("/app/admin/workers?tab=signatures")).toBe(
+      "/app/worker/workers?tab=signatures",
+    );
+  });
+
   it("assessment_share notifications open the approved run", () => {
     expect(
       resolveNotificationRoute(

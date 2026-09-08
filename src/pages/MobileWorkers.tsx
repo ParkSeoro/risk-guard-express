@@ -25,14 +25,14 @@ import { usePreview, usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
 import WorkerSingleRegisterDialog from "@/components/workers/WorkerSingleRegisterDialog";
 import ForeignRosterPanel from "@/components/workers/ForeignRosterPanel";
+import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
 import {
   formatSuspensionUntil,
   isWorkerCurrentlySuspended,
   suspensionKindLabel,
 } from "@/lib/workerSuspension";
 import { formatWorkHours, workMinutes } from "@/lib/workHours";
-
-type TabKey = "roster" | "attendance";
+import { resolveMobileWorkersTab, type MobileWorkersTab } from "@/lib/mobileWorkers";
 
 type AttendanceRow = {
   worker_id: string | null;
@@ -56,7 +56,7 @@ function fmtTime(iso?: string | null) {
   }
 }
 
-/** Mobile workers — 명부 | 입퇴장 only (no daily/company QR tabs). */
+/** Mobile workers — 명부 | 입퇴장 | (관리자) 서명 원장. */
 export default function MobileWorkers() {
   const [searchParams, setSearchParams] = useSearchParams();
   const goMobileHome = useNavigateMobileHome();
@@ -74,13 +74,12 @@ export default function MobileWorkers() {
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
   const [companyName, setCompanyName] = useState("");
 
-  const initialTab = (searchParams.get("tab") === "attendance" ? "attendance" : "roster") as TabKey;
-  const [tab, setTab] = useState<TabKey>(initialTab);
-
   const canSuspend = isManagerMobileRole(
     preview.isPreview ? preview.syntheticRole : role,
     preview.isPreview ? preview.syntheticRole === "master" : isMaster,
   );
+  const initialTab = resolveMobileWorkersTab(searchParams.get("tab"), canSuspend);
+  const [tab, setTab] = useState<MobileWorkersTab>(initialTab);
 
   const loadRoster = async () => {
     if (!projectId || scopeStatus !== 'ready') return;
@@ -145,11 +144,11 @@ export default function MobileWorkers() {
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "attendance" || t === "roster") setTab(t);
-  }, [searchParams]);
+    setTab(resolveMobileWorkersTab(t, canSuspend));
+  }, [searchParams, canSuspend]);
 
   const onTabChange = (v: string) => {
-    const next = (v === "attendance" ? "attendance" : "roster") as TabKey;
+    const next = resolveMobileWorkersTab(v, canSuspend);
     setTab(next);
     setSearchParams(next === "roster" ? {} : { tab: next }, { replace: true });
   };
@@ -220,9 +219,10 @@ export default function MobileWorkers() {
         )}
 
         <Tabs value={tab} onValueChange={onTabChange}>
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className={`grid w-full ${canSuspend ? "grid-cols-3" : "grid-cols-2"}`}>
             <TabsTrigger value="roster">명부</TabsTrigger>
             <TabsTrigger value="attendance">입퇴장 {onSiteCount > 0 ? `(${onSiteCount})` : ""}</TabsTrigger>
+            {canSuspend && <TabsTrigger value="signatures">서명</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="roster" className="space-y-3 mt-3">
@@ -375,6 +375,19 @@ export default function MobileWorkers() {
               새로고침
             </Button>
           </TabsContent>
+
+          {canSuspend && (
+            <TabsContent value="signatures" className="mt-3">
+              <p className="text-xs text-muted-foreground mb-3">
+                오늘 서명한 일일서약·TBM·RA 공유 등을 확인합니다. 기간을 바꾸면 이전 날짜도 볼 수 있습니다.
+              </p>
+              {projectId ? (
+                <WorkerSignatureLedgerPanel projectId={projectId} embedded />
+              ) : (
+                <p className="text-sm text-muted-foreground py-8 text-center">프로젝트를 선택하세요.</p>
+              )}
+            </TabsContent>
+          )}
         </Tabs>
       </main>
 

@@ -19,6 +19,8 @@ import {
   formatWorkHours,
   STREAK_WARN_DAYS,
   rollupWorkHours,
+  filterWorkHourRows,
+  summarizeVisibleHours,
 } from "@/lib/workHours";
 import { fetchHoursRollup, hoursDisclaimer } from "@/lib/laborEvidence";
 
@@ -84,20 +86,16 @@ export default function WorkerHoursPanel() {
     [rollup],
   );
 
-  const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (rollup?.rows || []).filter((r) => {
-      if (jobFilter !== "all" && r.jobType !== jobFilter) return false;
-      if (companyFilter !== "all" && r.companyName !== companyFilter) return false;
-      if (nightOnly && r.nightMinutes <= 0) return false;
-      if (!q) return true;
-      return (
-        r.workerName.toLowerCase().includes(q) ||
-        r.companyName.toLowerCase().includes(q) ||
-        r.jobType.toLowerCase().includes(q)
-      );
-    });
-  }, [rollup, jobFilter, companyFilter, nightOnly, search]);
+  const filteredRows = useMemo(
+    () =>
+      filterWorkHourRows(rollup?.rows || [], {
+        jobType: jobFilter,
+        companyName: companyFilter,
+        search,
+        nightOnly,
+      }),
+    [rollup, jobFilter, companyFilter, nightOnly, search],
+  );
 
   const display = useMemo(() => {
     let items = rollupWorkHours(filteredRows, group);
@@ -105,7 +103,10 @@ export default function WorkerHoursPanel() {
     return items;
   }, [filteredRows, group, week52Only]);
 
-  const summary = rollup?.summary;
+  const summary = useMemo(
+    () => summarizeVisibleHours(filteredRows, week52Only),
+    [filteredRows, week52Only],
+  );
 
   const exportExcel = () => {
     const rows = filteredRows.map((r) => ({

@@ -314,6 +314,46 @@ export function summarizeHours(rows: WorkHourRow[]) {
   };
 }
 
+export type HoursViewFilter = {
+  jobType?: string;
+  companyName?: string;
+  search?: string;
+  nightOnly?: boolean;
+};
+
+/** KPI cards and the table must use the same filtered set. */
+export function filterWorkHourRows(rows: WorkHourRow[], filter: HoursViewFilter = {}): WorkHourRow[] {
+  const job = String(filter.jobType || "").trim();
+  const company = String(filter.companyName || "").trim();
+  const q = String(filter.search || "").trim().toLowerCase();
+  const jobOn = Boolean(job && job !== "all");
+  const companyOn = Boolean(company && company !== "all");
+  return (rows || []).filter((r) => {
+    if (jobOn && r.jobType !== job) return false;
+    if (companyOn && r.companyName !== company) return false;
+    if (filter.nightOnly && r.nightMinutes <= 0) return false;
+    if (!q) return true;
+    return (
+      r.workerName.toLowerCase().includes(q) ||
+      r.companyName.toLowerCase().includes(q) ||
+      r.jobType.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function summarizeVisibleHours(rows: WorkHourRow[], week52Only = false) {
+  let list = rows;
+  if (week52Only) {
+    const flagged = new Set(
+      rollupWorkHours(list, "worker")
+        .filter((r) => r.week52WarnCount > 0 || r.week52CautionCount > 0)
+        .map((r) => r.key),
+    );
+    list = list.filter((r) => flagged.has(r.workerId));
+  }
+  return summarizeHours(list);
+}
+
 export function hashPledgeText(text: string): string {
   let h = 5381;
   for (let i = 0; i < text.length; i++) {

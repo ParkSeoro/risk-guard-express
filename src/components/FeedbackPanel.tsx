@@ -14,6 +14,11 @@ import { Plus, Camera, CheckCircle2, Clock, AlertTriangle, Image as ImageIcon, S
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import FeedbackAttachmentThumb from '@/components/feedback/FeedbackAttachmentThumb';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
+import {
+  feedbackPhotoRequirement,
+  mergeKeptAndUploaded,
+  removeAtIndex,
+} from '@/lib/feedbackPhotos';
 import { feedbackStatusBadge } from '@/lib/assessmentApprovalPhase';
 
 interface FeedbackItem {
@@ -118,6 +123,8 @@ export default function FeedbackPanel({
   const [formAfterFiles, setFormAfterFiles] = useState<File[]>([]);
   const [formBeforePreviews, setFormBeforePreviews] = useState<string[]>([]);
   const [formAfterPreviews, setFormAfterPreviews] = useState<string[]>([]);
+  const [keptBeforeUrls, setKeptBeforeUrls] = useState<string[]>([]);
+  const [keptAfterUrls, setKeptAfterUrls] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Edit state
@@ -164,26 +171,23 @@ export default function FeedbackPanel({
         return;
       }
     }
-    // Before photo is REQUIRED for new feedback
-    if (!editingId && formBeforeFiles.length === 0) {
-      toast({ title: '조치 전(Before) 사진은 필수입니다.', variant: 'destructive' });
+    const photoCheck = feedbackPhotoRequirement({
+      status: formStatus,
+      keptBefore: keptBeforeUrls,
+      newBeforeCount: formBeforeFiles.length,
+      keptAfter: keptAfterUrls,
+      newAfterCount: formAfterFiles.length,
+    });
+    if (!photoCheck.ok) {
+      toast({ title: photoCheck.error, variant: 'destructive' });
       return;
-    }
-    // After photo is REQUIRED when status is 완료
-    if (formStatus === '완료' && formAfterFiles.length === 0) {
-      // Check if editing and already has after images
-      const existing = editingId ? feedbackList.find(f => f.id === editingId) : null;
-      if (!existing?.after_image_urls?.length) {
-        toast({ title: '완료 처리 시 조치 후(After) 사진이 필수입니다.', variant: 'destructive' });
-        return;
-      }
     }
     setSaving(true);
     try {
-      let beforeUrls: string[] = [];
-      let afterUrls: string[] = [];
-      if (formBeforeFiles.length > 0) beforeUrls = await uploadImages(formBeforeFiles, 'before');
-      if (formAfterFiles.length > 0) afterUrls = await uploadImages(formAfterFiles, 'after');
+      const uploadedBefore = formBeforeFiles.length > 0 ? await uploadImages(formBeforeFiles, 'before') : [];
+      const uploadedAfter = formAfterFiles.length > 0 ? await uploadImages(formAfterFiles, 'after') : [];
+      const beforeUrls = mergeKeptAndUploaded(keptBeforeUrls, uploadedBefore);
+      const afterUrls = mergeKeptAndUploaded(keptAfterUrls, uploadedAfter);
 
       if (editingId) {
         const updateData: Record<string, any> = {
@@ -192,15 +196,9 @@ export default function FeedbackPanel({
           status: formStatus,
           risk_item_id: formRiskItemId || null,
           assignee_user_id: formAssignee || null,
+          before_image_urls: beforeUrls,
+          after_image_urls: afterUrls,
         };
-        if (beforeUrls.length > 0) {
-          const existing = feedbackList.find(f => f.id === editingId);
-          updateData.before_image_urls = [...(existing?.before_image_urls || []), ...beforeUrls];
-        }
-        if (afterUrls.length > 0) {
-          const existing = feedbackList.find(f => f.id === editingId);
-          updateData.after_image_urls = [...(existing?.after_image_urls || []), ...afterUrls];
-        }
         if (formStatus === '완료') updateData.completed_at = new Date().toISOString();
 
         await supabase.from('risk_item_feedback' as any).update(updateData).eq('id', editingId);
@@ -241,14 +239,40 @@ export default function FeedbackPanel({
     setFormAssignee('');
     setFormBeforeFiles([]);
     setFormAfterFiles([]);
-    setFormBeforePreviews([]);
-    setFormAfterPreviews([]);
+    setFormBeforePreviews((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      return [];
+    });
+    setFormAfterPreviews((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      return [];
+    });
+    setKeptBeforeUrls([]);
+    setKeptAfterUrls([]);
   };
 
-  const handleFileChange = (files: File[], setter: (f: File[]) => void, previewSetter: (p: string[]) => void) => {
+  const handleFileChange = (
+    files: File[],
+    setter: (f: File[]) => void,
+    previewSetter: (p: string[]) => void,
+    currentPreviews: string[],
+  ) => {
+    currentPreviews.forEach((url) => URL.revokeObjectURL(url));
     setter(files);
-    const previews = files.map(f => URL.createObjectURL(f));
-    previewSetter(previews);
+    previewSetter(files.map((f) => URL.createObjectURL(f)));
+  };
+
+  const removeNewFile = (
+    index: number,
+    files: File[],
+    previews: string[],
+    fileSetter: (f: File[]) => void,
+    previewSetter: (p: string[]) => void,
+  ) => {
+    const dropped = previews[index];
+    if (dropped) URL.revokeObjectURL(dropped);
+    fileSetter(removeAtIndex(files, index));
+    previewSetter(removeAtIndex(previews, index));
   };
 
   const openEdit = (fb: FeedbackItem) => {
@@ -260,6 +284,10 @@ export default function FeedbackPanel({
     setFormAssignee(fb.assignee_user_id || '');
     setFormBeforeFiles([]);
     setFormAfterFiles([]);
+    setFormBeforePreviews([]);
+    setFormAfterPreviews([]);
+    setKeptBeforeUrls(fb.before_image_urls || []);
+    setKeptAfterUrls(fb.after_image_urls || []);
     setShowAdd(true);
   };
 
@@ -631,7 +659,7 @@ export default function FeedbackPanel({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><Camera className="h-3.5 w-3.5" /> 조치 전 사진 <span className="text-destructive text-[10px]">*필수</span></Label>
-                <Input type="file" accept="image/*,application/pdf,.pdf" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormBeforeFiles, setFormBeforePreviews)} />
+                <Input type="file" accept="image/*,application/pdf,.pdf" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormBeforeFiles, setFormBeforePreviews, formBeforePreviews)} />
                 {formBeforePreviews.length > 0 && (
                   <div className="flex gap-1 flex-wrap">
                     {formBeforePreviews.map((url, i) => (
@@ -642,27 +670,32 @@ export default function FeedbackPanel({
                         mime={formBeforeFiles[i]?.type}
                         name={formBeforeFiles[i]?.name}
                         className="w-14 h-14"
+                        onRemove={() => removeNewFile(i, formBeforeFiles, formBeforePreviews, setFormBeforeFiles, setFormBeforePreviews)}
+                        removeLabel="새 첨부 삭제"
                       />
                     ))}
                   </div>
                 )}
-                {editingId && (() => {
-                  const existing = feedbackList.find(f => f.id === editingId);
-                  return existing?.before_image_urls?.length ? (
-                    <div className="space-y-0.5">
-                      <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진</p>
-                      <div className="flex gap-1">
-                        {existing.before_image_urls.map((url, i) => (
-                          <FeedbackAttachmentThumb key={i} url={url} label="조치 전" className="w-10 h-10" />
-                        ))}
-                      </div>
+                {keptBeforeUrls.length > 0 && (
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-success">기존 {keptBeforeUrls.length}개 · 삭제는 오른쪽 위 ×</p>
+                    <div className="flex gap-1 flex-wrap">
+                      {keptBeforeUrls.map((url, i) => (
+                        <FeedbackAttachmentThumb
+                          key={`${url}-${i}`}
+                          url={url}
+                          label="조치 전"
+                          className="w-10 h-10"
+                          onRemove={() => setKeptBeforeUrls((prev) => removeAtIndex(prev, i))}
+                        />
+                      ))}
                     </div>
-                  ) : null;
-                })()}
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> 조치 후 사진 {formStatus === '완료' && <span className="text-destructive text-[10px]">*필수</span>}</Label>
-                <Input type="file" accept="image/*,application/pdf,.pdf" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormAfterFiles, setFormAfterPreviews)} />
+                <Input type="file" accept="image/*,application/pdf,.pdf" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormAfterFiles, setFormAfterPreviews, formAfterPreviews)} />
                 {formAfterPreviews.length > 0 && (
                   <div className="flex gap-1 flex-wrap">
                     {formAfterPreviews.map((url, i) => (
@@ -673,31 +706,47 @@ export default function FeedbackPanel({
                         mime={formAfterFiles[i]?.type}
                         name={formAfterFiles[i]?.name}
                         className="w-14 h-14"
+                        onRemove={() => removeNewFile(i, formAfterFiles, formAfterPreviews, setFormAfterFiles, setFormAfterPreviews)}
+                        removeLabel="새 첨부 삭제"
                       />
                     ))}
                   </div>
                 )}
-                {editingId && (() => {
-                  const existing = feedbackList.find(f => f.id === editingId);
-                  return existing?.after_image_urls?.length ? (
-                    <div className="space-y-0.5">
-                      <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진</p>
-                      <div className="flex gap-1">
-                        {existing.after_image_urls.map((url, i) => (
-                          <FeedbackAttachmentThumb key={i} url={url} label="조치 후" className="w-10 h-10" />
-                        ))}
-                      </div>
+                {keptAfterUrls.length > 0 && (
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-success">기존 {keptAfterUrls.length}개 · 삭제는 오른쪽 위 ×</p>
+                    <div className="flex gap-1 flex-wrap">
+                      {keptAfterUrls.map((url, i) => (
+                        <FeedbackAttachmentThumb
+                          key={`${url}-${i}`}
+                          url={url}
+                          label="조치 후"
+                          className="w-10 h-10"
+                          onRemove={() => setKeptAfterUrls((prev) => removeAtIndex(prev, i))}
+                        />
+                      ))}
                     </div>
-                  ) : null;
-                })()}
+                  </div>
+                )}
               </div>
             </div>
 
-            {!editingId && formBeforeFiles.length === 0 && (
+            {keptBeforeUrls.length + formBeforeFiles.length === 0 && (
               <p className="text-[10px] text-destructive">⚠ 조치 전 사진을 첨부해야 저장할 수 있습니다.</p>
             )}
+            {formStatus === '완료' && keptAfterUrls.length + formAfterFiles.length === 0 && (
+              <p className="text-[10px] text-destructive">⚠ 완료 처리 시 조치 후 사진이 필요합니다.</p>
+            )}
 
-            <Button onClick={handleSave} className="w-full" disabled={saving || (!editingId && formBeforeFiles.length === 0)}>
+            <Button
+              onClick={handleSave}
+              className="w-full"
+              disabled={
+                saving
+                || keptBeforeUrls.length + formBeforeFiles.length === 0
+                || (formStatus === '완료' && keptAfterUrls.length + formAfterFiles.length === 0)
+              }
+            >
               {saving ? '저장 중...' : editingId ? '수정' : '등록'}
             </Button>
           </div>

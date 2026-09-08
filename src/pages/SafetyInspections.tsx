@@ -474,6 +474,30 @@ export default function SafetyInspections() {
     }
   };
 
+  const removeItemPhoto = async (item: InspItem, index: number) => {
+    if (!assertEditable()) return;
+    const next = (item.photos || []).filter((_, i) => i !== index);
+    await supabase.from('safety_inspection_items' as any).update({ photos: next }).eq('id', item.id);
+    setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, photos: next } : x));
+  };
+
+  const removeActionEvidence = async (action: InspAction, index: number) => {
+    if (!assertEditable()) return;
+    const next = (action.evidence_photos || []).filter((_, i) => i !== index);
+    await supabase.from('safety_inspection_actions' as any).update({ evidence_photos: next }).eq('id', action.id);
+    setDetailActions(prev => prev.map(x => x.id === action.id ? { ...x, evidence_photos: next } : x));
+  };
+
+  const removePatrolPhoto = async (slot: 0 | 1) => {
+    if (!detail || !assertEditable()) return;
+    const next = [...patrolPhotos];
+    next[slot] = '';
+    const clipped = [next[0] || '', next[1] || ''];
+    setPatrolPhotos(clipped);
+    await supabase.from('safety_inspections' as any).update({ patrol_photos: clipped }).eq('id', detail.id);
+    setDetail({ ...detail, patrol_photos: clipped });
+  };
+
   const onItemPhoto = async (item: InspItem, files: FileList | null) => {
     if (!assertEditable()) return;
     if (!files || files.length === 0) return;
@@ -1101,15 +1125,25 @@ export default function SafetyInspections() {
                     <Label className="text-xs">{PATROL_WALK_PHOTO_LABEL} (2장)</Label>
                     <div className="flex gap-2 mt-1">
                       {[0, 1].map((slot) => (
-                        <label key={slot} className={`flex-1 border rounded p-2 text-center text-xs ${isPatrolLogLocked(detail.status) ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}>
-                          {patrolPhotos[slot] ? (
-                            <img src={patrolPhotos[slot]} alt={`${PATROL_WALK_PHOTO_LABEL} ${slot + 1}`} className="h-20 w-full object-cover rounded mb-1" />
-                          ) : (
-                            <div className="h-20 flex items-center justify-center text-muted-foreground">{PATROL_WALK_PHOTO_LABEL} {slot + 1}</div>
+                        <div key={slot} className={`relative flex-1 border rounded p-2 text-center text-xs ${isPatrolLogLocked(detail.status) ? 'opacity-60' : ''}`}>
+                          <label className={isPatrolLogLocked(detail.status) ? '' : 'cursor-pointer hover:bg-accent block'}>
+                            {patrolPhotos[slot] ? (
+                              <img src={patrolPhotos[slot]} alt={`${PATROL_WALK_PHOTO_LABEL} ${slot + 1}`} className="h-20 w-full object-cover rounded mb-1" />
+                            ) : (
+                              <div className="h-20 flex items-center justify-center text-muted-foreground">{PATROL_WALK_PHOTO_LABEL} {slot + 1}</div>
+                            )}
+                            <span className="inline-flex items-center gap-1"><Camera className="h-3 w-3" />{patrolPhotos[slot] ? '교체' : '첨부'}</span>
+                            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={isPatrolLogLocked(detail.status)} onChange={(e) => onPatrolPhoto(slot as 0 | 1, e.target.files)} />
+                          </label>
+                          {patrolPhotos[slot] && !isPatrolLogLocked(detail.status) && (
+                            <button
+                              type="button"
+                              aria-label="순회 사진 삭제"
+                              className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
+                              onClick={() => void removePatrolPhoto(slot as 0 | 1)}
+                            >×</button>
                           )}
-                          <span className="inline-flex items-center gap-1"><Camera className="h-3 w-3" />첨부</span>
-                          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={isPatrolLogLocked(detail.status)} onChange={(e) => onPatrolPhoto(slot as 0 | 1, e.target.files)} />
-                        </label>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1141,7 +1175,19 @@ export default function SafetyInspections() {
                       </div>
                       {(it.photos || []).length > 0 && (
                         <div className="flex flex-wrap gap-1">
-                          {it.photos.map((p, idx) => <img key={idx} src={p} alt="" className="h-16 w-16 object-cover border rounded" />)}
+                          {it.photos.map((p, idx) => (
+                            <div key={`${p}-${idx}`} className="relative">
+                              <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
+                              {!(isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
+                                <button
+                                  type="button"
+                                  aria-label="점검 사진 삭제"
+                                  className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
+                                  onClick={() => void removeItemPhoto(it, idx)}
+                                >×</button>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </CardContent>
@@ -1265,7 +1311,19 @@ export default function SafetyInspections() {
                           </div>
                           {(a.evidence_photos || []).length > 0 && (
                             <div className="flex flex-wrap gap-1">
-                              {a.evidence_photos.map((p, idx) => <img key={idx} src={p} alt="" className="h-16 w-16 object-cover border rounded" />)}
+                              {a.evidence_photos.map((p, idx) => (
+                                <div key={`${p}-${idx}`} className="relative">
+                                  <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
+                                  {!(isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
+                                    <button
+                                      type="button"
+                                      aria-label="증빙 사진 삭제"
+                                      className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
+                                      onClick={() => void removeActionEvidence(a, idx)}
+                                    >×</button>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           )}
                         </CardContent>

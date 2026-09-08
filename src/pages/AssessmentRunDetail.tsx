@@ -3212,11 +3212,15 @@ const AssessmentRunDetail = () => {
                 {(run.worker_participation_images || []).length > 0 ? (
                   <div className="flex gap-2 flex-wrap">
                     {(run.worker_participation_images || []).map((url: string, i: number) => (
-                      <div key={i} className="relative group">
+                      <div key={i} className="relative">
                         <img src={url} alt={`참여사진${i + 1}`} className="w-20 h-20 rounded object-cover border cursor-pointer" onClick={() => window.open(url, '_blank')} />
                         {(canEdit || canForceEdit) && (
-                          <button className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 text-[9px] hidden group-hover:flex items-center justify-center"
-                            onClick={() => handleRemoveWorkerPhoto(i)}>×</button>
+                          <button
+                            type="button"
+                            aria-label="참여 사진 삭제"
+                            className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
+                            onClick={() => handleRemoveWorkerPhoto(i)}
+                          >×</button>
                         )}
                       </div>
                     ))}

@@ -321,6 +321,18 @@ export default function WorkerParticipationPanel({
     }
   };
 
+  const removeAccidentPhoto = async (accidentId: string, index: number) => {
+    if (!canEdit) return;
+    const target = accidents.find(a => a.id === accidentId);
+    const urls = (target?.photo_urls || []).filter((_: string, i: number) => i !== index);
+    const { error } = await supabase.from('assessment_accidents' as any).update({ photo_urls: urls }).eq('id', accidentId);
+    if (error) {
+      toast({ title: '사진 삭제 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await reload();
+  };
+
   const photoUpload = async (e: React.ChangeEvent<HTMLInputElement>, accidentId: string) => {
     const input = e.target;
     const f = input.files?.[0];
@@ -679,7 +691,19 @@ export default function WorkerParticipationPanel({
               </div>
               {a.photo_urls?.length > 0 && (
                 <div className="flex gap-1 flex-wrap">
-                  {a.photo_urls.map((u: string, i: number) => <img key={i} src={u} alt="사고사진" className="w-16 h-16 object-cover rounded border cursor-pointer" onClick={() => window.open(u, '_blank')} />)}
+                  {a.photo_urls.map((u: string, i: number) => (
+                    <div key={`${u}-${i}`} className="relative">
+                      <img src={u} alt="사고사진" className="w-16 h-16 object-cover rounded border cursor-pointer" onClick={() => window.open(u, '_blank')} />
+                      {canEdit && (
+                        <button
+                          type="button"
+                          aria-label="사고 사진 삭제"
+                          className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
+                          onClick={() => void removeAccidentPhoto(a.id, i)}
+                        >×</button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

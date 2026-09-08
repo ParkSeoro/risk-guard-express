@@ -119,7 +119,7 @@ describe("pickPendingSharePrompts", () => {
     ...partial,
   });
 
-  it("drops future weeks and keeps one copy per week+type", () => {
+  it("prompts each approved week on the approval day, one copy per week+type", () => {
     const rows = [
       share({ run_id: "week2-old", created_at: undefined, start_date: "2026-09-07" }),
       share({ run_id: "week2-new", period_label: "2026년09월2주차", start_date: "2026-09-07" }),
@@ -138,7 +138,7 @@ describe("pickPendingSharePrompts", () => {
     ];
     expect(
       pickPendingSharePrompts(rows, { today: "2026-09-07" }).map((r) => r.run_id),
-    ).toEqual(["week2-old", "week2-occasional"]);
+    ).toEqual(["week2-old", "week2-occasional", "week3"]);
   });
 
   it("hides the sibling week after a local dismiss", () => {

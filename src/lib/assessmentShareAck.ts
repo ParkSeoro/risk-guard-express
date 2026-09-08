@@ -55,9 +55,16 @@ export function shareTypeLabel(type?: string | null): string {
   return t ? `${t} 위험성평가` : "위험성평가";
 }
 
+export function shareAckErrorMessage(code?: string | null): string {
+  const raw = String(code || "").trim();
+  if (raw === "NOT_APPROVED") return "아직 승인되지 않은 회차입니다.";
+  if (raw === "WRONG_COMPANY") return "이 회차 대상 업체가 아닙니다.";
+  return raw || "확인 처리에 실패했습니다";
+}
+
 /**
- * Defense-in-depth for the share dialog:
- * drop future weeks, collapse duplicate weekly copies, honor local dismissals.
+ * Collapse duplicate weekly copies and honor local dismissals.
+ * Approved runs prompt on the approval day, including next week's 회차.
  */
 export function pickPendingSharePrompts(
   items: PendingAssessmentShare[],
@@ -67,7 +74,6 @@ export function pickPendingSharePrompts(
     dismissedGroupKeys?: Iterable<string>;
   },
 ): PendingAssessmentShare[] {
-  const today = opts?.today || todaySeoulDate();
   const dismissedIds = new Set(
     [...(opts?.dismissedRunIds || [])].map((id) => String(id || "").trim()).filter(Boolean),
   );
@@ -88,8 +94,6 @@ export function pickPendingSharePrompts(
   const out: PendingAssessmentShare[] = [];
   for (const item of sorted) {
     if (dismissedIds.has(item.run_id)) continue;
-    const start = String(item.start_date || "").trim().slice(0, 10);
-    if (start && start > today) continue;
     const key = sharePromptGroupKey(item);
     if (dismissedGroups.has(key) || seen.has(key)) continue;
     seen.add(key);
@@ -226,9 +230,9 @@ export async function ackAssessmentRunShare(opts: {
     _worker_id: opts.workerId || null,
     _source: opts.source || "notice",
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: shareAckErrorMessage(error.message) };
   const row = (data || {}) as { ok?: boolean; already?: boolean; error?: string };
-  if (row.error) return { ok: false, error: row.error };
+  if (row.error) return { ok: false, error: shareAckErrorMessage(row.error) };
   return { ok: row.ok !== false, already: !!row.already };
 }
 

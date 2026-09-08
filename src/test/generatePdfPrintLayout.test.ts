@@ -34,5 +34,7 @@ describe('generate-pdf RA table layout', () => {
     expect(src).toMatch(/assessment_run_share_acks/);
     expect(src).toMatch(/buildShareSignatureRows/);
     expect(src).toMatch(/safeSignatureSrc/);
+    expect(src).toMatch(/periodRange/);
+    expect(src).toMatch(/pdfFileName/);
   });
 });

@@ -10,11 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
-import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet, Search, Ban, Unlock } from "lucide-react";
+import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet, Search, Ban, Unlock, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
+import WorkerSingleRegisterDialog from "@/components/workers/WorkerSingleRegisterDialog";
 import ForeignRosterPanel from "@/components/workers/ForeignRosterPanel";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
 import {
@@ -72,6 +73,7 @@ export default function WorkerManagement() {
   const [accountStatusByPhone, setAccountStatusByPhone] = useState<Map<string, string>>(new Map());
   const [showQr, setShowQr] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [showSingle, setShowSingle] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [rosterFilter, setRosterFilter] = useState<RosterFilter>("field");
@@ -335,6 +337,9 @@ export default function WorkerManagement() {
                 >
                   <QrCode className="h-4 w-4 mr-2" />등록 QR 표시
                 </Button>
+                <Button variant="outline" onClick={() => setShowSingle(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" />한 명 등록
+                </Button>
                 <Button variant="secondary" onClick={() => setShowBulk(true)}><FileSpreadsheet className="h-4 w-4 mr-2" />엑셀 일괄등록</Button>
                 <Link to="/workers/legal-mapping"><Button variant="outline"><Settings2 className="h-4 w-4 mr-2" />법정 교육 매핑</Button></Link>
               </>
@@ -411,6 +416,7 @@ export default function WorkerManagement() {
                     <div>아직 등록된 근로자가 없습니다.<br />아래 방법 중 하나로 등록하세요.</div>
                     <div className="flex gap-2 justify-center pt-2">
                       <Button size="sm" onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR</Button>
+                      <Button size="sm" variant="outline" onClick={() => setShowSingle(true)}><UserPlus className="h-4 w-4 mr-2" />한 명 등록</Button>
                       <Button size="sm" variant="secondary" onClick={() => setShowBulk(true)}><FileSpreadsheet className="h-4 w-4 mr-2" />엑셀 일괄등록</Button>
                     </div>
                   </div>
@@ -575,6 +581,17 @@ export default function WorkerManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WorkerSingleRegisterDialog
+        projectId={projectId}
+        companyId={companyId}
+        companyName={companies.find((c) => c.id === companyId)?.name || ""}
+        companies={companies}
+        companyLocked={companyLocked}
+        open={showSingle}
+        onClose={() => setShowSingle(false)}
+        onDone={load}
+      />
 
       <WorkerBulkImportDialog
         projectId={projectId}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview, usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
+import WorkerSingleRegisterDialog from "@/components/workers/WorkerSingleRegisterDialog";
 import ForeignRosterPanel from "@/components/workers/ForeignRosterPanel";
 import {
   formatSuspensionUntil,
@@ -56,10 +57,9 @@ function fmtTime(iso?: string | null) {
 
 /** Mobile workers — 명부 | 입퇴장 only (no daily/company QR tabs). */
 export default function MobileWorkers() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const goMobileHome = useNavigateMobileHome();
-  const { projectId, applyCompanyFilter, role, isMaster, accessibleCompanyIds, scopeStatus } = useMobileAccess();
+  const { projectId, companyId, applyCompanyFilter, role, isMaster, accessibleCompanyIds, scopeStatus } = useMobileAccess();
   const preview = usePreview();
   const blockWrite = usePreviewWriteBlock();
   const [workers, setWorkers] = useState<any[]>([]);
@@ -69,6 +69,9 @@ export default function MobileWorkers() {
   const [q, setQ] = useState("");
   const [attQ, setAttQ] = useState("");
   const [suspendTarget, setSuspendTarget] = useState<{ id: string; name: string } | null>(null);
+  const [showSingle, setShowSingle] = useState(false);
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [companyName, setCompanyName] = useState("");
 
   const initialTab = (searchParams.get("tab") === "attendance" ? "attendance" : "roster") as TabKey;
   const [tab, setTab] = useState<TabKey>(initialTab);
@@ -122,8 +125,17 @@ export default function MobileWorkers() {
       return;
     }
     loadRoster();
+    if (projectId) {
+      import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
+        fetchProjectCompanies(projectId).then((rows) => {
+          setCompanies(rows.map((c) => ({ id: c.id, name: c.name })));
+          const mine = rows.find((c) => c.id === companyId);
+          setCompanyName(mine?.name || "");
+        }),
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, accessibleCompanyIds, scopeStatus]);
+  }, [projectId, accessibleCompanyIds, scopeStatus, companyId]);
 
   useEffect(() => {
     if (tab === "attendance") loadAttendance();
@@ -192,8 +204,8 @@ export default function MobileWorkers() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">근로자 · 출입</div>
-        {tab === "roster" && (
-          <Button size="sm" variant="secondary" onClick={() => navigate("/worker/register")}>
+        {tab === "roster" && canSuspend && (
+          <Button size="sm" variant="secondary" onClick={() => setShowSingle(true)}>
             <UserPlus className="h-4 w-4 mr-1" /> 등록
           </Button>
         )}
@@ -367,6 +379,16 @@ export default function MobileWorkers() {
         onOpenChange={(v) => !v && setSuspendTarget(null)}
         worker={suspendTarget}
         onDone={loadRoster}
+      />
+
+      <WorkerSingleRegisterDialog
+        projectId={projectId || ""}
+        companyId={companyId || ""}
+        companyName={companyName}
+        companies={companies}
+        open={showSingle}
+        onClose={() => setShowSingle(false)}
+        onDone={() => void loadRoster()}
       />
 
     </div>

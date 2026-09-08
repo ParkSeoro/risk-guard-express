@@ -344,7 +344,8 @@ export default function WorkerManagement() {
           {projectId && (
             <ForeignRosterPanel
               projectId={projectId}
-              destCompanyName=""
+              companyId={companyId || undefined}
+              destCompanyName={companies.find((c) => c.id === companyId)?.name || ""}
               onTransferred={load}
             />
           )}

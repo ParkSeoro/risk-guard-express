@@ -61,8 +61,19 @@ import {
   zoneCategorySchema,
   isPresenceZoneCategory,
 } from "@/lib/tracking/accessRules";
-import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
+import LeafletDrawControl, {
+  type DrawnShape,
+  type DrawTool,
+} from "@/components/geofence/LeafletDrawControl";
 import { looksLikeWgs84, looksLikeWgs84Ring, GPS_COORDS_INVALID_MSG } from "@/lib/tracking/imageSpaceGeo";
+import {
+  ADDRESS_PIN_RADIUS_M,
+  addressPinBounds,
+  addressPinFitSpec,
+  hasGeoreferencedDrawing,
+  parseProjectAddressPin,
+  type AddressPin,
+} from "@/lib/map/addressPinView";
 import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDangerZones";
 import { zoneBufferM } from "@/lib/tracking/zoneProximity";
 import { softDeletePayload } from "@/lib/dataAccess";
@@ -182,30 +193,47 @@ function FitToTargets({
   enabled,
   token,
   savedView,
+  sitePin,
+  pinRadiusM = ADDRESS_PIN_RADIUS_M,
+  maxZoom = 19,
 }: {
   imageBounds: L.LatLngBoundsExpression | null;
   zones: Zone[];
   enabled: boolean;
   token: string;
   savedView: SiteMapView | null;
+  sitePin?: AddressPin | null;
+  pinRadiusM?: number;
+  maxZoom?: number;
 }) {
   const map = useMap();
   const imageRef = useRef(imageBounds);
   const zonesRef = useRef(zones);
   const viewRef = useRef(savedView);
+  const pinRef = useRef(sitePin);
   imageRef.current = imageBounds;
   zonesRef.current = zones;
   viewRef.current = savedView;
+  pinRef.current = sitePin;
 
   useEffect(() => {
     if (!enabled) return;
     const view = viewRef.current;
-    if (view) {
+    // Saved overlay view only applies when a drawing is on the map.
+    if (view && !pinRef.current) {
       map.setView([view.lat, view.lng], view.zoom, { animate: false });
       return;
     }
     const parts: L.LatLngBoundsExpression[] = [];
     if (imageRef.current) parts.push(imageRef.current);
+    const pin = pinRef.current;
+    if (pin) {
+      const box = addressPinBounds(pin, pinRadiusM);
+      parts.push([
+        [box.south, box.west],
+        [box.north, box.east],
+      ]);
+    }
     for (const z of zonesRef.current) {
       if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
         const c = L.latLng(z.center_lat, z.center_lng);
@@ -220,9 +248,9 @@ function FitToTargets({
       union = union.extend(parts[i] as L.LatLngBoundsExpression);
     }
     if (union.isValid()) {
-      map.fitBounds(union, { padding: [40, 40], maxZoom: 19 });
+      map.fitBounds(union, { padding: [40, 40], maxZoom });
     }
-  }, [map, enabled, token]);
+  }, [map, enabled, token, pinRadiusM, maxZoom]);
   return null;
 }
 
@@ -403,6 +431,15 @@ export default function SiteControlMap() {
   const gpsWatchRef = useRef<number | null>(null);
   const [gpsCal, setGpsCal] = useState<GpsCalibration | null>(null);
   const [focusZoneId, setFocusZoneId] = useState<string | null>(null);
+  const [sitePin, setSitePin] = useState<AddressPin | null>(null);
+  const [sitePinLoaded, setSitePinLoaded] = useState(false);
+  const [zonesLoaded, setZonesLoaded] = useState(false);
+  const hasDrawing = hasGeoreferencedDrawing(activeMap, draftCorners);
+  const addressPinMode = !hasDrawing;
+  const addressFit = addressPinFitSpec({
+    pin: sitePin,
+    zoneCount: zones.filter((z) => z.is_active !== false).length,
+  });
 
   useEffect(() => {
     supabase
@@ -419,8 +456,20 @@ export default function SiteControlMap() {
 
   useEffect(() => {
     if (!projectId) return;
+    setSitePin(null);
+    setSitePinLoaded(false);
+    setZonesLoaded(false);
     void loadMaps();
     void loadZones();
+    void supabase
+      .from("projects")
+      .select("site_lat, site_lng, site_address")
+      .eq("id", projectId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setSitePin(parseProjectAddressPin(data));
+        setSitePinLoaded(true);
+      });
     void fetchProjectCompanies(projectId).then((rows) =>
       setCompanies(rows.map((c) => ({ id: c.id, name: c.name }))),
     );
@@ -437,7 +486,12 @@ export default function SiteControlMap() {
   // Tab switch: map tools vs zone tools — keep shared map/layer state, toggle tool visibility only
   useEffect(() => {
     if (panelTab === "zones") {
-      setLayers((l) => ({ ...l, zones: true, satellite: false }));
+      // No drawing: stay on satellite so operators can draw WGS84 zones on the address pin.
+      setLayers((l) => ({
+        ...l,
+        zones: true,
+        satellite: addressPinMode ? true : false,
+      }));
       void loadZones(); // pick up mobile Walk&Drop without full page reload
     } else {
       setLayers((l) => ({ ...l, satellite: true }));
@@ -448,7 +502,7 @@ export default function SiteControlMap() {
       const id = window.setTimeout(() => mapRef.current?.invalidateSize(), 50);
       return () => window.clearTimeout(id);
     }
-  }, [panelTab]);
+  }, [panelTab, addressPinMode]);
 
   const applyLocalMapRow = useCallback((next: SiteMap) => {
     activeMapRef.current = next;
@@ -622,6 +676,13 @@ export default function SiteControlMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMapGeorefKey]);
 
+  useEffect(() => {
+    if (!addressPinMode || !projectId || !sitePinLoaded || !zonesLoaded) return;
+    setFitToken(
+      `address-${projectId}-${sitePin ? `${sitePin.lat.toFixed(5)},${sitePin.lng.toFixed(5)}` : "none"}`,
+    );
+  }, [addressPinMode, projectId, sitePinLoaded, zonesLoaded, sitePin?.lat, sitePin?.lng]);
+
   const loadMaps = async () => {
     const { data } = await supabase
       .from("site_maps")
@@ -657,6 +718,7 @@ export default function SiteControlMap() {
       .order("created_at", { ascending: false });
     const list = (data || []) as unknown as Zone[];
     setZones(list);
+    setZonesLoaded(true);
     void retireLegacySiteDangerZones(projectId);
   };
 
@@ -808,10 +870,6 @@ export default function SiteControlMap() {
   );
 
   const startGeometryEdit = (z: Zone) => {
-    if (!draftCorners || !activeMap?.image_url) {
-      toast.error("지오레프된 도면이 필요합니다");
-      return;
-    }
     setPanelTab("zones");
     setRedrawZoneId(null);
     setDrawTool(null);
@@ -825,10 +883,6 @@ export default function SiteControlMap() {
   };
 
   const startRedrawZone = (z: Zone) => {
-    if (!draftCorners || !activeMap?.image_url) {
-      toast.error("지오레프된 도면이 필요합니다");
-      return;
-    }
     setPanelTab("zones");
     setGeometryEditZoneId(null);
     setRedrawZoneId(z.id);
@@ -966,9 +1020,29 @@ export default function SiteControlMap() {
     void loadZones();
   };
 
+  const zoneToDrawnShape = (z: Zone): DrawnShape | null => {
+    if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
+      return {
+        kind: "circle",
+        center: { lat: z.center_lat, lng: z.center_lng },
+        radius_m: Number(z.radius_m),
+      };
+    }
+    if (z.geo_polygon && z.geo_polygon.length >= 3) {
+      return { kind: "polygon", latlngs: z.geo_polygon };
+    }
+    return null;
+  };
+
+  const satEditShape = useMemo(() => {
+    if (!addressPinMode || !geometryEditZoneId) return null;
+    const z = zones.find((x) => x.id === geometryEditZoneId);
+    return z ? zoneToDrawnShape(z) : null;
+  }, [addressPinMode, geometryEditZoneId, zones]);
+
   const focusZone = (z: Zone) => {
-    // Zones tab uses CRS canvas (mapRef unmounted) — fly there instead.
-    if (panelTab === "zones" && activeMap?.image_url && draftCorners) {
+    // Zones tab + drawing uses CRS canvas (leaflet hidden) — fly there instead.
+    if (panelTab === "zones" && hasDrawing) {
       setFocusZoneId(z.id);
       const off = isZoneOffImage(z, draftCorners);
       if (off) {
@@ -1140,12 +1214,19 @@ export default function SiteControlMap() {
     [myGps, draftCorners, locateOnce, markOverlayDirty],
   );
 
-  const center: [number, number] = draftCorners
+  const center: [number, number] = hasDrawing && draftCorners
     ? (() => {
         const c = cornersCenter(draftCorners);
         return [c.lat, c.lng] as [number, number];
       })()
-    : [37.5665, 126.978];
+    : sitePin
+      ? [sitePin.lat, sitePin.lng]
+      : [37.5665, 126.978];
+
+  const refitAddressPin = () => {
+    if (!addressPinMode) return;
+    setFitToken(`address-refit-${Date.now()}`);
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
@@ -1452,29 +1533,25 @@ export default function SiteControlMap() {
                   </Accordion>
                 ) : (
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    도면을 업로드하면 모바일 워킹 보정으로 좌표를 맞출 수 있습니다. PC 위성
-                    수동 정렬(고급)은 업로드 후 이 탭에서 펼칠 수 있습니다.
+                    도면이 없으면 프로젝트 주소로 위성을 엽니다. 구역은 [2] 탭에서 위성 위에
+                    바로 그릴 수 있습니다. 도면을 올리면 모바일 워킹 보정으로 맞출 수 있습니다.
                   </p>
                 )}
               </TabsContent>
 
               <TabsContent value="zones" className="mt-3 space-y-3 focus-visible:outline-none">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  아래 버튼으로 평면 도면에 구역을 그립니다. 완료 후 허용/차단 목록 통제를 설정하면
-                  GPS 좌표로 자동 변환·저장됩니다.
+                  {addressPinMode
+                    ? "도면이 없으면 위성(WGS84) 위에 바로 그립니다. 주소 핀은 화면만 맞출 뿐 출퇴근·사이렌 기준이 아닙니다."
+                    : "아래 버튼으로 평면 도면에 구역을 그립니다. 완료 후 허용/차단 목록 통제를 설정하면 GPS 좌표로 자동 변환·저장됩니다."}
                 </p>
-                {!activeMap?.image_url && (
-                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                    먼저 [1] 도면 업로드 탭에서 현장 도면을 올리세요.
+                {addressPinMode && (
+                  <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2 leading-relaxed">
+                    {sitePin
+                      ? "주소 핀으로 위성을 열었습니다. 실제 작업장과 수백 미터 차이 날 수 있습니다. 도면을 올리면 워킹 보정으로 맞출 수 있습니다."
+                      : "프로젝트에 현장 좌표가 없습니다. 위성에서 직접 찾아 그리거나, 프로젝트 주소를 등록하세요."}
                   </div>
                 )}
-                {activeMap?.image_url && !draftCorners && (
-                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                    구역을 그리려면 지오레프가 필요합니다. 모바일 워킹 보정(권장) 또는 PC 위성
-                    TL/TR/BL(고급)을 저장하세요.
-                  </div>
-                )}
-
                 <div className="space-y-1.5">
                   <Label className="text-xs">구역 색상</Label>
                   <div className="flex gap-1.5">
@@ -1501,9 +1578,7 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "rectangle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={
-                        !activeMap?.image_url || !draftCorners || !!geometryEditZoneId
-                      }
+                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners)}
                       onClick={() => {
                         setGeometryEditZoneId(null);
                         setRedrawZoneId(null);
@@ -1516,9 +1591,7 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "polygon" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={
-                        !activeMap?.image_url || !draftCorners || !!geometryEditZoneId
-                      }
+                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners)}
                       onClick={() => {
                         setGeometryEditZoneId(null);
                         setRedrawZoneId(null);
@@ -1531,9 +1604,7 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "circle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={
-                        !activeMap?.image_url || !draftCorners || !!geometryEditZoneId
-                      }
+                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners)}
                       onClick={() => {
                         setGeometryEditZoneId(null);
                         setRedrawZoneId(null);
@@ -1619,7 +1690,7 @@ export default function SiteControlMap() {
 
         <Card className="overflow-hidden">
           <CardContent className="p-0 relative">
-            {panelTab === "zones" && activeMap?.image_url && draftCorners && (
+            {panelTab === "zones" && hasDrawing && (
               <OrthogonalZoneCanvas
                 className="h-[70vh] min-h-[420px] w-full"
                 imageUrl={activeMap.image_url}
@@ -1640,14 +1711,34 @@ export default function SiteControlMap() {
             )}
             <div
               className={`h-[70vh] min-h-[420px] w-full relative z-0${
-                panelTab === "zones" && activeMap?.image_url && draftCorners ? " hidden" : ""
+                panelTab === "zones" && hasDrawing ? " hidden" : ""
               }`}
             >
-              {panelTab === "zones" && (
-                <div className="absolute inset-0 z-[900] flex items-center justify-center bg-muted/80 p-6 text-center text-sm text-muted-foreground">
-                  {activeMap?.image_url
-                    ? "지오레프가 필요합니다. 모바일 워킹 보정(권장) 또는 PC 위성 TL/TR/BL(고급)을 저장하세요."
-                    : "현장 도면을 먼저 업로드하세요."}
+              {addressPinMode && (
+                <div
+                  className="absolute left-3 top-3 z-[1000] max-w-[min(22rem,calc(100%-14rem))] rounded-lg border border-amber-400/70 bg-amber-50/95 px-3 py-2 text-amber-950 shadow-md backdrop-blur-sm"
+                  data-testid="address-pin-banner"
+                  role="status"
+                >
+                  <div className="flex items-start gap-2">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <div className="min-w-0 text-[11px] leading-snug">
+                      <div className="font-semibold">주소 핀 · 실제 작업장과 다를 수 있음</div>
+                      <div className="truncate text-amber-800">
+                        {sitePin?.address ||
+                          (sitePin
+                            ? `${sitePin.lat.toFixed(5)}, ${sitePin.lng.toFixed(5)}`
+                            : "프로젝트 주소 없음")}
+                      </div>
+                      <button
+                        type="button"
+                        className="mt-1 text-[10px] font-medium underline underline-offset-2"
+                        onClick={refitAddressPin}
+                      >
+                        주소로 다시 맞추기
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="absolute top-3 right-3 z-[1000] w-52 rounded-lg border bg-background/95 shadow-md p-3 space-y-2.5 backdrop-blur-sm">
@@ -1661,7 +1752,7 @@ export default function SiteControlMap() {
                   <Switch
                     checked={layers.satellite}
                     onCheckedChange={(v) => setLayers((l) => ({ ...l, satellite: v }))}
-                    disabled={panelTab === "zones"}
+                    disabled={panelTab === "zones" && hasDrawing}
                   />
                 </label>
                 <p className="text-[10px] text-muted-foreground leading-snug -mt-1">
@@ -1691,7 +1782,19 @@ export default function SiteControlMap() {
                 <VWorldBasemap satellite={layers.satellite} />
 
                 <MapBridge onMap={onMapReady} seedRequest={seedRequest} onSeedCorners={onSeedCorners} />
-                <MapViewSync enabled={panelTab === "mapping"} onView={onMapViewChange} />
+                <MapViewSync enabled={panelTab === "mapping" && hasDrawing} onView={onMapViewChange} />
+                {addressPinMode && panelTab === "zones" && (
+                  <LeafletDrawControl
+                    enabled
+                    activeTool={drawTool}
+                    drawColor={drawColor}
+                    onShapeCreated={onShapeCreated}
+                    onToolFinished={() => setDrawTool(null)}
+                    editShape={satEditShape}
+                    editCommitToken={editCommitToken}
+                    onShapeEdited={onGeoShapeEdited}
+                  />
+                )}
 
                 {layers.drone && activeMap?.image_url && draftCorners && (
                   <RotatedImageOverlay
@@ -1726,11 +1829,18 @@ export default function SiteControlMap() {
                 )}
 
                 <FitToTargets
-                  imageBounds={layers.drone ? leafletBounds : null}
+                  imageBounds={layers.drone && hasDrawing ? leafletBounds : null}
                   zones={layers.zones ? zones.filter((z) => z.is_active !== false) : []}
                   enabled
                   token={fitToken}
-                  savedView={restoredView}
+                  savedView={hasDrawing ? restoredView : null}
+                  sitePin={addressPinMode ? sitePin : null}
+                  pinRadiusM={
+                    addressFit.mode === "pin" || addressFit.mode === "pin+zones"
+                      ? addressFit.radiusM
+                      : ADDRESS_PIN_RADIUS_M
+                  }
+                  maxZoom={addressPinMode ? (addressFit.mode === "none" ? 16 : addressFit.maxZoom) : 19}
                 />
 
                 {layers.zones && pendingShape?.kind === "polygon" && (
@@ -1857,7 +1967,7 @@ export default function SiteControlMap() {
                           size="icon"
                           className="h-7 w-7"
                           title="꼭짓점·이동 편집"
-                          disabled={!draftCorners || !!savingGeometry}
+                          disabled={!!savingGeometry || (hasDrawing && !draftCorners)}
                           onClick={() => startGeometryEdit(z)}
                         >
                           <Move className="h-3.5 w-3.5" />
@@ -1868,7 +1978,7 @@ export default function SiteControlMap() {
                           size="icon"
                           className="h-7 w-7"
                           title="다시 그리기"
-                          disabled={!draftCorners || !!savingGeometry}
+                          disabled={!!savingGeometry || (hasDrawing && !draftCorners)}
                           onClick={() => startRedrawZone(z)}
                         >
                           <PencilRuler className="h-3.5 w-3.5" />

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isClientType } from "@/lib/companyTypes";
 import {
+  isManagerTbmSignPath,
   managerTbmSignPath,
   mapPendingManagerTbmSign,
   needsManagerTbmSign,
@@ -26,6 +27,9 @@ describe("managerTbmSignPath", () => {
   it("deep-links a session", () => {
     expect(managerTbmSignPath("abc")).toBe("/app/worker/tbm-sign?session=abc");
     expect(managerTbmSignPath()).toBe("/app/worker/tbm-sign");
+    expect(isManagerTbmSignPath("/app/worker/tbm-sign")).toBe(true);
+    expect(isManagerTbmSignPath("/app/worker/tbm-sign/")).toBe(true);
+    expect(isManagerTbmSignPath("/app/worker/tbm")).toBe(false);
   });
 });
 

@@ -12,6 +12,12 @@ export function managerTbmSignPath(sessionId?: string | null): string {
     : "/app/worker/tbm-sign";
 }
 
+/** Desktop admins are otherwise bounced off /app/worker — keep this sign flow reachable. */
+export function isManagerTbmSignPath(pathname?: string | null): boolean {
+  const p = String(pathname || "").replace(/\/+$/, "") || "/";
+  return p === "/app/worker/tbm-sign";
+}
+
 export type PendingManagerTbmSign = {
   session_id: string;
   project_id: string;

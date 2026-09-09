@@ -122,6 +122,15 @@ Deno.serve(async (req) => {
       console.warn("close_expired_tbm_sessions", e);
     }
 
+    // 7) 시공사 이하 관리자: 오늘 TBM 확인·서명 아침 알람 (발주처 제외)
+    let tbmSignDue = 0;
+    try {
+      const { data: sCount } = await supabase.rpc("notify_manager_tbm_sign_due");
+      tbmSignDue = (sCount as number) || 0;
+    } catch (e) {
+      console.warn("notify_manager_tbm_sign_due", e);
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -131,6 +140,7 @@ Deno.serve(async (req) => {
         legalDutyTodos,
         closurePromoted,
         tbmClosed,
+        tbmSignDue,
         date: todayStr,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },

@@ -40,6 +40,8 @@ const tbmSchema = z.object({
 });
 
 import { tbmInAppPath, tbmPublicUrl } from "@/lib/tbmUrls";
+import { isClientType } from "@/lib/companyTypes";
+import { managerTbmSignPath } from "@/lib/managerTbmSign";
 
 type TbmSession = {
   id: string;
@@ -59,7 +61,7 @@ export default function MobileTbm() {
   const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
   const { profile } = useAuth();
-  const { projectId, companyId, applyCompanyFilter, role, isMaster } = useMobileAccess();
+  const { projectId, companyId, applyCompanyFilter, role, isMaster, companyType } = useMobileAccess();
   const preview = usePreview();
   const { log: logAudit } = useAuditLog();
 
@@ -422,9 +424,16 @@ export default function MobileTbm() {
                       {s.is_active === false ? "종료" : "진행중"}
                     </Badge>
                   </div>
-                  <Button className="w-full" variant="outline" onClick={() => openQr(s)}>
-                    <QrCode className="h-4 w-4 mr-1" /> QR · 참여자
-                  </Button>
+                  <div className="grid grid-cols-1 gap-2">
+                    {viewingToday && !isClientType(companyType) && (
+                      <Button className="w-full" onClick={() => navigate(managerTbmSignPath(s.id))}>
+                        <FileSignature className="h-4 w-4 mr-1" /> 확인 · 서명
+                      </Button>
+                    )}
+                    <Button className="w-full" variant="outline" onClick={() => openQr(s)}>
+                      <QrCode className="h-4 w-4 mr-1" /> QR · 참여자
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}

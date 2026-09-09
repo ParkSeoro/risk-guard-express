@@ -19,6 +19,7 @@ import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
+import { formatTbmParticipationTime } from '@/lib/tbmParticipationTime';
 import { useAuth } from '@/contexts/AuthContext';
 import { TbmSessionPhotos } from '@/components/tbm/TbmSessionPhotos';
 import { parseTbmPhotoUrls, tbmPhotoCountLabel } from '@/lib/tbmPhotos';
@@ -468,7 +469,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <td>${esc(p.worker_name)}</td>
           <td>${esc(p.worker_phone)}</td>
           <td>${esc(p.company_name || '-')}</td>
-          <td class="center">${fmtDate(p.participated_at)}</td>
+          <td class="center">${isRenderableSignature(p.signature_data) ? fmtDate(p.participated_at) : '미서명'}</td>
           <td class="center">${isRenderableSignature(p.signature_data) ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
         </tr>`).join('');
 
@@ -977,7 +978,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                 {p.signature_data && <img src={p.signature_data} alt="sig" className="h-12 w-24 object-contain border rounded bg-white" />}
                 <div className="flex-1 text-sm">
                   <p className="font-semibold">{p.worker_name} <span className="text-xs text-muted-foreground">({p.worker_phone})</span></p>
-                  <p className="text-xs text-muted-foreground">{p.company_name || '-'} · {new Date(p.participated_at).toLocaleString('ko-KR')}</p>
+                  <p className="text-xs text-muted-foreground">{p.company_name || '-'} · {formatTbmParticipationTime(p)}</p>
                 </div>
               </div>
             ))}

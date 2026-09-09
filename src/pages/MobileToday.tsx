@@ -27,11 +27,13 @@ import { isIosSafariTab } from "@/lib/pushSubscription";
 import { isIosWebClient, isWebStandalone } from "@/lib/iosWebPath";
 import { isNativeApp } from "@/lib/native/isNativeApp";
 import { anyMapHasGeoref } from "@/lib/mapBounds";
+import { isClientType } from "@/lib/companyTypes";
+import { managerTbmSignPath } from "@/lib/managerTbmSign";
 
 export default function MobileToday() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { role, isMaster, projectId, loading } = useMobileAccess();
+  const { role, isMaster, projectId, loading, companyType } = useMobileAccess();
   const preview = usePreview();
   const effectiveRole = preview.isPreview ? preview.syntheticRole : role;
   const manager = isManagerMobileRole(
@@ -71,6 +73,7 @@ export default function MobileToday() {
     <ManagerToday
       projectId={projectId || preview.previewProjectId}
       role={effectiveRole}
+      companyType={companyType}
     />
   );
 }
@@ -122,9 +125,11 @@ function HealthDueCard({ projectId }: { projectId: string }) {
 function ManagerToday({
   projectId,
   role,
+  companyType,
 }: {
   projectId: string;
   role: string;
+  companyType?: string | null;
 }) {
   const navigate = useNavigate();
   const unread = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
@@ -133,13 +138,15 @@ function ManagerToday({
   const [workStops, setWorkStops] = useState<number | null>(null);
   const [onSite, setOnSite] = useState<number | null>(null);
   const [needsWalkCalibration, setNeedsWalkCalibration] = useState(false);
+  const [pendingTbmSigns, setPendingTbmSigns] = useState<number>(0);
+  const [firstTbmSignSession, setFirstTbmSignSession] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!projectId) return;
       try {
-        const [appr, acts, stops, att, proj] = await Promise.all([
+        const [appr, acts, stops, att, proj, tbmSigns] = await Promise.all([
           supabase.rpc("get_my_pending_entity_approvals" as any).then((r) => r.data),
           supabase
             .from("safety_inspection_actions" as any)
@@ -168,6 +175,9 @@ function ManagerToday({
             .eq("project_id", projectId)
             .eq("is_deleted", false)
             .limit(8),
+          isClientType(companyType)
+            ? Promise.resolve({ data: [] as any[] })
+            : supabase.rpc("list_my_pending_tbm_signs" as any),
         ]);
         if (cancelled) return;
         const list = Array.isArray(appr) ? appr : appr ? [appr] : [];
@@ -175,6 +185,10 @@ function ManagerToday({
         setOpenActions(acts ?? 0);
         setWorkStops(stops ?? 0);
         setOnSite(att ?? 0);
+        const signRows = ((tbmSigns as any)?.data as any[]) || [];
+        const forProject = signRows.filter((r) => !projectId || r.project_id === projectId);
+        setPendingTbmSigns(forProject.length);
+        setFirstTbmSignSession(forProject[0]?.session_id || forProject[0]?.id || null);
         const maps = Array.isArray(proj.data) ? proj.data : [];
         // Walk A/B/C writes site_maps.geo_transform and CLEARS projects.gps_calibration.
         // Nag only when a drawing exists but has no georef — not when 1-point bias is empty.
@@ -186,7 +200,7 @@ function ManagerToday({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, companyType]);
 
   const tiles = [
     {
@@ -238,6 +252,22 @@ function ManagerToday({
       </div>
 
       {!projectId && <MobileProjectPicker />}
+
+      {!isClientType(companyType) && pendingTbmSigns > 0 && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardContent className="p-3 flex items-center gap-2 text-sm">
+            <PenLine className="h-4 w-4 text-amber-700 shrink-0" />
+            <span className="flex-1">오늘 TBM을 확인하고 서명해 주세요. ({pendingTbmSigns}건)</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => navigate(managerTbmSignPath(firstTbmSignSession))}
+            >
+              서명
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {(workStops ?? 0) > 0 && (
         <Card className="border-destructive/40 bg-destructive/5">

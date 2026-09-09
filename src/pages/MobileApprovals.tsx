@@ -214,7 +214,7 @@ export default function MobileApprovals() {
 
           {openId === r.approval_id ? (
             <div className="space-y-2 pt-2 border-t">
-              <IMESafeTextarea rows={2} placeholder="의견/사유 (반려 시 필수)" defaultValue={comment} onCommit={setComment} />
+              <IMESafeTextarea rows={6} className="min-h-[8rem] resize-y" placeholder="의견/사유 (반려 시 필수, 여러 줄 가능)" defaultValue={comment} onCommit={setComment} />
               <div className="grid grid-cols-3 gap-2">
                 <Button variant="outline" onClick={() => { setOpenId(null); setComment(""); }}>취소</Button>
                 <Button variant="destructive" onClick={() => decide(r, "reject")} disabled={submitting}>
@@ -286,7 +286,9 @@ export default function MobileApprovals() {
             {s.step_order != null ? `${s.step_order}. ` : ""}
             {s.step || s.position || "단계"} · {s.status}
             {s.approver_name ? ` · ${s.approver_name}` : ""}
-            {s.comment ? ` · "${s.comment}"` : ""}
+            {s.comment ? (
+              <div className="mt-0.5 whitespace-pre-wrap">사유: {s.comment}</div>
+            ) : null}
           </div>
         ));
       return (

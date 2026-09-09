@@ -75,8 +75,9 @@ export default function MobileApprovalActions({
   return (
     <div className="space-y-2 pt-1" data-testid="mobile-approval-actions">
       <IMESafeTextarea
-        rows={2}
-        placeholder={kind !== "normal" ? "의견 (선택) / 반려 시 필수" : "의견/사유 (반려 시 필수)"}
+        rows={6}
+        className="min-h-[8rem] resize-y"
+        placeholder={kind !== "normal" ? "의견 (선택) / 반려 시 필수 (여러 줄 가능)" : "의견/사유 (반려 시 필수, 여러 줄 가능)"}
         defaultValue={comment}
         onCommit={setComment}
       />

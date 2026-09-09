@@ -274,8 +274,9 @@ export default function MobileApprovalDetail() {
                 )}
 
                 <IMESafeTextarea
-                  rows={3}
-                  placeholder={stepKind !== "normal" ? "의견 (선택) / 반려 시 필수" : "의견/사유 (반려 시 필수)"}
+                  rows={6}
+                  className="min-h-[8rem] resize-y"
+                  placeholder={stepKind !== "normal" ? "의견 (선택) / 반려 시 필수 (여러 줄 가능)" : "의견/사유 (반려 시 필수, 여러 줄 가능)"}
                   defaultValue={comment}
                   onCommit={setComment}
                 />

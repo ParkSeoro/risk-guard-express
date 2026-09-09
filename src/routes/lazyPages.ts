@@ -44,6 +44,7 @@ export const LazyWorkerPortal = L(() => import("@/pages/WorkerPortal"));
 export const LazyWorkerEntry = L(() => import("@/pages/WorkerEntry"));
 export const LazyWorkerRegister = L(() => import("@/pages/WorkerRegister"));
 export const LazyTbmParticipate = L(() => import("@/pages/TbmParticipate"));
+export const LazyMobileTbmSign = L(() => import("@/pages/MobileTbmSign"));
 export const LazyZoneCheckin = L(() => import("@/pages/ZoneCheckin"));
 
 // ── Admin / manager (heavy — charts, leaflet, designers) ─────

@@ -25,6 +25,7 @@ import {
 } from "@/lib/tracking/sirenHysteresis";
 import {
   resolveSiteTrackingFence,
+  ZONE_APPROACH_EXIT_STREAK,
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
 import {
@@ -35,7 +36,12 @@ import {
   saveStickyDangerAlert,
   shouldRestoreStickyDangerAlert,
 } from "@/lib/tracking/dangerAlertSticky";
+import {
+  findZoneProximity,
+  isGpsAccurateEnoughForApproach,
+} from "@/lib/tracking/zoneProximity";
 import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
+import ZoneApproachBanner from "@/components/geofence/ZoneApproachBanner";
 
 function isEntryEventType(t: string): boolean {
   return /unauthorized|restricted|danger|ban/i.test(t) && !/exit|leave|depart/i.test(t);
@@ -50,6 +56,12 @@ export default function ShellGeofenceAlerts() {
   const { projectId, role, companyId } = useMobileAccess();
   const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string; confirming?: boolean } | null>(null);
+  const [approach, setApproach] = useState<{
+    id: string;
+    name: string;
+    distanceM: number;
+    accuracyM?: number | null;
+  } | null>(null);
   const [zonesGen, setZonesGen] = useState(0);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
   const zonesProjectRef = useRef<string | null>(null);
@@ -59,6 +71,9 @@ export default function ShellGeofenceAlerts() {
   const entryStreak = useRef(0);
   /** User tapped dismiss — suppress until they leave that zone. */
   const dismissedZoneId = useRef<string | null>(null);
+  const dismissedApproachZoneId = useRef<string | null>(null);
+  const approachExitStreak = useRef(0);
+  const approachVibratedId = useRef<string | null>(null);
   const lastOsNotifyAt = useRef(0);
   const lastGpsFixRef = useRef(lastGpsFix);
   lastGpsFixRef.current = lastGpsFix;
@@ -106,7 +121,7 @@ export default function ShellGeofenceAlerts() {
     const { data } = await supabase
       .from("restricted_zones")
       .select(
-        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color, is_active",
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, buffer_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color, is_active",
       )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
@@ -341,6 +356,65 @@ export default function ShellGeofenceAlerts() {
     openAlert({ id: clientHit.id, name: clientHit.name, confirming: true });
   }, [lastGpsFix, projectId, gpsTracking, openAlert, clearAlert]);
 
+  // Approach banner — parallel to the siren. Never opens the modal / TTS / OS siren.
+  useEffect(() => {
+    if (!gpsTracking || !lastGpsFix || !projectId) {
+      setApproach(null);
+      approachExitStreak.current = 0;
+      return;
+    }
+    const rawLat = lastGpsFix.raw_lat ?? lastGpsFix.lat;
+    const rawLng = lastGpsFix.raw_lng ?? lastGpsFix.lng;
+    if (
+      shouldSuppressLocalSirenOffsite({
+        fence: fenceRef.current,
+        rawLat,
+        rawLng,
+        accuracyM: lastGpsFix.accuracy,
+        allowOffsite: readMasterOffsiteAlarmTest(),
+      })
+    ) {
+      approachExitStreak.current = 0;
+      dismissedApproachZoneId.current = null;
+      approachVibratedId.current = null;
+      setApproach(null);
+      return;
+    }
+    if (!isGpsAccurateEnoughForApproach(lastGpsFix.accuracy)) return;
+
+    const prox = findZoneProximity(
+      lastGpsFix.lat,
+      lastGpsFix.lng,
+      zonesRef.current,
+      subjectRef.current,
+    );
+    if (!prox) {
+      approachExitStreak.current += 1;
+      if (approachExitStreak.current >= ZONE_APPROACH_EXIT_STREAK) {
+        dismissedApproachZoneId.current = null;
+        approachVibratedId.current = null;
+        setApproach(null);
+      }
+      return;
+    }
+    approachExitStreak.current = 0;
+    if (dismissedApproachZoneId.current === prox.zone.id) return;
+    if (approachVibratedId.current !== prox.zone.id) {
+      approachVibratedId.current = prox.zone.id;
+      try {
+        navigator.vibrate?.(80);
+      } catch {
+        /* ignore */
+      }
+    }
+    setApproach({
+      id: prox.zone.id,
+      name: prox.zone.name,
+      distanceM: prox.distanceM,
+      accuracyM: lastGpsFix.accuracy,
+    });
+  }, [lastGpsFix, projectId, gpsTracking]);
+
   useEffect(() => {
     if (!lastZoneEvent) return;
     const ev = lastZoneEvent as {
@@ -435,17 +509,30 @@ export default function ShellGeofenceAlerts() {
   }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert, loadZones, profile?.phone]);
 
   return (
-    <DangerZoneAlertModal
-      open={!!alertZone}
-      zoneName={alertZone?.name}
-      confirming={!!alertZone?.confirming}
-      workerName={profile?.display_name}
-      workerRole={role}
-      onDismiss={() => {
-        if (alertZone?.id) dismissedZoneId.current = alertZone.id;
-        setAlertZone(null);
-        clearStickyDangerAlert();
-      }}
-    />
+    <>
+      {!alertZone && approach && (
+        <ZoneApproachBanner
+          zoneName={approach.name}
+          distanceM={approach.distanceM}
+          accuracyM={approach.accuracyM}
+          onDismiss={() => {
+            dismissedApproachZoneId.current = approach.id;
+            setApproach(null);
+          }}
+        />
+      )}
+      <DangerZoneAlertModal
+        open={!!alertZone}
+        zoneName={alertZone?.name}
+        confirming={!!alertZone?.confirming}
+        workerName={profile?.display_name}
+        workerRole={role}
+        onDismiss={() => {
+          if (alertZone?.id) dismissedZoneId.current = alertZone.id;
+          setAlertZone(null);
+          clearStickyDangerAlert();
+        }}
+      />
+    </>
   );
 }

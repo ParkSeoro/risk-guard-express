@@ -55,6 +55,11 @@ export const SITE_EXIT_MAX_ACCURACY_M = 55;
 /** Local danger siren: ignore junk fixes on both open and close. */
 export const SIREN_MAX_ACCURACY_M = 40;
 
+/** Approach banner (not the siren): allow a slightly looser GPS circle. */
+export const ZONE_APPROACH_MAX_ACCURACY_M = 60;
+/** Consecutive outside-buffer samples before the approach banner closes. */
+export const ZONE_APPROACH_EXIT_STREAK = 2;
+
 /**
  * Off-site low-power resume probe (F-03).
  * ~12 samples/hour at home vs ~80/hour at 45s eco — keeps the OS GPS icon off

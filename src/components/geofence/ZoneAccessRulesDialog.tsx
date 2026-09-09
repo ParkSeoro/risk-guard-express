@@ -35,6 +35,11 @@ import {
 import { jobCategoryEntries } from "@/lib/jobCategories";
 import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
 import { formatGpsPreview } from "@/lib/tracking/imageSpaceGeo";
+import {
+  parseZoneBufferInput,
+  ZONE_BUFFER_DEFAULT_M,
+  ZONE_BUFFER_MAX_M,
+} from "@/lib/tracking/zoneProximity";
 
 export type ZoneDraftPayload = {
   name: string;
@@ -43,6 +48,8 @@ export type ZoneDraftPayload = {
   rule_type: ZoneRuleType;
   access_rules: AccessRules;
   shape: DrawnShape | null;
+  /** Approach ring in meters. NULL = client default. 0 = off. */
+  buffer_m: number | null;
   /** When set, update existing zone instead of insert */
   zoneId?: string;
 };
@@ -54,6 +61,7 @@ export type ZoneEditSeed = {
   zone_color?: string | null;
   rule_type?: string | null;
   access_rules?: unknown;
+  buffer_m?: number | null;
 };
 
 type CompanyOpt = { id: string; name: string };
@@ -85,6 +93,7 @@ export default function ZoneAccessRulesDialog({
   const [zoneColor, setZoneColor] = useState<string>(defaultColor);
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [jobTypes, setJobTypes] = useState<string[]>([]);
+  const [bufferM, setBufferM] = useState(String(ZONE_BUFFER_DEFAULT_M));
 
   useEffect(() => {
     if (!open) return;
@@ -101,6 +110,9 @@ export default function ZoneAccessRulesDialog({
       setZoneColor(editZone.zone_color || defaultColor);
       setCompanyIds(parsed.company_ids || []);
       setJobTypes(parsed.job_types || []);
+      setBufferM(
+        editZone.buffer_m != null ? String(editZone.buffer_m) : String(ZONE_BUFFER_DEFAULT_M),
+      );
       return;
     }
     setName("위험구역");
@@ -109,6 +121,7 @@ export default function ZoneAccessRulesDialog({
     setZoneColor(defaultColor);
     setCompanyIds([]);
     setJobTypes([]);
+    setBufferM(String(ZONE_BUFFER_DEFAULT_M));
   }, [open, shape, editZone, defaultColor]);
 
   const toggleCompany = (id: string, on: boolean) => {
@@ -120,7 +133,8 @@ export default function ZoneAccessRulesDialog({
 
   const presence = isPresenceZoneCategory(category);
   const hasTargets = companyIds.length > 0 || jobTypes.length > 0;
-  const canSave = (!!shape || !!editZone) && (presence || hasTargets);
+  const bufferOk = presence || parseZoneBufferInput(bufferM).ok;
+  const canSave = (!!shape || !!editZone) && (presence || hasTargets) && bufferOk;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -129,6 +143,8 @@ export default function ZoneAccessRulesDialog({
     const access_rules = presence
       ? buildAccessRules("DENY", ["00000000-0000-0000-0000-000000000000"], [])
       : buildAccessRules(ruleType, companyIds, jobTypes);
+    const buffer = parseZoneBufferInput(bufferM);
+    if (!presence && !buffer.ok) return;
     await onSave({
       name: name.trim() || (presence ? category : "위험구역"),
       zone_category: catParsed.data,
@@ -136,6 +152,7 @@ export default function ZoneAccessRulesDialog({
       rule_type: presence ? "DENY" : ruleType,
       access_rules,
       shape: shape,
+      buffer_m: presence ? null : buffer.ok ? buffer.value : null,
       zoneId: editZone?.id,
     });
   };
@@ -228,6 +245,28 @@ export default function ZoneAccessRulesDialog({
             <p className="text-xs text-muted-foreground rounded-md bg-muted/50 px-2 py-1.5">
               근로자마다 지정하지 않습니다. 이 폴리곤 안에 GPS가 들어오면 분포도에 자동으로 집계됩니다. 출입 알람은 없습니다.
             </p>
+          )}
+
+          {!presence && (
+            <div className="space-y-1.5">
+              <Label>접근 경고 반경 (m)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={ZONE_BUFFER_MAX_M}
+                step={1}
+                value={bufferM}
+                onChange={(e) => setBufferM(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                구역 바깥에서 미리 알려 주는 거리입니다. 비우면 {ZONE_BUFFER_DEFAULT_M}m,
+                0이면 접근 경고 없음. 휴대폰 GPS는 철골·실내에서 실제 오차가 20–50m일 수
+                있으니 맞닿은 작업구역은 0을 권장합니다. 사이렌(구역 안)은 이 값과 무관합니다.
+              </p>
+              {!parseZoneBufferInput(bufferM).ok && (
+                <p className="text-[11px] text-destructive">0–{ZONE_BUFFER_MAX_M}m만 입력하세요.</p>
+              )}
+            </div>
           )}
 
           {!presence && <div className="space-y-2">

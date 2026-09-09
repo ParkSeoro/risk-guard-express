@@ -79,7 +79,11 @@ export default function MobileShell({ children }: { children: ReactNode }) {
               {!projectId ? " · 프로젝트 미선택" : ""}
             </div>
           </div>
-          <GpsStatusChip tracking={gpsUi.tracking} block={gpsUi.block} />
+          <GpsStatusChip
+            tracking={gpsUi.tracking}
+            block={gpsUi.block}
+            accuracyM={gpsUi.accuracyM}
+          />
           <Badge variant="secondary" className="text-[10px] shrink-0">
             {bucket === "worker" ? "근로자" : bucket === "master" ? "마스터" : "관리자"}
           </Badge>

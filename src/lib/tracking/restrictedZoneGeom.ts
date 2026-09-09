@@ -19,6 +19,8 @@ export type RestrictedZoneGeom = {
   zone_category?: string | null;
   zone_color?: string | null;
   is_active?: boolean;
+  /** Approach ring in meters. NULL = client default. 0 = no buffer. */
+  buffer_m?: number | null;
 };
 
 function haversineM(a: GeoPoint, b: GeoPoint): number {
@@ -120,6 +122,24 @@ export function findViolatingRestrictedZone(
   return null;
 }
 
+/** Distance in meters to this zone's edge (0 if inside). */
+export function distanceToZoneEdgeM(
+  lat: number,
+  lng: number,
+  zone: RestrictedZoneGeom,
+): number {
+  if (pointInRestrictedZone(lat, lng, zone)) return 0;
+  const here = { lat, lng };
+  if (zone.geometry_type === "radius" && zone.center_lat != null && zone.center_lng != null && zone.radius_m) {
+    const d =
+      haversineM(here, { lat: zone.center_lat, lng: zone.center_lng }) - Number(zone.radius_m);
+    return Math.max(0, d);
+  }
+  const poly = zone.geo_polygon;
+  if (!poly || poly.length < 3) return Number.POSITIVE_INFINITY;
+  return distanceToPolygonEdgeM(here, poly);
+}
+
 /** Distance in meters to the nearest restricted-zone edge (0 if inside). */
 export function minDistanceToRestrictedZoneEdge(
   lat: number,
@@ -127,20 +147,12 @@ export function minDistanceToRestrictedZoneEdge(
   zones: RestrictedZoneGeom[],
 ): number {
   let best = Number.POSITIVE_INFINITY;
-  const here = { lat, lng };
   for (const z of zones) {
     if (z.is_active === false) continue;
     if (isPresenceZoneCategory(z.zone_category)) continue;
-    if (pointInRestrictedZone(lat, lng, z)) return 0;
-    if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
-      const d =
-        haversineM(here, { lat: z.center_lat, lng: z.center_lng }) - Number(z.radius_m);
-      best = Math.min(best, Math.max(0, d));
-      continue;
-    }
-    const poly = z.geo_polygon;
-    if (!poly || poly.length < 3) continue;
-    best = Math.min(best, distanceToPolygonEdgeM(here, poly));
+    const d = distanceToZoneEdgeM(lat, lng, z);
+    if (d === 0) return 0;
+    best = Math.min(best, d);
   }
   return Number.isFinite(best) ? best : Number.POSITIVE_INFINITY;
 }

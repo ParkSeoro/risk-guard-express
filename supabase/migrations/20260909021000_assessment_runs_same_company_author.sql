@@ -1,5 +1,5 @@
 -- Empty target_company_ids used to hide a colleague's RA from contractor RLS.
--- Same-company authors (예: 정대용 위평 → 박현호 허가서) must stay visible.
+-- Same-company authors stay visible. Rule is global (any project / any company).
 
 DROP POLICY IF EXISTS "Members can view runs" ON public.assessment_runs;
 CREATE POLICY "Members can view runs"

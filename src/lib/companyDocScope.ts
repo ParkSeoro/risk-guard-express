@@ -323,7 +323,7 @@ export function filterRunsByCompanyScope<T extends {
   opts: {
     userId?: string | null;
     accessibleCompanyIds: string[] | null; // null = all
-    /** created_by / author_user_id → 소속 company_id. 대상업체가 비어 있으면 같은 회사 회차는 유지. */
+    /** created_by / author_user_id → 소속 company_id. 대상업체가 비면 작성자 소속 회사가 allowlist에 있을 때만 유지(전 업체 공통). */
     authorCompanyIdByUser?: Record<string, string | null | undefined>;
   },
 ): T[] {

@@ -191,18 +191,8 @@ Deno.serve(async (req) => {
       },
     }]);
 
-    // 6. Trigger web push (fire-and-forget)
-    try {
-      fetch(`${supabaseUrl}/functions/v1/send-push`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id, title, body: message || title,
-          related_id, related_type, tag: related_id || type,
-          url: related_type === 'safety_inspection' ? '/m/actions' : '/m/alerts',
-        }),
-      }).catch(() => {});
-    } catch (_) {}
+    // Web/FCM push comes from trg_notifications_dispatch_push after the INSERT above.
+    // Do not call send-push here — that duplicated web push for PWA/iPhone.
 
     return new Response(JSON.stringify({ 
       success: true, 

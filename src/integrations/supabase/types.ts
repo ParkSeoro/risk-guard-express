@@ -7039,6 +7039,7 @@ export type Database = {
           banned_company_ids: string[]
           banned_job_types: string[]
           banned_worker_ids: string[]
+          buffer_m: number | null
           center_lat: number | null
           center_lng: number | null
           created_at: string
@@ -7063,6 +7064,7 @@ export type Database = {
           banned_company_ids?: string[]
           banned_job_types?: string[]
           banned_worker_ids?: string[]
+          buffer_m?: number | null
           center_lat?: number | null
           center_lng?: number | null
           created_at?: string
@@ -7087,6 +7089,7 @@ export type Database = {
           banned_company_ids?: string[]
           banned_job_types?: string[]
           banned_worker_ids?: string[]
+          buffer_m?: number | null
           center_lat?: number | null
           center_lng?: number | null
           created_at?: string

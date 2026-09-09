@@ -23,6 +23,12 @@ import {
   looksLikeWgs84,
   looksLikeWgs84Ring,
 } from "@/lib/tracking/imageSpaceGeo";
+import {
+  parseZoneBufferInput,
+  ZONE_BUFFER_DEFAULT_M,
+  ZONE_BUFFER_MAX_M,
+  zoneBufferM,
+} from "@/lib/tracking/zoneProximity";
 
 type Zone = {
   id: string;
@@ -34,6 +40,7 @@ type Zone = {
   center_lat: number | null;
   center_lng: number | null;
   radius_m: number | null;
+  buffer_m: number | null;
   banned_worker_ids: string[];
   banned_company_ids: string[];
   banned_job_types: string[];
@@ -50,6 +57,7 @@ const emptyForm = {
   center_lat: "",
   center_lng: "",
   radius_m: "30",
+  buffer_m: String(ZONE_BUFFER_DEFAULT_M),
   polygon_text: "",
   banned_worker_ids: [] as string[],
   banned_company_ids: [] as string[],
@@ -132,6 +140,7 @@ export default function RestrictedZones() {
       center_lat: z.center_lat != null ? String(z.center_lat) : "",
       center_lng: z.center_lng != null ? String(z.center_lng) : "",
       radius_m: z.radius_m != null ? String(z.radius_m) : "30",
+      buffer_m: z.buffer_m != null ? String(z.buffer_m) : String(ZONE_BUFFER_DEFAULT_M),
       polygon_text: z.geo_polygon
         ? z.geo_polygon.map((p) => `${p.lat},${p.lng}`).join("\n")
         : "",
@@ -169,11 +178,18 @@ export default function RestrictedZones() {
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const buffer = parseZoneBufferInput(form.buffer_m);
+    if (!buffer.ok) {
+      toast.error(`접근 경고 반경은 0–${ZONE_BUFFER_MAX_M}m 입니다`);
+      return;
+    }
+
     const payload: any = {
       project_id: projectId,
       name: form.name.trim(),
       description: form.description.trim() || null,
       geometry_type: form.geometry_type,
+      buffer_m: buffer.value,
       banned_worker_ids: form.banned_worker_ids,
       banned_company_ids: form.banned_company_ids,
       banned_job_types: jobTypes,
@@ -321,6 +337,11 @@ export default function RestrictedZones() {
                       ? `반경 ${z.radius_m}m`
                       : `폴리곤 ${(z.geo_polygon || []).length}점`}
                   </Badge>
+                  <Badge variant="outline">
+                    {zoneBufferM(z.buffer_m) === 0
+                      ? "접근 경고 없음"
+                      : `접근 ${zoneBufferM(z.buffer_m)}m`}
+                  </Badge>
                 </CardTitle>
                 {z.description && (
                   <p className="text-sm text-muted-foreground mt-1">{z.description}</p>
@@ -389,6 +410,23 @@ export default function RestrictedZones() {
                   <SelectItem value="polygon">폴리곤 (lat,lng 목록)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>접근 경고 반경 (m)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={ZONE_BUFFER_MAX_M}
+                step={1}
+                value={form.buffer_m}
+                onChange={(e) => setForm({ ...form, buffer_m: e.target.value })}
+              />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                구역 바깥에서 미리 알려 주는 거리입니다. 비우면 {ZONE_BUFFER_DEFAULT_M}m,
+                0이면 접근 경고 없음. 휴대폰 GPS는 철골·실내에서 실제 오차가 20–50m일 수
+                있으니 인접 작업구역은 0을 권장합니다. 사이렌(구역 안)은 이 값과 무관합니다.
+              </p>
             </div>
 
             {form.geometry_type === "radius" ? (

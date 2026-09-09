@@ -64,6 +64,7 @@ import {
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
 import { looksLikeWgs84, looksLikeWgs84Ring, GPS_COORDS_INVALID_MSG } from "@/lib/tracking/imageSpaceGeo";
 import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDangerZones";
+import { zoneBufferM } from "@/lib/tracking/zoneProximity";
 import { softDeletePayload } from "@/lib/dataAccess";
 import {
   bottomRight,
@@ -111,6 +112,7 @@ type Zone = {
   is_active?: boolean;
   rule_type?: string | null;
   zone_color?: string | null;
+  buffer_m?: number | null;
 };
 
 type LayerState = {
@@ -648,7 +650,7 @@ export default function SiteControlMap() {
     const { data } = await supabase
       .from("restricted_zones")
       .select(
-        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,zone_category,access_rules,is_active,rule_type,zone_color",
+        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,buffer_m,zone_category,access_rules,is_active,rule_type,zone_color",
       )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
@@ -855,6 +857,7 @@ export default function SiteControlMap() {
       zone_color: z.zone_color,
       rule_type: z.rule_type,
       access_rules: z.access_rules,
+      buffer_m: z.buffer_m,
     });
     setZoneModalOpen(true);
   };
@@ -881,6 +884,7 @@ export default function SiteControlMap() {
           zone_color: payload.zone_color,
           rule_type: payload.rule_type,
           access_rules: payload.access_rules,
+          buffer_m: payload.buffer_m,
         } as any)
         .eq("id", payload.zoneId);
       setSaving(false);
@@ -920,6 +924,7 @@ export default function SiteControlMap() {
       zone_color: payload.zone_color,
       rule_type: payload.rule_type,
       access_rules: payload.access_rules,
+      buffer_m: payload.buffer_m,
       banned_worker_ids: [] as string[],
       banned_company_ids: [] as string[],
       banned_job_types: [] as string[],
@@ -1827,6 +1832,13 @@ export default function SiteControlMap() {
                           <Badge variant="secondary" className="text-[10px]">
                             {z.geometry_type === "radius" ? `원 ${z.radius_m}m` : "폴리곤"}
                           </Badge>
+                          {!isPresenceZoneCategory(z.zone_category) && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {zoneBufferM(z.buffer_m) === 0
+                                ? "접근 경고 없음"
+                                : `접근 ${zoneBufferM(z.buffer_m)}m`}
+                            </Badge>
+                          )}
                           <Badge
                             className={`text-[10px] ${
                               rt === "ALLOW"

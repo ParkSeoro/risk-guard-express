@@ -50,8 +50,8 @@ export type { GpsBlockReason };
 export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
   const setUi = useSetGpsUi();
   useEffect(() => {
-    setUi({ tracking: false, block: reason });
-    return () => setUi({ tracking: false, block: null });
+    setUi({ tracking: false, block: reason, accuracyM: null });
+    return () => setUi({ tracking: false, block: null, accuracyM: null });
   }, [reason, setUi]);
   useReportWorkerGpsStatus(reason ?? undefined);
   return null;
@@ -59,7 +59,8 @@ export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
 
 export default function WorkerGlobalGps() {
   const { user, profile, roles, hasRole } = useAuth();
-  const { startGpsTracking, stopGpsTracking, gpsTracking, gpsSuspended, gpsError } = useSystemRealtime();
+  const { startGpsTracking, stopGpsTracking, gpsTracking, gpsSuspended, gpsError, lastGpsFix } =
+    useSystemRealtime();
   const setGpsUi = useSetGpsUi();
   const workerIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
@@ -409,9 +410,13 @@ export default function WorkerGlobalGps() {
             : gpsTracking
               ? null
               : gpsBlockReason,
+      accuracyM: lastGpsFix?.accuracy ?? null,
     });
-    return () => setGpsUi({ tracking: false, block: null });
-  }, [gpsTracking, gpsSuspended, gpsBlockReason, setGpsUi]);
+  }, [gpsTracking, gpsSuspended, gpsBlockReason, lastGpsFix?.accuracy, setGpsUi]);
+
+  useEffect(() => {
+    return () => setGpsUi({ tracking: false, block: null, accuracyM: null });
+  }, [setGpsUi]);
 
   return null;
 }

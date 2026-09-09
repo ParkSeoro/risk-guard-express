@@ -255,6 +255,8 @@ const SettingsNotifications = () => {
             title: '테스트 푸시',
             body: '푸시 알림이 정상 작동합니다.',
             url: '/app/worker/alerts',
+            type: 'general',
+            bypass_prefs: true,
           },
         });
         if (error) throw error;

@@ -16,6 +16,9 @@ interface Payload {
   related_id?: string;
   related_type?: string;
   tag?: string;
+  type?: string;
+  /** Only honored when the caller is pushing to themselves (settings test). */
+  bypass_prefs?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -71,6 +74,23 @@ Deno.serve(async (req) => {
       if (!shares && !isAdmin) {
         return new Response(JSON.stringify({ error: 'Forbidden' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    const bypassPrefs = p.bypass_prefs === true && !!callerId && callerId === p.user_id;
+    if (!bypassPrefs) {
+      try {
+        const { data: allowed } = await supabase.rpc("should_push_notify", {
+          _user_id: p.user_id,
+          _type: p.type || "general",
+        });
+        if (allowed === false) {
+          return new Response(JSON.stringify({ ok: true, skipped: "prefs" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch (_e) {
+        // preference lookup must not block delivery
       }
     }
 

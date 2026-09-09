@@ -1,17 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { formatTbmParticipationTime } from "@/lib/tbmParticipationTime";
+import { tbmParticipationTimeLabel } from "@/lib/tbmParticipationTime";
 
 const SIG = `data:image/png;base64,${"A".repeat(80)}`;
 
-describe("formatTbmParticipationTime", () => {
-  it("shows 미서명 until a real signature exists", () => {
-    expect(formatTbmParticipationTime({
-      participated_at: "2026-09-08T10:33:45+09:00",
-      signature_data: null,
-    })).toBe("미서명");
-    expect(formatTbmParticipationTime({
-      participated_at: "2026-09-08T10:33:45+09:00",
+describe("tbmParticipationTimeLabel", () => {
+  it("does not treat roster-sync time as a signature", () => {
+    expect(
+      tbmParticipationTimeLabel({
+        signature_data: "",
+        participated_at: "2026-09-08T01:33:45.000Z",
+      }),
+    ).toBe("미서명");
+    expect(
+      tbmParticipationTimeLabel({
+        participated_at: "2026-09-08T10:33:45+09:00",
+        signature_data: null,
+      }),
+    ).toBe("미서명");
+  });
+
+  it("shows the sign time when a real signature exists", () => {
+    const label = tbmParticipationTimeLabel({
       signature_data: SIG,
-    })).toMatch(/2026/);
+      participated_at: "2026-09-08T22:05:11.000Z",
+    });
+    expect(label).not.toBe("미서명");
+    expect(label).toMatch(/2026/);
+    expect(label.length).toBeGreaterThan(4);
   });
 });

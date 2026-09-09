@@ -11,9 +11,9 @@ import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
 import { resolveNotificationRoute, notificationInboxPath } from '@/lib/notificationRoutes';
-import { notificationPreview, notificationTitle } from '@/lib/notificationText';
-import { applyRevealedWorkStopName } from '@/lib/workStop';
-import { fetchRevealedWorkStopNames, workStopIdsFromNotifications } from '@/lib/workStopReveal';
+import { notificationTitle } from '@/lib/notificationText';
+import { decorateWorkStopNotificationPreview, fetchRevealedWorkStopNames, workStopIdsFromNotifications } from '@/lib/workStopReveal';
+import { fetchProjectNames } from '@/lib/projectNames';
 
 const resolveRoute = (n: any): string | null => resolveNotificationRoute(n);
 
@@ -25,6 +25,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'unread' | 'all'>('unread');
   const [nameById, setNameById] = useState<Record<string, string>>({});
+  const [projectById, setProjectById] = useState<Record<string, string>>({});
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -34,9 +35,11 @@ export function NotificationBell() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(30);
-    setNotifications(data || []);
-    const revealed = await fetchRevealedWorkStopNames(workStopIdsFromNotifications(data || []));
+    const rows = data || [];
+    setNotifications(rows);
+    const revealed = await fetchRevealedWorkStopNames(workStopIdsFromNotifications(rows));
     setNameById(revealed);
+    setProjectById(await fetchProjectNames(rows.map((n: any) => String(n.project_id || ""))));
   }, [user]);
 
   useEffect(() => {
@@ -151,9 +154,9 @@ export function NotificationBell() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className={`text-xs ${!n.is_read ? 'font-semibold' : ''}`}>{notificationTitle(n)}</p>
-                      {notificationPreview(n) && (
+                      {decorateWorkStopNotificationPreview(n, nameById, projectById) && (
                         <p className="text-[11px] text-muted-foreground line-clamp-2">
-                          {applyRevealedWorkStopName(notificationPreview(n), nameById[String(n.related_id || "")])}
+                          {decorateWorkStopNotificationPreview(n, nameById, projectById)}
                         </p>
                       )}
                     </div>

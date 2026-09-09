@@ -18,7 +18,8 @@ import {
   workStopDisplayName,
   workStopNotifyMessage,
 } from "@/lib/workStop";
-import { workStopIdsFromNotifications } from "@/lib/workStopReveal";
+import { decorateWorkStopNotificationPreview, workStopIdsFromNotifications } from "@/lib/workStopReveal";
+import { prefixNotificationProject } from "@/lib/projectNames";
 
 describe("work-stop identity", () => {
   it("lets the reporter choose anonymous vs real name", () => {
@@ -62,6 +63,15 @@ describe("work-stop identity", () => {
         hazard_description: "가스 냄새",
       }),
     ).toBe(`${ANONYMOUS_REPORTER_LABEL} · 지하 2층 — 가스 냄새`);
+    expect(
+      workStopNotifyMessage({
+        is_anonymous: true,
+        reporter_name: "홍길동",
+        location: "지하 2층",
+        hazard_description: "가스 냄새",
+        project_name: "SCK 인천 3P N2",
+      }),
+    ).toBe(`[SCK 인천 3P N2] ${ANONYMOUS_REPORTER_LABEL} · 지하 2층 — 가스 냄새`);
   });
 
   it("reveals the legal name only when PM+ supplied it", () => {
@@ -250,5 +260,18 @@ describe("work-stop notification routes", () => {
         { type: "approval", related_id: "c" },
       ]),
     ).toEqual(["a", "b"]);
+  });
+
+  it("prefixes the project and reveals the legal name on stored copy", () => {
+    expect(prefixNotificationProject("익명 근로자 · 출입구 — 개방", "SCK 인천 3P N2")).toBe(
+      "[SCK 인천 3P N2] 익명 근로자 · 출입구 — 개방",
+    );
+    expect(
+      decorateWorkStopNotificationPreview(
+        { message: "익명 근로자 · 출입구 — 개방", project_id: "p1", related_id: "r1" },
+        { r1: "김양수" },
+        { p1: "SCK 인천 3P N2" },
+      ),
+    ).toBe("[SCK 인천 3P N2] 김양수 (익명 신고) · 출입구 — 개방");
   });
 });

@@ -29,6 +29,7 @@ import {
   type WorkStopIdentityMode,
 } from "@/lib/workStop";
 import { fetchRevealedWorkStopNames } from "@/lib/workStopReveal";
+import { fetchProjectNames } from "@/lib/projectNames";
 
 type StopRow = {
   id: string;
@@ -48,6 +49,7 @@ export default function MobileWorkStop() {
   const blockWrite = usePreviewWriteBlock();
   const manager = isManagerMobileRole(role, isMaster);
   const [legalNames, setLegalNames] = useState<Record<string, string>>({});
+  const [projectLabel, setProjectLabel] = useState("");
   const [focused, setFocused] = useState<StopRow | null>(null);
   const [focusLoading, setFocusLoading] = useState(() => Boolean(focusId));
   const [showForm, setShowForm] = useState(() => !focusId);
@@ -97,6 +99,20 @@ export default function MobileWorkStop() {
       cancelled = true;
     };
   }, [manager, projectId, submitted]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setProjectLabel("");
+      return;
+    }
+    let cancelled = false;
+    fetchProjectNames([projectId]).then((map) => {
+      if (!cancelled) setProjectLabel(map[projectId] || "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   useEffect(() => {
     if (!focusId) {
@@ -248,11 +264,15 @@ export default function MobileWorkStop() {
             )}
             {focused && (
               <>
+                {projectLabel && <div className="text-xs font-medium text-primary">{projectLabel}</div>}
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="destructive">{focused.status}</Badge>
                   <span className="font-medium">
                     {workStopDisplayName(focused, { revealedLegalName: legalNames[focused.id] })}
                   </span>
+                  {focused.is_anonymous && legalNames[focused.id] && (
+                    <Badge variant="outline" className="text-[10px]">실명 공개</Badge>
+                  )}
                 </div>
                 <div className="text-sm text-muted-foreground">{focused.location || "위치 미기재"}</div>
                 <div className="text-sm whitespace-pre-wrap">{focused.hazard_description}</div>

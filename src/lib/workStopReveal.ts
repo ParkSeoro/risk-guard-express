@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
-import { ANONYMOUS_REPORTER_LABEL } from "@/lib/workStop";
+import { ANONYMOUS_REPORTER_LABEL, applyRevealedWorkStopName } from "@/lib/workStop";
+import { notificationPreview } from "@/lib/notificationText";
+import { prefixNotificationProject } from "@/lib/projectNames";
 
 /** PM+ only — RPC returns no rows for company managers. */
 export async function fetchRevealedWorkStopNames(ids: string[]): Promise<Record<string, string>> {
@@ -27,4 +29,15 @@ export function workStopIdsFromNotifications(
     })
     .map((n) => String(n.related_id || "").trim())
     .filter(Boolean);
+}
+
+export function decorateWorkStopNotificationPreview(
+  n: { message?: string | null; body?: string | null; project_id?: string | null; related_id?: string | null },
+  names: Record<string, string>,
+  projects: Record<string, string>,
+): string {
+  return prefixNotificationProject(
+    applyRevealedWorkStopName(notificationPreview(n), names[String(n.related_id || "")]),
+    projects[String(n.project_id || "")],
+  );
 }

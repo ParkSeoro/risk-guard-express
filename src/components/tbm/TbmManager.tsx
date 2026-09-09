@@ -19,7 +19,7 @@ import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
-import { formatTbmParticipationTime } from '@/lib/tbmParticipationTime';
+import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
 import { useAuth } from '@/contexts/AuthContext';
 import { TbmSessionPhotos } from '@/components/tbm/TbmSessionPhotos';
 import { parseTbmPhotoUrls, tbmPhotoCountLabel } from '@/lib/tbmPhotos';
@@ -359,8 +359,15 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const openParts = async (s: TbmSession) => {
     setShowParts(s);
-    const { data } = await supabase.from('tbm_participations' as any).select('*').eq('tbm_session_id', s.id).order('participated_at');
-    setParticipants((data as any) || []);
+    const [{ data }, { data: acks }] = await Promise.all([
+      supabase.from('tbm_participations' as any).select('*').eq('tbm_session_id', s.id).order('participated_at'),
+      supabase
+        .from('worker_daily_acks' as any)
+        .select('worker_id, worker_phone, permit_ids, signature_data, updated_at, created_at')
+        .eq('project_id', projectId)
+        .eq('ack_date', s.tbm_date),
+    ]);
+    setParticipants(fillMissingTbmSignatures((data as any[]) || [], (acks as any[]) || []));
   };
 
   // Deep-link from permit detail: ?session=<tbmId> → heal from permit crew, open participants
@@ -437,7 +444,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       .select('name, site_name').eq('id', projectId).single();
     const { data: acks } = await supabase
       .from('worker_daily_acks' as any)
-      .select('worker_id, worker_phone, permit_ids, signature_data')
+      .select('worker_id, worker_phone, permit_ids, signature_data, updated_at, created_at')
       .eq('project_id', projectId)
       .eq('ack_date', s.tbm_date);
     const sAny = s as any;
@@ -451,7 +458,6 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     if (!w) { toast({ title: '팝업이 차단되었습니다.', variant: 'destructive' }); return; }
 
     const esc = (v: any) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-    const fmtDate = (d: string) => d ? new Date(d).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '';
     const today = sAny.tbm_date || '';
 
     const risksHtml = risks.length === 0
@@ -469,7 +475,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <td>${esc(p.worker_name)}</td>
           <td>${esc(p.worker_phone)}</td>
           <td>${esc(p.company_name || '-')}</td>
-          <td class="center">${isRenderableSignature(p.signature_data) ? fmtDate(p.participated_at) : '미서명'}</td>
+          <td class="center">${tbmParticipationTimeLabel(p)}</td>
           <td class="center">${isRenderableSignature(p.signature_data) ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
         </tr>`).join('');
 
@@ -978,7 +984,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                 {p.signature_data && <img src={p.signature_data} alt="sig" className="h-12 w-24 object-contain border rounded bg-white" />}
                 <div className="flex-1 text-sm">
                   <p className="font-semibold">{p.worker_name} <span className="text-xs text-muted-foreground">({p.worker_phone})</span></p>
-                  <p className="text-xs text-muted-foreground">{p.company_name || '-'} · {formatTbmParticipationTime(p)}</p>
+                  <p className="text-xs text-muted-foreground">{p.company_name || '-'} · {tbmParticipationTimeLabel(p)}</p>
                 </div>
               </div>
             ))}

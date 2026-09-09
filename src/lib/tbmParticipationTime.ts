@@ -1,13 +1,12 @@
 import { isRenderableSignature } from "@/lib/permitCrewSignatures";
 
-/** Unsigned roster rows keep participated_at = insert time — never show that as attendance. */
-export function formatTbmParticipationTime(p: {
-  participated_at?: string | null;
-  signature_data?: string | null;
-}, locale = "ko-KR"): string {
+/** Roster-sync rows have participated_at = insert time, not a real TBM sign. */
+export function tbmParticipationTimeLabel(
+  p: { signature_data?: string | null; participated_at?: string | null },
+  locale = "ko-KR",
+): string {
   if (!isRenderableSignature(p.signature_data)) return "미서명";
-  if (!p.participated_at) return "미서명";
-  const d = new Date(p.participated_at);
-  if (Number.isNaN(d.getTime())) return "미서명";
-  return d.toLocaleString(locale, { timeZone: "Asia/Seoul" });
+  const at = p.participated_at ? new Date(p.participated_at) : null;
+  if (!at || Number.isNaN(at.getTime())) return "서명됨";
+  return at.toLocaleString(locale, { timeZone: "Asia/Seoul" });
 }

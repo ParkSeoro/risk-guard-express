@@ -18,13 +18,44 @@ export type CrewAckSignature = {
   worker_phone?: string | null;
   permit_ids?: string[] | null;
   signature_data?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
 export type CrewTbmSignature = {
   worker_id?: string | null;
   worker_phone?: string | null;
   signature_data?: string | null;
+  participated_at?: string | null;
 };
+
+function matchesCrewPerson(
+  workerId: string,
+  workerPhone: string | null | undefined,
+  id?: string | null,
+  phone?: string | null,
+): boolean {
+  if (id && id === workerId) return true;
+  const digits = phoneDigits(workerPhone);
+  const p = phoneDigits(phone);
+  return Boolean(digits && p && digits === p);
+}
+
+export function pickCrewDailyAck(opts: {
+  workerId: string;
+  workerPhone?: string | null;
+  permitId?: string | null;
+  dailyAcks?: CrewAckSignature[];
+}): CrewAckSignature | null {
+  for (const ack of opts.dailyAcks || []) {
+    if (!matchesCrewPerson(opts.workerId, opts.workerPhone, ack.worker_id, ack.worker_phone)) continue;
+    if (!isRenderableSignature(ack.signature_data)) continue;
+    const ids = Array.isArray(ack.permit_ids) ? ack.permit_ids.filter(Boolean) : [];
+    if (opts.permitId && ids.length > 0 && !ids.includes(opts.permitId)) continue;
+    return ack;
+  }
+  return null;
+}
 
 /** Prefer daily ack (출근 서명), then TBM participation. */
 export function pickCrewPrintSignature(opts: {
@@ -34,23 +65,11 @@ export function pickCrewPrintSignature(opts: {
   dailyAcks?: CrewAckSignature[];
   tbmParts?: CrewTbmSignature[];
 }): string | null {
-  const digits = phoneDigits(opts.workerPhone);
-  const matchesWorker = (id?: string | null, phone?: string | null) => {
-    if (id && id === opts.workerId) return true;
-    const p = phoneDigits(phone);
-    return Boolean(digits && p && digits === p);
-  };
-
-  for (const ack of opts.dailyAcks || []) {
-    if (!matchesWorker(ack.worker_id, ack.worker_phone)) continue;
-    if (!isRenderableSignature(ack.signature_data)) continue;
-    const ids = Array.isArray(ack.permit_ids) ? ack.permit_ids.filter(Boolean) : [];
-    if (opts.permitId && ids.length > 0 && !ids.includes(opts.permitId)) continue;
-    return String(ack.signature_data).trim();
-  }
+  const ack = pickCrewDailyAck(opts);
+  if (ack?.signature_data) return String(ack.signature_data).trim();
 
   for (const part of opts.tbmParts || []) {
-    if (!matchesWorker(part.worker_id, part.worker_phone)) continue;
+    if (!matchesCrewPerson(opts.workerId, opts.workerPhone, part.worker_id, part.worker_phone)) continue;
     if (!isRenderableSignature(part.signature_data)) continue;
     return String(part.signature_data).trim();
   }
@@ -66,14 +85,15 @@ export function fillMissingTbmSignatures<T extends CrewTbmSignature>(
 ): T[] {
   return parts.map((p) => {
     if (isRenderableSignature(p.signature_data)) return p;
-    const signature_data = pickCrewPrintSignature({
+    const ack = pickCrewDailyAck({
       workerId: String(p.worker_id || ""),
       workerPhone: p.worker_phone,
       permitId,
       dailyAcks,
-      tbmParts: [],
     });
-    return signature_data ? { ...p, signature_data } : p;
+    if (!ack?.signature_data) return p;
+    const signedAt = ack.updated_at || ack.created_at || p.participated_at;
+    return { ...p, signature_data: String(ack.signature_data).trim(), participated_at: signedAt || p.participated_at };
   });
 }
 

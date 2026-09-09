@@ -9,15 +9,16 @@ import { Bell, Check, Inbox, Search, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
-import { notificationPreview, notificationTitle } from "@/lib/notificationText";
-import { applyRevealedWorkStopName } from "@/lib/workStop";
-import { fetchRevealedWorkStopNames, workStopIdsFromNotifications } from "@/lib/workStopReveal";
+import { notificationTitle } from "@/lib/notificationText";
+import { decorateWorkStopNotificationPreview, fetchRevealedWorkStopNames, workStopIdsFromNotifications } from "@/lib/workStopReveal";
+import { fetchProjectNames } from "@/lib/projectNames";
 
 export default function NotificationInbox() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [items, setItems] = useState<any[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [projects, setProjects] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<"unread" | "all">("unread");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
@@ -35,6 +36,7 @@ export default function NotificationInbox() {
     setItems(rows);
     const revealed = await fetchRevealedWorkStopNames(workStopIdsFromNotifications(rows));
     setNames(revealed);
+    setProjects(await fetchProjectNames(rows.map((n: any) => String(n.project_id || ""))));
     setLoading(false);
   }, [user]);
 
@@ -42,8 +44,7 @@ export default function NotificationInbox() {
     void load();
   }, [load]);
 
-  const previewOf = (n: any) =>
-    applyRevealedWorkStopName(notificationPreview(n), names[String(n.related_id || "")]);
+  const previewOf = (n: any) => decorateWorkStopNotificationPreview(n, names, projects);
 
   const unreadCount = useMemo(() => items.filter((n) => !n.is_read).length, [items]);
   const visible = useMemo(() => {
@@ -55,7 +56,7 @@ export default function NotificationInbox() {
       const preview = previewOf(n).toLowerCase();
       return title.includes(key) || preview.includes(key);
     });
-  }, [items, tab, q, names]);
+  }, [items, tab, q, names, projects]);
 
   const markRead = async (id: string) => {
     await supabase.from("notifications").update({ is_read: true }).eq("id", id);

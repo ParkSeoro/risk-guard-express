@@ -422,9 +422,11 @@ export default function MobileTbm() {
                       {s.is_active === false ? "종료" : "진행중"}
                     </Badge>
                   </div>
-                  <Button className="w-full" variant="outline" onClick={() => openQr(s)}>
-                    <QrCode className="h-4 w-4 mr-1" /> QR · 참여자
-                  </Button>
+                  <div className="grid grid-cols-1 gap-2">
+                    <Button className="w-full" variant="outline" onClick={() => openQr(s)}>
+                      <QrCode className="h-4 w-4 mr-1" /> QR · 참여자
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}

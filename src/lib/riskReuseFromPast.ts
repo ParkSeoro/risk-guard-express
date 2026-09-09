@@ -3,7 +3,7 @@
  * Speeds up auto-gen: pull known process rows, then AI fills gaps only.
  */
 import { supabase } from "@/integrations/supabase/client";
-import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
+import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import type { GeneratedRiskItem } from "@/lib/riskAutoGen";
 
 export type PastRiskReuseOpts = {
@@ -62,7 +62,7 @@ export async function fetchPastApprovedRiskItems(
 
   const { data: runsRaw, error: runsErr } = await supabase
     .from("assessment_runs")
-    .select("id, created_by, target_company_ids, created_at")
+    .select("id, created_by, author_user_id, target_company_ids, created_at")
     .eq("project_id", opts.projectId)
     .eq("status", "승인완료")
     .eq("is_deleted", false)
@@ -71,9 +71,16 @@ export async function fetchPastApprovedRiskItems(
 
   if (runsErr || !runsRaw?.length) return [];
 
+  let authorCompanyIdByUser: Record<string, string> = {};
+  try {
+    authorCompanyIdByUser = await authorCompanyIdsForRuns(opts.projectId, runsRaw as any[]);
+  } catch {
+    authorCompanyIdByUser = {};
+  }
   let runs = filterRunsByCompanyScope(runsRaw as any[], {
     userId: opts.userId,
     accessibleCompanyIds: opts.accessibleCompanyIds,
+    authorCompanyIdByUser,
   });
 
   if (opts.excludeRunId) {

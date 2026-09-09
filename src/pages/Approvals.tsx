@@ -25,7 +25,7 @@ import {
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
-import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
+import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
   approvalAssessmentPrintType,
@@ -34,6 +34,7 @@ import {
   type ApprovalPreviewTarget,
 } from "@/lib/approvalInboxPreview";
 import ApprovalDocPreviewDialog from "@/components/approval/ApprovalDocPreviewDialog";
+import ApprovalRejectReasonDialog from "@/components/approval/ApprovalRejectReasonDialog";
 import {
   permitPostStepKind,
   permitPostStepBadge,
@@ -108,6 +109,11 @@ const Approvals = () => {
   const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | ApprovalEntityType>('all');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<ApprovalPreviewTarget | null>(null);
+  const [rejectEntity, setRejectEntity] = useState<{
+    id: string;
+    stepKind: ReturnType<typeof permitPostStepKind>;
+    stepMeta?: any;
+  } | null>(null);
 
   const openDocPreview = (entityType?: string | null, entityId?: string | null, title?: string | null) => {
     if (!entityType || !entityId) return;
@@ -190,10 +196,12 @@ const Approvals = () => {
       });
       return;
     }
-    const comment = action === 'reject' ? (prompt('반려 사유') || '') : '';
-    if (action === 'reject' && !comment) return;
+    if (action === 'reject') {
+      setRejectEntity({ id, stepKind, stepMeta });
+      return;
+    }
 
-    await runEntityApproval(id, action, stepKind, comment, stepMeta);
+    await runEntityApproval(id, action, stepKind, '', stepMeta);
   };
 
   const handleWithdraw = async (steps: any[]) => {
@@ -249,9 +257,17 @@ const Approvals = () => {
           userId: user?.id,
           accessibleCompanyIds,
         });
+        let authorCompanyIdByUser: Record<string, string> = {};
+        try {
+          authorCompanyIdByUser = await authorCompanyIdsForRuns(selectedProject, runsData);
+        } catch {
+          authorCompanyIdByUser = {};
+        }
+        if (seq !== fetchSeqRef.current) return;
         runsData = filterRunsByCompanyScope(runsData, {
           userId: user?.id,
           accessibleCompanyIds,
+          authorCompanyIdByUser,
         });
       }
 
@@ -707,9 +723,13 @@ const Approvals = () => {
                 const withComments = sectionSteps.filter((s: any) => s.comment);
                 if (withComments.length === 0) return null;
                 return (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    코멘트: {withComments.map((s: any) => `${s.approver_name}: "${s.comment}"`).join(' | ')}
-                  </p>
+                  <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                    {withComments.map((s: any) => (
+                      <p key={s.id} className="whitespace-pre-wrap">
+                        코멘트 · {s.approver_name}: {s.comment}
+                      </p>
+                    ))}
+                  </div>
                 );
               };
 
@@ -821,14 +841,14 @@ const Approvals = () => {
                     )}
 
                     {rejectingId && activeSteps.some(s => s.id === rejectingId) && (
-                      <div className="mt-3 flex items-end gap-2">
-                        <div className="flex-1">
-                          <Textarea placeholder="반려 사유를 입력하세요..." value={rejectComment} onChange={e => setRejectComment(e.target.value)} rows={2} className="text-xs" />
+                      <div className="mt-3 space-y-2">
+                        <Textarea placeholder="반려 사유를 입력하세요..." value={rejectComment} onChange={e => setRejectComment(e.target.value)} rows={6} className="text-xs min-h-[8rem] resize-y" />
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="ghost" className="h-8" onClick={() => { setRejectingId(null); setRejectComment(''); }}>취소</Button>
+                          <Button size="sm" variant="destructive" className="h-8 gap-1" onClick={() => handleApprovalAction(rejectingId, '반려', rejectComment)}>
+                            <MessageSquare className="h-3 w-3" /> 반려
+                          </Button>
                         </div>
-                        <Button size="sm" variant="destructive" className="h-8 gap-1" onClick={() => handleApprovalAction(rejectingId, '반려', rejectComment)}>
-                          <MessageSquare className="h-3 w-3" /> 반려
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-8" onClick={() => { setRejectingId(null); setRejectComment(''); }}>취소</Button>
                       </div>
                     )}
                   </CardContent>
@@ -843,6 +863,15 @@ const Approvals = () => {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         target={previewTarget}
+      />
+      <ApprovalRejectReasonDialog
+        open={!!rejectEntity}
+        onOpenChange={(open) => { if (!open) setRejectEntity(null); }}
+        onConfirm={async (reason) => {
+          const target = rejectEntity;
+          if (!target) return;
+          await runEntityApproval(target.id, 'reject', target.stepKind, reason, target.stepMeta);
+        }}
       />
     </div>
   );

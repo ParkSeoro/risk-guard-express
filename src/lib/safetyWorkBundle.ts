@@ -2,7 +2,7 @@
  * Safety work bundle — join helpers for Assessment ↔ Permit ↔ TBM.
  */
 import { supabase } from "@/integrations/supabase/client";
-import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
+import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from "@/lib/companyDocScope";
 
 export type SafetyWorkBundle = {
   work_permit_id: string;
@@ -26,6 +26,8 @@ export type LinkedAssessmentRun = {
   status: string | null;
   start_date: string | null;
   end_date: string | null;
+  created_by?: string | null;
+  author_user_id?: string | null;
   target_company_ids?: string[] | null;
 };
 
@@ -139,7 +141,7 @@ export async function discoverPermitDateValidRuns(opts: {
 }): Promise<LinkedAssessmentRun[]> {
   const { data, error } = await supabase
     .from("assessment_runs")
-    .select("id, period_label, status, start_date, end_date, target_company_ids, created_by")
+    .select("id, period_label, status, start_date, end_date, target_company_ids, created_by, author_user_id")
     .eq("project_id", opts.projectId)
     .eq("is_deleted", false)
     .eq("status", "승인완료")
@@ -155,9 +157,16 @@ export async function discoverPermitDateValidRuns(opts: {
         ? [opts.companyId]
         : null;
   if (scopeIds !== null) {
+    let authorCompanyIdByUser: Record<string, string> = {};
+    try {
+      authorCompanyIdByUser = await authorCompanyIdsForRuns(opts.projectId, rows);
+    } catch {
+      authorCompanyIdByUser = {};
+    }
     rows = filterRunsByCompanyScope(rows as any, {
       userId: opts.userId,
       accessibleCompanyIds: scopeIds,
+      authorCompanyIdByUser,
     }) as LinkedAssessmentRun[];
   }
   return rows;

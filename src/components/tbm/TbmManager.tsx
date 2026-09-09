@@ -458,7 +458,6 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     if (!w) { toast({ title: '팝업이 차단되었습니다.', variant: 'destructive' }); return; }
 
     const esc = (v: any) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-    const fmtDate = (d: string) => d ? new Date(d).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '';
     const today = sAny.tbm_date || '';
 
     const risksHtml = risks.length === 0

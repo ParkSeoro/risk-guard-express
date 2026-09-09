@@ -11,6 +11,12 @@ describe("tbmParticipationTimeLabel", () => {
         participated_at: "2026-09-08T01:33:45.000Z",
       }),
     ).toBe("미서명");
+    expect(
+      tbmParticipationTimeLabel({
+        participated_at: "2026-09-08T10:33:45+09:00",
+        signature_data: null,
+      }),
+    ).toBe("미서명");
   });
 
   it("shows the sign time when a real signature exists", () => {
@@ -19,6 +25,7 @@ describe("tbmParticipationTimeLabel", () => {
       participated_at: "2026-09-08T22:05:11.000Z",
     });
     expect(label).not.toBe("미서명");
+    expect(label).toMatch(/2026/);
     expect(label.length).toBeGreaterThan(4);
   });
 });

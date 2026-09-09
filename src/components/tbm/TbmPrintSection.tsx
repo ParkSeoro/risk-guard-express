@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { parseTbmPhotoUrls } from '@/lib/tbmPhotos';
-import { WorkStopPhotos } from '@/components/work-stop/WorkStopPhotos';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
+import { WorkStopPhotos } from '@/components/work-stop/WorkStopPhotos';
 
 /**
  * Hidden on screen, visible on print.

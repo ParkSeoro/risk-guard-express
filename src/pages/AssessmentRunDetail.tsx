@@ -72,6 +72,7 @@ import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine, type ApprovalLineManagerHandle, type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
+import ApprovalRejectReasonDialog from '@/components/approval/ApprovalRejectReasonDialog';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
 import { buildAssessmentSubmitPreflight, countIncompleteAssessmentItems } from '@/lib/assessmentSubmitPreflight';
@@ -198,7 +199,6 @@ const AssessmentRunDetail = () => {
   const [approvalComment, setApprovalComment] = useState('');
   const [latestApprovals, setLatestApprovals] = useState<any[]>([]);
   const [rejectCommentDialog, setRejectCommentDialog] = useState(false);
-  const [rejectComment, setRejectComment] = useState('');
   const [approvalLines, setApprovalLines] = useState<ApprovalLine[]>([]);
   const [approvalDraftInfo, setApprovalDraftInfo] = useState<DraftStatusInfo>({
     status: 'none',
@@ -4187,43 +4187,11 @@ const AssessmentRunDetail = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={rejectCommentDialog} onOpenChange={(open) => {
-        setRejectCommentDialog(open);
-        if (!open) setRejectComment('');
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>반려 사유</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            작성자가 보완할 수 있도록 사유를 입력하세요. 알림과 문서에 그대로 보입니다.
-          </p>
-          <Textarea
-            value={rejectComment}
-            onChange={(e) => setRejectComment(e.target.value)}
-            placeholder="예: 위험상황, 개선대책 누락"
-            rows={4}
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setRejectCommentDialog(false)}>취소</Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const reason = rejectComment.trim();
-                if (!reason) {
-                  toast({ title: '반려 사유를 입력하세요.', variant: 'destructive' });
-                  return;
-                }
-                setRejectCommentDialog(false);
-                setRejectComment('');
-                void handleFinalApproval('반려', reason);
-              }}
-            >
-              반려
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ApprovalRejectReasonDialog
+        open={rejectCommentDialog}
+        onOpenChange={setRejectCommentDialog}
+        onConfirm={(reason) => handleFinalApproval('반려', reason)}
+      />
 
       {run && (
         <CloneRunDialog

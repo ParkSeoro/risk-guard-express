@@ -35,6 +35,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   incident_report: () => `${ADMIN}/incidents`,
   emergency_drill: () => `${ADMIN}/emergency-drills`,
   tbm: () => `${ADMIN}/tbm-logs`,
+  tbm_session: (id) => (id ? `${ADMIN}/tbm-logs?session=${id}` : `${ADMIN}/tbm-logs`),
   todo: () => `${ADMIN}/todo`,
   work_stop: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
   work_stop_request: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
@@ -60,6 +61,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   incident: () => `${WORKER}/incident`,
   incident_report: () => `${WORKER}/incident`,
   tbm: () => `${WORKER}/tbm`,
+  tbm_session: (id) => (id ? `${WORKER}/tbm?session=${id}` : `${WORKER}/tbm`),
   work_stop: (id) => (id ? `${WORKER}/work-stop?id=${id}` : `${WORKER}/work-stop`),
   work_stop_request: (id) => (id ? `${WORKER}/work-stop?id=${id}` : `${WORKER}/work-stop`),
   // No dedicated mobile page yet → Today (avoid silent desktop jump)

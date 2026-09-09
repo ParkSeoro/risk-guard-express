@@ -17,7 +17,6 @@ import {
   Crosshair,
   Bell,
   LogIn,
-  PenLine,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
 import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";

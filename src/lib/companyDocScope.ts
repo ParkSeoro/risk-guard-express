@@ -316,22 +316,71 @@ export function applyOwnCompanyFilter(
 /** Filter assessment_runs-like rows that use target_company_ids instead of company_id. */
 export function filterRunsByCompanyScope<T extends {
   created_by?: string | null;
+  author_user_id?: string | null;
   target_company_ids?: string[] | null;
 }>(
   rows: T[],
   opts: {
     userId?: string | null;
     accessibleCompanyIds: string[] | null; // null = all
+    /** created_by / author_user_id → 소속 company_id. 대상업체가 비면 작성자 소속 회사가 allowlist에 있을 때만 유지(전 업체 공통). */
+    authorCompanyIdByUser?: Record<string, string | null | undefined>;
   },
 ): T[] {
   if (opts.accessibleCompanyIds === null) return rows;
   const allow = new Set(opts.accessibleCompanyIds);
+  const companyOf = (uid?: string | null) => {
+    if (!uid) return null;
+    const id = opts.authorCompanyIdByUser?.[uid];
+    return id ? String(id) : null;
+  };
   return rows.filter((r) => {
-    if (opts.userId && r.created_by === opts.userId) return true;
+    if (opts.userId && (r.created_by === opts.userId || r.author_user_id === opts.userId)) return true;
     const targets = r.target_company_ids;
-    if (!Array.isArray(targets) || targets.length === 0) return false;
-    return targets.some((id) => allow.has(id));
+    if (Array.isArray(targets) && targets.length > 0) {
+      return targets.some((id) => allow.has(String(id)));
+    }
+    const authorCo = companyOf(r.author_user_id) || companyOf(r.created_by);
+    return !!(authorCo && allow.has(authorCo));
   });
+}
+
+/** project_members 기준 작성자/입력자 소속 회사. */
+export async function fetchAuthorCompanyIdByUser(
+  projectId: string,
+  userIds: string[],
+): Promise<Record<string, string>> {
+  const ids = [...new Set(userIds.map(String).filter(Boolean))];
+  if (!projectId || ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from('project_members')
+    .select('user_id, company_id, role_new')
+    .eq('project_id', projectId)
+    .in('user_id', ids);
+  if (error) throw error;
+  const byUser = new Map<string, ProjectMemberPickRow[]>();
+  for (const row of (data || []) as ProjectMemberPickRow[]) {
+    const uid = String(row.user_id || '');
+    if (!uid) continue;
+    const list = byUser.get(uid) || [];
+    list.push(row);
+    byUser.set(uid, list);
+  }
+  const out: Record<string, string> = {};
+  for (const [uid, rows] of byUser) {
+    const picked = pickProjectMemberRow(rows);
+    const cid = String(picked?.company_id || '').trim();
+    if (cid) out[uid] = cid;
+  }
+  return out;
+}
+
+export async function authorCompanyIdsForRuns(
+  projectId: string,
+  runs: Array<{ created_by?: string | null; author_user_id?: string | null }>,
+): Promise<Record<string, string>> {
+  const userIds = runs.flatMap((r) => [r.author_user_id, r.created_by]).filter(Boolean) as string[];
+  return fetchAuthorCompanyIdByUser(projectId, userIds);
 }
 
 /**

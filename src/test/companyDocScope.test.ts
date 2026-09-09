@@ -124,6 +124,24 @@ describe('filterRunsByCompanyScope', () => {
     });
     expect(out.map((r: any) => r.id).sort()).toEqual(['2', '3']);
   });
+
+  it('keeps a colleague RA when targets are empty and author company is in scope (any company)', () => {
+    const rows = [
+      { id: 'own', created_by: 'u-a', author_user_id: 'u-a', target_company_ids: [] },
+      { id: 'same-co', created_by: 'u-b', author_user_id: 'u-b', target_company_ids: [] },
+      { id: 'other-co', created_by: 'u-c', author_user_id: 'u-c', target_company_ids: [] },
+    ];
+    const out = filterRunsByCompanyScope(rows as any, {
+      userId: 'u-a',
+      accessibleCompanyIds: ['co-a'],
+      authorCompanyIdByUser: {
+        'u-a': 'co-a',
+        'u-b': 'co-a',
+        'u-c': 'co-b',
+      },
+    });
+    expect(out.map((r: any) => r.id).sort()).toEqual(['own', 'same-co']);
+  });
 });
 
 describe('resolveAssessmentRunCompanyLabels', () => {

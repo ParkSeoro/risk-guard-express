@@ -42,6 +42,7 @@ import {
   type DirectorPatrolItem,
 } from '@/lib/legalForms/patrolLog';
 import ApprovalLineManager, { type DraftStatusInfo } from '@/components/ApprovalLineManager';
+import ApprovalRejectReasonDialog from '@/components/approval/ApprovalRejectReasonDialog';
 import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
 import { DEFAULT_STEPS_BY_ENTITY } from '@/lib/approvalRules';
 import {
@@ -145,6 +146,7 @@ export default function SafetyInspections() {
   const [companies, setCompanies] = useState<Array<{ id: string; name: string; type: string; parent_company_id?: string | null }>>([]);
   const [myPendingApprovalId, setMyPendingApprovalId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
 
   const load = async () => {
     if (!projectId) return;
@@ -648,19 +650,26 @@ export default function SafetyInspections() {
     load();
   };
 
+  const submitPatrolReject = async (reason: string) => {
+    if (!myPendingApprovalId) return;
+    const { error } = await supabase.rpc('act_on_entity_approval', {
+      _approval_id: myPendingApprovalId,
+      _action: 'reject',
+      _comment: reason.trim(),
+    });
+    if (error) return toast({ title: '반려 실패', description: error.message, variant: 'destructive' });
+    toast({ title: '반려되었습니다.', variant: 'destructive' });
+    setDetail({ ...detail!, status: '반려' });
+    setMyPendingApprovalId(null);
+    if (detail) await openDetail({ ...detail, status: '반려' });
+    load();
+  };
+
   const actOnPatrol = async (action: 'approve' | 'reject') => {
     if (!myPendingApprovalId) return;
     if (action === 'reject') {
-      const reason = window.prompt('반려 사유를 입력하세요.');
-      if (!reason?.trim()) return toast({ title: '반려 사유를 입력하세요.', variant: 'destructive' });
-      const { error } = await supabase.rpc('act_on_entity_approval', {
-        _approval_id: myPendingApprovalId,
-        _action: 'reject',
-        _comment: reason.trim(),
-      });
-      if (error) return toast({ title: '반려 실패', description: error.message, variant: 'destructive' });
-      toast({ title: '반려되었습니다.', variant: 'destructive' });
-      setDetail({ ...detail!, status: '반려' });
+      setRejectDialogOpen(true);
+      return;
     } else {
       const { error } = await supabase.rpc('act_on_entity_approval', {
         _approval_id: myPendingApprovalId,
@@ -1364,6 +1373,11 @@ export default function SafetyInspections() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ApprovalRejectReasonDialog
+        open={rejectDialogOpen}
+        onOpenChange={setRejectDialogOpen}
+        onConfirm={submitPatrolReject}
+      />
     </div>
   );
 }

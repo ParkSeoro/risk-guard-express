@@ -8,5 +8,5 @@ export function tbmParticipationTimeLabel(
   if (!isRenderableSignature(p.signature_data)) return "미서명";
   const at = p.participated_at ? new Date(p.participated_at) : null;
   if (!at || Number.isNaN(at.getTime())) return "서명됨";
-  return at.toLocaleString(locale);
+  return at.toLocaleString(locale, { timeZone: "Asia/Seoul" });
 }

@@ -22,6 +22,7 @@ import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 import {
+  authorCompanyIdsForRuns,
   fetchCreatorCompanyLabelMap,
   filterRunsByCompanyScope,
   pickProjectMemberRow,
@@ -159,9 +160,18 @@ const AssessmentRuns = () => {
     }
     const { data } = await query;
     if (seq !== fetchSeqRef.current) return;
-    const list = filterRunsByCompanyScope(data || [], {
+    const raw = data || [];
+    let authorCompanyIdByUser: Record<string, string> = {};
+    try {
+      authorCompanyIdByUser = await authorCompanyIdsForRuns(selectedProject, raw);
+    } catch {
+      authorCompanyIdByUser = {};
+    }
+    if (seq !== fetchSeqRef.current) return;
+    const list = filterRunsByCompanyScope(raw, {
       userId: user?.id,
       accessibleCompanyIds,
+      authorCompanyIdByUser,
     });
     setRuns(list);
 

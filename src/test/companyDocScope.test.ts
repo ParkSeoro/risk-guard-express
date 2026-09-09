@@ -124,6 +124,24 @@ describe('filterRunsByCompanyScope', () => {
     });
     expect(out.map((r: any) => r.id).sort()).toEqual(['2', '3']);
   });
+
+  it('keeps a colleague RA when target companies are empty but author is same company', () => {
+    const rows = [
+      { id: 'week1', created_by: 'hyunho', author_user_id: 'hyunho', target_company_ids: [] },
+      { id: 'week2', created_by: 'daeyong', author_user_id: 'daeyong', target_company_ids: [] },
+      { id: 'other-co', created_by: 'other', author_user_id: 'other', target_company_ids: [] },
+    ];
+    const out = filterRunsByCompanyScope(rows as any, {
+      userId: 'hyunho',
+      accessibleCompanyIds: ['cheongwon'],
+      authorCompanyIdByUser: {
+        hyunho: 'cheongwon',
+        daeyong: 'cheongwon',
+        other: 'someone-else',
+      },
+    });
+    expect(out.map((r: any) => r.id).sort()).toEqual(['week1', 'week2']);
+  });
 });
 
 describe('resolveAssessmentRunCompanyLabels', () => {

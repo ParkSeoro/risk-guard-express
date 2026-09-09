@@ -12,7 +12,6 @@ import {
   isNativeApp,
 } from "@/lib/native/isNativeApp";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
-import { isManagerTbmSignPath } from "@/lib/managerTbmSign";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -278,9 +277,6 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
   if (shell === "worker" && isAdminShellUser(roles) && !prefersMobileAppShell()) {
     const isMaster = roles.some((r) => r.toLowerCase() === "master");
     if (isMaster && isActiveMobilePreviewRequest(location.search)) {
-      return <>{children}</>;
-    }
-    if (isManagerTbmSignPath(location.pathname)) {
       return <>{children}</>;
     }
     return <Navigate to={DESKTOP_ADMIN_HOME} replace />;

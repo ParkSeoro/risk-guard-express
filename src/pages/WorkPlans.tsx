@@ -75,12 +75,24 @@ const WorkPlans = () => {
   const loadRuns = async () => {
     if (!access.selectedProject) return;
     const { data } = await supabase.from('assessment_runs')
-      .select('id, period_label, type, status')
+      .select('id, period_label, type, status, created_by, author_user_id')
       .eq('project_id', access.selectedProject)
       .eq('is_deleted', false)
       .eq('status', '승인완료')
       .order('updated_at', { ascending: false }).limit(50);
-    setRuns(data || []);
+    const rows = (data || []) as any[];
+    const authorIds = [...new Set(rows.flatMap((r) => [r.author_user_id, r.created_by]).filter(Boolean))];
+    let nameByUser: Record<string, string> = {};
+    if (authorIds.length > 0) {
+      const { data: profs } = await supabase.from('profiles').select('user_id, display_name').in('user_id', authorIds);
+      for (const p of (profs || []) as any[]) {
+        if (p.user_id && p.display_name) nameByUser[p.user_id] = p.display_name;
+      }
+    }
+    setRuns(rows.map((r) => ({
+      ...r,
+      author_name: nameByUser[r.author_user_id] || nameByUser[r.created_by] || '',
+    })));
   };
 
   const loadCompanies = async () => {
@@ -349,7 +361,11 @@ const WorkPlans = () => {
                       <SelectContent>
                         {runs.length === 0
                           ? <SelectItem value="__none__" disabled>승인완료된 위험성평가가 없습니다</SelectItem>
-                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.period_label || r.type || r.id}</SelectItem>)}
+                          : runs.map(r => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.period_label || r.type || r.id}{r.author_name ? ` · ${r.author_name}` : ''}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>

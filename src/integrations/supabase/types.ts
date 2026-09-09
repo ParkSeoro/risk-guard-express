@@ -10156,27 +10156,6 @@ export type Database = {
         }[]
       }
       mark_required_items_overdue: { Args: never; Returns: number }
-      list_my_pending_tbm_signs: {
-        Args: never
-        Returns: {
-          session_id: string
-          project_id: string
-          project_name: string
-          title: string
-          tbm_date: string
-          location: string
-          leader_name: string
-          briefing_summary: string
-          briefing_risks: Json
-          company_name: string
-          qr_token: string
-        }[]
-      }
-      manager_sign_tbm_participation: {
-        Args: { _tbm_session_id: string; _signature_data: string }
-        Returns: Json
-      }
-      notify_manager_tbm_sign_due: { Args: never; Returns: number }
       merge_companies: {
         Args: { _dst: string; _src: string }
         Returns: undefined

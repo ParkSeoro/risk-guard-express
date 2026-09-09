@@ -25,7 +25,7 @@ import {
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
-import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
+import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
   approvalAssessmentPrintType,
@@ -257,9 +257,17 @@ const Approvals = () => {
           userId: user?.id,
           accessibleCompanyIds,
         });
+        let authorCompanyIdByUser: Record<string, string> = {};
+        try {
+          authorCompanyIdByUser = await authorCompanyIdsForRuns(selectedProject, runsData);
+        } catch {
+          authorCompanyIdByUser = {};
+        }
+        if (seq !== fetchSeqRef.current) return;
         runsData = filterRunsByCompanyScope(runsData, {
           userId: user?.id,
           accessibleCompanyIds,
+          authorCompanyIdByUser,
         });
       }
 

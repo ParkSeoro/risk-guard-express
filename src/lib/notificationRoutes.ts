@@ -35,7 +35,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   incident_report: () => `${ADMIN}/incidents`,
   emergency_drill: () => `${ADMIN}/emergency-drills`,
   tbm: () => `${ADMIN}/tbm-logs`,
-  tbm_session: (id) => (id ? `${WORKER}/tbm-sign?session=${id}` : `${WORKER}/tbm-sign`),
+  tbm_session: (id) => (id ? `${ADMIN}/tbm-logs?session=${id}` : `${ADMIN}/tbm-logs`),
   todo: () => `${ADMIN}/todo`,
   work_stop: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
   work_stop_request: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
@@ -61,7 +61,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   incident: () => `${WORKER}/incident`,
   incident_report: () => `${WORKER}/incident`,
   tbm: () => `${WORKER}/tbm`,
-  tbm_session: (id) => (id ? `${WORKER}/tbm-sign?session=${id}` : `${WORKER}/tbm-sign`),
+  tbm_session: (id) => (id ? `${WORKER}/tbm?session=${id}` : `${WORKER}/tbm`),
   work_stop: (id) => (id ? `${WORKER}/work-stop?id=${id}` : `${WORKER}/work-stop`),
   work_stop_request: (id) => (id ? `${WORKER}/work-stop?id=${id}` : `${WORKER}/work-stop`),
   // No dedicated mobile page yet → Today (avoid silent desktop jump)
@@ -107,8 +107,6 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   work_permit: (n) =>
     n.related_id ? `${ADMIN}/work-permits/${n.related_id}` : `${ADMIN}/work-permits`,
   tbm: () => `${ADMIN}/tbm-logs`,
-  tbm_sign_due: (n) =>
-    n.related_id ? `${WORKER}/tbm-sign?session=${n.related_id}` : `${WORKER}/tbm-sign`,
   todo_due: () => `${ADMIN}/todo`,
   health_warning: () => `${ADMIN}/health`,
   health_checkup_due: () => `${ADMIN}/health/checkups`,
@@ -152,8 +150,6 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${WORKER}/inspect?id=${n.related_id}` : `${WORKER}/inspect`,
   work_permit: () => `${WORKER}/approvals`,
   tbm: () => `${WORKER}/tbm`,
-  tbm_sign_due: (n) =>
-    n.related_id ? `${WORKER}/tbm-sign?session=${n.related_id}` : `${WORKER}/tbm-sign`,
   todo_due: () => `${WORKER}/tasks`,
   health_warning: () => `${WORKER}/daily-health-log`,
   health_checkup_due: () => `${WORKER}/daily-health-log`,
@@ -195,10 +191,6 @@ export function toMobileShellPath(path: string): string {
     return `${WORKER}/inspect${q}`;
   }
   if (p.startsWith("/incidents")) return `${WORKER}/incident`;
-  if (p.startsWith("/tbm-sign")) {
-    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
-    return `${WORKER}/tbm-sign${q}`;
-  }
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
   if (p.startsWith("/work-stop")) {
     const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";

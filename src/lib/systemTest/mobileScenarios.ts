@@ -34,7 +34,6 @@ export const MOBILE_ROUTES: Array<{
   { path: "/app/worker/risk-assessment", label: "위험성평가", requires: { kind: "table", name: "assessment_runs", project_scoped: true } },
   { path: "/app/worker/work-plans", label: "작업계획", requires: { kind: "table", name: "work_plans", project_scoped: true } },
   { path: "/app/worker/tbm", label: "TBM", requires: { kind: "table", name: "tbm_sessions", project_scoped: true } },
-  { path: "/app/worker/tbm-sign", label: "관리자 TBM 확인서명", requires: { kind: "rpc", name: "list_my_pending_tbm_signs", sample_args: {} } },
   { path: "/app/worker/permits", label: "허가서 조회", requires: { kind: "table", name: "work_permits", project_scoped: true } },
   { path: "/app/worker/incident", label: "사고 신고", requires: { kind: "table", name: "incident_reports", project_scoped: true } },
   { path: "/app/worker/scan", label: "QR 스캔(카메라)", requires: { kind: "browser", cap: "camera" } },

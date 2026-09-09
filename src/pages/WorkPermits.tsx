@@ -32,7 +32,7 @@ import {
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
-import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
+import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from '@/lib/companyDocScope';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import {
   filterPermitsForList,
@@ -217,7 +217,7 @@ export default function WorkPermits() {
     let tbmQ: any = supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50);
     tbmQ = applyCompanyFilter(tbmQ);
     // assessment_runs: no company_id — filter by target_company_ids / creator for subordinates
-    let runsQ: any = supabase.from('assessment_runs').select('id, period_label, status, created_by, target_company_ids').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100);
+    let runsQ: any = supabase.from('assessment_runs').select('id, period_label, status, created_by, author_user_id, target_company_ids').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(200);
 
     const [{ data: p }, { data: wp }, { data: ar }, { data: tb }, { data: myApprovals }, { data: nameApprovals }] = await Promise.all([
       permitQuery,
@@ -251,11 +251,30 @@ export default function WorkPermits() {
     );
     setPlans((wp as any) || []);
     const runsRaw = (ar as any[]) || [];
+    let authorCompanyIdByUser: Record<string, string> = {};
+    try {
+      authorCompanyIdByUser = await authorCompanyIdsForRuns(projectId, runsRaw);
+    } catch {
+      authorCompanyIdByUser = {};
+    }
+    const scoped = filterRunsByCompanyScope(runsRaw, {
+      userId: user?.id,
+      accessibleCompanyIds,
+      authorCompanyIdByUser,
+    });
+    const authorIds = [...new Set(scoped.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean))];
+    let nameByUser: Record<string, string> = {};
+    if (authorIds.length > 0) {
+      const { data: profs } = await supabase.from('profiles').select('user_id, display_name').in('user_id', authorIds);
+      for (const p of (profs || []) as any[]) {
+        if (p.user_id && p.display_name) nameByUser[p.user_id] = p.display_name;
+      }
+    }
     setRuns(
-      filterRunsByCompanyScope(runsRaw, {
-        userId: user?.id,
-        accessibleCompanyIds,
-      }),
+      scoped.map((r: any) => ({
+        ...r,
+        author_name: nameByUser[r.author_user_id] || nameByUser[r.created_by] || '',
+      })),
     );
     setTbms((tb as any) || []);
 
@@ -716,7 +735,11 @@ export default function WorkPermits() {
               <Label>위험성평가 회차</Label>
               <Select value={form.assessment_run_id} onValueChange={(v) => setForm({ ...form, assessment_run_id: v })}>
                 <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
-                <SelectContent>{runs.map((r) => <SelectItem key={r.id} value={r.id}>{r.period_label} ({r.status})</SelectItem>)}</SelectContent>
+                <SelectContent>{runs.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.period_label} ({r.status}){r.author_name ? ` · ${r.author_name}` : ''}
+                  </SelectItem>
+                ))}</SelectContent>
               </Select>
             </div>
             <div>

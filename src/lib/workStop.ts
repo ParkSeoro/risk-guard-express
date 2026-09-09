@@ -76,11 +76,14 @@ export function applyRevealedWorkStopName(preview: string, legalName: string | n
 export function workStopNotifyMessage(row: WorkStopIdentityRow & {
   location?: string | null;
   hazard_description?: string | null;
+  project_name?: string | null;
 }): string {
   const who = workStopDisplayName(row);
   const loc = (row.location || "").trim();
   const hazard = (row.hazard_description || "").trim() || "위험상황";
-  return loc ? `${who} · ${loc} — ${hazard}` : `${who} — ${hazard}`;
+  const body = loc ? `${who} · ${loc} — ${hazard}` : `${who} — ${hazard}`;
+  const project = (row.project_name || "").trim();
+  return project ? `[${project}] ${body}` : body;
 }
 
 export function validateWorkStopForm(opts: {

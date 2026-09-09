@@ -43,6 +43,11 @@ vi.mock("@/lib/tracking/resolveBanSubject", () => ({
   lookupWorkerBanFields: async () => ({ worker_id: null }),
 }));
 
+vi.mock("@/lib/projectNames", () => ({
+  fetchProjectNames: async () => ({}),
+  prefixNotificationProject: (text: string) => text,
+}));
+
 import MobileWorkStop from "@/pages/MobileWorkStop";
 
 describe("MobileWorkStop photo field", () => {

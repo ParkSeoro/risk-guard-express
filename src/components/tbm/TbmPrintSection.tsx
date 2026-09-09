@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { parseTbmPhotoUrls } from '@/lib/tbmPhotos';
 import { WorkStopPhotos } from '@/components/work-stop/WorkStopPhotos';
+import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
 
 /**
  * Hidden on screen, visible on print.
@@ -84,7 +85,7 @@ export default function TbmPrintSection({ runId }: { runId: string }) {
                     <td className="border p-1">{p.worker_name}</td>
                     <td className="border p-1">{p.company_name || '-'}</td>
                     <td className="border p-1">{p.worker_phone}</td>
-                    <td className="border p-1">{new Date(p.participated_at).toLocaleString('ko-KR')}</td>
+                    <td className="border p-1">{tbmParticipationTimeLabel(p)}</td>
                     <td className="border p-1 text-center">
                       {p.signature_data && <img src={p.signature_data} alt="서명" className="inline-block h-8 max-w-full object-contain" />}
                     </td>

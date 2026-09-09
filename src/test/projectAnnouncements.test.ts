@@ -146,6 +146,11 @@ describe("filterAnnouncementRecipients", () => {
     expect(ids).not.toContain("u-co-w");
     expect(ids).toContain("u-gc-a");
   });
+
+  it("특정 회사 + 관리자 stays in that company", () => {
+    const ids = filterAnnouncementRecipients(members, ["co-1"], "managers");
+    expect(ids).toEqual(["u-co-sm"]);
+  });
 });
 
 describe("resolveAudienceCompanyIds", () => {
@@ -157,6 +162,15 @@ describe("resolveAudienceCompanyIds", () => {
     );
     expect(ids).toEqual(expect.arrayContaining(["gc-a", "co-1"]));
     expect(ids).not.toEqual(expect.arrayContaining(["gc-b"]));
+  });
+
+  it("keeps 특정 회사만 on that company, no descendants", () => {
+    const ids = resolveAudienceCompanyIds(
+      { companyMode: "one_company", companyIds: ["gc-a"], includeDescendants: false, people: "managers" },
+      gc,
+      companies,
+    );
+    expect(ids).toEqual(["gc-a"]);
   });
 });
 

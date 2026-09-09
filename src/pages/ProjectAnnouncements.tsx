@@ -142,24 +142,30 @@ export default function ProjectAnnouncements() {
 
   useEffect(() => {
     if (!open || !projectId || editingId) return;
-    const audience: AnnouncementAudience = {
-      companyMode,
-      companyIds: pickedCompany ? [pickedCompany] : [],
-      includeDescendants: companyMode !== "one_company",
-      people,
-    };
+    const audience = audienceDraft();
     (async () => {
-      const { data } = await supabase
-        .from("project_members")
-        .select("user_id, role_new, company_id")
-        .eq("project_id", projectId);
-      const companyIds = resolveAudienceCompanyIds(audience, author, companies);
-      const ids = filterAnnouncementRecipients((data || []) as any[], companyIds, people);
-      // Author is always included on publish
-      if (user?.id && !ids.includes(user.id)) ids.push(user.id);
-      setPreviewCount(ids.length);
+      const { data, error } = await supabase.rpc("preview_project_announcement_count" as any, {
+        _project_id: projectId,
+        _audience: audience as any,
+        _author_company_id: access.userCompanyId,
+      });
+      if (error) {
+        const companyIds = resolveAudienceCompanyIds(audience, author, companies);
+        const { data: members } = await supabase
+          .from("project_members")
+          .select("user_id, role_new, company_id")
+          .eq("project_id", projectId)
+          .not("user_id", "is", null)
+          .limit(5000);
+        const ids = filterAnnouncementRecipients((members || []) as any[], companyIds, audience.people);
+        if (user?.id && !ids.includes(user.id)) ids.push(user.id);
+        setPreviewCount(ids.length);
+        return;
+      }
+      const n = typeof data === "number" ? data : Number((data as any)?.recipient_count ?? 0);
+      setPreviewCount(Number.isFinite(n) ? n : 0);
     })();
-  }, [open, editingId, projectId, companyMode, people, pickedCompany, companies, user?.id]);
+  }, [open, editingId, projectId, companyMode, people, pickedCompany, companies, user?.id, access.userCompanyId]);
 
   const audienceDraft = (): AnnouncementAudience => ({
     companyMode,
@@ -386,6 +392,9 @@ export default function ProjectAnnouncements() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    현장 전체, 내 회사(하위 포함), 특정 시공사(하위 포함), 특정 회사만 중에서 고릅니다.
+                  </p>
                 </div>
                 {(companyMode === "one_gc" || companyMode === "one_company") && (
                   <div>
@@ -398,6 +407,11 @@ export default function ProjectAnnouncements() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {companyMode === "one_company" && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        고른 회사 계정에만 갑니다. 하위 협력사에는 가지 않습니다.
+                      </p>
+                    )}
                   </div>
                 )}
                 <div>
@@ -410,6 +424,9 @@ export default function ProjectAnnouncements() {
                       <SelectItem value="workers">근로자</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    관리자만, 근로자만, 또는 전원. 위 회사 범위와 같이 적용됩니다.
+                  </p>
                 </div>
               </>
             )}
@@ -426,8 +443,8 @@ export default function ProjectAnnouncements() {
             </div>
             {!editingId && previewCount != null && (
               <p className="text-xs text-muted-foreground">
-                앱 계정 약 <strong>{previewCount}명</strong>(작성자 포함)에게 푸시 1회.
-                앱을 설치·로그인한 폰만 알람이 울립니다.
+                {summarizeAudience(audienceDraft())} · 계정 <strong>{previewCount}명</strong>(작성자 포함)에게 알림이 갑니다.
+                앱을 설치·로그인한 폰만 푸시가 울립니다.
               </p>
             )}
             {editingId && (

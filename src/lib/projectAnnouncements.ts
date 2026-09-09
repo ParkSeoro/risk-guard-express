@@ -84,6 +84,7 @@ export function resolveAudienceCompanyIds(
   return [root];
 }
 
+/** Project members with an app account in the company + people scope. */
 export function filterAnnouncementRecipients(
   members: AnnouncementMember[],
   companyIds: string[] | "all",

@@ -15,6 +15,7 @@ import {
   type AnnouncementAudience,
   type AnnouncementAuthor,
   type AnnouncementCompanyMode,
+  type AnnouncementPeople,
 } from "@/lib/projectAnnouncements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,7 @@ export default function ProjectAnnouncements() {
   const [expiresAt, setExpiresAt] = useState("");
   const [requireAck, setRequireAck] = useState(false);
   const [companyMode, setCompanyMode] = useState<AnnouncementCompanyMode>(modes[0] || "own_tree");
+  const [people, setPeople] = useState<AnnouncementPeople>("all");
   const [pickedCompany, setPickedCompany] = useState("");
   const [companies, setCompanies] = useState<{ id: string; name: string; type: string | null; parent_company_id?: string | null }[]>([]);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
@@ -93,6 +95,7 @@ export default function ProjectAnnouncements() {
     setExpiresAt("");
     setRequireAck(false);
     setCompanyMode(modes[0] || "own_tree");
+    setPeople("all");
     setPickedCompany("");
   };
 
@@ -150,11 +153,11 @@ export default function ProjectAnnouncements() {
         const companyIds = resolveAudienceCompanyIds(audience, author, companies);
         const { data: members } = await supabase
           .from("project_members")
-          .select("user_id, company_id")
+          .select("user_id, role_new, company_id")
           .eq("project_id", projectId)
           .not("user_id", "is", null)
           .limit(5000);
-        const ids = filterAnnouncementRecipients((members || []) as any[], companyIds);
+        const ids = filterAnnouncementRecipients((members || []) as any[], companyIds, audience.people);
         if (user?.id && !ids.includes(user.id)) ids.push(user.id);
         setPreviewCount(ids.length);
         return;
@@ -162,13 +165,13 @@ export default function ProjectAnnouncements() {
       const n = typeof data === "number" ? data : Number((data as any)?.recipient_count ?? 0);
       setPreviewCount(Number.isFinite(n) ? n : 0);
     })();
-  }, [open, editingId, projectId, companyMode, pickedCompany, companies, user?.id, access.userCompanyId]);
+  }, [open, editingId, projectId, companyMode, people, pickedCompany, companies, user?.id, access.userCompanyId]);
 
   const audienceDraft = (): AnnouncementAudience => ({
     companyMode,
     companyIds: pickedCompany ? [pickedCompany] : [],
     includeDescendants: companyMode !== "one_company",
-    people: "all",
+    people,
   });
 
   const openCreate = () => {
@@ -389,6 +392,9 @@ export default function ProjectAnnouncements() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    현장 전체, 내 회사(하위 포함), 특정 시공사(하위 포함), 특정 회사만 중에서 고릅니다.
+                  </p>
                 </div>
                 {(companyMode === "one_gc" || companyMode === "one_company") && (
                   <div>
@@ -401,8 +407,27 @@ export default function ProjectAnnouncements() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {companyMode === "one_company" && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        고른 회사 계정에만 갑니다. 하위 협력사에는 가지 않습니다.
+                      </p>
+                    )}
                   </div>
                 )}
+                <div>
+                  <Label>사람</Label>
+                  <Select value={people} onValueChange={(v) => setPeople(v as AnnouncementPeople)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전원</SelectItem>
+                      <SelectItem value="managers">관리자</SelectItem>
+                      <SelectItem value="workers">근로자</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    관리자만, 근로자만, 또는 전원. 위 회사 범위와 같이 적용됩니다.
+                  </p>
+                </div>
               </>
             )}
             <div className="flex items-center justify-between rounded-lg border px-3 py-2">
@@ -418,7 +443,7 @@ export default function ProjectAnnouncements() {
             </div>
             {!editingId && previewCount != null && (
               <p className="text-xs text-muted-foreground">
-                이 프로젝트 계정 <strong>{previewCount}명</strong>(작성자 포함)에게 알림이 갑니다.
+                {summarizeAudience(audienceDraft())} · 계정 <strong>{previewCount}명</strong>(작성자 포함)에게 알림이 갑니다.
                 앱을 설치·로그인한 폰만 푸시가 울립니다.
               </p>
             )}

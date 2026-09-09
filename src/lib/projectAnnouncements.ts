@@ -84,17 +84,20 @@ export function resolveAudienceCompanyIds(
   return [root];
 }
 
-/** Project members with an app account in the company scope. Role is ignored. */
+/** Project members with an app account in the company + people scope. */
 export function filterAnnouncementRecipients(
   members: AnnouncementMember[],
   companyIds: string[] | "all",
-  _people?: AnnouncementPeople,
+  people: AnnouncementPeople,
 ): string[] {
   const ids = new Set<string>();
   for (const m of members) {
     const uid = String(m.user_id || "").trim();
     if (!uid) continue;
     if (companyIds !== "all" && !companyIds.includes(String(m.company_id || ""))) continue;
+    const role = String(m.role_new || "").toLowerCase();
+    if (people === "managers" && !ADMIN.has(role)) continue;
+    if (people === "workers" && role !== "worker") continue;
     ids.add(uid);
   }
   return [...ids];
@@ -154,6 +157,8 @@ export function validateAnnouncementAudience(
 }
 
 export function summarizeAudience(audience: AnnouncementAudience): string {
+  const people =
+    audience.people === "managers" ? "관리자" : audience.people === "workers" ? "근로자" : "전원";
   const company =
     audience.companyMode === "project_all"
       ? "현장 전체"
@@ -162,7 +167,7 @@ export function summarizeAudience(audience: AnnouncementAudience): string {
         : audience.companyMode === "one_gc"
           ? "특정 시공사(하위 포함)"
           : "특정 회사";
-  return `${company} · 계정 전원`;
+  return `${company} · ${people}`;
 }
 
 export function isPendingAnnouncementActive(opts: {

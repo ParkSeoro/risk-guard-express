@@ -130,15 +130,26 @@ describe("filterAnnouncementRecipients", () => {
     const ids = filterAnnouncementRecipients(
       members.filter((m) => m.user_id !== "u-no-account").concat([{ user_id: null, role_new: "worker", company_id: "co-1" }]),
       ["gc-a", "co-1"],
+      "workers",
     );
-    expect(ids.sort()).toEqual(["u-co-sm", "u-co-w", "u-gc-a"]);
+    expect(ids.sort()).toEqual(["u-co-w"]);
   });
 
-  it("현장 전체 includes every account on the project", () => {
-    const ids = filterAnnouncementRecipients(members, "all");
+  it("현장 전체 + 전원 includes every account on the project", () => {
+    const ids = filterAnnouncementRecipients(members, "all", "all");
     expect(ids).toContain("u-gc-b");
     expect(ids).toContain("u-co2-w");
-    expect(ids).toContain("u-co-w");
+  });
+
+  it("managers excludes workers", () => {
+    const ids = filterAnnouncementRecipients(members, "all", "managers");
+    expect(ids).not.toContain("u-co-w");
+    expect(ids).toContain("u-gc-a");
+  });
+
+  it("특정 회사 + 관리자 stays in that company", () => {
+    const ids = filterAnnouncementRecipients(members, ["co-1"], "managers");
+    expect(ids).toEqual(["u-co-sm"]);
   });
 });
 
@@ -152,6 +163,15 @@ describe("resolveAudienceCompanyIds", () => {
     expect(ids).toEqual(expect.arrayContaining(["gc-a", "co-1"]));
     expect(ids).not.toEqual(expect.arrayContaining(["gc-b"]));
   });
+
+  it("keeps 특정 회사만 on that company, no descendants", () => {
+    const ids = resolveAudienceCompanyIds(
+      { companyMode: "one_company", companyIds: ["gc-a"], includeDescendants: false, people: "managers" },
+      gc,
+      companies,
+    );
+    expect(ids).toEqual(["gc-a"]);
+  });
 });
 
 describe("isPendingAnnouncementActive", () => {
@@ -164,9 +184,9 @@ describe("isPendingAnnouncementActive", () => {
 });
 
 describe("summarizeAudience", () => {
-  it("labels company scope and all accounts", () => {
-    expect(summarizeAudience({ companyMode: "project_all", companyIds: [], includeDescendants: true, people: "all" })).toBe(
-      "현장 전체 · 계정 전원",
+  it("labels company + people", () => {
+    expect(summarizeAudience({ companyMode: "project_all", companyIds: [], includeDescendants: true, people: "workers" })).toBe(
+      "현장 전체 · 근로자",
     );
   });
 });

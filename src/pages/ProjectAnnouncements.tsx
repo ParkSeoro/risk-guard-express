@@ -15,7 +15,6 @@ import {
   type AnnouncementAudience,
   type AnnouncementAuthor,
   type AnnouncementCompanyMode,
-  type AnnouncementPeople,
 } from "@/lib/projectAnnouncements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,7 +82,6 @@ export default function ProjectAnnouncements() {
   const [expiresAt, setExpiresAt] = useState("");
   const [requireAck, setRequireAck] = useState(false);
   const [companyMode, setCompanyMode] = useState<AnnouncementCompanyMode>(modes[0] || "own_tree");
-  const [people, setPeople] = useState<AnnouncementPeople>("all");
   const [pickedCompany, setPickedCompany] = useState("");
   const [companies, setCompanies] = useState<{ id: string; name: string; type: string | null; parent_company_id?: string | null }[]>([]);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
@@ -95,7 +93,6 @@ export default function ProjectAnnouncements() {
     setExpiresAt("");
     setRequireAck(false);
     setCompanyMode(modes[0] || "own_tree");
-    setPeople("all");
     setPickedCompany("");
   };
 
@@ -142,30 +139,36 @@ export default function ProjectAnnouncements() {
 
   useEffect(() => {
     if (!open || !projectId || editingId) return;
-    const audience: AnnouncementAudience = {
-      companyMode,
-      companyIds: pickedCompany ? [pickedCompany] : [],
-      includeDescendants: companyMode !== "one_company",
-      people,
-    };
+    const audience = audienceDraft();
     (async () => {
-      const { data } = await supabase
-        .from("project_members")
-        .select("user_id, role_new, company_id")
-        .eq("project_id", projectId);
-      const companyIds = resolveAudienceCompanyIds(audience, author, companies);
-      const ids = filterAnnouncementRecipients((data || []) as any[], companyIds, people);
-      // Author is always included on publish
-      if (user?.id && !ids.includes(user.id)) ids.push(user.id);
-      setPreviewCount(ids.length);
+      const { data, error } = await supabase.rpc("preview_project_announcement_count" as any, {
+        _project_id: projectId,
+        _audience: audience as any,
+        _author_company_id: access.userCompanyId,
+      });
+      if (error) {
+        const companyIds = resolveAudienceCompanyIds(audience, author, companies);
+        const { data: members } = await supabase
+          .from("project_members")
+          .select("user_id, company_id")
+          .eq("project_id", projectId)
+          .not("user_id", "is", null)
+          .limit(5000);
+        const ids = filterAnnouncementRecipients((members || []) as any[], companyIds);
+        if (user?.id && !ids.includes(user.id)) ids.push(user.id);
+        setPreviewCount(ids.length);
+        return;
+      }
+      const n = typeof data === "number" ? data : Number((data as any)?.recipient_count ?? 0);
+      setPreviewCount(Number.isFinite(n) ? n : 0);
     })();
-  }, [open, editingId, projectId, companyMode, people, pickedCompany, companies, user?.id]);
+  }, [open, editingId, projectId, companyMode, pickedCompany, companies, user?.id, access.userCompanyId]);
 
   const audienceDraft = (): AnnouncementAudience => ({
     companyMode,
     companyIds: pickedCompany ? [pickedCompany] : [],
     includeDescendants: companyMode !== "one_company",
-    people,
+    people: "all",
   });
 
   const openCreate = () => {
@@ -400,17 +403,6 @@ export default function ProjectAnnouncements() {
                     </Select>
                   </div>
                 )}
-                <div>
-                  <Label>사람</Label>
-                  <Select value={people} onValueChange={(v) => setPeople(v as AnnouncementPeople)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">전원</SelectItem>
-                      <SelectItem value="managers">관리자</SelectItem>
-                      <SelectItem value="workers">근로자</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </>
             )}
             <div className="flex items-center justify-between rounded-lg border px-3 py-2">
@@ -426,8 +418,8 @@ export default function ProjectAnnouncements() {
             </div>
             {!editingId && previewCount != null && (
               <p className="text-xs text-muted-foreground">
-                앱 계정 약 <strong>{previewCount}명</strong>(작성자 포함)에게 푸시 1회.
-                앱을 설치·로그인한 폰만 알람이 울립니다.
+                이 프로젝트 계정 <strong>{previewCount}명</strong>(작성자 포함)에게 알림이 갑니다.
+                앱을 설치·로그인한 폰만 푸시가 울립니다.
               </p>
             )}
             {editingId && (

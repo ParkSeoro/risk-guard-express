@@ -130,21 +130,15 @@ describe("filterAnnouncementRecipients", () => {
     const ids = filterAnnouncementRecipients(
       members.filter((m) => m.user_id !== "u-no-account").concat([{ user_id: null, role_new: "worker", company_id: "co-1" }]),
       ["gc-a", "co-1"],
-      "workers",
     );
-    expect(ids.sort()).toEqual(["u-co-w"]);
+    expect(ids.sort()).toEqual(["u-co-sm", "u-co-w", "u-gc-a"]);
   });
 
-  it("현장 전체 + 전원 includes every account on the project", () => {
-    const ids = filterAnnouncementRecipients(members, "all", "all");
+  it("현장 전체 includes every account on the project", () => {
+    const ids = filterAnnouncementRecipients(members, "all");
     expect(ids).toContain("u-gc-b");
     expect(ids).toContain("u-co2-w");
-  });
-
-  it("managers excludes workers", () => {
-    const ids = filterAnnouncementRecipients(members, "all", "managers");
-    expect(ids).not.toContain("u-co-w");
-    expect(ids).toContain("u-gc-a");
+    expect(ids).toContain("u-co-w");
   });
 });
 
@@ -170,9 +164,9 @@ describe("isPendingAnnouncementActive", () => {
 });
 
 describe("summarizeAudience", () => {
-  it("labels company + people", () => {
-    expect(summarizeAudience({ companyMode: "project_all", companyIds: [], includeDescendants: true, people: "workers" })).toBe(
-      "현장 전체 · 근로자",
+  it("labels company scope and all accounts", () => {
+    expect(summarizeAudience({ companyMode: "project_all", companyIds: [], includeDescendants: true, people: "all" })).toBe(
+      "현장 전체 · 계정 전원",
     );
   });
 });

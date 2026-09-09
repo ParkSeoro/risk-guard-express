@@ -13,6 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Megaphone, CheckCircle2, Plus, Users } from 'lucide-react';
 import { format } from 'date-fns';
+import { authorCompanyIdsForRuns } from '@/lib/companyDocScope';
+import { filterAssessmentNoticesByCompanyScope, noticeCompanyIdsForRun } from '@/lib/assessmentNoticeScope';
 
 interface Notice {
   id: string;
@@ -24,11 +26,12 @@ interface Notice {
   expires_at: string | null;
   acknowledged_worker_ids: string[] | null;
   created_at: string;
+  company_ids?: string[] | null;
 }
 
 export default function AssessmentNotices() {
   const { user } = useAuth();
-  const { selectedProject } = useGlobalProjectAccess();
+  const { selectedProject, accessibleCompanyIds, scopeStatus } = useGlobalProjectAccess();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -47,7 +50,7 @@ export default function AssessmentNotices() {
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    if (!selectedProject) { setNotices([]); setLoading(false); return; }
+    if (!selectedProject || scopeStatus !== 'ready') { setNotices([]); setLoading(scopeStatus === 'ready'); return; }
     setLoading(true);
     const { data, error } = await supabase
       .from('assessment_notices')
@@ -55,16 +58,38 @@ export default function AssessmentNotices() {
       .eq('project_id', selectedProject)
       .order('posted_at', { ascending: false });
     if (error) toast({ title: '공지 조회 실패', description: error.message, variant: 'destructive' });
-    const rows = (data as Notice[]) || [];
-    setNotices(rows);
+    let rows = (data as Notice[]) || [];
     const runIds = [...new Set(rows.map((n) => n.run_id).filter((id): id is string => !!id))];
-    if (runIds.length === 0) {
+    let companyIdsByRunId: Record<string, string[]> = {};
+    if (runIds.length > 0) {
+      const { data: runs } = await supabase
+        .from('assessment_runs')
+        .select('id, target_company_ids, author_user_id, created_by')
+        .in('id', runIds);
+      const runRows = (runs || []) as any[];
+      let authorMap: Record<string, string> = {};
+      try {
+        authorMap = await authorCompanyIdsForRuns(selectedProject, runRows);
+      } catch {
+        authorMap = {};
+      }
+      for (const r of runRows) {
+        companyIdsByRunId[r.id] = noticeCompanyIdsForRun(r, authorMap);
+      }
+    }
+    rows = filterAssessmentNoticesByCompanyScope(rows, {
+      accessibleCompanyIds,
+      companyIdsByRunId,
+    });
+    setNotices(rows);
+    const ackRunIds = [...new Set(rows.map((n) => n.run_id).filter((id): id is string => !!id))];
+    if (ackRunIds.length === 0) {
       setShareCounts({});
     } else {
       const { data: acks } = await supabase
         .from('assessment_run_share_acks')
         .select('run_id')
-        .in('run_id', runIds);
+        .in('run_id', ackRunIds);
       const counts: Record<string, number> = {};
       for (const row of acks || []) {
         const id = (row as { run_id?: string }).run_id;
@@ -75,7 +100,7 @@ export default function AssessmentNotices() {
     }
     setLoading(false);
   };
-  useEffect(() => { load(); }, [selectedProject]);
+  useEffect(() => { load(); }, [selectedProject, accessibleCompanyIds, scopeStatus]);
 
   const handleCreate = async () => {
     if (!title.trim() || !selectedProject) return;
@@ -110,7 +135,7 @@ export default function AssessmentNotices() {
           <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
             <Megaphone className="h-5 w-5" /> 위험성평가 공지
           </h1>
-          <p className="text-sm text-muted-foreground">근로자 의견수렴·결과 공지 (위험성평가 고시)</p>
+          <p className="text-sm text-muted-foreground">승인된 회차의 업체 공지. 시공사는 자사·하위 협력사, 발주처는 현장 전체.</p>
         </div>
         <Button size="sm" onClick={() => setOpenCreate(true)}>
           <Plus className="h-4 w-4 mr-1" /> 공지 작성

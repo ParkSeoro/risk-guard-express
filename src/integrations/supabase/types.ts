@@ -872,6 +872,7 @@ export type Database = {
         Row: {
           acknowledged_worker_ids: string[] | null
           body: string | null
+          company_ids: string[]
           created_at: string
           created_by: string | null
           expires_at: string | null
@@ -885,6 +886,7 @@ export type Database = {
         Insert: {
           acknowledged_worker_ids?: string[] | null
           body?: string | null
+          company_ids?: string[]
           created_at?: string
           created_by?: string | null
           expires_at?: string | null
@@ -898,6 +900,7 @@ export type Database = {
         Update: {
           acknowledged_worker_ids?: string[] | null
           body?: string | null
+          company_ids?: string[]
           created_at?: string
           created_by?: string | null
           expires_at?: string | null
@@ -10188,6 +10191,14 @@ export type Database = {
           _related_id?: string
           _severity?: string
           _positions?: string[]
+        }
+        Returns: number
+      }
+      preview_project_announcement_count: {
+        Args: {
+          _project_id: string
+          _audience: Json
+          _author_company_id?: string | null
         }
         Returns: number
       }

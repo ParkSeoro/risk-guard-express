@@ -1,7 +1,8 @@
 /**
  * iPhone Safari/PWA: "Can't find variable: Shareable".
  * Shareable is a React Native worklets global — it does not exist on iOS web.
- * Recover once: drop the service worker + Cache Storage, then reload.
+ * Recover once: drop the service worker + Cache Storage, then reload
+ * with a cache-busting query so Safari does not reuse the broken JS.
  */
 
 export const SHAREABLE_RUNTIME_RE =
@@ -10,7 +11,8 @@ export const SHAREABLE_RUNTIME_RE =
 export const IOS_SHAREABLE_PAGE_MESSAGE =
   "아이폰 웹 화면을 다시 불러오는 중입니다. 잠시 후 새로고침됩니다.";
 
-const RECOVER_KEY = "safenex.ios-shareable-recover";
+export const IOS_SHAREABLE_RECOVER_KEY = "safenex.ios-shareable-recover";
+export const IOS_SHAREABLE_BUST_PARAM = "_snx";
 export const IOS_SHAREABLE_RECOVER_COOLDOWN_MS = 15_000;
 
 export function errorText(err: unknown): string {
@@ -44,13 +46,20 @@ export function shouldRecoverIosShareable(lastAt: number, now: number): boolean 
   return now - lastAt >= IOS_SHAREABLE_RECOVER_COOLDOWN_MS;
 }
 
+/** Path + query + hash with a fresh bust param so Safari skips the stale document/JS. */
+export function cacheBustedLocation(href: string, now: number): string {
+  const url = new URL(href, "https://safenex.org");
+  url.searchParams.set(IOS_SHAREABLE_BUST_PARAM, String(now));
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export async function recoverIosWebRuntimeOnce(win: Window = window): Promise<boolean> {
   if (!isIosWebWindow(win)) return false;
   try {
-    const last = Number(win.sessionStorage?.getItem(RECOVER_KEY) || "0");
+    const last = Number(win.sessionStorage?.getItem(IOS_SHAREABLE_RECOVER_KEY) || "0");
     const now = Date.now();
     if (!shouldRecoverIosShareable(last, now)) return false;
-    win.sessionStorage?.setItem(RECOVER_KEY, String(now));
+    win.sessionStorage?.setItem(IOS_SHAREABLE_RECOVER_KEY, String(now));
   } catch {
     /* private mode: still try once */
   }
@@ -73,9 +82,14 @@ export async function recoverIosWebRuntimeOnce(win: Window = window): Promise<bo
   }
 
   try {
-    win.location.reload();
+    const next = cacheBustedLocation(win.location.href, Date.now());
+    win.location.replace(next);
   } catch {
-    return false;
+    try {
+      win.location.reload();
+    } catch {
+      return false;
+    }
   }
   return true;
 }

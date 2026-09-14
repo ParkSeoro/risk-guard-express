@@ -13,7 +13,7 @@ describe("리깅플랜 인쇄 제목", () => {
   it("화면과 같은 제목으로 재사용 컬럼을 찍는다", () => {
     const html = renderRiggingPrintHtml(
       {
-        lifting_method: "정대용형",
+        lifting_method: "정대용",
         outrigger_setup: "GSC조 내계",
         notes: "2026-09-01 ~ 09-30",
         load_description: "H빔 반입",
@@ -25,7 +25,7 @@ describe("리깅플랜 인쇄 제목", () => {
     );
 
     expect(html).toContain(`>${RIGGING_PRINT_LABELS.lifting_method}<`);
-    expect(html).toContain("정대용형");
+    expect(html).toContain("정대용");
     expect(html).not.toContain("인양 방식");
 
     expect(html).toContain(`>${RIGGING_PRINT_LABELS.outrigger_setup}<`);

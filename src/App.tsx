@@ -36,6 +36,7 @@ const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
 const NativePermissionsOnboarding = lazy(
   () => import("@/pages/NativePermissionsOnboarding"),
 );
+const WorkerLocaleOnboarding = lazy(() => import("@/pages/WorkerLocaleOnboarding"));
 
 const queryClient = new QueryClient();
 
@@ -154,6 +155,7 @@ const App = () => (
                 <Route path="/manual" element={<Manual />} />
                 <Route path="/consent" element={<ConsentPage />} />
                 <Route path="/native-permissions" element={<NativePermissionsOnboarding />} />
+                <Route path="/app-language" element={<WorkerLocaleOnboarding />} />
                 <Route path="/onboarding" element={<Navigate to="/consent" replace />} />
 
                 {/* Canonical role-split shells */}

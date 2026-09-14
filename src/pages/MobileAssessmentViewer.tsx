@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,9 @@ import {
   A4_LANDSCAPE_PX,
   fetchAssessmentPrintHtml,
 } from "@/lib/approvalDocPreview";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
+import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
+import { isNonKoreanLocale } from "@/lib/i18n/workerLocale";
 
 type RiskCard = {
   id: string;
@@ -59,6 +62,25 @@ export default function MobileAssessmentViewer({
   const [printLoading, setPrintLoading] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [tab, setTab] = useState<"doc" | "summary">("doc");
+  const { t, locale } = useWorkerLocale();
+  const foreign = isNonKoreanLocale(locale);
+  const summaryFields = useMemo(() => {
+    const out: Record<string, string> = {};
+    items.forEach((it, i) => {
+      out[`p${i}`] = it.process || "";
+      out[`s${i}`] = it.sub_task || "";
+      out[`h${i}`] = it.hazard || "";
+      out[`sit${i}`] = it.hazard_situation || "";
+      out[`m${i}`] = it.improvement_measure || it.existing_measure || "";
+    });
+    return out;
+  }, [items]);
+  const { translated, loading: trLoading, failed: trFailed } = useTranslatedDocFields(
+    "assessment_run",
+    runId,
+    locale,
+    summaryFields,
+  );
 
   const goBack = () => {
     const back = resolvePermitViewerBackPath(searchParams.get("from"));
@@ -125,6 +147,10 @@ export default function MobileAssessmentViewer({
     };
   }, [runId, printMode, searchParams]);
 
+  useEffect(() => {
+    if (isNonKoreanLocale(locale)) setTab("summary");
+  }, [locale]);
+
   return (
     <div className="h-dvh overflow-hidden bg-slate-950 text-white flex flex-col">
       <header className="shrink-0 bg-red-700 px-4 py-3 flex items-center gap-3 shadow-lg">
@@ -145,15 +171,17 @@ export default function MobileAssessmentViewer({
         )}
       </header>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "summary")} className="flex-1 min-h-0 flex flex-col">
+      <Tabs value={foreign ? tab : "doc"} onValueChange={(v) => setTab(v as "doc" | "summary")} className="flex-1 min-h-0 flex flex-col">
+        {foreign && (
         <TabsList className="shrink-0 mx-3 mt-2 grid grid-cols-2 bg-slate-800 text-slate-300">
           <TabsTrigger value="doc" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            문서
+            {t("originalKo")}
           </TabsTrigger>
           <TabsTrigger value="summary" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            요약
+            {t("myLanguage")}
           </TabsTrigger>
         </TabsList>
+        )}
 
         <TabsContent value="doc" forceMount className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden">
           <ZoomableDocumentPreview
@@ -177,10 +205,12 @@ export default function MobileAssessmentViewer({
             <div className="text-center py-16 text-slate-400 text-base">등록된 위험요인이 없습니다</div>
           )}
 
-          <p className="text-xs text-slate-400">작성·수정은 PC에서만 가능합니다.</p>
+          <p className="text-xs text-slate-400">
+            {trLoading ? t("translating") : trFailed ? t("translateFailed") : t("originalKo")}
+          </p>
 
-          {items.map((it) => {
-            const measure = it.improvement_measure || it.existing_measure || "안전조치 미기재";
+          {items.map((it, i) => {
+            const measure = translated[`m${i}`] || it.improvement_measure || it.existing_measure || "—";
             const gradeClass = GRADE_STYLE[it.risk_grade] || GRADE_STYLE[(it.risk_grade || "").toLowerCase()] || "bg-slate-600 text-white";
             return (
               <article
@@ -193,15 +223,15 @@ export default function MobileAssessmentViewer({
                   </div>
                   <div className="flex-1 p-4 space-y-1">
                     <div className="text-xs text-slate-400">
-                      {it.process}
-                      {it.sub_task ? ` · ${it.sub_task}` : ""}
+                      {translated[`p${i}`] || it.process}
+                      {(translated[`s${i}`] || it.sub_task) ? ` · ${translated[`s${i}`] || it.sub_task}` : ""}
                     </div>
                     <h2 className="text-2xl font-black leading-snug text-red-300 flex gap-2 items-start">
                       <AlertTriangle className="h-6 w-6 shrink-0 mt-1" />
-                      <span>{it.hazard || "(위험요인 미기재)"}</span>
+                      <span>{translated[`h${i}`] || it.hazard || "—"}</span>
                     </h2>
-                    {it.hazard_situation && (
-                      <p className="text-sm text-slate-300 leading-relaxed">{it.hazard_situation}</p>
+                    {(translated[`sit${i}`] || it.hazard_situation) && (
+                      <p className="text-sm text-slate-300 leading-relaxed">{translated[`sit${i}`] || it.hazard_situation}</p>
                     )}
                   </div>
                 </div>

@@ -11,6 +11,7 @@ import {
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
+  pickBootProjectId,
   readActiveProjectId,
   writeActiveProjectId,
 } from '@/lib/activeProject';
@@ -208,7 +209,7 @@ interface MemberInfo {
 
 
 export function useProjectAccess(): ProjectAccess {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, profile } = useAuth();
   const isMaster = hasRole('master');
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
   const [selectedProject, setSelectedProjectState] = useState(() => {
@@ -240,7 +241,7 @@ export function useProjectAccess(): ProjectAccess {
 
   useEffect(() => {
     loadProjects();
-  }, [user, isMaster]);
+  }, [user, isMaster, profile?.default_project_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,11 +319,12 @@ export function useProjectAccess(): ProjectAccess {
         .order('created_at', { ascending: false });
       if (data && data.length > 0) {
         setProjects(data);
-        const saved = readActiveProjectId();
-        const validSaved = saved && data.some(p => p.id === saved);
-        if (!selectedProject || !data.some(p => p.id === selectedProject)) {
-          setSelectedProject(validSaved ? saved! : data[0].id);
-        }
+        const picked = pickBootProjectId({
+          allowedIds: data.map((p) => p.id),
+          defaultProjectId: profile?.default_project_id,
+          storedId: readActiveProjectId(),
+        });
+        if (picked && picked !== selectedProject) setSelectedProject(picked);
       } else {
         setProjects([]);
         if (selectedProject) setSelectedProject('');
@@ -338,11 +340,12 @@ export function useProjectAccess(): ProjectAccess {
           .filter((p: any) => p && p.is_deleted !== true)
           .map((p: any) => ({ id: p.id, name: p.name, site_name: p.site_name }));
         setProjects(projs);
-        const saved = readActiveProjectId();
-        const validSaved = saved && projs.some((p: any) => p.id === saved);
-        if (!selectedProject || !projs.some((p: any) => p.id === selectedProject)) {
-          setSelectedProject(validSaved ? saved! : (projs[0]?.id || ''));
-        }
+        const picked = pickBootProjectId({
+          allowedIds: projs.map((p: { id: string }) => p.id),
+          defaultProjectId: profile?.default_project_id,
+          storedId: readActiveProjectId(),
+        });
+        if (picked && picked !== selectedProject) setSelectedProject(picked);
       } else {
         setProjects([]);
         if (selectedProject) setSelectedProject('');

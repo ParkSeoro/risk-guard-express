@@ -20,7 +20,7 @@ import {
   PenLine,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
-import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
+import MobileProjectSwitcher from "@/components/mobile/MobileProjectSwitcher";
 import TodayFieldAnnouncements from "@/components/announcements/TodayFieldAnnouncements";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { isIosSafariTab } from "@/lib/pushSubscription";
@@ -54,6 +54,7 @@ export default function MobileToday() {
     return (
       <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="worker-today">
         <IosWebPathBanner />
+        <MobileProjectSwitcher compact />
         <TodayFieldAnnouncements projectId={projectId || preview.previewProjectId} />
         <MobileWeatherCard projectId={projectId || preview.previewProjectId} />
         <HealthDueCard projectId={projectId || preview.previewProjectId} />
@@ -237,7 +238,7 @@ function ManagerToday({
         </div>
       </div>
 
-      {!projectId && <MobileProjectPicker />}
+      <MobileProjectSwitcher compact />
 
       {(workStops ?? 0) > 0 && (
         <Card className="border-destructive/40 bg-destructive/5">

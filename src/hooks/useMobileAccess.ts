@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -26,7 +26,7 @@ export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_m
  * PreviewContext가 있으면 합성 역할·프로젝트를 사용 (마스터 PC 프리뷰).
  */
 export function useMobileAccess() {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, profile } = useAuth();
   const preview = usePreview();
   const isMaster = preview.isPreview ? preview.syntheticRole === "master" : hasRole('master');
   const [projectId, setProjectIdState] = useState<string>(() => {
@@ -66,6 +66,19 @@ export function useMobileAccess() {
     setProjectIdState(id);
     writeActiveProjectId(id);
   }, []);
+
+  const appliedDefaultRef = useRef(false);
+  useEffect(() => {
+    const def = String((profile as { default_project_id?: string | null } | null)?.default_project_id || "").trim();
+    if (!def || appliedDefaultRef.current) return;
+    appliedDefaultRef.current = true;
+    if (readActiveProjectId() === def) {
+      setProjectIdState(def);
+      return;
+    }
+    setProjectIdState(def);
+    writeActiveProjectId(def);
+  }, [profile]);
 
   useEffect(() => {
     if (preview.isPreview && preview.previewProjectId) {

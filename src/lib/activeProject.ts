@@ -58,3 +58,21 @@ export function writeActiveProjectId(id: string): void {
     /* ignore */
   }
 }
+
+/**
+ * App/web boot: profile default → last local choice → first allowed.
+ * Switching in the header does not write the profile default.
+ */
+export function pickBootProjectId(opts: {
+  allowedIds: string[];
+  defaultProjectId?: string | null;
+  storedId?: string | null;
+}): string {
+  const allowed = opts.allowedIds.map((id) => String(id || "").trim()).filter(Boolean);
+  const allowedSet = new Set(allowed);
+  const def = String(opts.defaultProjectId || "").trim();
+  if (def && allowedSet.has(def)) return def;
+  const stored = String(opts.storedId || "").trim();
+  if (stored && allowedSet.has(stored)) return stored;
+  return allowed[0] || "";
+}

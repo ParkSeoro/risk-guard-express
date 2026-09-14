@@ -12,7 +12,6 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import {
   mobileTabsForBucket,
   resolveMobileShellBucket,
-  roleLabelKo,
   MOBILE_WORK_STOP,
 } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
@@ -20,8 +19,10 @@ import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { GpsStatusChip, useGpsUi } from "@/lib/tracking/gpsStatusUi";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
+import { localeHtmlLang } from "@/lib/i18n/workerLocale";
 
 const ICONS: Record<string, typeof Home> = {
   today: Home,
@@ -43,6 +44,10 @@ export default function MobileShell({ children }: { children: ReactNode }) {
   );
   const tabs = mobileTabsForBucket(bucket);
   const displayRole = preview.isPreview ? preview.syntheticRole : role;
+  const { t, locale, roleLabel } = useWorkerLocale();
+  useEffect(() => {
+    document.documentElement.lang = localeHtmlLang(locale);
+  }, [locale]);
   const unread = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
   const gpsUi = useGpsUi();
 
@@ -66,7 +71,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
     >
       {preview.isPreview && (
         <div className="sticky top-0 z-40 bg-amber-500 text-amber-950 text-center text-xs font-semibold py-1.5 px-2 pt-[max(0.375rem,var(--sat))]">
-          프리뷰 · 데이터 변경 불가 · {roleLabelKo(displayRole)}
+          프리뷰 · 데이터 변경 불가 · {roleLabel(displayRole)}
         </div>
       )}
 
@@ -75,8 +80,8 @@ export default function MobileShell({ children }: { children: ReactNode }) {
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm leading-tight">SafeNex</div>
             <div className="text-[10px] opacity-80 truncate">
-              {loading ? "역할 확인 중…" : roleLabelKo(displayRole)}
-              {!projectId ? " · 프로젝트 미선택" : ""}
+              {loading ? t("roleChecking") : roleLabel(displayRole)}
+              {!projectId ? ` · ${t("noProject")}` : ""}
             </div>
           </div>
           <GpsStatusChip
@@ -85,7 +90,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
             accuracyM={gpsUi.accuracyM}
           />
           <Badge variant="secondary" className="text-[10px] shrink-0">
-            {bucket === "worker" ? "근로자" : bucket === "master" ? "마스터" : "관리자"}
+            {bucket === "worker" ? t("bucketWorker") : bucket === "master" ? t("bucketMaster") : t("bucketManager")}
           </Badge>
         </header>
       )}
@@ -101,7 +106,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
           data-testid="work-stop-fab"
         >
           <OctagonAlert className="h-4 w-4 mr-1.5" />
-          작업중지
+          {t("workStop")}
         </Button>
       )}
 
@@ -137,7 +142,17 @@ export default function MobileShell({ children }: { children: ReactNode }) {
                         </span>
                       )}
                     </span>
-                    {tab.label}
+                    {tab.key === "today"
+                      ? t("tabToday")
+                      : tab.key === "tasks"
+                        ? bucket === "worker" ? t("tabTasks") : t("tabField")
+                        : tab.key === "approvals"
+                          ? t("tabApprovals")
+                          : tab.key === "docs"
+                            ? t("tabDocs")
+                            : tab.key === "alerts"
+                              ? t("tabAlerts")
+                              : t("tabMore")}
                   </NavLink>
                 </li>
               );

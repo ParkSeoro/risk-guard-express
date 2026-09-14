@@ -40,6 +40,7 @@ import {
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
+  pickBootProjectId,
   readActiveProjectId,
   writeActiveProjectId,
 } from "@/lib/activeProject";
@@ -98,18 +99,20 @@ export default function WorkerGlobalGps() {
     };
 
     const ensureProject = async () => {
-      let projectId = readActiveProjectId();
-      if (projectId) return projectId;
       const master = isPlatformMaster(hasRole, roles);
       try {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("default_project_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
         let list: { id: string }[] = [];
         if (master) {
           const { data } = await supabase
             .from("projects")
             .select("id")
             .eq("is_deleted", false)
-            .order("created_at", { ascending: false })
-            .limit(5);
+            .order("created_at", { ascending: false });
           list = data || [];
         } else {
           const { data } = await supabase
@@ -120,14 +123,19 @@ export default function WorkerGlobalGps() {
             .map((m: any) => m.projects)
             .filter((p: any) => p && !p.is_deleted);
         }
-        if (list[0]?.id) {
-          writeActiveProjectId(list[0].id);
-          return list[0].id;
+        const picked = pickBootProjectId({
+          allowedIds: list.map((p) => p.id),
+          defaultProjectId: (prof as { default_project_id?: string | null } | null)?.default_project_id,
+          storedId: readActiveProjectId(),
+        });
+        if (picked) {
+          writeActiveProjectId(picked);
+          return picked;
         }
       } catch {
         /* ignore */
       }
-      return null;
+      return readActiveProjectId() || null;
     };
 
     const resolveIsManager = async (projectId: string): Promise<boolean> => {

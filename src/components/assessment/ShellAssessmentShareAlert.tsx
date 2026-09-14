@@ -15,6 +15,7 @@ import { usePendingAssessmentShares } from "@/hooks/usePendingAssessmentShares";
 import { ackAssessmentRunShare, shareTypeLabel } from "@/lib/assessmentShareAck";
 import { toast } from "sonner";
 import { ShieldAlert } from "lucide-react";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 /**
  * Blocking confirm after RA approval. Signature stamps 근로자 참여 및 공유 서명 once.
  */
@@ -23,6 +24,7 @@ export default function ShellAssessmentShareAlert() {
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
   const [busy, setBusy] = useState(false);
   const typeLabel = shareTypeLabel(current?.type);
+  const { t } = useWorkerLocale();
 
   const submit = async () => {
     if (!current) return;
@@ -69,10 +71,10 @@ export default function ShellAssessmentShareAlert() {
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5" /> {typeLabel} 결과 공유
+            <ShieldAlert className="h-5 w-5" /> {typeLabel} {t("ackShareTitle")}
           </DialogTitle>
           <DialogDescription>
-            {current?.period_label || typeLabel}가 승인되었습니다. 요지를 확인하고 한 번만 서명해 주세요.
+            {current?.period_label || typeLabel}. {t("ackShareBody")}
             {remainingCount > 0
               ? ` 서명 후 남은 공유 확인 ${remainingCount}건이 이어서 표시됩니다.`
               : ""}

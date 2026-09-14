@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,9 @@ import {
   fetchWorkPlanPrintHtml,
 } from "@/lib/approvalDocPreview";
 import { extractWorkPlanHazardCards, type WorkPlanHazardCard } from "@/lib/workPlanHazardCards";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
+import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
+import { isNonKoreanLocale } from "@/lib/i18n/workerLocale";
 
 /**
  * Mobile read-only viewer for work plans (including in-approval docs).
@@ -32,6 +35,23 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
   const [printError, setPrintError] = useState<string | null>(null);
   const [printHint, setPrintHint] = useState("인쇄 문서를 준비하는 중…");
   const [tab, setTab] = useState<"doc" | "files" | "summary">("doc");
+  const { t, locale } = useWorkerLocale();
+  const foreign = isNonKoreanLocale(locale);
+  const summaryFields = useMemo(() => {
+    const out: Record<string, string> = {};
+    cards.forEach((c, i) => {
+      out[`p${i}`] = c.process || "";
+      out[`h${i}`] = c.hazard || "";
+      out[`m${i}`] = c.measure || "";
+    });
+    return out;
+  }, [cards]);
+  const { translated, loading: trLoading, failed: trFailed } = useTranslatedDocFields(
+    "work_plan",
+    planId,
+    locale,
+    summaryFields,
+  );
 
   const goBack = () => {
     const back = resolvePermitViewerBackPath(searchParams.get("from"));
@@ -107,6 +127,10 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
     };
   }, [planId]);
 
+  useEffect(() => {
+    if (isNonKoreanLocale(locale)) setTab("summary");
+  }, [locale]);
+
   return (
     <div className="h-dvh overflow-hidden bg-slate-950 text-white flex flex-col">
       <header className="shrink-0 bg-sky-800 px-4 py-3 flex items-center gap-3 shadow-lg">
@@ -126,16 +150,18 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
       </header>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "files" | "summary")} className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="shrink-0 mx-3 mt-2 grid grid-cols-3 bg-slate-800 text-slate-300">
+        <TabsList className={`shrink-0 mx-3 mt-2 grid ${foreign ? "grid-cols-3" : "grid-cols-2"} bg-slate-800 text-slate-300`}>
           <TabsTrigger value="doc" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            문서
+            {foreign ? t("originalKo") : t("documentTab")}
           </TabsTrigger>
           <TabsTrigger value="files" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            첨부
+            {t("attachTab")}
           </TabsTrigger>
+          {foreign && (
           <TabsTrigger value="summary" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            요약
+            {t("myLanguage")}
           </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="doc" forceMount className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden">
@@ -176,22 +202,28 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
             <div className="text-center py-16 text-slate-400 text-base">표시할 핵심 위험요인이 없습니다</div>
           )}
 
-          <p className="text-xs text-slate-400">작성·수정은 PC에서만 가능합니다.</p>
+          <p className="text-xs text-slate-400">
+            {trLoading ? t("translating") : trFailed ? t("translateFailed") : t("originalKo")}
+          </p>
 
-          {cards.map((c) => (
+          {cards.map((c, i) => (
             <article key={c.key} className="rounded-2xl bg-slate-900 border border-slate-700 overflow-hidden shadow-xl">
               <div className="p-5 space-y-2 border-b border-slate-700">
-                {c.process && <div className="text-xs text-slate-400">{c.process}</div>}
+                {(translated[`p${i}`] || c.process) && (
+                  <div className="text-xs text-slate-400">{translated[`p${i}`] || c.process}</div>
+                )}
                 <h2 className="text-2xl font-black leading-snug text-amber-300 flex gap-2 items-start">
                   <AlertTriangle className="h-6 w-6 shrink-0 mt-1" />
-                  <span>{c.hazard}</span>
+                  <span>{translated[`h${i}`] || c.hazard}</span>
                 </h2>
               </div>
               <div className="bg-emerald-950/60 p-5 space-y-2">
                 <div className="flex items-center gap-2 text-emerald-300 font-bold text-sm uppercase tracking-wide">
                   <ShieldCheck className="h-5 w-5" /> 안전조치
                 </div>
-                <p className="text-xl font-semibold leading-relaxed text-emerald-50 whitespace-pre-wrap">{c.measure}</p>
+                <p className="text-xl font-semibold leading-relaxed text-emerald-50 whitespace-pre-wrap">
+                  {translated[`m${i}`] || c.measure}
+                </p>
               </div>
             </article>
           ))}

@@ -14,7 +14,7 @@ import {
 import {
   isAdminShellUser,
   needsConsent,
-  postConsentHomePath,
+  afterConsentHomePath,
   readLoginIntent,
   resolvePostLoginShell,
   WORKER_HOME,
@@ -70,7 +70,7 @@ export default function ConsentPage() {
   // ④ Race defense: unauthenticated URL hit → login
   if (!session || !user) return <Navigate to="/login?next=/consent" replace />;
   if (!needsConsent(profile, roles)) {
-    const home = postConsentHomePath(roles, { loginIntent: readLoginIntent() });
+    const home = afterConsentHomePath(roles, profile, { loginIntent: readLoginIntent() });
     // Never render a blank page — /consent looping would look like a white freeze.
     if (home === "/consent") return <Navigate to={WORKER_HOME} replace />;
     return <Navigate to={home} replace />;
@@ -129,7 +129,7 @@ export default function ConsentPage() {
       if (isNativeApp() && !hasCompletedNativePermissions()) {
         navigate("/native-permissions", { replace: true });
       } else {
-        navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), { replace: true });
+        navigate(afterConsentHomePath(roles, profile, { loginIntent: readLoginIntent() }), { replace: true });
       }
     } catch (e: any) {
       toast.error(e?.message || "동의 저장에 실패했습니다");

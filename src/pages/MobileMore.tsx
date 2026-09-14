@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import { isManagerMobileRole, roleLabelKo } from "@/lib/mobileShell";
+import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
 import { setForceDesktop } from "@/hooks/use-mobile";
 import { isNativeApp } from "@/lib/native/isNativeApp";
@@ -37,10 +37,14 @@ import {
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { anyMapHasGeoref } from "@/lib/mapBounds";
 import { useGpsUi } from "@/lib/tracking/gpsStatusUi";
+import MobileProjectSwitcher from "@/components/mobile/MobileProjectSwitcher";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
+import { WORKER_LOCALE_LABELS, WORKER_LOCALES } from "@/lib/i18n/workerLocale";
 
 export default function MobileMore() {
-  const { signOut, profile, hasRole, user } = useAuth();
-  const { role, isMaster, projectId, setProjectId } = useMobileAccess();
+  const { signOut, profile } = useAuth();
+  const { role, isMaster, projectId } = useMobileAccess();
+  const { t, locale, setLocale, roleLabel } = useWorkerLocale();
   const preview = usePreview();
   const navigate = useNavigate();
   const realtime = useSystemRealtimeOptional();
@@ -51,38 +55,8 @@ export default function MobileMore() {
     effectiveRole,
     preview.isPreview ? effectiveRole === "master" : isMaster,
   );
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [mapGeorefDone, setMapGeorefDone] = useState(false);
   const [offsiteAlarmTest, setOffsiteAlarmTest] = useState(readMasterOffsiteAlarmTest);
-
-  useEffect(() => {
-    (async () => {
-      if (hasRole("master") || preview.isPreview) {
-        const { data } = await supabase
-          .from("projects")
-          .select("id, name")
-          .eq("is_deleted", false)
-          .order("name")
-          .limit(50);
-        setProjects(dedupeProjectsById((data as any) || []));
-        return;
-      }
-      if (!user?.id) {
-        setProjects([]);
-        return;
-      }
-      // Own memberships only — RLS can otherwise return every peer row on the project.
-      const { data } = await supabase
-        .from("project_members")
-        .select("project_id, projects(id, name, is_deleted)")
-        .eq("user_id", user.id)
-        .limit(100);
-      const list = projectsFromMembershipRows(
-        ((data as any) || []).filter((r: any) => r.projects && !r.projects.is_deleted),
-      );
-      setProjects(list);
-    })();
-  }, [hasRole, preview.isPreview, user?.id]);
 
   const effectiveProjectId = projectId || preview.previewProjectId || "";
   useEffect(() => {
@@ -111,34 +85,34 @@ export default function MobileMore() {
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-more">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-base font-bold">더보기</h1>
+          <h1 className="text-base font-bold">{t("more")}</h1>
           <p className="text-xs text-muted-foreground">
-            {profile?.display_name || "사용자"} · {roleLabelKo(effectiveRole)}
+            {profile?.display_name || t("roleUser")} · {roleLabel(effectiveRole)}
           </p>
         </div>
-        <Badge variant="secondary">{manager ? "관리자" : "근로자"}</Badge>
+        <Badge variant="secondary">{manager ? t("bucketManager") : t("bucketWorker")}</Badge>
       </div>
 
-      {projects.length > 0 && (
-        <Card>
-          <CardContent className="p-3 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">프로젝트</div>
-            <select
-              className="w-full h-10 rounded-md border bg-background px-2 text-sm"
-              value={projectId || preview.previewProjectId || ""}
-              disabled={preview.isPreview}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">선택…</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardContent className="p-3">
+          <MobileProjectSwitcher />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-3 space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">{t("language")}</div>
+          <select
+            className="w-full h-10 rounded-md border bg-background px-2 text-sm"
+            value={locale}
+            onChange={(e) => void setLocale(e.target.value as typeof locale)}
+          >
+            {WORKER_LOCALES.map((loc) => (
+              <option key={loc} value={loc}>{WORKER_LOCALE_LABELS[loc]}</option>
+            ))}
+          </select>
+        </CardContent>
+      </Card>
 
       <MobileOtaUpdateCard />
 

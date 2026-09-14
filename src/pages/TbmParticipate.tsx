@@ -12,6 +12,8 @@ import { CheckCircle2, AlertTriangle, HardHat, Loader2 } from 'lucide-react';
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatPhoneMask } from '@/lib/workerAuth';
+import { useWorkerLocale } from '@/hooks/useWorkerLocale';
+import { useTranslatedDocFields } from '@/hooks/useTranslatedDocFields';
 
 type Briefing = {
   id: string;
@@ -30,6 +32,7 @@ export default function TbmParticipate() {
   const { token } = useParams<{ token: string }>();
   const { toast } = useToast();
   const { profile } = useAuth();
+  const { t, locale } = useWorkerLocale();
   const location = useLocation();
   const navigate = useNavigate();
   const inApp = location.pathname.startsWith('/app/worker');
@@ -47,6 +50,14 @@ export default function TbmParticipate() {
   const [understoodChecked, setUnderstoodChecked] = useState(false);
 
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
+  const tbmFields = briefing
+    ? {
+        title: briefing.title || "",
+        summary: briefing.briefing_summary || "",
+        location: briefing.location || "",
+      }
+    : { title: "", summary: "", location: "" };
+  const { translated } = useTranslatedDocFields("tbm_session", briefing?.id, locale, tbmFields);
 
   useEffect(() => {
     if (!profile) return;
@@ -196,7 +207,7 @@ export default function TbmParticipate() {
             {briefing.briefing_summary && (
               <div>
                 <Label className="text-xs">브리핑 요약</Label>
-                <div className="mt-1 p-3 rounded-md bg-muted/50 text-sm whitespace-pre-wrap">{briefing.briefing_summary}</div>
+                <div className="mt-1 p-3 rounded-md bg-muted/50 text-sm whitespace-pre-wrap">{translated.summary || briefing.briefing_summary}</div>
               </div>
             )}
             {risks.length > 0 && (
@@ -267,7 +278,7 @@ export default function TbmParticipate() {
             <label className="flex items-start gap-3 cursor-pointer">
               <Checkbox checked={confirmed} onCheckedChange={(v) => setConfirmed(!!v)} />
               <span className="text-sm">
-                위 브리핑 내용과 위험요인·안전대책을 확인하였으며, 안전수칙을 준수하여 작업하겠습니다. *
+                {t("tbmConfirm")} *
               </span>
             </label>
           </CardContent>

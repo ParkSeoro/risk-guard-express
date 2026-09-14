@@ -4,6 +4,7 @@ import {
   CANONICAL_PROJECT_KEY,
   isActiveProjectStorageKey,
   LEGACY_PROJECT_KEY,
+  pickBootProjectId,
   readActiveProjectId,
   writeActiveProjectId,
 } from "@/lib/activeProject";
@@ -44,5 +45,32 @@ describe("activeProject (F-07)", () => {
     expect(isActiveProjectStorageKey(CANONICAL_PROJECT_KEY)).toBe(true);
     expect(isActiveProjectStorageKey(LEGACY_PROJECT_KEY)).toBe(true);
     expect(isActiveProjectStorageKey("other")).toBe(false);
+  });
+
+  it("prefers profile default over localStorage when both are allowed", () => {
+    expect(
+      pickBootProjectId({
+        allowedIds: ["a", "b", "c"],
+        defaultProjectId: "b",
+        storedId: "c",
+      }),
+    ).toBe("b");
+  });
+
+  it("falls back to stored then first allowed", () => {
+    expect(
+      pickBootProjectId({
+        allowedIds: ["a", "b"],
+        defaultProjectId: "gone",
+        storedId: "b",
+      }),
+    ).toBe("b");
+    expect(
+      pickBootProjectId({
+        allowedIds: ["a", "b"],
+        defaultProjectId: null,
+        storedId: "",
+      }),
+    ).toBe("a");
   });
 });

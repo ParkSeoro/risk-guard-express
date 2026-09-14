@@ -63,11 +63,8 @@ import GpsConsentCoach from "@/components/worker/GpsConsentCoach";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { readActiveProjectId } from "@/lib/activeProject";
 
-import {
-  HEALTH_PLEDGE,
-  NO_ACCIDENT_PLEDGE,
-  WORK_ACK_PLEDGE,
-} from "@/lib/legal/dailyPledges";
+import { displayPledge } from "@/lib/i18n/pledges";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 
 type EntryLog = {
   id: string;
@@ -86,6 +83,7 @@ export default function WorkerDailyHome({
   diagnosticsOnly?: boolean;
 }) {
   const { user, profile } = useAuth();
+  const { t, locale } = useWorkerLocale();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const { projectId, setProjectId } = useActiveProject();
   /** One-shot / polled fix for check-in distance UI before full tracking starts. */
@@ -551,7 +549,7 @@ export default function WorkerDailyHome({
           </div>
           <div className="flex-1">
             <div className="font-bold text-lg leading-tight">
-              {diagnosticsOnly ? "위치 · GPS" : "일일 안전 출퇴근"}
+              {diagnosticsOnly ? "GPS" : t("dailyTitle")}
             </div>
             <div className="text-xs opacity-80">
               {profile?.display_name || "근로자"} · {projectName || "현장 미선택"}
@@ -598,7 +596,7 @@ export default function WorkerDailyHome({
               asChild
               className="w-full h-12 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-base font-semibold"
             >
-              <Link to="/app/worker/work-stop">작업중지 요청</Link>
+              <Link to="/app/worker/work-stop">{t("workStopAsk")}</Link>
             </Button>
           </section>
         )}
@@ -845,7 +843,7 @@ export default function WorkerDailyHome({
             </label>
             <label className="flex items-start gap-2">
               <Checkbox checked={ackPledgeOk} onCheckedChange={(v) => setAckPledgeOk(v === true)} />
-              <span>{WORK_ACK_PLEDGE}</span>
+              <span>{displayPledge("work", locale)}</span>
             </label>
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -888,11 +886,11 @@ export default function WorkerDailyHome({
           <div className="space-y-3 text-sm">
             <label className="flex items-start gap-2">
               <Checkbox checked={noAccident} onCheckedChange={(v) => setNoAccident(v === true)} />
-              <span>{NO_ACCIDENT_PLEDGE}</span>
+              <span>{displayPledge("noAccident", locale)}</span>
             </label>
             <label className="flex items-start gap-2">
               <Checkbox checked={healthOk} onCheckedChange={(v) => setHealthOk(v === true)} />
-              <span>{HEALTH_PLEDGE}</span>
+              <span>{displayPledge("health", locale)}</span>
             </label>
             <div>
               <div className="flex items-center justify-between mb-1">

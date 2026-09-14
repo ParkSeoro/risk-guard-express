@@ -34,7 +34,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Battery, Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
+import { pickBootProjectId, readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
 type Step = "location" | "notifications" | "battery" | "camera" | "done";
 
@@ -72,16 +72,20 @@ async function promptBackgroundLocation() {
 
 async function ensureSelectedProject(userId: string, isMaster: boolean) {
   try {
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("default_project_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const preferred = String((prof as { default_project_id?: string | null } | null)?.default_project_id || "").trim();
     const cur = readActiveProjectId();
-    if (cur) return cur;
     let list: { id: string; name?: string }[] = [];
     if (isMaster) {
       const { data } = await supabase
         .from("projects")
         .select("id, name")
         .eq("is_deleted", false)
-        .order("created_at", { ascending: false })
-        .limit(20);
+        .order("created_at", { ascending: false });
       list = data || [];
     } else {
       const { data } = await supabase
@@ -92,9 +96,15 @@ async function ensureSelectedProject(userId: string, isMaster: boolean) {
         .map((m: any) => m.projects)
         .filter((p: any) => p && !p.is_deleted);
     }
-    if (list.length >= 1) {
-      writeActiveProjectId(list[0].id);
-      return list[0].id;
+    const allowed = list.map((p) => p.id);
+    const picked = pickBootProjectId({
+      allowedIds: allowed,
+      defaultProjectId: preferred,
+      storedId: cur,
+    });
+    if (picked) {
+      writeActiveProjectId(picked);
+      return picked;
     }
   } catch (e) {
     console.warn("[NativePermissions] project auto-select failed", e);

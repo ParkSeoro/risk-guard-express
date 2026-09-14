@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, Save, User, KeyRound, Building2, Shield } from 'lucide-react';
+import { WORKER_LOCALE_LABELS, WORKER_LOCALES, parseWorkerLocale, writeStoredWorkerLocale, type WorkerLocale } from '@/lib/i18n/workerLocale';
 
 const statusLabel: Record<string, string> = {
   pending: '승인대기',
@@ -43,8 +44,11 @@ const SettingsAccount = () => {
   const [pwdSaving, setPwdSaving] = useState(false);
 
   const [memberships, setMemberships] = useState<
-    Array<{ project_name: string; role_new: string | null; position_new: string | null; company: string | null }>
+    Array<{ project_id: string; project_name: string; role_new: string | null; position_new: string | null; company: string | null }>
   >([]);
+  const [allProjects, setAllProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [defaultProjectId, setDefaultProjectId] = useState('');
+  const [uiLocale, setUiLocale] = useState<WorkerLocale>('ko');
 
   const accountStatus = (profile as any)?.account_status || 'active';
   const createdAt = (profile as any)?.created_at as string | undefined;
@@ -57,6 +61,8 @@ const SettingsAccount = () => {
         phone: profile.phone || '',
         position: profile.position || '',
       });
+      setDefaultProjectId(profile.default_project_id || '');
+      setUiLocale(parseWorkerLocale(profile.ui_locale));
     }
   }, [profile]);
 
@@ -65,18 +71,27 @@ const SettingsAccount = () => {
     (async () => {
       const { data } = await supabase
         .from('project_members')
-        .select('role_new, position_new, company, projects(name)')
+        .select('role_new, position_new, company, project_id, projects(id, name)')
         .eq('user_id', user.id);
       setMemberships(
         (data || []).map((m: any) => ({
+          project_id: m.project_id || m.projects?.id || '',
           project_name: m.projects?.name || '프로젝트',
           role_new: m.role_new,
           position_new: m.position_new,
           company: m.company,
         })),
       );
+      if (hasRole('master')) {
+        const { data: projs } = await supabase
+          .from('projects')
+          .select('id, name')
+          .eq('is_deleted', false)
+          .order('name');
+        setAllProjects((projs || []) as Array<{ id: string; name: string }>);
+      }
     })();
-  }, [user]);
+  }, [user, hasRole]);
 
   const roleBadges = useMemo(() => {
     const labels: string[] = [];
@@ -95,7 +110,12 @@ const SettingsAccount = () => {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from('profiles').update(parsed.data).eq('user_id', user.id);
+    writeStoredWorkerLocale(uiLocale);
+    const { error } = await supabase.from('profiles').update({
+      ...parsed.data,
+      default_project_id: defaultProjectId || null,
+      ui_locale: uiLocale,
+    }).eq('user_id', user.id);
     if (error) {
       toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
     } else {
@@ -266,6 +286,39 @@ const SettingsAccount = () => {
               onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
               placeholder="010-0000-0000"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">기본 현장</Label>
+            <select
+              className="w-full h-10 rounded-md border bg-background px-2 text-sm"
+              value={defaultProjectId}
+              onChange={(e) => setDefaultProjectId(e.target.value)}
+            >
+              <option value="">지정 안 함</option>
+              {(hasRole('master') ? allProjects : memberships.map((m) => ({ id: m.project_id, name: m.project_name })))
+                .filter((p) => p.id)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+            </select>
+            <p className="text-[10px] text-muted-foreground">
+              앱·웹을 열면 이 현장이 먼저 열립니다. 헤더에서 잠깐 바꿔도 기본값은 여기만 바뀝니다.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">앱 언어 (근로자 화면)</Label>
+            <select
+              className="w-full h-10 rounded-md border bg-background px-2 text-sm"
+              value={uiLocale}
+              onChange={(e) => setUiLocale(parseWorkerLocale(e.target.value))}
+            >
+              {WORKER_LOCALES.map((loc) => (
+                <option key={loc} value={loc}>{WORKER_LOCALE_LABELS[loc]}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-muted-foreground">
+              결재·승인본 원문은 한국어입니다. 근로자 앱 메뉴와 승인본 보기만 이 언어로 표시합니다.
+            </p>
           </div>
           <Button onClick={handleSave} disabled={saving} className="w-full gap-1.5">
             <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '프로필 저장'}

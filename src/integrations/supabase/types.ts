@@ -4293,10 +4293,12 @@ export type Database = {
           company: string | null
           consent_agreed_at: string | null
           created_at: string
+          default_project_id: string | null
           display_name: string
           id: string
           phone: string | null
           position: string | null
+          ui_locale: string
           updated_at: string
           user_id: string
         }
@@ -4310,10 +4312,12 @@ export type Database = {
           company?: string | null
           consent_agreed_at?: string | null
           created_at?: string
+          default_project_id?: string | null
           display_name?: string
           id?: string
           phone?: string | null
           position?: string | null
+          ui_locale?: string
           updated_at?: string
           user_id: string
         }
@@ -4327,10 +4331,12 @@ export type Database = {
           company?: string | null
           consent_agreed_at?: string | null
           created_at?: string
+          default_project_id?: string | null
           display_name?: string
           id?: string
           phone?: string | null
           position?: string | null
+          ui_locale?: string
           updated_at?: string
           user_id?: string
         }

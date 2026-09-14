@@ -18,6 +18,7 @@ import {
   type SitePulse,
 } from "@/lib/dashboardOps";
 import { seoulDayRange } from "@/lib/dailyWorkAck";
+import { formatSiteLabel } from "@/lib/legalForms/patrolLog";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, FileCheck,
   ClipboardList, ShieldCheck, ArrowRight, RefreshCw,
@@ -329,7 +330,7 @@ const Dashboard = () => {
           <h1 className="text-2xl font-bold">현장 운영 현황</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {currentProject
-              ? `${currentProject.site_name} · ${currentProject.name}`
+              ? formatSiteLabel(currentProject.name, currentProject.site_name)
               : "프로젝트를 선택하세요"}
           </p>
         </div>

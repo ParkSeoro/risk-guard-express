@@ -3,6 +3,69 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <script>
+      /* Keep in sync with src/lib/iosShareableGuard.ts — must run before the hashed bundle. */
+      (function () {
+        var RE = /Can't find variable:\s*Shareable|Shareable is not defined|ReferenceError:\s*Shareable/i;
+        var KEY = "safenex.ios-shareable-recover";
+        var BUST = "_snx";
+        var COOLDOWN = 15000;
+        function isIosWeb() {
+          try {
+            var ua = navigator.userAgent || "";
+            if (!/iphone|ipad|ipod/i.test(ua)) return false;
+            var cap = window.Capacitor;
+            if (cap && cap.isNativePlatform && cap.isNativePlatform()) return false;
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+        function recover() {
+          if (!isIosWeb()) return;
+          try {
+            var last = Number(sessionStorage.getItem(KEY) || "0");
+            var now = Date.now();
+            if (last && now - last < COOLDOWN) return;
+            sessionStorage.setItem(KEY, String(now));
+          } catch (e) {}
+          var go = function () {
+            try {
+              var u = new URL(location.href);
+              u.searchParams.set(BUST, String(Date.now()));
+              location.replace(u.pathname + u.search + u.hash);
+            } catch (e2) {
+              location.reload();
+            }
+          };
+          var p = Promise.resolve();
+          try {
+            if (navigator.serviceWorker) {
+              p = navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all((regs || []).map(function (r) { return r.unregister(); }));
+              });
+            }
+          } catch (e) {}
+          p.then(function () {
+            if (!window.caches) return;
+            return caches.keys().then(function (keys) {
+              return Promise.all((keys || []).map(function (k) { return caches.delete(k); }));
+            });
+          }).then(go, go);
+        }
+        window.addEventListener("error", function (ev) {
+          var t = (ev && ev.message) || (ev && ev.error && ev.error.message) || "";
+          if (RE.test(String(t))) recover();
+        });
+        window.addEventListener("unhandledrejection", function (ev) {
+          var r = ev && ev.reason;
+          var t = r && r.message ? r.message : String(r || "");
+          if (RE.test(t)) recover();
+        });
+      })();
+    </script>
     <meta name="google-site-verification" content="82bBcZdWP9bq5ne2GjopJOimewJJnq6qj05z24sh6gQ" />
     <title>SafeNex 안전관리시스템 — 건설현장 위험성평가 통합 플랫폼</title>
     <meta name="description" content="대한민국 산업안전보건법 기준의 건설현장 안전관리 통합 플랫폼. 위험성평가, 작업계획서, 작업허가서, TBM, 근로자 관리, 보건관리까지 한 곳에서 스마트하게 관리하세요." />

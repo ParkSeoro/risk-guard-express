@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   buildAttentionItems,
   countOnSite,
   summarizePermits,
 } from '@/lib/dashboardOps';
+import { formatSiteLabel } from '@/lib/legalForms/patrolLog';
 
 describe('dashboardOps', () => {
   it('summarizes permit statuses', () => {
@@ -53,5 +55,15 @@ describe('dashboardOps', () => {
     ]);
     expect(c.todayEntries).toBe(2);
     expect(c.onSiteWorkers).toBe(1);
+  });
+});
+
+describe('dashboard site label', () => {
+  it('shows one name when project and site are the same', () => {
+    expect(formatSiteLabel('GSC 여수 H2/LCO2 PJT', 'GSC 여수 H2/LCO2 PJT'))
+      .toBe('GSC 여수 H2/LCO2 PJT');
+    const src = readFileSync('src/pages/Dashboard.tsx', 'utf8');
+    expect(src).toContain('formatSiteLabel(currentProject.name, currentProject.site_name)');
+    expect(src).not.toContain('${currentProject.site_name} · ${currentProject.name}');
   });
 });

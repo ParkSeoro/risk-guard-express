@@ -26,9 +26,8 @@ const SettingsAccount = () => {
   const { user, profile, roles, refreshProfile, hasRole } = useAuth();
   const { log } = useAuditLog();
   const { toast } = useToast();
-  const backTo = location.pathname.startsWith('/app/worker')
-    ? '/app/worker/more'
-    : '/settings';
+  const isWorkerAccount = location.pathname.startsWith('/app/worker');
+  const backTo = isWorkerAccount ? '/app/worker/more' : '/settings';
 
   const [form, setForm] = useState({
     display_name: '',
@@ -114,7 +113,7 @@ const SettingsAccount = () => {
     const { error } = await supabase.from('profiles').update({
       ...parsed.data,
       default_project_id: defaultProjectId || null,
-      ui_locale: uiLocale,
+      ...(isWorkerAccount ? { ui_locale: uiLocale, ui_locale_chosen: true } : {}),
     }).eq('user_id', user.id);
     if (error) {
       toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -305,8 +304,9 @@ const SettingsAccount = () => {
               앱·웹을 열면 이 현장이 먼저 열립니다. 헤더에서 잠깐 바꿔도 기본값은 여기만 바뀝니다.
             </p>
           </div>
+          {isWorkerAccount && (
           <div className="space-y-1.5">
-            <Label className="text-xs">앱 언어 (근로자 화면)</Label>
+            <Label className="text-xs">앱 언어</Label>
             <select
               className="w-full h-10 rounded-md border bg-background px-2 text-sm"
               value={uiLocale}
@@ -317,9 +317,10 @@ const SettingsAccount = () => {
               ))}
             </select>
             <p className="text-[10px] text-muted-foreground">
-              결재·승인본 원문은 한국어입니다. 근로자 앱 메뉴와 승인본 보기만 이 언어로 표시합니다.
+              잘못 고르셨으면 여기서만 바꿉니다. 한국어를 고르면 예전과 같은 화면입니다.
             </p>
           </div>
+          )}
           <Button onClick={handleSave} disabled={saving} className="w-full gap-1.5">
             <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '프로필 저장'}
           </Button>

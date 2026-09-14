@@ -63,6 +63,7 @@ export default function MobileAssessmentViewer({
   const [printError, setPrintError] = useState<string | null>(null);
   const [tab, setTab] = useState<"doc" | "summary">("doc");
   const { t, locale } = useWorkerLocale();
+  const foreign = isNonKoreanLocale(locale);
   const summaryFields = useMemo(() => {
     const out: Record<string, string> = {};
     items.forEach((it, i) => {
@@ -170,7 +171,8 @@ export default function MobileAssessmentViewer({
         )}
       </header>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "summary")} className="flex-1 min-h-0 flex flex-col">
+      <Tabs value={foreign ? tab : "doc"} onValueChange={(v) => setTab(v as "doc" | "summary")} className="flex-1 min-h-0 flex flex-col">
+        {foreign && (
         <TabsList className="shrink-0 mx-3 mt-2 grid grid-cols-2 bg-slate-800 text-slate-300">
           <TabsTrigger value="doc" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
             {t("originalKo")}
@@ -179,6 +181,7 @@ export default function MobileAssessmentViewer({
             {t("myLanguage")}
           </TabsTrigger>
         </TabsList>
+        )}
 
         <TabsContent value="doc" forceMount className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden">
           <ZoomableDocumentPreview

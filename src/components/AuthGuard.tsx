@@ -12,6 +12,7 @@ import {
   isNativeApp,
 } from "@/lib/native/isNativeApp";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
+import { needsWorkerLocaleChoice, WORKER_LANGUAGE_PATH } from "@/lib/i18n/workerLocale";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -38,6 +39,7 @@ export const PUBLIC_ROUTES = [
   "/register",
   "/consent",
   "/native-permissions",
+  "/app-language",
   "/onboarding",
   "/forgot-password",
   "/update-password",
@@ -81,6 +83,7 @@ type ConsentProfile = {
   agreed_to_privacy?: boolean | null;
   agreed_to_admin_security?: boolean | null;
   consent_agreed_at?: string | null;
+  ui_locale_chosen?: boolean | null;
 } | null;
 
 /** Universal consent gate — role-aware required flags. */
@@ -151,10 +154,23 @@ export function postLoginPath(
 ): string {
   const intent = opts?.loginIntent ?? readLoginIntent();
   if (needsConsent(profile ?? null, roles, { loginIntent: intent })) return "/consent";
-  return postConsentHomePath(roles, {
+  return afterConsentHomePath(roles, profile ?? null, {
     rolesReady: opts?.rolesReady,
     loginIntent: intent,
   });
+}
+
+/** After legal consent: language gate only when opening the worker/app shell. */
+export function afterConsentHomePath(
+  roles: string[],
+  profile?: ConsentProfile,
+  opts?: { rolesReady?: boolean; loginIntent?: "admin" | "worker" | null },
+): string {
+  const dest = postConsentHomePath(roles, opts);
+  if (dest.startsWith("/app/worker") && needsWorkerLocaleChoice(profile ?? null)) {
+    return WORKER_LANGUAGE_PATH;
+  }
+  return dest;
 }
 
 type AuthGuardProps = {
@@ -265,6 +281,16 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     location.pathname !== "/native-permissions"
   ) {
     return <Navigate to="/native-permissions" replace />;
+  }
+
+  // ④c First worker-app language pick — existing Korean accounts are already marked chosen.
+  if (
+    shell === "worker" &&
+    needsWorkerLocaleChoice(profile) &&
+    !isActiveMobilePreviewRequest(location.search) &&
+    location.pathname !== WORKER_LANGUAGE_PATH
+  ) {
+    return <Navigate to={WORKER_LANGUAGE_PATH} replace />;
   }
 
   // ⑤ Shell gate — only pure workers are blocked from admin shell

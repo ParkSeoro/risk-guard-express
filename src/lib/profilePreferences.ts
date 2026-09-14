@@ -14,7 +14,7 @@ export async function saveUiLocale(userId: string, locale: WorkerLocale): Promis
   const next = parseWorkerLocale(locale);
   const { error } = await supabase
     .from("profiles")
-    .update({ ui_locale: next } as any)
+    .update({ ui_locale: next, ui_locale_chosen: true } as any)
     .eq("user_id", userId);
   if (error) throw error;
 }

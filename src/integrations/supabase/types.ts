@@ -4299,6 +4299,7 @@ export type Database = {
           phone: string | null
           position: string | null
           ui_locale: string
+          ui_locale_chosen: boolean
           updated_at: string
           user_id: string
         }
@@ -4318,6 +4319,7 @@ export type Database = {
           phone?: string | null
           position?: string | null
           ui_locale?: string
+          ui_locale_chosen?: boolean
           updated_at?: string
           user_id: string
         }
@@ -4337,6 +4339,7 @@ export type Database = {
           phone?: string | null
           position?: string | null
           ui_locale?: string
+          ui_locale_chosen?: boolean
           updated_at?: string
           user_id?: string
         }

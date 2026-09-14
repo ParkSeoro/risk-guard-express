@@ -36,6 +36,7 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
   const [printHint, setPrintHint] = useState("인쇄 문서를 준비하는 중…");
   const [tab, setTab] = useState<"doc" | "files" | "summary">("doc");
   const { t, locale } = useWorkerLocale();
+  const foreign = isNonKoreanLocale(locale);
   const summaryFields = useMemo(() => {
     const out: Record<string, string> = {};
     cards.forEach((c, i) => {
@@ -149,16 +150,18 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
       </header>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "files" | "summary")} className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="shrink-0 mx-3 mt-2 grid grid-cols-3 bg-slate-800 text-slate-300">
+        <TabsList className={`shrink-0 mx-3 mt-2 grid ${foreign ? "grid-cols-3" : "grid-cols-2"} bg-slate-800 text-slate-300`}>
           <TabsTrigger value="doc" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            {t("originalKo")}
+            {foreign ? t("originalKo") : t("documentTab")}
           </TabsTrigger>
           <TabsTrigger value="files" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
-            첨부
+            {t("attachTab")}
           </TabsTrigger>
+          {foreign && (
           <TabsTrigger value="summary" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
             {t("myLanguage")}
           </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="doc" forceMount className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden">

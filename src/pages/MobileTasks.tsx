@@ -4,9 +4,11 @@ import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronRight, ClipboardCheck, AlertOctagon, Users, Wrench, HeartPulse, CloudSun, HardHat, MapPin, PenLine, LogIn } from "lucide-react";
+import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 
 export default function MobileTasks() {
   const { role, isMaster } = useMobileAccess();
+  const { t } = useWorkerLocale();
   const preview = usePreview();
   const effectiveRole = preview.isPreview ? preview.syntheticRole : role;
   const manager = isManagerMobileRole(
@@ -15,12 +17,12 @@ export default function MobileTasks() {
   );
 
   const workerItems = [
-    { label: "내 조치사항", sub: "배정된 조치 완료", to: "/app/worker/actions", icon: Wrench },
-    { label: "TBM 참여", sub: "오늘 브리핑·서명", to: "/app/worker/tbm", icon: Users },
-    { label: "사고·아차사고 신고", sub: "즉시 보고", to: "/app/worker/incident", icon: AlertOctagon },
-    { label: "작업중지권", sub: "익명·실명 선택 신고", to: "/app/worker/work-stop", icon: AlertOctagon },
-    { label: "건강로그", sub: "오늘 컨디션", to: "/app/worker/daily-health-log", icon: HeartPulse },
-    { label: "보호구 수령확인", sub: "서명·지급대장 기록", to: "/app/worker/ppe-receipt", icon: HardHat },
+    { label: t("taskMyActions"), sub: t("taskMyActionsSub"), to: "/app/worker/actions", icon: Wrench },
+    { label: t("taskTbm"), sub: t("taskTbmSub"), to: "/app/worker/tbm", icon: Users },
+    { label: t("taskIncident"), sub: t("taskIncidentSub"), to: "/app/worker/incident", icon: AlertOctagon },
+    { label: t("taskWorkStop"), sub: t("taskWorkStopSub"), to: "/app/worker/work-stop", icon: AlertOctagon },
+    { label: t("taskHealth"), sub: t("taskHealthSub"), to: "/app/worker/daily-health-log", icon: HeartPulse },
+    { label: t("taskPpe"), sub: t("taskPpeSub"), to: "/app/worker/ppe-receipt", icon: HardHat },
   ];
 
   const managerItems = [
@@ -42,9 +44,9 @@ export default function MobileTasks() {
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-tasks">
       <div>
-        <h1 className="text-base font-bold">{manager ? "현장" : "할 일"}</h1>
+        <h1 className="text-base font-bold">{manager ? "현장" : t("tasksTitle")}</h1>
         <p className="text-xs text-muted-foreground">
-          {manager ? "점검·조치·TBM·출입 바로가기" : "오늘 수행해야 할 작업"}
+          {manager ? "점검·조치·TBM·출입 바로가기" : t("tasksSub")}
         </p>
       </div>
       <Card>

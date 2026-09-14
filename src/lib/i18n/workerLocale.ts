@@ -2,6 +2,18 @@ export const WORKER_LOCALES = ["ko", "en", "zh", "ja"] as const;
 export type WorkerLocale = (typeof WORKER_LOCALES)[number];
 
 export const WORKER_LOCALE_STORAGE_KEY = "safenex.ui_locale";
+export const WORKER_LANGUAGE_PATH = "/app-language";
+
+export type LocaleChoiceProfile = {
+  ui_locale_chosen?: boolean | null;
+} | null;
+
+/** Missing column or already picked → do not block Korean workers. */
+export function needsWorkerLocaleChoice(profile?: LocaleChoiceProfile): boolean {
+  if (!profile) return false;
+  if (profile.ui_locale_chosen == null) return false;
+  return profile.ui_locale_chosen !== true;
+}
 
 export const WORKER_LOCALE_LABELS: Record<WorkerLocale, string> = {
   ko: "한국어",

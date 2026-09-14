@@ -79,13 +79,13 @@ describe("SettingsAccount home site and locale", () => {
     host = null;
   });
 
-  it("shows 기본 현장 and 앱 언어 fields", async () => {
+  async function renderAt(path: string) {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
     await act(async () => {
       root!.render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
           <SettingsAccount />
         </MemoryRouter>,
       );
@@ -94,11 +94,20 @@ describe("SettingsAccount home site and locale", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(host.textContent).toMatch(/기본 현장/);
-    expect(host.textContent).toMatch(/앱 언어 \(근로자 화면\)/);
-    expect(host.textContent).toMatch(/English/);
-    expect(host.textContent).toMatch(/한국어/);
-    expect(host.textContent).toMatch(/中文/);
-    expect(host.textContent).toMatch(/日本語/);
+  }
+
+  it("shows 앱 언어 only on the worker account page", async () => {
+    await renderAt("/app/worker/account");
+    expect(host?.textContent).toMatch(/기본 현장/);
+    expect(host?.textContent).toMatch(/앱 언어/);
+    expect(host?.textContent).toMatch(/English/);
+    expect(host?.textContent).toMatch(/한국어/);
+  });
+
+  it("keeps web account Korean-only (no language picker)", async () => {
+    await renderAt("/settings/account");
+    expect(host?.textContent).toMatch(/기본 현장/);
+    expect(host?.textContent).not.toMatch(/앱 언어/);
+    expect(host?.textContent).not.toMatch(/English/);
   });
 });

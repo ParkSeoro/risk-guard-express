@@ -39,12 +39,11 @@ import { anyMapHasGeoref } from "@/lib/mapBounds";
 import { useGpsUi } from "@/lib/tracking/gpsStatusUi";
 import MobileProjectSwitcher from "@/components/mobile/MobileProjectSwitcher";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
-import { WORKER_LOCALE_LABELS, WORKER_LOCALES } from "@/lib/i18n/workerLocale";
 
 export default function MobileMore() {
   const { signOut, profile } = useAuth();
   const { role, isMaster, projectId } = useMobileAccess();
-  const { t, locale, setLocale, roleLabel } = useWorkerLocale();
+  const { t, roleLabel } = useWorkerLocale();
   const preview = usePreview();
   const navigate = useNavigate();
   const realtime = useSystemRealtimeOptional();
@@ -96,21 +95,6 @@ export default function MobileMore() {
       <Card>
         <CardContent className="p-3">
           <MobileProjectSwitcher />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-3 space-y-2">
-          <div className="text-xs font-medium text-muted-foreground">{t("language")}</div>
-          <select
-            className="w-full h-10 rounded-md border bg-background px-2 text-sm"
-            value={locale}
-            onChange={(e) => void setLocale(e.target.value as typeof locale)}
-          >
-            {WORKER_LOCALES.map((loc) => (
-              <option key={loc} value={loc}>{WORKER_LOCALE_LABELS[loc]}</option>
-            ))}
-          </select>
         </CardContent>
       </Card>
 
@@ -172,28 +156,28 @@ export default function MobileMore() {
         <CardContent className="p-0 divide-y">
           {(manager
             ? [
-                { label: "알림 내역", to: "/app/worker/alerts", icon: Inbox, badge: unread },
-                { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
-                { label: "승인 자료", to: "/app/worker/docs", icon: FolderOpen },
-                { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
-                { label: "비전 관제", to: "/app/worker/vision-events", icon: Video },
-                { label: "근로자·출입", to: "/app/worker/workers", icon: QrCode },
-                { label: "입퇴장 현황", to: "/app/worker/workers?tab=attendance", icon: LogIn },
-                { label: "서명·서약", to: "/app/worker/workers?tab=signatures", icon: PenLine },
-                { label: "근로자 분포", to: "/app/worker/distribution", icon: MapPin },
-                { label: "계정 정보", to: "/app/worker/account", icon: User },
+                { label: t("menuAlerts"), to: "/app/worker/alerts", icon: Inbox, badge: unread },
+                { label: t("menuAlertSettings"), to: "/app/worker/notifications", icon: Bell },
+                { label: t("menuApprovedDocs"), to: "/app/worker/docs", icon: FolderOpen },
+                { label: t("menuQr"), to: "/app/worker/scan", icon: ScanLine },
+                { label: t("menuVision"), to: "/app/worker/vision-events", icon: Video },
+                { label: t("menuWorkers"), to: "/app/worker/workers", icon: QrCode },
+                { label: t("menuAttendance"), to: "/app/worker/workers?tab=attendance", icon: LogIn },
+                { label: t("menuSignatures"), to: "/app/worker/workers?tab=signatures", icon: PenLine },
+                { label: t("menuDistribution"), to: "/app/worker/distribution", icon: MapPin },
+                { label: t("menuAccount"), to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()
-                  ? [{ label: "사용 설명서", to: "/manual", icon: BookOpen }]
+                  ? [{ label: t("menuManual"), to: "/manual", icon: BookOpen }]
                   : []),
               ]
             : [
-                { label: "알림 내역", to: "/app/worker/alerts", icon: Inbox, badge: unread },
-                { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
-                { label: "위치 · GPS", to: "/app/worker/location", icon: MapPin },
-                { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
-                { label: "계정 정보", to: "/app/worker/account", icon: User },
+                { label: t("menuAlerts"), to: "/app/worker/alerts", icon: Inbox, badge: unread },
+                { label: t("menuAlertSettings"), to: "/app/worker/notifications", icon: Bell },
+                { label: t("menuLocation"), to: "/app/worker/location", icon: MapPin },
+                { label: t("menuQr"), to: "/app/worker/scan", icon: ScanLine },
+                { label: t("menuAccount"), to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()
-                  ? [{ label: "사용 설명서", to: "/manual", icon: BookOpen }]
+                  ? [{ label: t("menuManual"), to: "/manual", icon: BookOpen }]
                   : []),
               ]
           ).map((row) => (
@@ -225,7 +209,7 @@ export default function MobileMore() {
           }}
         >
           <Monitor className="h-4 w-4 mr-2" />
-          PC 관리 화면으로
+          {t("menuPcAdmin")}
         </Button>
       )}
 
@@ -239,7 +223,7 @@ export default function MobileMore() {
           }}
         >
           <LogOut className="h-4 w-4 mr-2" />
-          로그아웃
+          {t("menuLogout")}
         </Button>
       )}
     </div>

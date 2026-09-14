@@ -13,7 +13,7 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  postConsentHomePath,
+  afterConsentHomePath,
   readLoginIntent,
 } from "@/components/AuthGuard";
 import {
@@ -113,7 +113,7 @@ async function ensureSelectedProject(userId: string, isMaster: boolean) {
 }
 
 export default function NativePermissionsOnboarding() {
-  const { user, roles, isAuthLoading } = useAuth();
+  const { user, roles, isAuthLoading, profile } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("location");
   const [busy, setBusy] = useState(false);
@@ -163,7 +163,7 @@ export default function NativePermissionsOnboarding() {
   if (!isNativeApp() || hasCompletedNativePermissions()) {
     return (
       <Navigate
-        to={postConsentHomePath(roles, { loginIntent: readLoginIntent() })}
+        to={afterConsentHomePath(roles, profile, { loginIntent: readLoginIntent() })}
         replace
       />
     );
@@ -180,7 +180,7 @@ export default function NativePermissionsOnboarding() {
         return;
       }
       markNativePermissionsDone();
-      navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), {
+      navigate(afterConsentHomePath(roles, profile, { loginIntent: readLoginIntent() }), {
         replace: true,
       });
     } finally {

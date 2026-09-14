@@ -14,6 +14,7 @@ const ROOTS = new Set([
   "/login",
   "/consent",
   "/native-permissions",
+  "/app-language",
 ]);
 
 export default function NativeAndroidBack() {

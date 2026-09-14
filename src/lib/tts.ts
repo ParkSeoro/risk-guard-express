@@ -11,7 +11,6 @@
  */
 
 import { Capacitor } from "@capacitor/core";
-import { NativeAudio } from "@capacitor-community/native-audio";
 import { buildDangerTtsMessage, type AlarmRoleInput } from "@/lib/alarmRoleLabel";
 import {
   boostAlarmVolumeMax,
@@ -25,6 +24,21 @@ import {
 const SIREN_ASSET_ID = "danger_siren";
 const SIREN_WEB_PATH = "/sounds/siren.wav";
 const SIREN_DURATION_MS = 2000;
+
+type NativeAudioApi = {
+  configure: (opts: Record<string, unknown>) => Promise<unknown>;
+  preload: (opts: Record<string, unknown>) => Promise<unknown>;
+  setVolume: (opts: Record<string, unknown>) => Promise<unknown>;
+  play: (opts: Record<string, unknown>) => Promise<unknown>;
+  stop: (opts: Record<string, unknown>) => Promise<unknown>;
+};
+
+/** Web/PWA must not evaluate the native-audio plugin (iOS Safari: Shareable). */
+async function loadNativeAudio(): Promise<NativeAudioApi | null> {
+  if (!Capacitor.isNativePlatform()) return null;
+  const { NativeAudio } = await import("@capacitor-community/native-audio");
+  return NativeAudio as unknown as NativeAudioApi;
+}
 
 export const DANGER_MESSAGE =
   "경고. 위험 구역에 진입했습니다. 즉시 이탈하십시오.";
@@ -61,6 +75,8 @@ async function ensureNativeSiren(): Promise<boolean> {
   if (isNativeAlarmAvailable()) return false;
   if (!nativeReady) {
     nativeReady = (async () => {
+      const NativeAudio = await loadNativeAudio();
+      if (!NativeAudio) return false;
       try {
         await NativeAudio.configure({ fade: false, focus: true });
         await NativeAudio.preload({
@@ -192,6 +208,8 @@ async function playSiren(): Promise<void> {
     const ok = await ensureNativeSiren();
     if (ok) {
       try {
+        const NativeAudio = await loadNativeAudio();
+        if (!NativeAudio) throw new Error("native-audio unavailable");
         await NativeAudio.setVolume({ assetId: SIREN_ASSET_ID, volume: 1.0 });
         await NativeAudio.play({ assetId: SIREN_ASSET_ID });
         await new Promise((r) => setTimeout(r, SIREN_DURATION_MS));
@@ -377,7 +395,9 @@ export function stopSpeaking(): void {
     /* ignore */
   }
   if (Capacitor.isNativePlatform()) {
-    void NativeAudio.stop({ assetId: SIREN_ASSET_ID }).catch(() => undefined);
+    void loadNativeAudio()
+      .then((audio) => audio?.stop({ assetId: SIREN_ASSET_ID }))
+      .catch(() => undefined);
   }
   void stopNativeAlarmSiren();
   if (volumeBoosted) {

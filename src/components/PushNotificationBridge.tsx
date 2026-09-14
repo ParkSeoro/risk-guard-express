@@ -10,7 +10,6 @@ import { Capacitor } from '@capacitor/core';
 import { resolveNotificationRoute } from '@/lib/notificationRoutes';
 import { isPushSupported, subscribeToPush } from '@/lib/pushSubscription';
 import { isIosNativeAlarmAvailable, requestIosCriticalAlerts } from '@/lib/alarmVolume';
-import { playDangerAlarm } from '@/lib/tts';
 
 export default function PushNotificationBridge() {
   const { user } = useAuth();
@@ -170,7 +169,7 @@ export default function PushNotificationBridge() {
           (notification: any) => {
             const data = notification?.data || {};
             if (data.type === 'danger_zone_entry') {
-              void playDangerAlarm();
+              void import('@/lib/tts').then((m) => m.playDangerAlarm());
             }
             // 현장 공지: system tray already shows; foreground just surface a toast.
             if (data.type === 'announcement') {

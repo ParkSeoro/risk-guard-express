@@ -6,7 +6,9 @@ import { runBootOtaGate } from "./lib/native/bootOtaGate";
 import { runBootStoreGate } from "./lib/native/bootStoreGate";
 import { isNativeApp } from "./lib/native/platform";
 import { installStaleChunkAutoReload } from "./lib/staleChunkError";
+import { installIosShareableGuard } from "./lib/iosShareableGuard";
 
+installIosShareableGuard();
 installStaleChunkAutoReload();
 
 const rootEl = document.getElementById("root");

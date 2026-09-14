@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { Geolocation } from "@capacitor/geolocation";
 import { MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isNativeApp } from "@/lib/native/isNativeApp";
@@ -57,6 +56,7 @@ export default function GpsConsentCoach({
     let cancelled = false;
     const read = async () => {
       try {
+        const { Geolocation } = await import("@capacitor/geolocation");
         const cur = await Geolocation.checkPermissions();
         if (cancelled) return;
         const granted = locationPermissionTriState(cur);

@@ -10,7 +10,6 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { Geolocation } from "@capacitor/geolocation";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   afterConsentHomePath,
@@ -241,6 +240,7 @@ export default function NativePermissionsOnboarding() {
   const requestCamera = async () => {
     setBusy(true);
     try {
+      const { BarcodeScanner } = await import("@capacitor-mlkit/barcode-scanning");
       await BarcodeScanner.requestPermissions();
       setStep("done");
     } catch (e: any) {

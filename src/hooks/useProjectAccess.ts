@@ -11,9 +11,10 @@ import {
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
-  pickBootProjectId,
+  pickSessionProjectId,
   readActiveProjectId,
   writeActiveProjectId,
+  markProjectViewingSession,
 } from '@/lib/activeProject';
 
 /**
@@ -224,6 +225,7 @@ export function useProjectAccess(): ProjectAccess {
   const setSelectedProject = (id: string) => {
     setSelectedProjectState(id);
     writeActiveProjectId(id);
+    markProjectViewingSession();
   };
 
   useEffect(() => {
@@ -319,12 +321,16 @@ export function useProjectAccess(): ProjectAccess {
         .order('created_at', { ascending: false });
       if (data && data.length > 0) {
         setProjects(data);
-        const picked = pickBootProjectId({
+        const picked = pickSessionProjectId({
           allowedIds: data.map((p) => p.id),
           defaultProjectId: profile?.default_project_id,
           storedId: readActiveProjectId(),
+          defaultReady: profile != null,
         });
-        if (picked && picked !== selectedProject) setSelectedProject(picked);
+        if (picked && picked !== selectedProject) {
+          setSelectedProjectState(picked);
+          writeActiveProjectId(picked);
+        }
       } else {
         setProjects([]);
         if (selectedProject) setSelectedProject('');
@@ -340,12 +346,16 @@ export function useProjectAccess(): ProjectAccess {
           .filter((p: any) => p && p.is_deleted !== true)
           .map((p: any) => ({ id: p.id, name: p.name, site_name: p.site_name }));
         setProjects(projs);
-        const picked = pickBootProjectId({
+        const picked = pickSessionProjectId({
           allowedIds: projs.map((p: { id: string }) => p.id),
           defaultProjectId: profile?.default_project_id,
           storedId: readActiveProjectId(),
+          defaultReady: profile != null,
         });
-        if (picked && picked !== selectedProject) setSelectedProject(picked);
+        if (picked && picked !== selectedProject) {
+          setSelectedProjectState(picked);
+          writeActiveProjectId(picked);
+        }
       } else {
         setProjects([]);
         if (selectedProject) setSelectedProject('');

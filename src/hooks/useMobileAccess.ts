@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -14,8 +14,10 @@ import { resolveGlobalMobileRole } from "@/lib/mobileShell";
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
+  pickSessionProjectId,
   readActiveProjectId,
   writeActiveProjectId,
+  markProjectViewingSession,
 } from "@/lib/activeProject";
 
 export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'worker' | 'viewer' | 'contractor';
@@ -65,19 +67,22 @@ export function useMobileAccess() {
   const setProjectId = useCallback((id: string) => {
     setProjectIdState(id);
     writeActiveProjectId(id);
+    markProjectViewingSession();
   }, []);
 
-  const appliedDefaultRef = useRef(false);
   useEffect(() => {
     const def = String((profile as { default_project_id?: string | null } | null)?.default_project_id || "").trim();
-    if (!def || appliedDefaultRef.current) return;
-    appliedDefaultRef.current = true;
-    if (readActiveProjectId() === def) {
-      setProjectIdState(def);
-      return;
-    }
-    setProjectIdState(def);
-    writeActiveProjectId(def);
+    const stored = readActiveProjectId();
+    if (!def && !stored) return;
+    const picked = pickSessionProjectId({
+      allowedIds: [def, stored].filter(Boolean),
+      defaultProjectId: def || null,
+      storedId: stored,
+      defaultReady: profile != null,
+    });
+    if (!picked) return;
+    setProjectIdState(picked);
+    if (picked !== stored) writeActiveProjectId(picked);
   }, [profile]);
 
   useEffect(() => {

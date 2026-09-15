@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
+  markProjectViewingSession,
   readActiveProjectId,
   writeActiveProjectId,
 } from "@/lib/activeProject";
@@ -28,6 +29,7 @@ export function useActiveProject(): {
 
   const setProjectId = useCallback((id: string) => {
     writeActiveProjectId(id);
+    markProjectViewingSession();
     setState(id || "");
   }, []);
 

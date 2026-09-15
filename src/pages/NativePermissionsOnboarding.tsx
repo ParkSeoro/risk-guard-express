@@ -33,7 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Battery, Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { pickBootProjectId, readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
+import { pickSessionProjectId, readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
 type Step = "location" | "notifications" | "battery" | "camera" | "done";
 
@@ -96,7 +96,7 @@ async function ensureSelectedProject(userId: string, isMaster: boolean) {
         .filter((p: any) => p && !p.is_deleted);
     }
     const allowed = list.map((p) => p.id);
-    const picked = pickBootProjectId({
+    const picked = pickSessionProjectId({
       allowedIds: allowed,
       defaultProjectId: preferred,
       storedId: cur,

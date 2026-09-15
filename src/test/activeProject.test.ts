@@ -4,8 +4,11 @@ import {
   CANONICAL_PROJECT_KEY,
   isActiveProjectStorageKey,
   LEGACY_PROJECT_KEY,
+  markProjectViewingSession,
   pickBootProjectId,
+  pickSessionProjectId,
   readActiveProjectId,
+  resetProjectViewingSessionForTests,
   writeActiveProjectId,
 } from "@/lib/activeProject";
 
@@ -13,6 +16,7 @@ describe("activeProject (F-07)", () => {
   afterEach(() => {
     localStorage.removeItem(CANONICAL_PROJECT_KEY);
     localStorage.removeItem(LEGACY_PROJECT_KEY);
+    resetProjectViewingSessionForTests();
   });
 
   it("prefers selectedProjectId and mirrors it onto currentProjectId", () => {
@@ -72,5 +76,55 @@ describe("activeProject (F-07)", () => {
         storedId: "",
       }),
     ).toBe("a");
+  });
+
+  it("cold start uses the profile default even if last night's site is stored", () => {
+    expect(
+      pickSessionProjectId({
+        allowedIds: ["a", "b", "c"],
+        defaultProjectId: "a",
+        storedId: "c",
+        defaultReady: true,
+      }),
+    ).toBe("a");
+  });
+
+  it("after the user picks a site, GPS/list reloads keep that site", () => {
+    markProjectViewingSession();
+    expect(
+      pickSessionProjectId({
+        allowedIds: ["a", "b", "c"],
+        defaultProjectId: "a",
+        storedId: "c",
+        defaultReady: true,
+      }),
+    ).toBe("c");
+  });
+
+  it("does not lock last night's site before the profile default is known", () => {
+    expect(
+      pickSessionProjectId({
+        allowedIds: ["a", "b"],
+        defaultProjectId: "a",
+        storedId: "b",
+        defaultReady: false,
+      }),
+    ).toBe("b");
+    expect(
+      pickSessionProjectId({
+        allowedIds: ["a", "b"],
+        defaultProjectId: "a",
+        storedId: "b",
+        defaultReady: true,
+      }),
+    ).toBe("a");
+  });
+
+  it("GPS and project list use the session picker, not a fresh boot", async () => {
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync("src/hooks/useProjectAccess.ts", "utf8")).toContain("pickSessionProjectId");
+    expect(readFileSync("src/hooks/useMobileAccess.ts", "utf8")).toContain("pickSessionProjectId");
+    expect(readFileSync("src/components/worker/WorkerGlobalGps.tsx", "utf8")).toContain("pickSessionProjectId");
+    expect(readFileSync("src/contexts/AuthContext.tsx", "utf8")).toContain("resetProjectViewingSession");
   });
 });

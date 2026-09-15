@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { resetProjectViewingSession } from "@/lib/activeProject";
 import type { Tables } from "@/integrations/supabase/types";
 import type { AppRole } from "@/lib/permissions";
 
@@ -179,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    resetProjectViewingSession();
     userIdRef.current = null;
     setUser(null);
     setSession(null);

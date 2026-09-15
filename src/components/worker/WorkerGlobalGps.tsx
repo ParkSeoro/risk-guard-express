@@ -40,7 +40,7 @@ import {
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
-  pickBootProjectId,
+  pickSessionProjectId,
   readActiveProjectId,
   writeActiveProjectId,
 } from "@/lib/activeProject";
@@ -123,7 +123,7 @@ export default function WorkerGlobalGps() {
             .map((m: any) => m.projects)
             .filter((p: any) => p && !p.is_deleted);
         }
-        const picked = pickBootProjectId({
+        const picked = pickSessionProjectId({
           allowedIds: list.map((p) => p.id),
           defaultProjectId: (prof as { default_project_id?: string | null } | null)?.default_project_id,
           storedId: readActiveProjectId(),

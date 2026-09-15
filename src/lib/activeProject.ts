@@ -4,11 +4,30 @@
  * Canonical key: selectedProjectId (header, GPS, mobile).
  * Legacy key:    currentProjectId (older map/zone/QR screens).
  * Writes always mirror both so a map-page switch restarts GPS in the same tab.
+ *
+ * Boot (앱을 나갔다 다시 켠 JS 세션): profile default → last local → first allowed.
+ * While logged in, header/GPS must not snap back to the default; that is only viewing.
  */
 
 export const CANONICAL_PROJECT_KEY = "selectedProjectId";
 export const LEGACY_PROJECT_KEY = "currentProjectId";
 export const ACTIVE_PROJECT_CHANGED_EVENT = "mobile:project-changed";
+
+/** True after this JS lifetime applied boot or the user picked a site. Dies on reload. */
+let projectViewingSession = false;
+
+export function hasProjectViewingSession(): boolean {
+  return projectViewingSession;
+}
+
+export function resetProjectViewingSession(): void {
+  projectViewingSession = false;
+}
+
+/** Tests only. */
+export function resetProjectViewingSessionForTests(): void {
+  projectViewingSession = false;
+}
 
 function peek(key: string): string {
   try {
@@ -59,6 +78,10 @@ export function writeActiveProjectId(id: string): void {
   }
 }
 
+export function markProjectViewingSession(): void {
+  projectViewingSession = true;
+}
+
 /**
  * App/web boot: profile default → last local choice → first allowed.
  * Switching in the header does not write the profile default.
@@ -75,4 +98,31 @@ export function pickBootProjectId(opts: {
   const stored = String(opts.storedId || "").trim();
   if (stored && allowedSet.has(stored)) return stored;
   return allowed[0] || "";
+}
+
+/**
+ * Cold JS start: pickBootProjectId (기본 현장) once the profile default is known.
+ * After that, or after the user picks a site, keep the stored id so GPS/list
+ * reloads do not snap back. Leaving the app (new JS) starts over at the default.
+ */
+export function pickSessionProjectId(opts: {
+  allowedIds: string[];
+  defaultProjectId?: string | null;
+  storedId?: string | null;
+  /** False while profile is still loading — do not lock last night's site as "viewing". */
+  defaultReady?: boolean;
+}): string {
+  const stored = String(opts.storedId ?? readActiveProjectId()).trim();
+  const allowed = opts.allowedIds.map((id) => String(id || "").trim()).filter(Boolean);
+  const allowedSet = new Set(allowed);
+  if (projectViewingSession) {
+    if (stored && allowedSet.has(stored)) return stored;
+    return pickBootProjectId(opts);
+  }
+  if (opts.defaultReady === false) {
+    if (stored && allowedSet.has(stored)) return stored;
+    return allowed[0] || "";
+  }
+  projectViewingSession = true;
+  return pickBootProjectId({ ...opts, storedId: stored });
 }

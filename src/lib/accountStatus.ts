@@ -35,3 +35,12 @@ export function authBannedErrorMessage(raw?: string | null): string | null {
   }
   return null;
 }
+
+/** Auth가 6자 이상을 요구할 때 — 근로자 비번은 전화 뒤 4자리. */
+export function workerAuthPasswordErrorMessage(raw?: string | null): string | null {
+  const m = String(raw || '').toLowerCase();
+  if (m.includes('at least 6') || m.includes('password should be at least')) {
+    return '비밀번호는 전화번호 뒤 4자리입니다. 서버 최소 길이를 4자로 맞춰 주세요.';
+  }
+  return null;
+}

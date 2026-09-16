@@ -41,6 +41,16 @@ function pinFromPhone(digits: string): string | null {
   return digits.slice(-4);
 }
 
+function passwordsToTry(pin: string): string[] {
+  if (pin.length >= 6) return [pin];
+  return [pin, pin.padStart(6, "0")];
+}
+
+function isPasswordTooShort(message?: string | null): boolean {
+  const m = String(message || "").toLowerCase();
+  return m.includes("at least 6") || m.includes("password should be at least");
+}
+
 type WorkerIn = { phone?: string; name?: string; job_type?: string | null };
 
 Deno.serve(async (req) => {
@@ -170,25 +180,30 @@ Deno.serve(async (req) => {
           userId = existingId as string;
           status = "linked";
         } else {
-          const createdRes = await admin.auth.admin.createUser({
-            email,
-            password: pin,
-            email_confirm: true,
-            user_metadata: {
-              display_name: name,
-              phone: digits,
-              company: companyName,
-              account_kind: "worker",
-              signup_project_id: projectId,
-              signup_company_id: companyId,
-              signup_position: "WORKER",
-              signup_job_type: jobType,
-              provisioned_by: callerId,
-              provisioned_via: "admin_bulk",
-            },
-          });
+          let createdRes: Awaited<ReturnType<typeof admin.auth.admin.createUser>> | null = null;
+          for (const password of passwordsToTry(pin)) {
+            createdRes = await admin.auth.admin.createUser({
+              email,
+              password,
+              email_confirm: true,
+              user_metadata: {
+                display_name: name,
+                phone: digits,
+                company: companyName,
+                account_kind: "worker",
+                signup_project_id: projectId,
+                signup_company_id: companyId,
+                signup_position: "WORKER",
+                signup_job_type: jobType,
+                provisioned_by: callerId,
+                provisioned_via: "admin_bulk",
+              },
+            });
+            if (!createdRes.error) break;
+            if (!isPasswordTooShort(createdRes.error.message)) break;
+          }
 
-          if (createdRes.error || !createdRes.data?.user) {
+          if (!createdRes || createdRes.error || !createdRes.data?.user) {
             // Race / already exists
             const { data: again } = await admin.rpc("lookup_auth_user_id_by_email", {
               _email: email,
@@ -197,7 +212,7 @@ Deno.serve(async (req) => {
               userId = again as string;
               status = "linked";
             } else {
-              throw createdRes.error || new Error("createUser failed");
+              throw createdRes?.error || new Error("createUser failed");
             }
           } else {
             userId = createdRes.data.user.id;

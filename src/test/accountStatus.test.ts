@@ -5,6 +5,7 @@ import {
   isAccountPending,
   normalizeAccountStatus,
   signupIdentityErrorMessage,
+  workerAuthPasswordErrorMessage,
 } from '@/lib/accountStatus';
 
 describe('accountStatus', () => {
@@ -21,5 +22,6 @@ describe('accountStatus', () => {
     expect(signupIdentityErrorMessage('EMAIL_IN_USE')).toContain('이메일');
     expect(authBannedErrorMessage('User is banned')).toContain('로그인 차단');
     expect(authBannedErrorMessage('invalid password')).toBeNull();
+    expect(workerAuthPasswordErrorMessage('Password should be at least 6 characters.')).toMatch(/뒤 4자리/);
   });
 });

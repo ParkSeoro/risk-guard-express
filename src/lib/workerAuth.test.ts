@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPhoneMask,
+  isAuthPasswordTooShort,
+  isWorkerVirtualEmail,
   phoneToWorkerEmail,
+  pinFromPhone,
+  workerAuthPasswordsToTry,
   workerPhoneSchema,
   workerPinSchema,
-  isWorkerVirtualEmail,
 } from "@/lib/workerAuth";
 
 describe("workerAuth virtual email", () => {
@@ -20,6 +23,14 @@ describe("workerAuth virtual email", () => {
   it("masks phone input for display", () => {
     expect(formatPhoneMask("01012345678")).toBe("010-1234-5678");
     expect(formatPhoneMask("01012")).toBe("010-12");
+  });
+
+  it("uses the last 4 phone digits as the worker password", () => {
+    expect(pinFromPhone("010-1234-5678")).toBe("5678");
+    expect(pinFromPhone("01012345678")).toBe("5678");
+    expect(pinFromPhone("010-547")).toBeNull();
+    expect(workerAuthPasswordsToTry("5678")).toEqual(["5678", "005678"]);
+    expect(isAuthPasswordTooShort("Password should be at least 6 characters.")).toBe(true);
   });
 
   it("validates pin and phone", () => {

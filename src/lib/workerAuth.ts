@@ -40,10 +40,30 @@ export function isWorkerVirtualEmail(email: string | null | undefined): boolean 
   return e.endsWith(`@${WORKER_EMAIL_DOMAIN}`);
 }
 
-/** 근로자 PIN: 숫자 4~6자리 */
+/** 근로자 기본 비밀번호 = 휴대전화 뒤 4자리. 신규 가입·관리자 등록 SSOT. */
+export function pinFromPhone(phone: string | null | undefined): string | null {
+  const digits = digitsOnlyPhone(phone);
+  if (digits.length < 10) return null;
+  return digits.slice(-4);
+}
+
+/** 로그인: 기본은 뒤 4자리. 예전에 직접 정한 4~6자리 PIN도 허용. */
 export const workerPinSchema = z
-  .string({ required_error: "PIN 번호를 입력하세요" })
-  .regex(/^\d{4,6}$/, { message: "비밀번호는 숫자 4~6자리여야 합니다" });
+  .string({ required_error: "비밀번호를 입력하세요" })
+  .regex(/^\d{4,6}$/, { message: "비밀번호는 전화번호 뒤 4자리입니다" });
+
+/** Auth가 6자 이상을 요구하면 앞에 0을 채운다. 사용자는 뒤 4자리만 입력한다. */
+export function workerAuthPasswordsToTry(pin: string): string[] {
+  const p = String(pin || "").replace(/\D/g, "");
+  if (p.length >= 6) return [p];
+  if (p.length < 4) return [p];
+  return [p, p.padStart(6, "0")];
+}
+
+export function isAuthPasswordTooShort(message?: string | null): boolean {
+  const m = String(message || "").toLowerCase();
+  return m.includes("at least 6") || m.includes("password should be at least");
+}
 
 /** 근로자 가입/로그인용 휴대전화 */
 export const workerPhoneSchema = z
@@ -93,9 +113,22 @@ export async function signInWorkerWithPhone(
   }
 
   const loginEmail = phoneToWorkerEmail(phoneParsed.data);
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: loginEmail,
-    password: pinParsed.data,
-  });
-  return { data, error, loginEmail };
+  let last: WorkerSignInResult = {
+    data: { user: null, session: null },
+    error: {
+      name: "AuthApiError",
+      message: "비밀번호가 올바르지 않습니다",
+      status: 400,
+    } as AuthError,
+    loginEmail,
+  };
+  for (const password of workerAuthPasswordsToTry(pinParsed.data)) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password,
+    });
+    last = { data, error, loginEmail };
+    if (!error) return last;
+  }
+  return last;
 }

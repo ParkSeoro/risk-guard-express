@@ -1,5 +1,9 @@
 project_id = "qhntxmggacorqjjmjqgo"
 
+# 근로자 비밀번호 = 전화 뒤 4자리. 호스트 Auth 설정도 4로 맞춰야 한다.
+[auth]
+password_min_length = 4
+
 [functions.setup-e2e-accounts]
 verify_jwt = false
 

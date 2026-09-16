@@ -17,6 +17,8 @@ import { extractWorkPlanHazardCards, type WorkPlanHazardCard } from "@/lib/workP
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
 import { isNonKoreanLocale } from "@/lib/i18n/workerLocale";
+import { WorkDocVoidBanner } from "@/components/work-docs/WorkDocVoidStamp";
+import { workDocVoidInfo } from "@/lib/workDocVoid";
 
 /**
  * Mobile read-only viewer for work plans (including in-approval docs).
@@ -148,6 +150,12 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
         </div>
         {plan && <Badge className="bg-white/20 text-white border-0 shrink-0">{plan.status}</Badge>}
       </header>
+
+      {plan && workDocVoidInfo(plan) && (
+        <div className="px-3 pt-2">
+          <WorkDocVoidBanner info={workDocVoidInfo(plan)} />
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "files" | "summary")} className="flex-1 min-h-0 flex flex-col">
         <TabsList className={`shrink-0 mx-3 mt-2 grid ${foreign ? "grid-cols-3" : "grid-cols-2"} bg-slate-800 text-slate-300`}>

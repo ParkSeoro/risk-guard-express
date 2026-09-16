@@ -15,6 +15,7 @@ import type { PermitFormData, PermitSignatures } from "@/components/permits/DigP
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
 import { permitViewerPath } from "@/lib/permitViewerNav";
+import { workDocVoidInfo } from "@/lib/workDocVoid";
 import { isSubmitterApprovalStep } from "@/lib/approvalRules";
 import {
   permitPostStepKind,
@@ -248,6 +249,7 @@ export default function MobileApprovalDetail() {
                 permitType={permitRow.permit_type}
                 permitKinds={permitRow.permit_kinds}
                 loading={previewLoading}
+                voidInfo={workDocVoidInfo(permitRow)}
               />
             )}
 

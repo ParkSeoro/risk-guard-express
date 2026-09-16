@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, Sparkles, CheckCircle2, Ban } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -37,6 +37,13 @@ import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
 import PermitAiBriefingCard from '@/components/permits/PermitAiBriefingCard';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
+import { WorkDocVoidBanner, WorkDocVoidStamp } from '@/components/work-docs/WorkDocVoidStamp';
+import { WorkDocVoidDialog } from '@/components/work-docs/WorkDocVoidDialog';
+import {
+  canClientVoidWorkDoc,
+  isWorkDocVoided,
+  workDocVoidInfo,
+} from '@/lib/workDocVoid';
 import {
   normalizePermitKinds,
   primaryPermitKind,
@@ -90,6 +97,7 @@ function isPermitApproved(status?: string | null) {
   return APPROVED_PERMIT_STATUSES.has(status || '') || CLOSURE_PENDING_STATUSES.has(status || '') || CLOSED_PERMIT_STATUSES.has(status || '');
 }
 function permitStatusLabel(status?: string | null) {
+  if (status === '작업취소') return '작업 취소';
   if (CLOSED_PERMIT_STATUSES.has(status || '')) return '종료 완료';
   if (CLOSURE_PENDING_STATUSES.has(status || '')) return '작업 완료 확인 대기';
   if (APPROVED_PERMIT_STATUSES.has(status || '')) return '발행 완료';
@@ -103,7 +111,7 @@ export default function WorkPermitDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, profile } = useAuth();
-  const { userCompanyId } = useGlobalProjectAccess();
+  const { userCompanyId, userRole, isMaster } = useGlobalProjectAccess();
   const listBackPath = approvalsBackOr('/work-permits', searchParams.get('from'));
 
   const [permit, setPermit] = useState<any>(null);
@@ -131,6 +139,7 @@ export default function WorkPermitDetail() {
   const [tbmParticipants, setTbmParticipants] = useState<TbmParticipantPrint[]>([]);
   const [workersDialogOpen, setWorkersDialogOpen] = useState(false);
   const [tbmBusy, setTbmBusy] = useState(false);
+  const [voidOpen, setVoidOpen] = useState(false);
 
   const applyAssignedCrew = (next: {
     workers: PermitWorkerRow[];
@@ -258,7 +267,8 @@ export default function WorkPermitDetail() {
     if (
       !(p as any).tbm_session_id &&
       (p as any).project_id &&
-      APPROVED_PERMIT_STATUSES.has((p as any).status)
+      APPROVED_PERMIT_STATUSES.has((p as any).status) &&
+      !isWorkDocVoided(p as any)
     ) {
       try {
         const { ensureTbmAfterPermitIssued } = await import('@/lib/tbmLifecycle');
@@ -550,13 +560,22 @@ export default function WorkPermitDetail() {
   };
 
   const isApproved = isPermitApproved(permit?.status);
+  const isVoided = isWorkDocVoided(permit);
+  const voidInfo = workDocVoidInfo(permit);
+  const canVoid = canClientVoidWorkDoc({
+    userRole,
+    isMaster,
+    status: permit?.status,
+    voidedAt: permit?.voided_at,
+  });
   const isAuthor = !permit?.created_by || permit?.created_by === user?.id;
-  const readOnly = !isPermitEditable(permit?.status);
-  const canSave = !readOnly && isAuthor;
-  const canSubmit = !readOnly && isAuthor;
+  const readOnly = !isPermitEditable(permit?.status) || isVoided;
+  const canSave = !readOnly && isAuthor && !isVoided;
+  const canSubmit = !readOnly && isAuthor && !isVoided;
   /** 발행·종료대기: 가스측정 입력/저장 (선택) */
   const gasFieldsEditable =
     !!permit &&
+    !isVoided &&
     (APPROVED_PERMIT_STATUSES.has(permit.status || '') ||
       CLOSURE_PENDING_STATUSES.has(permit.status || '')) &&
     !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
@@ -605,10 +624,11 @@ export default function WorkPermitDetail() {
       setSaving(false);
     }
   };
-  // 발행 완료면 날짜 제한 없이 인쇄 가능
-  const canPrint = isApproved;
+  // 발행 완료 또는 작업취소본은 인쇄 가능 (취소 도장 포함)
+  const canPrint = isApproved || isVoided;
   const canRequestExtend =
     !!permit &&
+    !isVoided &&
     APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
     !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
     !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
@@ -617,6 +637,7 @@ export default function WorkPermitDetail() {
   /** 발행 완료: 관리감독자→SM 작업완료(종료) 결재 수동 요청 (가스측정 비필수) */
   const canRequestClosure =
     !!permit &&
+    !isVoided &&
     APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
     !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
     !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
@@ -697,7 +718,9 @@ export default function WorkPermitDetail() {
     if (!canPrint) {
       toast({
         title: '인쇄 불가',
-        description: '결재 승인(발행 완료) 후 인쇄할 수 있습니다.',
+        description: isVoided
+          ? '취소된 허가서를 불러오지 못했습니다.'
+          : '결재 승인(발행 완료) 후 인쇄할 수 있습니다.',
         variant: 'destructive',
       });
       return;
@@ -740,6 +763,9 @@ export default function WorkPermitDetail() {
           <Button variant="outline" size="sm" onClick={() => navigate(listBackPath)}><ArrowLeft className="h-4 w-4 mr-1" />목록</Button>
           <h1 className="text-lg md:text-xl font-bold flex items-center gap-2"><FileSignature className="h-5 w-5" />안전작업허가서</h1>
           <Badge variant="outline">{permitStatusLabel(permit.status)}</Badge>
+          {isVoided && (
+            <Badge className="bg-red-600 text-white border-red-700">작업 취소</Badge>
+          )}
           <Badge variant="outline">{resolvePermitWorkDate(permit) || permit.permit_date}</Badge>
           <Badge variant="secondary" className="text-[10px]">{selectedKinds.length}종 묶음</Badge>
         </div>
@@ -769,6 +795,11 @@ export default function WorkPermitDetail() {
               setApprovalOpen(true);
             }}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
           )}
+          {canVoid && (
+            <Button size="sm" variant="destructive" onClick={() => setVoidOpen(true)}>
+              <Ban className="h-4 w-4 mr-1" />작업 취소
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -781,7 +812,7 @@ export default function WorkPermitDetail() {
             size="sm"
             onClick={print}
             disabled={!canPrint}
-            title={!isApproved ? '결재 승인 후 인쇄 가능' : '허가서 인쇄 후 인원 명단(을지)은 별도 페이지로 출력'}
+            title={!canPrint ? '결재 승인 후 인쇄 가능' : '허가서 인쇄 후 인원 명단(을지)은 별도 페이지로 출력'}
           >
             <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / PDF' : '인쇄 불가'}
           </Button>
@@ -798,6 +829,8 @@ export default function WorkPermitDetail() {
           )}
         </div>
       </div>
+
+      <WorkDocVoidBanner info={voidInfo} />
 
       {showBriefing && (
         <div className="print:hidden">
@@ -884,7 +917,7 @@ export default function WorkPermitDetail() {
                   variant="outline"
                   onClick={async () => {
                     // Align TBM attendees to current permit crew before opening
-                    if (assignedWorkers.length > 0) {
+                    if (assignedWorkers.length > 0 && !isVoided) {
                       await syncPermitCrewToTbm({
                         permitId: permit.id,
                         tbmSessionId: permit.tbm_session_id!,
@@ -895,7 +928,7 @@ export default function WorkPermitDetail() {
                 >
                   TBM 일지 열기
                 </Button>
-              ) : (
+              ) : isVoided ? null : (
                 <Button
                   size="sm"
                   disabled={tbmBusy || !permit}
@@ -978,7 +1011,9 @@ export default function WorkPermitDetail() {
       {/* Screen edit: active kind only — always DigPermitForm */}
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:hidden">
         <StandardPermitSheet>
-          <DigPermitForm
+          <div className="relative">
+            <WorkDocVoidStamp info={voidInfo} />
+            <DigPermitForm
             permitType={activeKind}
             data={data}
             signatures={signatures}
@@ -1002,6 +1037,7 @@ export default function WorkPermitDetail() {
             }}
             onSign={(k, v) => { if (!readOnly) setSignatures({ ...signatures, [k]: v }); }}
           />
+          </div>
         </StandardPermitSheet>
       </div>
 
@@ -1026,7 +1062,9 @@ export default function WorkPermitDetail() {
         {selectedKinds.map((kind) => (
           <div key={kind} className="permit-print-form-page">
             <StandardPermitSheet>
-              <DigPermitForm
+              <div className="relative">
+                <WorkDocVoidStamp info={voidInfo} />
+                <DigPermitForm
                 permitType={kind}
                 data={data}
                 signatures={signatures}
@@ -1037,6 +1075,7 @@ export default function WorkPermitDetail() {
                 readOnly
                 printMode
               />
+              </div>
             </StandardPermitSheet>
           </div>
         ))}
@@ -1082,6 +1121,14 @@ export default function WorkPermitDetail() {
           onSubmitted={() => { setApprovalOpen(false); load(); }}
         />
       )}
+
+      <WorkDocVoidDialog
+        open={voidOpen}
+        onOpenChange={setVoidOpen}
+        entityType="work_permit"
+        entityId={permit.id}
+        onVoided={() => { void load(); }}
+      />
 
       <Dialog open={extendOpen} onOpenChange={(v) => { setExtendOpen(v); if (!v) { setExtendUntil(''); setExtendReason(''); } }}>
         <DialogContent className="max-w-sm">

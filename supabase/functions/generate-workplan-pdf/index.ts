@@ -480,9 +480,14 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
   }
   .footer { display: none; }
 }
+.void-stamp-host {
+  position: relative;
+  height: 0;
+  z-index: 40;
+}
 .void-stamp-overlay {
-  position: fixed;
-  top: 32%;
+  position: absolute;
+  top: 160pt;
   left: 50%;
   transform: translateX(-50%) rotate(-8deg);
   z-index: 40;
@@ -508,18 +513,15 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
   font-weight: 700;
   line-height: 1.4;
 }
-@media print {
-  .void-stamp-overlay { position: fixed; }
-}
 </style>
 </head>
 <body>
-${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-overlay">
+${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-host"><div class="void-stamp-overlay">
   <div class="void-title">작업 취소</div>
   <div class="void-line">사유 · ${escapeHtml(String(plan.voided_reason || "-"))}</div>
   <div class="void-line">취소자 · ${escapeHtml(String(plan.voided_by_name || "-"))}</div>
   <div class="void-line">시각 · ${escapeHtml(formatKST(plan.voided_at) || "-")}</div>
-</div>` : ""}
+</div></div>` : ""}
 
 <div class="report-header">
   <div class="report-title">작 업 계 획 서</div>

@@ -39,6 +39,8 @@ describe("work-plan body print + RA table contracts", () => {
     expect(edge).toContain("첨부서류 일람");
     expect(edge).not.toContain("attachment-print-page");
     expect(edge).not.toMatch(/position:\s*fixed/);
+    expect(edge).toContain("void-stamp-overlay");
+    expect(edge).toContain("position: absolute");
     expect(edge).not.toMatch(/이 파일 형식은 인쇄본에 직접 포함할 수 없습니다/);
   });
 });

@@ -26,6 +26,8 @@ export type HeadlessTrackStartOpts = {
   fenceLat?: number | null;
   fenceLng?: number | null;
   fenceRadiusM?: number | null;
+  /** Multiple GPS 개소 circles. New APKs use union; old APKs keep fenceLat. */
+  fencesJson?: string | null;
   intervalMs?: number;
   /** Consecutive outside samples before low-power watch. Default matches SITE_EXIT_STREAK. */
   exitStreak?: number;
@@ -62,6 +64,7 @@ function headlessPayload(opts: HeadlessTrackStartOpts): Record<string, unknown> 
     fenceLat: opts.fenceLat ?? undefined,
     fenceLng: opts.fenceLng ?? undefined,
     fenceRadiusM: opts.fenceRadiusM ?? undefined,
+    fencesJson: opts.fencesJson || undefined,
   };
 }
 

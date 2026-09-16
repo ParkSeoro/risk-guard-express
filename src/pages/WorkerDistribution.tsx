@@ -20,6 +20,12 @@ import {
   summarizeDistributionFixes,
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
+import {
+  fenceFromSiteSpot,
+  fetchActiveSiteSpots,
+  pickCurrentSiteSpot,
+  type ProjectSiteSpotRow,
+} from "@/lib/tracking/siteTrackBounds";
 
 type SiteMap = AnchorMap & { id: string; name: string; image_url: string | null };
 type Zone = {
@@ -94,12 +100,14 @@ export default function WorkerDistribution() {
   const [rtStatus, setRtStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [nowTick, setNowTick] = useState(Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [spots, setSpots] = useState<ProjectSiteSpotRow[]>([]);
 
   useEffect(() => {
     if (!projectId) return;
     loadMaps();
     loadCounts("polling");
     loadPositions();
+    void fetchActiveSiteSpots(projectId).then(setSpots);
     setRtStatus("connecting");
     const ch = supabase
       .channel(`wd:${projectId}`)
@@ -342,15 +350,37 @@ export default function WorkerDistribution() {
           stale: kind === "checkin" || kind === "stale",
           ago: p.updated_at ? formatAgo(nowTick - new Date(p.updated_at).getTime()) : "",
           key: `${p.lat}:${p.lng}:${p.updated_at}:${i}`,
+          spotName: pickCurrentSiteSpot(spots.map(fenceFromSiteSpot), p.lat, p.lng, {
+            mode: "track",
+            accuracyM: p.accuracy_m ?? 30,
+          })?.name,
         };
       })
       .filter((d): d is NonNullable<typeof d> => d != null);
-  }, [positions, corners, nowTick, companyColors]);
+  }, [positions, corners, nowTick, companyColors, spots]);
 
   const freshness = useMemo(
     () => summarizeDistributionFixes(positions, nowTick, totalIn),
     [positions, nowTick, totalIn],
   );
+
+  const spotCounts = useMemo(() => {
+    const fences = spots.map(fenceFromSiteSpot);
+    if (!fences.length || !positions.length) return [];
+    const counts = new Map<string, { name: string; n: number }>();
+    for (const p of positions) {
+      const hit = pickCurrentSiteSpot(fences, p.lat, p.lng, {
+        mode: "track",
+        accuracyM: p.accuracy_m ?? 30,
+      });
+      const key = hit?.id || "__off";
+      const name = hit?.name || "개소 사이·현장 밖";
+      const cur = counts.get(key) || { name, n: 0 };
+      cur.n += 1;
+      counts.set(key, cur);
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n);
+  }, [spots, positions]);
 
   const zoneById = useMemo(() => Object.fromEntries(zones.map((z) => [z.id, z])), [zones]);
 
@@ -488,6 +518,15 @@ export default function WorkerDistribution() {
         <SummaryCard icon={MapPin} label="출근 위치" value={freshness.checkin} tone="muted" />
         <SummaryCard icon={Building2} label="위치 없음" value={freshness.missing} tone="muted" />
       </div>
+      {spotCounts.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {spotCounts.map((s) => (
+            <Badge key={s.name} variant="secondary">
+              {s.name} {s.n}명
+            </Badge>
+          ))}
+        </div>
+      )}
       {(freshness.checkin > 0 || freshness.stale > 0 || freshness.missing > 0) && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 leading-relaxed">
           맵의 점은 지금 위치가 아닐 수 있습니다. 실시간은 5분 이내 GPS, 노란 테두리는 출근 때 잡은 좌표입니다.
@@ -559,6 +598,7 @@ export default function WorkerDistribution() {
                         {d.company}
                         {` · ${distributionFixLabel(d.kind)}`}
                         {d.ago ? ` · ${d.ago} 전` : ""}
+                        {d.spotName ? ` · ${d.spotName}` : ""}
                       </title>
                     </g>
                   ))}

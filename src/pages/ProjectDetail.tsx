@@ -24,6 +24,7 @@ import {
   resolveProjectCompanyType,
 } from '@/lib/companyTypes';
 import { POSITION_LABELS, positionsForCompanyType, syncMembershipRolePosition } from '@/lib/projectPositions';
+import ProjectSiteSpotsCard from '@/components/project/ProjectSiteSpotsCard';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -816,6 +817,14 @@ const ProjectDetail = () => {
               </div>
             </CardContent>
           </Card>
+
+          <ProjectSiteSpotsCard
+            projectId={projectId || project.id}
+            pinLat={typeof project.site_lat === 'number' ? project.site_lat : null}
+            pinLng={typeof project.site_lng === 'number' ? project.site_lng : null}
+            canEdit={canManage || projectRole === 'safety_manager'}
+            onToast={(opts) => toast(opts)}
+          />
         </TabsContent>
 
         {/* Members Tab */}

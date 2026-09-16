@@ -7,6 +7,10 @@ import {
   isDefinitelyOutsideSite,
   isInsideCheckInFence,
   isInsideResumeFence,
+  isInsideAnyCheckInFence,
+  isInsideAnyResumeFence,
+  isDefinitelyOutsideAllSites,
+  pickCurrentSiteSpot,
   SITE_CHECKIN_MAX_M,
   SITE_CHECKIN_MIN_M,
   SITE_CHECKIN_PIN_M,
@@ -14,6 +18,7 @@ import {
   SITE_TRACK_EXIT_M,
   SITE_TRACK_MAP_PAD_M,
   SITE_TRACK_MAX_M,
+  type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
 import { calculateDistance } from "@/lib/geo/calculateDistance";
 import { minDistanceToRestrictedZoneEdge } from "@/lib/tracking/restrictedZoneGeom";
@@ -160,5 +165,68 @@ describe("minDistanceToRestrictedZoneEdge", () => {
       },
     ]);
     expect(d).toBeGreaterThan(50);
+  });
+});
+
+describe("여러 GPS 개소", () => {
+  const pad: SiteTrackingFence = {
+    id: "pad",
+    name: "패드",
+    lat: 34.85125,
+    lng: 127.70013,
+    radiusM: 400,
+    source: "site_spot",
+  };
+  const office: SiteTrackingFence = {
+    id: "office",
+    name: "사무실",
+    lat: 34.84546,
+    lng: 127.70833,
+    radiusM: 350,
+    source: "site_spot",
+  };
+  const near: SiteTrackingFence = {
+    id: "near-a",
+    name: "A동",
+    lat: 37.5,
+    lng: 127.0,
+    radiusM: 250,
+    source: "site_spot",
+  };
+  const nearB: SiteTrackingFence = {
+    id: "near-b",
+    name: "B동",
+    lat: 37.5015,
+    lng: 127.0,
+    radiusM: 250,
+    source: "site_spot",
+  };
+
+  it("어느 개소 안이든 출근 가능", () => {
+    expect(isInsideAnyCheckInFence([pad, office], pad.lat, pad.lng, 10)).toBe(true);
+    expect(isInsideAnyCheckInFence([pad, office], office.lat, office.lng, 10)).toBe(true);
+  });
+
+  it("개소 사이(몇 km)는 현장 밖", () => {
+    // ~1km north of pad, still far from office
+    const midLat = 34.86;
+    const midLng = 127.704;
+    expect(isInsideAnyCheckInFence([pad, office], midLat, midLng, 10)).toBe(false);
+    const leave = isDefinitelyOutsideAllSites([pad, office], midLat, midLng, 15);
+    expect(leave.outside).toBe(true);
+    expect(isInsideAnyResumeFence([pad, office], midLat, midLng, 15)).toBe(false);
+  });
+
+  it("겹치면 중심이 더 가까운 개소", () => {
+    const hit = pickCurrentSiteSpot([near, nearB], 37.5002, 127.0, { accuracyM: 10 });
+    expect(hit?.id).toBe("near-a");
+  });
+
+  it("애매하면 마지막 개소를 유지한다", () => {
+    const mid = pickCurrentSiteSpot([near, nearB], 37.5007, 127.0, {
+      lastId: "near-b",
+      accuracyM: 10,
+    });
+    expect(mid?.id).toBe("near-b");
   });
 });

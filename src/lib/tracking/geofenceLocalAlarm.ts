@@ -1,4 +1,8 @@
-import { isDefinitelyOutsideSite, type SiteTrackingFence } from "./siteTrackBounds";
+import {
+  isDefinitelyOutsideAllSites,
+  listTrackingFences,
+  type SiteTrackingFence,
+} from "./siteTrackBounds";
 export { isGpsAccurateEnoughForSiren } from "./sirenHysteresis";
 
 /**
@@ -7,7 +11,8 @@ export { isGpsAccurateEnoughForSiren } from "./sirenHysteresis";
  * first gate. No fence configured → do not suppress (cannot prove off-site).
  */
 export function shouldSuppressLocalSirenOffsite(opts: {
-  fence: SiteTrackingFence | null | undefined;
+  fence?: SiteTrackingFence | null | undefined;
+  fences?: SiteTrackingFence[] | null;
   rawLat: number;
   rawLng: number;
   accuracyM?: number;
@@ -15,8 +20,9 @@ export function shouldSuppressLocalSirenOffsite(opts: {
   allowOffsite?: boolean;
 }): boolean {
   if (opts.allowOffsite) return false;
-  if (!opts.fence) return false;
+  const fences = listTrackingFences({ siteFences: opts.fences, siteCenter: opts.fence });
+  if (!fences.length) return false;
   const acc = Number.isFinite(opts.accuracyM) ? Number(opts.accuracyM) : 999;
-  return isDefinitelyOutsideSite(opts.fence, opts.rawLat, opts.rawLng, acc).outside;
+  return isDefinitelyOutsideAllSites(fences, opts.rawLat, opts.rawLng, acc).outside;
 }
 

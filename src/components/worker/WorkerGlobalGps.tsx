@@ -19,8 +19,8 @@ import {
 import { hasCompletedNativePermissions, isNativeApp } from "@/lib/native/isNativeApp";
 import { isForegroundLocationGranted } from "@/lib/native/nativePermissionGate";
 import {
-  resolveSiteTrackingFence,
-  isInsideResumeFence,
+  resolveSiteTrackingFences,
+  isInsideAnyResumeFence,
 } from "@/lib/tracking/siteTrackBounds";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import {
@@ -182,14 +182,14 @@ export default function WorkerGlobalGps() {
 
     const probeInsideSite = async (projectId: string): Promise<boolean> => {
       if (!("geolocation" in navigator)) return false;
-      const fence = await resolveSiteTrackingFence(projectId);
-      if (!fence) return false;
+      const fences = await resolveSiteTrackingFences(projectId);
+      if (!fences.length) return false;
       return await new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             resolve(
-              isInsideResumeFence(
-                fence,
+              isInsideAnyResumeFence(
+                fences,
                 pos.coords.latitude,
                 pos.coords.longitude,
                 pos.coords.accuracy,

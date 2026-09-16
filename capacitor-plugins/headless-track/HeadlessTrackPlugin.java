@@ -88,6 +88,7 @@ public class HeadlessTrackPlugin extends Plugin {
     if (call.getDouble("fenceLat") != null) cfg.put("fenceLat", call.getDouble("fenceLat"));
     if (call.getDouble("fenceLng") != null) cfg.put("fenceLng", call.getDouble("fenceLng"));
     if (call.getDouble("fenceRadiusM") != null) cfg.put("fenceRadiusM", call.getDouble("fenceRadiusM"));
+    copy(call, cfg, "fencesJson");
     HeadlessTrackService.persistConfig(getContext(), new org.json.JSONObject(cfg.toString()));
   }
 

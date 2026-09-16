@@ -77,6 +77,18 @@ describe("shouldSuppressLocalSirenOffsite", () => {
     ).toBe(false);
   });
 
+  it("does not suppress when standing in another 개소 of the same project", () => {
+    const other = { lat: 35.1, lng: 128.0, radiusM: 400, source: "site_spot" as const };
+    expect(
+      shouldSuppressLocalSirenOffsite({
+        fences: [fence, other],
+        rawLat: other.lat,
+        rawLng: other.lng,
+        accuracyM: 12,
+      }),
+    ).toBe(false);
+  });
+
   it("allows off-site sirens when master alarm-test mode is on", () => {
     expect(
       shouldSuppressLocalSirenOffsite({

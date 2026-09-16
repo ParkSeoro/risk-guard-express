@@ -18,8 +18,9 @@ import {
 import { watchGpsCalibrationInvalidation } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
   DANGER_PROXIMITY_M,
-  isDefinitelyOutsideSite,
-  isInsideResumeFence,
+  isDefinitelyOutsideAllSites,
+  isInsideAnyResumeFence,
+  listTrackingFences,
   SITE_EXIT_MAX_ACCURACY_M,
   SITE_EXIT_STREAK,
   SITE_RESUME_FIRST_PROBE_MS,
@@ -125,6 +126,8 @@ export type TrackerOptions = {
   movementThresholdM?: number;
   /** 현장 펜스 — raw GPS 기준 밖이면 onLeaveSite 후 저전력 재개 감시. */
   siteCenter?: SiteTrackingFence | null;
+  /** 여러 GPS 개소. 있으면 합집합이 SSOT이고 siteCenter는 무시한다. */
+  siteFences?: SiteTrackingFence[] | null;
   onLeaveSite?: (info: { distanceM: number; lat: number; lng: number; radiusM: number }) => void;
   onResumeSite?: () => void;
   onPreview?: (info: TrackerFixInfo) => void;
@@ -242,7 +245,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     let webviewOwnsPipeline = true;
     const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
     const movementThresholdM = opts.movementThresholdM ?? 12;
-    const site = opts.siteCenter;
+    const fences = listTrackingFences(opts);
 
     const clearResumeTimers = () => {
       if (resumeTimer != null) {
@@ -267,10 +270,10 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     };
 
     const probeResume = async () => {
-      if (sessionStopped || phase !== "suspended" || !site) return;
+      if (sessionStopped || phase !== "suspended" || fences.length === 0) return;
       const pos = await probeCurrentPosition();
       if (!pos || sessionStopped || phase !== "suspended") return;
-      if (!isInsideResumeFence(site, pos.lat, pos.lng, pos.accuracy)) return;
+      if (!isInsideAnyResumeFence(fences, pos.lat, pos.lng, pos.accuracy)) return;
       phase = "tracking";
       outsideStreak = 0;
       clearResumeTimers();
@@ -317,9 +320,9 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         const accuracy = Number(location.accuracy) || 30;
         const disp = applyGpsCalibration(rawLat, rawLng, cal);
 
-        if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
-          const { outside, distanceM: d } = isDefinitelyOutsideSite(
-            site,
+        if (fences.length > 0) {
+          const { outside, distanceM: d, radiusM } = isDefinitelyOutsideAllSites(
+            fences,
             rawLat,
             rawLng,
             accuracy,
@@ -331,7 +334,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
               distanceM: d,
               lat: rawLat,
               lng: rawLng,
-              radiusM: site.radiusM,
+              radiusM,
             });
             return;
           }
@@ -522,7 +525,8 @@ async function headlessCompanionOpts(opts: TrackerOptions): Promise<Parameters<t
   const session = data?.session;
   if (!session?.access_token) return null;
   const live = opts.getIdentity?.() ?? opts.identity;
-  const site = opts.siteCenter;
+  const fences = listTrackingFences(opts);
+  const site = fences[0] ?? null;
   return {
     projectId: live.project_id,
     workerId: live.worker_id,
@@ -535,11 +539,14 @@ async function headlessCompanionOpts(opts: TrackerOptions): Promise<Parameters<t
     fenceLat: site?.lat ?? null,
     fenceLng: site?.lng ?? null,
     fenceRadiusM: site?.radiusM ?? null,
+    fencesJson: fences.length
+      ? JSON.stringify(fences.map((f) => ({ lat: f.lat, lng: f.lng, radiusM: f.radiusM })))
+      : null,
     intervalMs: TRACK_BG_HEARTBEAT_MS,
     exitStreak: SITE_EXIT_STREAK,
     maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
     resumePollMs: SITE_RESUME_POLL_MS,
-    skipFence: !site || !!live.suppress_last_position,
+    skipFence: fences.length === 0 || !!live.suppress_last_position,
     suppressLastPosition: !!live.suppress_last_position,
   };
 }
@@ -608,7 +615,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   };
   const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
   const movementThresholdM = opts.movementThresholdM ?? 12;
-  const site = opts.siteCenter;
+  const fences = listTrackingFences(opts);
   const unsubCal = watchGpsCalibrationInvalidation(identity.project_id);
 
   let lastSentAt = 0;
@@ -687,10 +694,10 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   };
 
   const probeResume = async () => {
-    if (stopped || phase !== "suspended" || !site) return;
+    if (stopped || phase !== "suspended" || fences.length === 0) return;
     const pos = await probeCurrentPosition();
     if (!pos || stopped || phase !== "suspended") return;
-    if (!isInsideResumeFence(site, pos.lat, pos.lng, pos.accuracy)) return;
+    if (!isInsideAnyResumeFence(fences, pos.lat, pos.lng, pos.accuracy)) return;
     phase = "tracking";
     outsideStreak = 0;
     clearResumeTimers();
@@ -731,9 +738,9 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
     const here = { lat: disp.lat, lng: disp.lng, ts: now };
 
-    if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
-      const { outside, distanceM: d } = isDefinitelyOutsideSite(
-        site,
+    if (fences.length > 0) {
+      const { outside, distanceM: d, radiusM } = isDefinitelyOutsideAllSites(
+        fences,
         raw.lat,
         raw.lng,
         accuracy,
@@ -745,7 +752,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
           distanceM: d,
           lat: raw.lat,
           lng: raw.lng,
-          radiusM: site.radiusM,
+          radiusM,
         });
         return;
       }

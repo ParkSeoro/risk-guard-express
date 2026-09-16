@@ -77,7 +77,25 @@ export type SiteTrackingFence = {
   lng: number;
   radiusM: number;
   /** How the center was chosen — for UI diagnostics. */
-  source?: "site_map" | "site_pin" | "site_union";
+  source?: "site_map" | "site_pin" | "site_union" | "site_spot";
+  id?: string;
+  name?: string;
+};
+
+/** Admin default when creating a GPS 개소. */
+export const SITE_SPOT_DEFAULT_RADIUS_M = 400;
+export const SITE_SPOT_MIN_RADIUS_M = 50;
+/** Keep last 개소 when two overlapping centers are this close. */
+export const SITE_SPOT_HYSTERESIS_M = 40;
+
+export type ProjectSiteSpotRow = {
+  id: string;
+  project_id: string;
+  name: string;
+  center_lat: number;
+  center_lng: number;
+  radius_m: number;
+  sort_order?: number;
 };
 
 type MapRow = {
@@ -234,8 +252,7 @@ export function isInsideResumeFence(
   return d <= fence.radiusM;
 }
 
-/** Build tracking fence from project pin + optional drone map corners. */
-export async function resolveSiteTrackingFence(
+async function resolveLegacyTrackingFence(
   projectId: string,
 ): Promise<SiteTrackingFence | null> {
   try {
@@ -252,6 +269,14 @@ export async function resolveSiteTrackingFence(
   } catch {
     return null;
   }
+}
+
+/** Build tracking fence from project pin + optional drone map corners. */
+export async function resolveSiteTrackingFence(
+  projectId: string,
+): Promise<SiteTrackingFence | null> {
+  const fences = await resolveSiteTrackingFences(projectId);
+  return fences[0] ?? null;
 }
 
 /**
@@ -323,7 +348,7 @@ export function isInsideCheckInFence(
   return d <= fence.radiusM + pad;
 }
 
-export async function resolveSiteCheckInFence(
+async function resolveLegacyCheckInFence(
   projectId: string,
 ): Promise<SiteTrackingFence | null> {
   try {
@@ -337,4 +362,180 @@ export async function resolveSiteCheckInFence(
   } catch {
     return null;
   }
+}
+
+export async function resolveSiteCheckInFence(
+  projectId: string,
+): Promise<SiteTrackingFence | null> {
+  const fences = await resolveSiteCheckInFences(projectId);
+  return fences[0] ?? null;
+}
+
+export function clampSiteSpotRadiusM(radiusM: number): number {
+  const n = Number(radiusM);
+  if (!Number.isFinite(n)) return SITE_SPOT_DEFAULT_RADIUS_M;
+  return Math.min(SITE_TRACK_MAX_M, Math.max(SITE_SPOT_MIN_RADIUS_M, n));
+}
+
+export function fenceFromSiteSpot(row: ProjectSiteSpotRow): SiteTrackingFence {
+  return {
+    id: row.id,
+    name: row.name,
+    lat: Number(row.center_lat),
+    lng: Number(row.center_lng),
+    radiusM: clampSiteSpotRadiusM(Number(row.radius_m)),
+    source: "site_spot",
+  };
+}
+
+export async function fetchActiveSiteSpots(projectId: string): Promise<ProjectSiteSpotRow[]> {
+  if (!projectId) return [];
+  try {
+    const { data, error } = await supabase
+      .from("project_site_spots" as any)
+      .select("id, project_id, name, center_lat, center_lng, radius_m, sort_order")
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    if (error) return [];
+    return ((data || []) as ProjectSiteSpotRow[]).filter(
+      (s) => Number.isFinite(Number(s.center_lat)) && Number.isFinite(Number(s.center_lng)),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function listTrackingFences(opts: {
+  siteFences?: SiteTrackingFence[] | null;
+  siteCenter?: SiteTrackingFence | null;
+}): SiteTrackingFence[] {
+  if (opts.siteFences && opts.siteFences.length > 0) return opts.siteFences;
+  if (opts.siteCenter) return [opts.siteCenter];
+  return [];
+}
+
+export function isInsideAnyCheckInFence(
+  fences: SiteTrackingFence[],
+  lat: number,
+  lng: number,
+  accuracyM?: number,
+): boolean {
+  return fences.some((f) => isInsideCheckInFence(f, lat, lng, accuracyM));
+}
+
+export function isInsideAnyResumeFence(
+  fences: SiteTrackingFence[],
+  lat: number,
+  lng: number,
+  accuracyM = 30,
+): boolean {
+  return fences.some((f) => isInsideResumeFence(f, lat, lng, accuracyM));
+}
+
+/** True only when raw GPS is clearly outside every 개소 (or the legacy single fence). */
+export function isDefinitelyOutsideAllSites(
+  fences: SiteTrackingFence[],
+  rawLat: number,
+  rawLng: number,
+  accuracyM: number,
+): { outside: boolean; distanceM: number; radiusM: number } {
+  if (!fences.length) return { outside: false, distanceM: 0, radiusM: 0 };
+  let nearest = {
+    outside: true,
+    distanceM: Number.POSITIVE_INFINITY,
+    radiusM: fences[0].radiusM,
+  };
+  for (const f of fences) {
+    const r = isDefinitelyOutsideSite(f, rawLat, rawLng, accuracyM);
+    if (!r.outside) {
+      return { outside: false, distanceM: r.distanceM, radiusM: f.radiusM };
+    }
+    if (r.distanceM < nearest.distanceM) {
+      nearest = { outside: true, distanceM: r.distanceM, radiusM: f.radiusM };
+    }
+  }
+  return nearest;
+}
+
+export function nearestFenceDistanceM(
+  fences: SiteTrackingFence[],
+  lat: number,
+  lng: number,
+): number | null {
+  if (!fences.length) return null;
+  let min = Number.POSITIVE_INFINITY;
+  for (const f of fences) {
+    min = Math.min(min, calculateDistance(f.lat, f.lng, lat, lng));
+  }
+  return Number.isFinite(min) ? min : null;
+}
+
+export function pickCurrentSiteSpot(
+  fences: SiteTrackingFence[],
+  lat: number,
+  lng: number,
+  opts?: {
+    lastId?: string | null;
+    accuracyM?: number;
+    mode?: "checkin" | "track";
+  },
+): SiteTrackingFence | null {
+  const mode = opts?.mode ?? "checkin";
+  const acc = opts?.accuracyM;
+  const inside = fences.filter((f) =>
+    mode === "track"
+      ? isInsideResumeFence(f, lat, lng, acc ?? 30)
+      : isInsideCheckInFence(f, lat, lng, acc),
+  );
+  if (!inside.length) return null;
+  const ranked = inside
+    .map((f) => ({ f, d: calculateDistance(f.lat, f.lng, lat, lng) }))
+    .sort((a, b) => a.d - b.d);
+  const best = ranked[0];
+  const lastId = opts?.lastId;
+  if (lastId) {
+    const last = ranked.find((r) => r.f.id === lastId);
+    if (last && last.d - best.d <= SITE_SPOT_HYSTERESIS_M) return last.f;
+  }
+  return best.f;
+}
+
+function lastSpotStorageKey(projectId: string): string {
+  return `snx-site-spot:${projectId}`;
+}
+
+export function readLastSiteSpotId(projectId: string): string | null {
+  if (!projectId || typeof sessionStorage === "undefined") return null;
+  try {
+    return sessionStorage.getItem(lastSpotStorageKey(projectId));
+  } catch {
+    return null;
+  }
+}
+
+export function writeLastSiteSpotId(projectId: string, id: string | null | undefined): void {
+  if (!projectId || typeof sessionStorage === "undefined") return;
+  try {
+    const key = lastSpotStorageKey(projectId);
+    if (id) sessionStorage.setItem(key, id);
+    else sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function resolveSiteTrackingFences(projectId: string): Promise<SiteTrackingFence[]> {
+  const spots = await fetchActiveSiteSpots(projectId);
+  if (spots.length > 0) return spots.map(fenceFromSiteSpot);
+  const legacy = await resolveLegacyTrackingFence(projectId);
+  return legacy ? [legacy] : [];
+}
+
+export async function resolveSiteCheckInFences(projectId: string): Promise<SiteTrackingFence[]> {
+  const spots = await fetchActiveSiteSpots(projectId);
+  if (spots.length > 0) return spots.map(fenceFromSiteSpot);
+  const legacy = await resolveLegacyCheckInFence(projectId);
+  return legacy ? [legacy] : [];
 }

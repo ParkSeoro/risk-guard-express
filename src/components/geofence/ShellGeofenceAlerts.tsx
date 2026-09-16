@@ -24,7 +24,7 @@ import {
   SIREN_EXIT_STREAK_NEEDED,
 } from "@/lib/tracking/sirenHysteresis";
 import {
-  resolveSiteTrackingFence,
+  resolveSiteTrackingFences,
   ZONE_APPROACH_EXIT_STREAK,
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
@@ -65,7 +65,7 @@ export default function ShellGeofenceAlerts() {
   const [zonesGen, setZonesGen] = useState(0);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
   const zonesProjectRef = useRef<string | null>(null);
-  const fenceRef = useRef<SiteTrackingFence | null>(null);
+  const fenceRef = useRef<SiteTrackingFence[]>([]);
   const subjectRef = useRef<BanSubject>({});
   const exitStreak = useRef(0);
   const entryStreak = useRef(0);
@@ -129,9 +129,9 @@ export default function ShellGeofenceAlerts() {
     zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
     zonesProjectRef.current = projectId;
     try {
-      fenceRef.current = await resolveSiteTrackingFence(projectId);
+      fenceRef.current = await resolveSiteTrackingFences(projectId);
     } catch {
-      fenceRef.current = null;
+      fenceRef.current = [];
     }
 
     const live = zonesRef.current;
@@ -232,7 +232,7 @@ export default function ShellGeofenceAlerts() {
         const rawLng = fix.raw_lng ?? fix.lng;
         if (
           shouldSuppressLocalSirenOffsite({
-            fence: fenceRef.current,
+            fences: fenceRef.current,
             rawLat,
             rawLng,
             accuracyM: fix.accuracy,
@@ -289,7 +289,7 @@ export default function ShellGeofenceAlerts() {
     const rawLng = lastGpsFix.raw_lng ?? lastGpsFix.lng;
     if (
       shouldSuppressLocalSirenOffsite({
-        fence: fenceRef.current,
+        fences: fenceRef.current,
         rawLat,
         rawLng,
         accuracyM: lastGpsFix.accuracy,
@@ -367,7 +367,7 @@ export default function ShellGeofenceAlerts() {
     const rawLng = lastGpsFix.raw_lng ?? lastGpsFix.lng;
     if (
       shouldSuppressLocalSirenOffsite({
-        fence: fenceRef.current,
+        fences: fenceRef.current,
         rawLat,
         rawLng,
         accuracyM: lastGpsFix.accuracy,
@@ -472,7 +472,7 @@ export default function ShellGeofenceAlerts() {
         const rawLng = fix.raw_lng ?? fix.lng;
         if (
           shouldSuppressLocalSirenOffsite({
-            fence: fenceRef.current,
+            fences: fenceRef.current,
             rawLat,
             rawLng,
             accuracyM: fix.accuracy,

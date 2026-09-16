@@ -52,6 +52,7 @@ type EntryLog = {
   entry_at: string;
   exit_at: string | null;
   entry_method?: string | null;
+  entry_site_spot_name?: string | null;
   entry_signature_data?: string | null;
   exit_signature_data?: string | null;
   risk_assessment_confirmed?: boolean;
@@ -121,7 +122,7 @@ export default function WorkerAttendance() {
       const { data, error } = await supabase
         .from("worker_entry_logs")
         .select(
-          "id, worker_id, entry_at, exit_at, entry_method, entry_signature_data, exit_signature_data, risk_assessment_confirmed, education_confirmed, tbm_confirmed, no_accident_confirmed",
+          "id, worker_id, entry_at, exit_at, entry_method, entry_site_spot_name, entry_signature_data, exit_signature_data, risk_assessment_confirmed, education_confirmed, tbm_confirmed, no_accident_confirmed",
         )
         .eq("project_id", projectId)
         .gte("entry_at", dayRange.start)
@@ -581,7 +582,12 @@ export default function WorkerAttendance() {
                         </td>
                         <td className="p-2">{l.workers?.company_name || "-"}</td>
                         <td className="p-2 text-xs">{(l.workers?.job_type || "").trim() || "미분류"}</td>
-                        <td className="p-2 text-xs">{new Date(l.entry_at).toLocaleTimeString("ko-KR")}</td>
+                        <td className="p-2 text-xs">
+                          {new Date(l.entry_at).toLocaleTimeString("ko-KR")}
+                          {l.entry_site_spot_name ? (
+                            <div className="text-[10px] text-muted-foreground">{l.entry_site_spot_name}</div>
+                          ) : null}
+                        </td>
                         <td className="p-2 text-xs">
                           {l.exit_at ? new Date(l.exit_at).toLocaleTimeString("ko-KR") : <Badge>입장중</Badge>}
                         </td>
@@ -635,6 +641,7 @@ export default function WorkerAttendance() {
               <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
                 <div className="text-xs text-muted-foreground">당일 출역</div>
                 <div>입장: {fmtTs(selected.entry_at)}</div>
+                <div>입장 개소: {selected.entry_site_spot_name || "—"}</div>
                 <div>퇴장: {selected.exit_at ? fmtTs(selected.exit_at) : "입장중"}</div>
                 <div>
                   근로시간: {formatWorkHours(buildWorkHourRow({

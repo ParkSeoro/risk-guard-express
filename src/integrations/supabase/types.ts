@@ -4842,6 +4842,59 @@ export type Database = {
           },
         ]
       }
+      project_site_spots: {
+        Row: {
+          center_lat: number
+          center_lng: number
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          is_deleted: boolean
+          name: string
+          project_id: string
+          radius_m: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          center_lat: number
+          center_lng: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          is_deleted?: boolean
+          name: string
+          project_id: string
+          radius_m?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          center_lat?: number
+          center_lng?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          is_deleted?: boolean
+          name?: string
+          project_id?: string
+          radius_m?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_site_spots_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           client: string | null
@@ -9119,6 +9172,8 @@ export type Database = {
           entry_at: string
           entry_method: string
           entry_signature_data: string | null
+          entry_site_spot_id: string | null
+          entry_site_spot_name: string | null
           exit_at: string | null
           exit_signature_data: string | null
           health_warning_items: Json | null
@@ -9139,6 +9194,8 @@ export type Database = {
           entry_at?: string
           entry_method?: string
           entry_signature_data?: string | null
+          entry_site_spot_id?: string | null
+          entry_site_spot_name?: string | null
           exit_at?: string | null
           exit_signature_data?: string | null
           health_warning_items?: Json | null
@@ -9159,6 +9216,8 @@ export type Database = {
           entry_at?: string
           entry_method?: string
           entry_signature_data?: string | null
+          entry_site_spot_id?: string | null
+          entry_site_spot_name?: string | null
           exit_at?: string | null
           exit_signature_data?: string | null
           health_warning_items?: Json | null
@@ -10235,6 +10294,8 @@ export type Database = {
           _lng?: number
           _accuracy?: number
           _signature?: string
+          _site_spot_id?: string
+          _site_spot_name?: string
         }
         Returns: Json
       }

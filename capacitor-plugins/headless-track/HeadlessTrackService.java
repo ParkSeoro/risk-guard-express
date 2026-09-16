@@ -253,37 +253,33 @@ public class HeadlessTrackService extends Service implements LocationListener {
     double lng = loc.getLongitude();
     float acc = loc.hasAccuracy() ? loc.getAccuracy() : 30f;
 
-    double fenceLat = Double.longBitsToDouble(p.getLong("fence_lat_bits", 0));
-    double fenceLng = Double.longBitsToDouble(p.getLong("fence_lng_bits", 0));
-    float fenceR = p.getFloat("fence_radius_m", 0f);
     boolean skipFence = p.getBoolean("skip_fence", false);
     int exitStreakNeed = Math.max(1, p.getInt("exit_streak", 5));
     float maxAcc = p.getFloat("max_accuracy_m", 55f);
-    // Same hysteresis as TS isDefinitelyOutsideSite / isInsideResumeFence:
+    // Same hysteresis as TS isDefinitelyOutsideAllSites / isInsideAnyResumeFence:
     // leave uses radius + accuracy pad; resume requires being inside radius with a good fix.
-    if (!skipFence && fenceR > 0 && fenceLat != 0 && fenceLng != 0) {
-      double d = haversineM(fenceLat, fenceLng, lat, lng);
-      boolean accOk = acc <= maxAcc;
-      boolean definitelyOutside = accOk && d > fenceR + Math.max(acc, 25f);
-      boolean insideResume = accOk && d <= fenceR;
-      if (watchMode) {
-        if (insideResume) {
-          Log.i(TAG, "re-entered site fence — resuming posts");
-          outsideStreak = 0;
-          setWatchMode(false);
+    if (!skipFence) {
+      FenceHit hit = evalFences(p, lat, lng, acc, maxAcc);
+      if (hit.active) {
+        if (watchMode) {
+          if (hit.insideResume) {
+            Log.i(TAG, "re-entered site fence — resuming posts");
+            outsideStreak = 0;
+            setWatchMode(false);
+          } else {
+            return;
+          }
+        } else if (hit.definitelyOutside) {
+          outsideStreak += 1;
+          if (outsideStreak >= exitStreakNeed) {
+            Log.i(TAG, "left site fence — low-power watch (no stopSelf)");
+            outsideStreak = 0;
+            setWatchMode(true);
+            return;
+          }
         } else {
-          return;
-        }
-      } else if (definitelyOutside) {
-        outsideStreak += 1;
-        if (outsideStreak >= exitStreakNeed) {
-          Log.i(TAG, "left site fence — low-power watch (no stopSelf)");
           outsideStreak = 0;
-          setWatchMode(true);
-          return;
         }
-      } else {
-        outsideStreak = 0;
       }
     } else if (watchMode && skipFence) {
       outsideStreak = 0;
@@ -438,7 +434,64 @@ public class HeadlessTrackService extends Service implements LocationListener {
       e.remove("fence_lng_bits");
       e.remove("fence_radius_m");
     }
+    String fencesJson = cfg.optString("fencesJson", "");
+    if (fencesJson != null && !fencesJson.isEmpty() && !"null".equals(fencesJson)) {
+      e.putString("fences_json", fencesJson);
+    } else {
+      e.remove("fences_json");
+    }
     e.apply();
+  }
+
+  private static class FenceHit {
+    boolean active;
+    boolean definitelyOutside;
+    boolean insideResume;
+  }
+
+  private static FenceHit evalFences(SharedPreferences p, double lat, double lng, float acc, float maxAcc) {
+    FenceHit hit = new FenceHit();
+    org.json.JSONArray arr = null;
+    String raw = p.getString("fences_json", null);
+    if (raw != null && !raw.isEmpty()) {
+      try {
+        arr = new org.json.JSONArray(raw);
+      } catch (Exception ignored) {
+        arr = null;
+      }
+    }
+    if (arr != null && arr.length() > 0) {
+      hit.active = true;
+      boolean accOk = acc <= maxAcc;
+      boolean anyInsideResume = false;
+      boolean allDefinitelyOutside = true;
+      for (int i = 0; i < arr.length(); i++) {
+        org.json.JSONObject f = arr.optJSONObject(i);
+        if (f == null) continue;
+        double fLat = f.optDouble("lat", 0);
+        double fLng = f.optDouble("lng", 0);
+        double fR = f.optDouble("radiusM", 0);
+        if (fR <= 0) continue;
+        double d = haversineM(fLat, fLng, lat, lng);
+        if (accOk && d <= fR) anyInsideResume = true;
+        boolean outside = accOk && d > fR + Math.max(acc, 25f);
+        if (!outside) allDefinitelyOutside = false;
+      }
+      hit.insideResume = anyInsideResume;
+      hit.definitelyOutside = allDefinitelyOutside && accOk;
+      return hit;
+    }
+    double fenceLat = Double.longBitsToDouble(p.getLong("fence_lat_bits", 0));
+    double fenceLng = Double.longBitsToDouble(p.getLong("fence_lng_bits", 0));
+    float fenceR = p.getFloat("fence_radius_m", 0f);
+    if (fenceR > 0 && fenceLat != 0 && fenceLng != 0) {
+      hit.active = true;
+      double d = haversineM(fenceLat, fenceLng, lat, lng);
+      boolean accOk = acc <= maxAcc;
+      hit.definitelyOutside = accOk && d > fenceR + Math.max(acc, 25f);
+      hit.insideResume = accOk && d <= fenceR;
+    }
+    return hit;
   }
 
   private static void putStr(SharedPreferences.Editor e, String k, String v) {

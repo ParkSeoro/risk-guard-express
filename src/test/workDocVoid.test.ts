@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { resolveNotificationRoute } from '@/lib/notificationRoutes';
 import {
   canClientVoidWorkDoc,
   isWorkDocVoidableStatus,
@@ -63,5 +65,42 @@ describe('work document void', () => {
   it('maps RPC errors without exposing SQL', () => {
     expect(voidWorkDocumentErrorMessage('FORBIDDEN')).toMatch(/프로젝트 관리자/);
     expect(voidWorkDocumentErrorMessage('NOT_VOIDABLE')).toMatch(/작성중/);
+  });
+
+  it('notifies every approval-line person except the voider', () => {
+    const sql = readFileSync('supabase/migrations/20260916223000_void_work_document_line_notify.sql', 'utf8');
+    expect(sql).toContain("INSERT INTO public.notifications");
+    expect(sql).toContain("'approval_result'");
+    expect(sql).toContain('FROM public.approvals a');
+    expect(sql).toContain('a.approver_id IS DISTINCT FROM v_uid');
+    expect(sql).toContain("v_title := v_label || ' 작업 취소'");
+    expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.void_work_document');
+  });
+
+  it('opens the cancelled document from the approval_result alert', () => {
+    expect(
+      resolveNotificationRoute(
+        { type: 'approval_result', related_type: 'work_permit', related_id: 'p1', link: '/work-permits/p1' },
+        { mobileShell: false },
+      ),
+    ).toBe('/app/admin/work-permits/p1');
+    expect(
+      resolveNotificationRoute(
+        { type: 'approval_result', related_type: 'work_permit', related_id: 'p1', link: '/work-permits/p1' },
+        { mobileShell: true },
+      ),
+    ).toBe('/app/worker/permits?id=p1');
+    expect(
+      resolveNotificationRoute(
+        { type: 'approval_result', related_type: 'work_plan', related_id: 'w1', link: '/work-plan/w1' },
+        { mobileShell: false },
+      ),
+    ).toBe('/app/admin/work-plan/w1');
+    expect(
+      resolveNotificationRoute(
+        { type: 'approval_result', related_type: 'work_plan', related_id: 'w1' },
+        { mobileShell: true },
+      ),
+    ).toBe('/app/worker/work-plans/w1');
   });
 });

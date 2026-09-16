@@ -85,7 +85,11 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
       ? `${ADMIN}/assessment-run/${n.related_id}`
       : n.related_type === "safety_inspection" && n.related_id
         ? `${ADMIN}/safety-inspections?id=${n.related_id}`
-        : `${ADMIN}/approvals`,
+        : n.related_type === "work_permit" && n.related_id
+          ? `${ADMIN}/work-permits/${n.related_id}`
+          : n.related_type === "work_plan" && n.related_id
+            ? `${ADMIN}/work-plan/${n.related_id}`
+            : `${ADMIN}/approvals`,
   approval_rejected: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${ADMIN}/assessment-run/${n.related_id}`
@@ -129,7 +133,11 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
       ? `${WORKER}/risk-assessment/${n.related_id}`
       : n.related_type === "safety_inspection" && n.related_id
         ? `${WORKER}/inspect?id=${n.related_id}`
-        : `${WORKER}/approvals`,
+        : n.related_type === "work_permit" && n.related_id
+          ? `${WORKER}/permits?id=${n.related_id}`
+          : n.related_type === "work_plan" && n.related_id
+            ? `${WORKER}/work-plans/${n.related_id}`
+            : `${WORKER}/approvals`,
   approval_rejected: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${WORKER}/risk-assessment/${n.related_id}`

@@ -59,6 +59,10 @@ const ENTITY_ROUTES: Record<string, (id?: string | null, project?: string | null
 function deepLinkFor(n: NotificationRow): string {
   const explicit = (n.link || "").trim();
   if (n.type?.startsWith("approval") || n.related_type === "approval") {
+    // 작업취소 등 문서 링크가 있으면 대기함이 아니라 본문으로.
+    if (explicit.includes("/work-permits/") || explicit.includes("/work-plan/")) {
+      return explicit;
+    }
     return "/app/worker/approvals";
   }
   if (explicit) {

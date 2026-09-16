@@ -9,7 +9,8 @@ export type PermitListStatusFilter =
   | 'issued'
   | 'closure_pending'
   | 'closed'
-  | 'rejected';
+  | 'rejected'
+  | 'voided';
 
 const DRAFT = new Set(['작성중', '임시저장']);
 const IN_APPROVAL = new Set(['결재중', '결재진행', '검토대기', '검토완료', '대기']);
@@ -17,6 +18,7 @@ const ISSUED = new Set(['승인', '승인완료', '발행완료', 'approved', 'I
 const CLOSURE_PENDING = new Set(['종료대기', 'CLOSURE_PENDING']);
 const CLOSED = new Set(['종료완료', 'CLOSED', '마감', '완료']);
 const REJECTED = new Set(['반려']);
+const VOIDED = new Set(['작업취소']);
 
 /** Inclusive calendar-day shift on a YYYY-MM-DD string. */
 export function addCalendarDaysYmd(ymd: string, delta: number): string {
@@ -61,6 +63,7 @@ export function matchesPermitStatusFilter(
   if (filter === 'closure_pending') return CLOSURE_PENDING.has(s);
   if (filter === 'closed') return CLOSED.has(s);
   if (filter === 'rejected') return REJECTED.has(s);
+  if (filter === 'voided') return VOIDED.has(s);
   return true;
 }
 

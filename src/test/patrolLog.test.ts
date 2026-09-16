@@ -74,6 +74,14 @@ describe('patrol log form pack', () => {
       permit_date: '2026-08-19',
       form_data: { work_description: '배관 용접 및 비파괴검사' },
     }], '2026-08-19')).toEqual(['배관 용접 및 비파괴검사']);
+    expect(collectTodayPermitRoute([
+      {
+        status: '작업취소',
+        permit_date: '2026-08-19',
+        location: '취소구간',
+        work_name: '취소작업',
+      },
+    ], '2026-08-19')).toBe('');
   });
 
   it('reads weather label from permit snapshots', () => {

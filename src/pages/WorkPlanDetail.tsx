@@ -55,7 +55,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle,
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,
-  CalendarDays, MapPin, User, Shield, ClipboardList
+  CalendarDays, MapPin, User, Shield, ClipboardList, Ban
 } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
@@ -71,6 +71,9 @@ import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
 import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
 import { appendTextToMethodSection } from '@/lib/workPlanMethodSection';
 import { approvalsBackOr } from '@/lib/approvalInboxPreview';
+import { WorkDocVoidBanner } from '@/components/work-docs/WorkDocVoidStamp';
+import { WorkDocVoidDialog } from '@/components/work-docs/WorkDocVoidDialog';
+import { canClientVoidWorkDoc, isWorkDocVoided, workDocVoidInfo } from '@/lib/workDocVoid';
 
 const EDITABLE_PLAN_STATUSES = new Set(['작성중', '반려']);
 const LOCKED_PREVIEW_STATUSES = new Set(['결재중', '승인', '승인완료', '완료']);
@@ -107,6 +110,7 @@ const WorkPlanDetail = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [voidOpen, setVoidOpen] = useState(false);
   const [authorName, setAuthorName] = useState('');
   // Basic info fields
   const [startDate, setStartDate] = useState('');
@@ -730,7 +734,18 @@ const WorkPlanDetail = () => {
     '완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     '만료': 'bg-muted text-muted-foreground',
     '반려': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    '작업취소': 'bg-red-600 text-white',
   }[plan.status] || '';
+
+  const isVoided = isWorkDocVoided(plan);
+  const voidInfo = workDocVoidInfo(plan);
+  const planEditable = EDITABLE_PLAN_STATUSES.has(plan.status) && !isVoided;
+  const canVoid = canClientVoidWorkDoc({
+    userRole,
+    isMaster,
+    status: plan.status,
+    voidedAt: plan.voided_at,
+  });
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -754,6 +769,8 @@ const WorkPlanDetail = () => {
           <Badge className={`text-[10px] ${statusColor}`}>{plan.status}</Badge>
         </div>
       </div>
+
+      <WorkDocVoidBanner info={voidInfo} />
 
       {plan.status === '반려' && (
         <Card className="border-red-500/40 bg-red-50/50 dark:bg-red-950/20">
@@ -816,7 +833,7 @@ const WorkPlanDetail = () => {
         <Button
           size="sm"
           onClick={() => handleSave()}
-          disabled={saving || !EDITABLE_PLAN_STATUSES.has(plan.status)}
+          disabled={saving || !planEditable}
           className="gap-1"
         >
           <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
@@ -856,7 +873,12 @@ const WorkPlanDetail = () => {
             {attProgress.mandatoryMissing > 0 ? ` · 필수 미첨부 ${attProgress.mandatoryMissing}` : ' · 필수 완료'}
           </Badge>
         )}
-        {['승인완료', '승인', '완료'].includes(plan.status) && (
+        {canVoid && (
+          <Button size="sm" variant="destructive" className="gap-1" onClick={() => setVoidOpen(true)}>
+            <Ban className="h-3.5 w-3.5" /> 작업 취소
+          </Button>
+        )}
+        {['승인완료', '승인', '완료'].includes(plan.status) && !isVoided && (
           <>
             <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
               const { data, error } = await supabase.rpc('derive_permit_from_work_plan', { _work_plan_id: planId });
@@ -882,7 +904,7 @@ const WorkPlanDetail = () => {
             </Button>
           </>
         )}
-        {EDITABLE_PLAN_STATUSES.has(plan.status) && (
+        {planEditable && (
           <Button
             size="sm"
             variant="default"
@@ -903,7 +925,7 @@ const WorkPlanDetail = () => {
       </div>
 
       {/* 근로자 주지 — TBM 참석 증빙 (안전기준규칙 제38조②) */}
-      {['승인완료', '승인', '완료'].includes(plan.status) && (
+      {['승인완료', '승인', '완료'].includes(plan.status) && !isVoided && (
         <Card className={tbmNotice?.notified ? 'border-emerald-500/40' : 'border-amber-500/50'}>
           <CardContent className="p-3 flex items-center gap-3 flex-wrap">
             <ClipboardList className={`h-4 w-4 ${tbmNotice?.notified ? 'text-emerald-600' : 'text-amber-600'}`} />
@@ -1238,6 +1260,25 @@ const WorkPlanDetail = () => {
           {planId && <AttachmentReviewPanel workPlanId={planId} />}
         </TabsContent>
       </Tabs>
+      {plan && (
+        <WorkDocVoidDialog
+          open={voidOpen}
+          onOpenChange={setVoidOpen}
+          entityType="work_plan"
+          entityId={plan.id}
+          onVoided={() => {
+            setPlan((prev: any) => prev ? {
+              ...prev,
+              status: '작업취소',
+              voided_at: new Date().toISOString(),
+            } : prev);
+            void (async () => {
+              const { data } = await supabase.from('work_plans').select('*').eq('id', plan.id).maybeSingle();
+              if (data) setPlan(data);
+            })();
+          }}
+        />
+      )}
       {plan && (
         <SubmitApprovalDialog
           open={approvalDialogOpen}

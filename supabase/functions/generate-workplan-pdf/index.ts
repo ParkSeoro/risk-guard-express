@@ -480,9 +480,48 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
   }
   .footer { display: none; }
 }
+.void-stamp-host {
+  position: relative;
+  height: 0;
+  z-index: 40;
+}
+.void-stamp-overlay {
+  position: absolute;
+  top: 160pt;
+  left: 50%;
+  transform: translateX(-50%) rotate(-8deg);
+  z-index: 40;
+  border: 4px solid #dc2626;
+  color: #dc2626;
+  background: rgba(255,255,255,0.9);
+  padding: 10pt 16pt;
+  text-align: center;
+  min-width: 180pt;
+  max-width: 70%;
+  pointer-events: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.void-stamp-overlay .void-title {
+  font-size: 22pt;
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  margin-bottom: 6pt;
+}
+.void-stamp-overlay .void-line {
+  font-size: 9pt;
+  font-weight: 700;
+  line-height: 1.4;
+}
 </style>
 </head>
 <body>
+${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-host"><div class="void-stamp-overlay">
+  <div class="void-title">작업 취소</div>
+  <div class="void-line">사유 · ${escapeHtml(String(plan.voided_reason || "-"))}</div>
+  <div class="void-line">취소자 · ${escapeHtml(String(plan.voided_by_name || "-"))}</div>
+  <div class="void-line">시각 · ${escapeHtml(formatKST(plan.voided_at) || "-")}</div>
+</div></div>` : ""}
 
 <div class="report-header">
   <div class="report-title">작 업 계 획 서</div>

@@ -30,6 +30,7 @@ const statusColors: Record<string, string> = {
   '완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   '만료': 'bg-muted text-muted-foreground',
   '반려': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  '작업취소': 'bg-red-600 text-white',
 };
 
 const APPROVED_PLAN_STATUSES = new Set(['승인완료', '승인', '완료']);
@@ -267,6 +268,7 @@ const WorkPlans = () => {
     switch (status) {
       case '완료': return <CheckCircle2 className="h-4 w-4 text-green-500" />;
       case '반려': return <AlertTriangle className="h-4 w-4 text-red-500" />;
+      case '작업취소': return <AlertTriangle className="h-4 w-4 text-red-600" />;
       case '만료': return <CalendarClock className="h-4 w-4 text-muted-foreground" />;
       default: return <Clock className="h-4 w-4 text-yellow-500" />;
     }
@@ -298,6 +300,7 @@ const WorkPlans = () => {
               <SelectItem value="결재중">결재중</SelectItem>
               <SelectItem value="승인완료">승인완료</SelectItem>
               <SelectItem value="반려">반려</SelectItem>
+              <SelectItem value="작업취소">작업 취소</SelectItem>
               <SelectItem value="만료">만료</SelectItem>
             </SelectContent>
           </Select>
@@ -429,7 +432,7 @@ const WorkPlans = () => {
             const company = companies.find(c => c.id === plan.company_id);
             const isExpired = plan.end_date && isPast(parseISO(plan.end_date));
             return (
-              <Card key={plan.id} className={`hover:border-primary/40 transition-colors ${plan.status === '만료' ? 'opacity-60' : ''}`}>
+              <Card key={plan.id} className={`hover:border-primary/40 transition-colors ${plan.status === '만료' ? 'opacity-60' : ''} ${plan.status === '작업취소' ? 'border-red-600/60' : ''}`}>
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <CardTitle

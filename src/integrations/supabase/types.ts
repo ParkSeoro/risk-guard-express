@@ -8412,6 +8412,10 @@ export type Database = {
           tbm_session_id: string | null
           updated_at: string
           valid_until: string | null
+          voided_at: string | null
+          voided_by: string | null
+          voided_by_name: string | null
+          voided_reason: string | null
           weather_check_passed: boolean
           weather_snapshot: Json
           work_description: string
@@ -8463,6 +8467,10 @@ export type Database = {
           tbm_session_id?: string | null
           updated_at?: string
           valid_until?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+          voided_by_name?: string | null
+          voided_reason?: string | null
           weather_check_passed?: boolean
           weather_snapshot?: Json
           work_description?: string
@@ -8514,6 +8522,10 @@ export type Database = {
           tbm_session_id?: string | null
           updated_at?: string
           valid_until?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+          voided_by_name?: string | null
+          voided_reason?: string | null
           weather_check_passed?: boolean
           weather_snapshot?: Json
           work_description?: string
@@ -8710,6 +8722,10 @@ export type Database = {
           title: string
           updated_at: string
           version: number
+          voided_at: string | null
+          voided_by: string | null
+          voided_by_name: string | null
+          voided_reason: string | null
           work_type: string
         }
         Insert: {
@@ -8734,6 +8750,10 @@ export type Database = {
           title?: string
           updated_at?: string
           version?: number
+          voided_at?: string | null
+          voided_by?: string | null
+          voided_by_name?: string | null
+          voided_reason?: string | null
           work_type: string
         }
         Update: {
@@ -8758,6 +8778,10 @@ export type Database = {
           title?: string
           updated_at?: string
           version?: number
+          voided_at?: string | null
+          voided_by?: string | null
+          voided_by_name?: string | null
+          voided_reason?: string | null
           work_type?: string
         }
         Relationships: [
@@ -10452,6 +10476,10 @@ export type Database = {
       }
       verify_worker_otp: {
         Args: { _code: string; _phone: string }
+        Returns: Json
+      }
+      void_work_document: {
+        Args: { _entity_id: string; _entity_type: string; _reason: string }
         Returns: Json
       }
       update_project_announcement: {

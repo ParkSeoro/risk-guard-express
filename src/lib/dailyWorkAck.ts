@@ -3,6 +3,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { PLEDGE_HASHES } from "@/lib/workHours";
+import { isWorkerTodayPermitActive } from "@/lib/workDocVoid";
 
 export type DailyPermitBrief = {
   id: string;
@@ -59,13 +60,15 @@ export async function fetchWorkerDayPermits(
   const { data: permits } = await supabase
     .from("work_permits" as any)
     .select(
-      "id, work_name, work_description, location, permit_date, form_data, tbm_session_id, assessment_run_id, status, is_deleted",
+      "id, work_name, work_description, location, permit_date, form_data, tbm_session_id, assessment_run_id, status, is_deleted, voided_at",
     )
     .in("id", ids)
     .eq("permit_date", day)
     .eq("is_deleted", false);
 
-  return ((permits as any[]) || []).map((p) => {
+  return ((permits as any[]) || [])
+    .filter((p) => isWorkerTodayPermitActive(p))
+    .map((p) => {
     const fd = p.form_data || {};
     return {
       id: p.id,

@@ -31,6 +31,8 @@ import {
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { isPureWorkerUser } from "@/components/AuthGuard";
+import { workDocVoidInfo } from "@/lib/workDocVoid";
+import { WorkDocVoidBanner } from "@/components/work-docs/WorkDocVoidStamp";
 
 const STATUS_BADGE: Record<string, string> = {
   대기: "bg-warning/20 text-warning",
@@ -44,9 +46,11 @@ const STATUS_BADGE: Record<string, string> = {
   종료대기: "bg-amber-500/20 text-amber-700",
   종료완료: "bg-muted text-muted-foreground",
   종료: "bg-success/20 text-success",
+  작업취소: "bg-red-600 text-white",
 };
 
 function permitStatusLabel(status?: string | null) {
+  if (status === "작업취소") return "작업 취소";
   if (status === "종료완료" || status === "CLOSED" || status === "마감") return "종료 완료";
   if (status === "종료대기" || status === "CLOSURE_PENDING") return "작업 완료 확인 대기";
   if (status === "승인" || status === "승인완료" || status === "발행완료" || status === "approved") {
@@ -341,6 +345,7 @@ export default function MobilePermits() {
                   <div>장소: {permitLocation(active)}</div>
                   <div>업체: {permitCompany(active)}</div>
                 </div>
+                <WorkDocVoidBanner info={workDocVoidInfo(active)} />
                 {pendingRow ? (
                   <MobileApprovalActions pending={pendingRow} onDone={afterDecide} />
                 ) : null}
@@ -354,6 +359,7 @@ export default function MobilePermits() {
               permitType={active.permit_type}
               permitKinds={active.permit_kinds}
               loading={detailLoading}
+              voidInfo={workDocVoidInfo(active)}
             />
           </div>
         )}

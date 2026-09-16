@@ -8,6 +8,8 @@ import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { Button } from "@/components/ui/button";
 import { normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
+import { WorkDocVoidStamp } from "@/components/work-docs/WorkDocVoidStamp";
+import type { WorkDocVoidInfo } from "@/lib/workDocVoid";
 import { useMemo, useState } from "react";
 
 function getForm(p: any) {
@@ -36,6 +38,7 @@ type Props = {
   permitType?: string | null;
   permitKinds?: unknown;
   loading?: boolean;
+  voidInfo?: WorkDocVoidInfo | null;
 };
 
 /** Read-only permit body shared by 문서보기 and 결재 상세. */
@@ -46,6 +49,7 @@ export default function PermitReadOnlyPreview({
   permitType,
   permitKinds,
   loading,
+  voidInfo,
 }: Props) {
   const kinds = useMemo(
     () => normalizePermitKinds(permitKinds, (permitType || "general") as PermitKindId),
@@ -76,12 +80,15 @@ export default function PermitReadOnlyPreview({
       <PermitAiBriefingCard briefing={briefing ?? null} />
       <div className="bg-white border rounded shadow-sm p-2 overflow-x-auto">
         <StandardPermitSheet>
-          <DigPermitForm
-            permitType={kind as PermitType}
-            data={formData}
-            signatures={signatures}
-            readOnly
-          />
+          <div className="relative">
+            <WorkDocVoidStamp info={voidInfo} />
+            <DigPermitForm
+              permitType={kind as PermitType}
+              data={formData}
+              signatures={signatures}
+              readOnly
+            />
+          </div>
         </StandardPermitSheet>
       </div>
     </div>

@@ -59,6 +59,7 @@ const STATUS_COLOR: Record<string, string> = {
   '종료대기': 'bg-warning/10 text-warning',
   '종료완료': 'bg-muted text-muted-foreground',
   '반려': 'bg-destructive/10 text-destructive',
+  '작업취소': 'bg-red-600 text-white',
   '작업중': 'bg-primary/10 text-primary',
   '완료': 'bg-accent/10 text-accent',
 };
@@ -78,6 +79,7 @@ function canRequestPermitExtend(p: any): boolean {
 }
 
 function permitStatusLabel(status?: string | null) {
+  if (status === '작업취소') return '작업 취소';
   if (CLOSED_PERMIT_STATUSES.has(status || '')) return '종료 완료';
   if (CLOSURE_PENDING_STATUSES.has(status || '')) return '작업 완료 확인 대기';
   if (APPROVED_PERMIT_STATUSES.has(status || '')) return '발행 완료';
@@ -547,6 +549,7 @@ export default function WorkPermits() {
               <SelectItem value="closure_pending">종료대기</SelectItem>
               <SelectItem value="closed">종료</SelectItem>
               <SelectItem value="rejected">반려</SelectItem>
+              <SelectItem value="voided">작업 취소</SelectItem>
             </SelectContent>
           </Select>
         </CardContent>

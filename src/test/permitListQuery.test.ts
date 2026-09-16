@@ -25,6 +25,8 @@ describe('permit list status/search', () => {
     expect(matchesPermitStatusFilter('종료대기', 'closure_pending')).toBe(true);
     expect(matchesPermitStatusFilter('승인', 'issued')).toBe(true);
     expect(matchesPermitStatusFilter('작성중', 'issued')).toBe(false);
+    expect(matchesPermitStatusFilter('작업취소', 'voided')).toBe(true);
+    expect(matchesPermitStatusFilter('작업취소', 'issued')).toBe(false);
   });
 
   it('searches name, location, company', () => {

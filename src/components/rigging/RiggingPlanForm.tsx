@@ -97,7 +97,8 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
 
   // Auto-set wire breaking load
   useEffect(() => {
-    if (rigging?.wire_diameter_mm > 0 && rigging?.sling_material_type === 'wire_rope') {
+    const material = rigging?.sling_material_type || 'wire_rope';
+    if (rigging?.wire_diameter_mm > 0 && material === 'wire_rope') {
       const bl = getWireBreakingLoad(numVal(rigging.wire_diameter_mm));
       const inch = parseFloat(mmToInch(numVal(rigging.wire_diameter_mm)).toFixed(2));
       const patch: Record<string, any> = { wire_diameter_inch: inch };

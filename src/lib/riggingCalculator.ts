@@ -33,6 +33,9 @@ export const WIRE_ROPE_BREAKING_LOAD: Record<number, number> = {
   50: 136.0, 52: 147.0, 56: 170.0, 60: 196.0,
 };
 
+/** Catalog max diameter (mm). Larger sizes scale as d² from this point. */
+export const WIRE_ROPE_TABLE_MAX_MM = 60;
+
 // ============================================================
 // 슬링벨트(웹슬링) 폭(mm) 기준 정격하중 (ton)
 // ============================================================
@@ -279,7 +282,16 @@ function interpolate(table: Record<number, number>, key: number): number {
 }
 
 export function getWireBreakingLoad(diameterMm: number): number {
-  return interpolate(WIRE_ROPE_BREAKING_LOAD, diameterMm);
+  const d = Number(diameterMm);
+  if (!Number.isFinite(d) || d <= 0) return 0;
+  const tabulated = interpolate(WIRE_ROPE_BREAKING_LOAD, d);
+  if (tabulated > 0) return tabulated;
+  // 6×24·6×37 표는 60mm까지. 동일 구조에서 절단하중 ∝ d² 이므로 그 이상은 60mm 기준으로 환산 (75mm 등).
+  const maxD = WIRE_ROPE_TABLE_MAX_MM;
+  if (d > maxD) {
+    return WIRE_ROPE_BREAKING_LOAD[maxD] * (d / maxD) ** 2;
+  }
+  return 0;
 }
 
 export function getShackleSafeLoad(diameterMm: number): number {

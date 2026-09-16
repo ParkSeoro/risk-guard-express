@@ -2,13 +2,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { isClaimableOrphanWorker } from "@/lib/companyLabel";
 import { isStandardJobType } from "@/lib/jobCategories";
 import { provisionWorkerAccounts, type ProvisionWorkerResult } from "@/lib/provisionWorkerAccounts";
-import { digitsOnlyPhone, formatPhoneMask } from "@/lib/workerAuth";
+import { digitsOnlyPhone, formatPhoneMask, pinFromPhone } from "@/lib/workerAuth";
 import { formatWorkerBulkRowError } from "@/lib/workerBulk";
 
 export function workerLoginPreview(phone: string): { loginId: string; password: string } | null {
   const digits = digitsOnlyPhone(phone);
-  if (digits.length < 10) return null;
-  return { loginId: digits, password: digits.slice(-4) };
+  const password = pinFromPhone(digits);
+  if (!password) return null;
+  return { loginId: digits, password };
 }
 
 export function formatWorkerPhoneInput(raw: string): string {

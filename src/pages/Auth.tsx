@@ -21,9 +21,11 @@ import { koreanName, zodErrorMessage } from '@/lib/commonSchemas';
 import {
   formatPhoneMask,
   phoneToWorkerEmail,
+  isAuthPasswordTooShort,
+  pinFromPhone,
   signInWorkerWithPhone,
+  workerAuthPasswordsToTry,
   workerPhoneSchema,
-  workerPinSchema,
 } from '@/lib/workerAuth';
 import { rememberWorkerLoginOnDevice, workerLoginPrefill, loadWorkerLoginMemory } from '@/lib/workerLoginMemory';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,7 +33,11 @@ import { writeLoginIntent } from '@/components/AuthGuard';
 import { isNativeApp } from '@/lib/native/isNativeApp';
 import { openPlayStore } from '@/lib/playStore';
 import { isIosWebClient } from '@/lib/iosWebPath';
-import { authBannedErrorMessage, signupIdentityErrorMessage } from '@/lib/accountStatus';
+import {
+  authBannedErrorMessage,
+  signupIdentityErrorMessage,
+  workerAuthPasswordErrorMessage,
+} from '@/lib/accountStatus';
 
 type Mode = 'login' | 'signup';
 type Audience = 'worker' | 'manager';
@@ -291,7 +297,6 @@ const Auth = () => {
   const handleWorkerSignup = async () => {
     const nameParsed = koreanName.safeParse(displayName);
     const phoneParsed = workerPhoneSchema.safeParse(phone);
-    const pinParsed = workerPinSchema.safeParse(pin);
     const jobParsed = jobTypeSchema.safeParse(selectedJobType);
 
     if (!nameParsed.success) {
@@ -302,8 +307,9 @@ const Auth = () => {
       toast({ title: zodErrorMessage(phoneParsed.error), variant: 'destructive' });
       return;
     }
-    if (!pinParsed.success) {
-      toast({ title: zodErrorMessage(pinParsed.error), variant: 'destructive' });
+    const last4 = pinFromPhone(phoneParsed.data);
+    if (!last4) {
+      toast({ title: '올바른 휴대전화 번호를 입력하세요', variant: 'destructive' });
       return;
     }
     if (!selectedProject || !selectedCompany) {
@@ -343,32 +349,45 @@ const Auth = () => {
         toast({ title: '회원가입 불가', description: identErr, variant: 'destructive' });
         return;
       }
-      const { data: signUpData, error } = await supabase.auth.signUp({
-        email: dummyEmail,
-        password: pinParsed.data,
-        options: {
-          emailRedirectTo: window.location.origin,
-          data: {
-            display_name: nameParsed.data,
-            phone: digits,
-            company: companyName,
-            account_kind: 'worker',
-            signup_project_id: selectedProject,
-            signup_company_id: selectedCompany,
-            signup_position: 'WORKER',
-            signup_job_type: jobParsed.data,
-          },
+      const signupMeta = {
+        emailRedirectTo: window.location.origin,
+        data: {
+          display_name: nameParsed.data,
+          phone: digits,
+          company: companyName,
+          account_kind: 'worker',
+          signup_project_id: selectedProject,
+          signup_company_id: selectedCompany,
+          signup_position: 'WORKER',
+          signup_job_type: jobParsed.data,
         },
-      });
+      };
+      let signUpData: Awaited<ReturnType<typeof supabase.auth.signUp>>['data'] | null = null;
+      let error: Awaited<ReturnType<typeof supabase.auth.signUp>>['error'] = null;
+      for (const password of workerAuthPasswordsToTry(last4)) {
+        const res = await supabase.auth.signUp({
+          email: dummyEmail,
+          password,
+          options: signupMeta,
+        });
+        signUpData = res.data;
+        error = res.error;
+        if (!error) break;
+        if (!isAuthPasswordTooShort(error.message)) break;
+      }
 
-      if (error) {
-        toast({ title: '회원가입 실패', description: error.message, variant: 'destructive' });
+      if (error || !signUpData) {
+        toast({
+          title: '회원가입 실패',
+          description: workerAuthPasswordErrorMessage(error?.message) || error?.message,
+          variant: 'destructive',
+        });
         return;
       }
 
       if (signUpData.user) {
         if (!signUpData.session) {
-          await signInWorkerWithPhone(digits, pinParsed.data);
+          await signInWorkerWithPhone(digits, last4);
         }
         const { data: rosterRes, error: rpcErr } = await (supabase as any).rpc(
           'complete_worker_roster_signup',
@@ -390,10 +409,11 @@ const Auth = () => {
         }
       }
 
-      rememberWorkerLoginOnDevice(digits, pinParsed.data, true);
+      setPin(last4);
+      rememberWorkerLoginOnDevice(digits, last4, true);
       toast({
         title: '근로자 가입 완료',
-        description: '바로 전화번호와 PIN으로 로그인하세요. 관리자 승인은 필요 없습니다.',
+        description: `비밀번호는 전화번호 뒤 4자리(${last4})입니다. 관리자 승인은 필요 없습니다.`,
       });
       setMode('login');
       setLoginAudience('worker');
@@ -667,6 +687,13 @@ const Auth = () => {
                     disabled={!workerQrContext}
                   />
                   <p className="text-[10px] text-muted-foreground">숫자만 입력하면 자동으로 하이픈이 붙습니다.</p>
+                  {pinFromPhone(phone) && (
+                    <p className="text-xs text-foreground">
+                      로그인 비밀번호는 전화번호 뒤 4자리{' '}
+                      <span className="font-semibold tracking-wider">{pinFromPhone(phone)}</span>
+                      {' '}입니다.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>직종 *</Label>
@@ -676,22 +703,6 @@ const Auth = () => {
                     placeholder="표준 직종 선택"
                     disabled={!workerQrContext}
                     triggerClassName="h-12 text-base"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>PIN 비밀번호 (숫자 4~6자리) *</Label>
-                  <Input
-                    className="h-12 text-lg tracking-[0.3em]"
-                    type="password"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={6}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="••••"
-                    autoComplete="new-password"
-                    required
-                    disabled={!workerQrContext}
                   />
                 </div>
               </>
@@ -881,7 +892,7 @@ const Auth = () => {
                   <p className="text-[10px] text-muted-foreground">숫자만 입력됩니다. 로그인 시 자동으로 계정에 연결됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="worker-login-pin">PIN 비밀번호 (숫자 4~6자리)</Label>
+                  <Label htmlFor="worker-login-pin">비밀번호 (전화번호 뒤 4자리)</Label>
                   <Input
                     id="worker-login-pin"
                     name="password"
@@ -892,10 +903,13 @@ const Auth = () => {
                     maxLength={6}
                     value={pin}
                     onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="숫자 PIN"
+                    placeholder="뒤 4자리"
                     autoComplete="current-password"
                     required
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    기본은 전화번호 뒤 4자리입니다. 예전에 다른 PIN을 쓰셨으면 그대로 입력하세요.
+                  </p>
                 </div>
                 <label className="flex items-start gap-2 rounded-md border border-border/80 bg-muted/30 px-3 py-2.5">
                   <Checkbox

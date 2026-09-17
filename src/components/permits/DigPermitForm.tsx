@@ -24,6 +24,7 @@ import {
   formatPermitReviewDate,
   formatPermitDateTimeRange,
 } from '@/lib/permitDateFormat';
+import { extraGasKey, GAS_EXTRA_ROUNDS } from '@/lib/permitGasValidation';
 import {
   resolveSpecialFormSigSlot,
   sigSlotHasContent,
@@ -143,6 +144,22 @@ export interface PermitFormData {
   gas_co2?: string;
   gas_measurer?: string;
   gas_time?: string;
+  /** 화기·밀폐 가스표 2~4회 (1회는 위 키). 비어 있어도 됨. */
+  gas_o2_2?: string;
+  gas_h2s_2?: string;
+  gas_co_2?: string;
+  gas_hc_2?: string;
+  gas_co2_2?: string;
+  gas_o2_3?: string;
+  gas_h2s_3?: string;
+  gas_co_3?: string;
+  gas_hc_3?: string;
+  gas_co2_3?: string;
+  gas_o2_4?: string;
+  gas_h2s_4?: string;
+  gas_co_4?: string;
+  gas_hc_4?: string;
+  gas_co2_4?: string;
   // applicant (confined/hot)
   applicant_name?: string;
   applicant_company?: string;
@@ -304,6 +321,13 @@ export default function DigPermitForm({
   dataRef.current = data;
   const update = (patch: Partial<PermitFormData>) =>
     onChange?.({ ...dataRef.current, ...patch });
+  const extraGas = (base: Parameters<typeof extraGasKey>[0], n: (typeof GAS_EXTRA_ROUNDS)[number]) =>
+    (data[extraGasKey(base, n)] as string | undefined) || '';
+  const setExtraGas = (
+    base: Parameters<typeof extraGasKey>[0],
+    n: (typeof GAS_EXTRA_ROUNDS)[number],
+    v: string,
+  ) => update({ [extraGasKey(base, n)]: v });
   const [signTarget, setSignTarget] = useState<keyof PermitSignatures | null>(null);
   const [signName, setSignName] = useState('');
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
@@ -962,6 +986,20 @@ export default function DigPermitForm({
                           </div>
                         </td>
                       </tr>
+                      {GAS_EXTRA_ROUNDS.map((n) => (
+                        <tr key={`cs-gas-${n}`}>
+                          <td className="text-center">{n}회</td>
+                          <td><Inp gasField value={extraGas('gas_o2', n)} onChangeText={(v: string) => setExtraGas('gas_o2', n, v)} placeholder="%" /></td>
+                          <td><Inp gasField value={extraGas('gas_h2s', n)} onChangeText={(v: string) => setExtraGas('gas_h2s', n, v)} placeholder="ppm" /></td>
+                          <td>
+                            <div className="gas-multi">
+                              <Inp gasField value={extraGas('gas_co', n)} onChangeText={(v: string) => setExtraGas('gas_co', n, v)} placeholder="CO" />
+                              <Inp gasField value={extraGas('gas_hc', n)} onChangeText={(v: string) => setExtraGas('gas_hc', n, v)} placeholder="H·C" />
+                              <Inp gasField value={extraGas('gas_co2', n)} onChangeText={(v: string) => setExtraGas('gas_co2', n, v)} placeholder="CO₂" />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                       <tr>
                         <td className="text-center">기준 값</td>
                         <td className="gas-std text-center">18%이상~23.5%미만</td>
@@ -1084,6 +1122,24 @@ export default function DigPermitForm({
                           </div>
                         </td>
                       </tr>
+                      {GAS_EXTRA_ROUNDS.map((n) => (
+                        <tr key={`hw-gas-${n}`}>
+                          <td className="text-center">{n}회</td>
+                          <td><Inp gasField value={extraGas('gas_o2', n)} onChangeText={(v: string) => setExtraGas('gas_o2', n, v)} placeholder="%" /></td>
+                          <td>
+                            <div className="gas-multi">
+                              <Inp gasField value={extraGas('gas_h2s', n)} onChangeText={(v: string) => setExtraGas('gas_h2s', n, v)} placeholder="H₂S" />
+                              <Inp gasField value={extraGas('gas_co', n)} onChangeText={(v: string) => setExtraGas('gas_co', n, v)} placeholder="CO" />
+                            </div>
+                          </td>
+                          <td>
+                            <div className="gas-multi">
+                              <Inp gasField value={extraGas('gas_hc', n)} onChangeText={(v: string) => setExtraGas('gas_hc', n, v)} placeholder="H·C" />
+                              <Inp gasField value={extraGas('gas_co2', n)} onChangeText={(v: string) => setExtraGas('gas_co2', n, v)} placeholder="CO₂" />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                       <tr>
                         <td className="text-center">기준</td>
                         <td className="gas-std text-center">18%이상~23.5%미만</td>

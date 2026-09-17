@@ -21,17 +21,23 @@ export function preferredSubmitterUserId(opts: {
   return opts.authorUserId || opts.loggedInUserId || null;
 }
 
-/** Fill empty contractor_supervisor step with the preferred user when they are eligible. */
+function isSubmitterPosition(position?: string): boolean {
+  const p = (position || '').toLowerCase();
+  return p === 'contractor_supervisor' || p === 'contractor_pic';
+}
+
+/** Fill contractor_supervisor with the preferred user when they are eligible.
+ *  `overwrite` replaces a template assignee — 상신칸은 상신자 본인만. */
 export function seedSubmitterStep<T extends SeedableStep>(
   rawSteps: T[],
   approverList: SeedableApprover[],
   preferredUserId: string | null,
+  opts?: { overwrite?: boolean },
 ): T[] {
   if (!preferredUserId) return rawSteps;
-  const idx = rawSteps.findIndex(
-    (s) => (s.position || '').toLowerCase() === 'contractor_supervisor',
-  );
-  if (idx < 0 || rawSteps[idx].user_id) return rawSteps;
+  const idx = rawSteps.findIndex((s) => isSubmitterPosition(s.position));
+  if (idx < 0) return rawSteps;
+  if (rawSteps[idx].user_id && !opts?.overwrite) return rawSteps;
   const me = approverList.find((a) => a.out_user_id === preferredUserId);
   if (!me) return rawSteps;
   const next = [...rawSteps];

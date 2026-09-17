@@ -44,6 +44,9 @@ export function mapApprovalActionError(raw: unknown): string {
   if (code.includes("SUBMITTER_STEP_NO_SELF_APPROVE")) {
     return "상신(기안) 단계는 승인/반려할 수 없습니다.";
   }
+  if (code.includes("submitter_step_must_be_author")) {
+    return "담당자(시공)은 상신하는 본인이어야 합니다. 그 칸을 본인으로 맞춘 뒤 다시 상신하세요.";
+  }
   if (code.includes("WORK_PERMIT_LOCKED")) {
     return "문서 잠금 충돌이 발생했습니다. 페이지를 새로고침 후 다시 시도하세요.";
   }

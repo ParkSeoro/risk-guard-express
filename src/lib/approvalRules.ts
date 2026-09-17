@@ -829,6 +829,26 @@ export function isSubmitterApprovalStep(step: {
   return false;
 }
 
+/** 시공 칸이 상신자가 아닌 채 진행중 — 상위 승인 있어도 회수해야 하는 막힘. */
+export function hasStuckSubmitterStep(
+  steps: Array<{
+    position?: string | null;
+    step?: string | null;
+    step_label?: string | null;
+    step_position?: string | null;
+    status?: string | null;
+    approver_id?: string | null;
+  }>,
+  actorUserId?: string | null,
+): boolean {
+  return steps.some((s) =>
+    isSubmitterApprovalStep(s)
+    && s.status === '진행중'
+    && !!s.approver_id
+    && s.approver_id !== actorUserId
+  );
+}
+
 /**
  * Force 담당자(시공)/contractor_pic step onto the legal author (submitter).
  * Returns a new array; does not mutate input.

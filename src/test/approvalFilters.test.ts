@@ -8,6 +8,7 @@ import {
   buildDefaultStepsForAuthor,
   stepLabelForAuthor,
   isSubmitterApprovalStep,
+  hasStuckSubmitterStep,
   dedupeApprovalSteps,
   approvalTimelineGroupKey,
   sequentialDisplayStatus,
@@ -208,6 +209,19 @@ describe("approval timeline helpers — self-lock / sequential", () => {
     expect(isSubmitterApprovalStep({ step: "시공사 관리감독자 (상신)" })).toBe(true);
     expect(isSubmitterApprovalStep({ position: "owner_sm", step: "담당자(SM)" })).toBe(false);
     expect(isSubmitterApprovalStep({ step: "작성자" })).toBe(true);
+  });
+
+  it("hasStuckSubmitterStep is 시공 진행중 assigned to someone else", () => {
+    const steps = [
+      { position: "contractor_safety_manager", status: "승인", approver_id: "sm-1" },
+      { position: "contractor_supervisor", status: "진행중", approver_id: "other" },
+    ];
+    expect(hasStuckSubmitterStep(steps, "sm-1")).toBe(true);
+    expect(hasStuckSubmitterStep(steps, "other")).toBe(false);
+    expect(hasStuckSubmitterStep(
+      [{ position: "contractor_supervisor", status: "승인", approver_id: "sm-1" }],
+      "sm-1",
+    )).toBe(false);
   });
 
   it("dedupeApprovalSteps keeps first of identical person+position", () => {

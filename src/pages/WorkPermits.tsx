@@ -824,6 +824,7 @@ export default function WorkPermits() {
           entityId={approvalTarget.id}
           projectId={projectId}
           submitterCompanyId={approvalTarget.company_id || userCompanyId || null}
+          authorUserId={approvalTarget.created_by}
           permitBriefingContext={{
             permitKinds: normalizePermitKinds(approvalTarget.permit_kinds, approvalTarget.permit_type),
             formData: (approvalTarget.form_data || {}) as Record<string, unknown>,

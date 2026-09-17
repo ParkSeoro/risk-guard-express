@@ -17,6 +17,8 @@ type AuthContextType = {
   isAuthLoading: boolean;
   /** True once roles have been fetched at least once for the current session. */
   rolesReady: boolean;
+  /** True once the profile fetch for this session has settled (row or miss). */
+  profileReady: boolean;
   roles: AppRole[];
   hasRole: (role: AppRole) => boolean;
   isAdmin: boolean;
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [rolesReady, setRolesReady] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const bootstrappedRef = useRef(false);
   const userIdRef = useRef<string | null>(null);
@@ -95,10 +98,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!nextSession?.user) {
         setProfile(null);
         setRoles([]);
+        setProfileReady(true);
         finishAuthLoading();
         return;
       }
 
+      setProfileReady(false);
       try {
         await Promise.all([fetchProfile(nextSession.user.id), fetchRoles(nextSession.user.id)]);
       } catch (e) {
@@ -106,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setRoles([]);
       } finally {
+        setProfileReady(true);
         if (opts?.isInitialBoot) {
           finishAuthLoading();
         } else {
@@ -159,6 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(null);
           setRoles([]);
           setRolesReady(true);
+          setProfileReady(true);
           setIsAuthLoading(false);
           return;
         }
@@ -187,6 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
     setRoles([]);
     setRolesReady(true);
+    setProfileReady(true);
     setIsAuthLoading(false);
   };
 
@@ -237,6 +245,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading: isAuthLoading,
         isAuthLoading,
         rolesReady,
+        profileReady,
         roles,
         hasRole,
         isAdmin,

@@ -8,6 +8,7 @@ vi.mock("@/contexts/AuthContext", () => ({
     user: { id: "u1" },
     session: { user: { id: "u1" } },
     isAuthLoading: false,
+    profileReady: true,
     roles: ["worker"],
     profile: {
       agreed_to_terms: true,

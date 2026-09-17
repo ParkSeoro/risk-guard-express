@@ -21,6 +21,7 @@ import {
   approvalTimelineGroupKey,
   entityTypeLabel,
   isSubmitterApprovalStep,
+  hasStuckSubmitterStep,
   sequentialDisplayStatus,
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
@@ -211,7 +212,8 @@ const Approvals = () => {
       return;
     }
     // 상신 자동승인만 있는 경우는 회수 허용 — 실결재(비-상신 승인/반려)가 있으면 차단
-    if (steps.some((s: any) =>
+    // 시공≠상신자로 멈춘 건은 예외 (상위 단계가 이미 승인돼도 회수)
+    if (!hasStuckSubmitterStep(steps, user?.id) && steps.some((s: any) =>
       (s.status === '승인' && !isSubmitterApprovalStep(s)) || s.status === '반려'
     )) {
       toast({ title: '회수 불가', description: '이미 처리된 결재 단계가 있어 회수할 수 없습니다.', variant: 'destructive' });
@@ -763,8 +765,10 @@ const Approvals = () => {
                             && timeline.postSteps.length === 0
                             && arr.every(s => s.status === '진행중' || s.status === '대기' || s.status === '승인')
                             && arr.some(s => s.status === '진행중')
-                            && !arr.some(s => s.status === '승인' && !isSubmitterApprovalStep(s) && (s.step_order ?? 0) > 1)
+                            && (!arr.some(s => s.status === '승인' && !isSubmitterApprovalStep(s) && (s.step_order ?? 0) > 1)
+                                || hasStuckSubmitterStep(arr, user.id))
                             && (isMaster || seesAllCompanies || isProjectAdmin
+                                || hasStuckSubmitterStep(arr, user.id)
                                 || arr.some(s => s.approver_id === user.id && (s.step_order === 1 || isSubmitterApprovalStep(s))));
                           return canWithdraw ? (
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => handleWithdraw(arr)}>

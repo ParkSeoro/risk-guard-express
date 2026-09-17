@@ -26,6 +26,7 @@ import {
   WORK_PLAN_POSITION_OPTIONS,
   dedupeApprovalSteps,
   stepLabelForAuthor,
+  isSubmitterApprovalStep,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
 import { positionLabel } from '@/lib/projectPositions';
@@ -191,6 +192,7 @@ export default function SubmitApprovalDialog({
             authorUserId,
             loggedInUserId: uid || user?.id || null,
           }),
+          { overwrite: true },
         );
 
         if (def) setSelectedTemplateId(def.id);
@@ -227,6 +229,7 @@ export default function SubmitApprovalDialog({
       adapted,
       approvers,
       preferredSubmitterUserId({ authorUserId, loggedInUserId: user?.id || null }),
+      { overwrite: true },
     ));
   };
 
@@ -323,6 +326,17 @@ export default function SubmitApprovalDialog({
     }
     if (orderedSteps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
 
+    const submitterId = preferredSubmitterUserId({
+      authorUserId,
+      loggedInUserId: user?.id || null,
+    });
+    const stepsToSubmit = seedSubmitterStep(
+      orderedSteps,
+      approvers,
+      submitterId,
+      { overwrite: true },
+    );
+
     setSubmitting(true);
     try {
       // 작업허가서: 상신 직전 AI 결재 브리핑 생성·저장 (실패해도 로컬 폴백 후 상신 진행)
@@ -385,7 +399,7 @@ export default function SubmitApprovalDialog({
         _entity_id: entityId,
         _project_id: projectId,
         _company_id: resolvedSubmitterCompanyId || submitterCompanyId,
-        _steps: orderedSteps as any,
+        _steps: stepsToSubmit as any,
         _reason: reason || null,
       });
       if (error) throw error;
@@ -429,7 +443,12 @@ export default function SubmitApprovalDialog({
       onOpenChange(false);
       onSubmitted?.();
     } catch (e: any) {
-      toast.error('상신 실패: ' + (e.message || e));
+      const raw = String(e?.message || e || '');
+      toast.error(
+        raw.includes('submitter_step_must_be_author')
+          ? '담당자(시공)은 상신하는 본인이어야 합니다. 그 칸을 본인으로 맞춘 뒤 다시 상신하세요.'
+          : '상신 실패: ' + raw,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -474,6 +493,11 @@ export default function SubmitApprovalDialog({
               {entityType === 'work_plan' && (
                 <p className="text-[11px] text-muted-foreground">
                   작성자가 결재 인원을 정합니다. 발주처 CM·SM·현장소장은 필요할 때만 단계 추가로 넣으세요.
+                </p>
+              )}
+              {steps.some((st) => isSubmitterApprovalStep(st)) && (
+                <p className="text-[11px] text-muted-foreground">
+                  담당자(시공)은 상신하는 본인입니다. 이 칸은 바꿀 수 없으며 상신 시 자동 완료됩니다.
                 </p>
               )}
               {steps.map((s, i) => (
@@ -524,11 +548,12 @@ export default function SubmitApprovalDialog({
                       || stepKey
                       || '직책 미지정';
                     const empty = options.length === 0;
+                    const lockedSubmitter = isSubmitterApprovalStep(s);
                     return (
                       <Select
                         value={s.user_id || undefined}
                         onValueChange={(v) => setApprover(i, v)}
-                        disabled={empty || !stepKey}
+                        disabled={empty || !stepKey || lockedSubmitter}
                       >
                         <SelectTrigger className="h-9">
                           <SelectValue

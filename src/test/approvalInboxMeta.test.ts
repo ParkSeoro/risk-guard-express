@@ -75,6 +75,25 @@ describe("mapApprovalActionError", () => {
   it("maps submitted_document_locked to Korean", () => {
     expect(mapApprovalActionError("submitted_document_locked")).toMatch(/잠겨/);
   });
+
+  it("maps submitter_step_must_be_author to Korean", () => {
+    expect(mapApprovalActionError("submitter_step_must_be_author")).toContain("상신하는 본인");
+  });
+});
+
+describe("permit submitter must be author RPC", () => {
+  it("rejects 시공≠작성자 for work_permit and RA, auto-approves 시공 wherever it sits, and allows stuck withdraw", () => {
+    const src = readFileSync(
+      "supabase/migrations/20260917040000_permit_submitter_must_be_author.sql",
+      "utf8",
+    );
+    expect(src).toContain("submitter_step_must_be_author");
+    expect(src).toMatch(/_entity_type IN \('assessment_run', 'work_permit'\)/);
+    expect(src).toContain("v_stuck_submitter");
+    expect(src).toContain("v_submitter.id IS NOT NULL");
+    expect(src).toContain("ELSIF v_first.id IS NOT NULL");
+    expect(src).toMatch(/AND v_uid IS DISTINCT FROM v_created/);
+  });
 });
 
 describe("groupedDocumentStatus", () => {

@@ -111,6 +111,28 @@ describe('approval submitter seed', () => {
     );
     expect(steps[0].user_id).toBe('other');
   });
+
+  it('overwrite replaces a template assignee on the submitter step', () => {
+    const steps = seedSubmitterStep(
+      [{ position: 'contractor_supervisor', user_id: 'other', user_name: '기존' }],
+      [{ out_user_id: 'sup-1', out_display_name: '김감독', out_company_id: null, out_company_name: '' }],
+      'sup-1',
+      { overwrite: true },
+    );
+    expect(steps[0].user_id).toBe('sup-1');
+    expect(steps[0].user_name).toBe('김감독');
+  });
+
+  it('overwrite also locks contractor_pic onto the preferred submitter', () => {
+    const steps = seedSubmitterStep(
+      [{ position: 'contractor_pic', user_id: 'other', user_name: '기존' }],
+      [{ out_user_id: 'me', out_display_name: '정근영', out_company_id: null, out_company_name: '' }],
+      'me',
+      { overwrite: true },
+    );
+    expect(steps[0].user_id).toBe('me');
+    expect(steps[0].user_name).toBe('정근영');
+  });
 });
 
 describe('work plan approval line is author-composed', () => {

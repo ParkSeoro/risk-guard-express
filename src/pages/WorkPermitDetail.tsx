@@ -1109,6 +1109,7 @@ export default function WorkPermitDetail() {
           entityId={permit.id}
           projectId={permit.project_id}
           submitterCompanyId={permit.company_id || userCompanyId || null}
+          authorUserId={permit.created_by}
           permitBriefingContext={{
             permitKinds: selectedKinds,
             formData: data as Record<string, unknown>,

@@ -34,6 +34,11 @@ import {
 } from '@/lib/riggingCalculator';
 import { roundSlingSwatch } from '@/lib/riggingHardwareCatalog';
 import { buildRiggingInputFromRow, riggingResultToPatch } from '@/lib/riggingDerived';
+import {
+  LIFTING_METHOD_OPTIONS,
+  RIGGING_UTIL_MAX_PCT,
+  RIGGING_UTIL_STANDARD_PCT,
+} from '@/lib/riggingLoadBand';
 
 interface RiggingPlanFormProps {
   rigging: any;
@@ -222,6 +227,26 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             {field('작업 장소', 'outrigger_setup', 'text')}
             {field('작업 기간', 'notes', 'text')}
             {field('작업지휘자', 'lifting_method', 'text')}
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">인양 방식</Label>
+              <Select
+                value={String(rigging.sling_method || '') || undefined}
+                onValueChange={(v) => onChange('sling_method', v)}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+                <SelectContent>
+                  {LIFTING_METHOD_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                  ))}
+                  {rigging.sling_method
+                    && !LIFTING_METHOD_OPTIONS.some((o) => o.value === rigging.sling_method) && (
+                    <SelectItem value={String(rigging.sling_method)} className="text-xs">
+                      {String(rigging.sling_method)}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -603,13 +628,13 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="bg-card p-2 text-center font-bold">{result?.totalWeightMax?.toFixed(3) || '0'}</div>
             <div className={`bg-card p-2 text-center font-bold ${
               !result?.equipmentOk ? 'text-red-600'
-                : (result?.equipmentSafetyFactor ?? 0) >= 1.25 ? 'text-green-600' : 'text-amber-600'
+                : (result?.loadUtilizationPct ?? 0) > RIGGING_UTIL_STANDARD_PCT ? 'text-amber-600' : 'text-green-600'
             }`}>
               {result?.windStop ? '-' : (result?.equipmentSafetyFactor?.toFixed(2) || '0')}
             </div>
           </div>
           <p className="text-[9px] text-muted-foreground mt-2 leading-relaxed">
-            판정: 적용 정격 ≥ 총중량 (규칙 제146조). 여유율 1.25는 권고이며 법령 필수 아님.
+            판정: 적용 정격 ≥ 총중량 (규칙 제146조). 부하율 기준 {RIGGING_UTIL_STANDARD_PCT}% · 최대 {RIGGING_UTIL_MAX_PCT}% — 초과는 경고만, 상신은 막지 않습니다.
             풍속 5~10m/s는 C-99 인양하중표 20% 감, 10m/s 이상은 C-69·철골 제383조 작업 중지.
           </p>
           </>

@@ -122,7 +122,7 @@ export function summarizeRiggingPlan(rigging: RiggingPlanRow | null | undefined)
     lines.push(
       `안전율 ${Number(rigging.safety_factor).toFixed(2)}` +
         (rigging.calculated_utilization != null
-          ? ` · 가동률 ${Number(rigging.calculated_utilization).toFixed(1)}%`
+          ? ` · 부하율 ${Number(rigging.calculated_utilization).toFixed(1)}%`
           : ""),
     );
   }

@@ -626,18 +626,19 @@ export function calculateRigging(params: {
   }
 
   // Safety factor (안전율): typically 80% for crane operations
-  const safetyLimit = availableCapacity * 0.8;
   const utilization = (params.loadWeight / availableCapacity) * 100;
   const safetyFactor = availableCapacity / params.loadWeight;
-  const isValid = params.loadWeight <= safetyLimit;
+  const isValid = params.loadWeight <= availableCapacity;
 
   let message = '';
   if (!isValid) {
-    message = `⚠️ 정격하중 초과! 하중 ${params.loadWeight}톤 > 안전하중 ${safetyLimit.toFixed(1)}톤 (가용 ${availableCapacity.toFixed(1)}톤의 80%)`;
-  } else if (utilization > 70) {
-    message = `⚠️ 높은 가동률 (${utilization.toFixed(0)}%). 주의 필요.`;
+    message = `⚠️ 정격하중 초과! 하중 ${params.loadWeight}톤 > 가용 ${availableCapacity.toFixed(1)}톤`;
+  } else if (utilization > 85) {
+    message = `⚠️ 부하율 ${utilization.toFixed(0)}% > 최대 85% (경고)`;
+  } else if (utilization > 75) {
+    message = `⚠️ 부하율 ${utilization.toFixed(0)}% > 기준 75% (최대 85%)`;
   } else {
-    message = `✅ 안전 범위 내 (가동률 ${utilization.toFixed(0)}%, 안전율 ${safetyFactor.toFixed(2)})`;
+    message = `✅ 안전 범위 내 (부하율 ${utilization.toFixed(0)}%, 안전율 ${safetyFactor.toFixed(2)})`;
   }
 
   return { isValid, safetyFactor, utilization, requiredCapacity: params.loadWeight, availableCapacity, message };

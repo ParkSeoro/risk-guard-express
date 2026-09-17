@@ -92,7 +92,8 @@ export function needsConsent(
   roles: string[],
   opts?: { loginIntent?: "admin" | "worker" | null },
 ): boolean {
-  if (!profile) return true;
+  // Missing profile is "not loaded yet", not "unsigned". Callers must wait.
+  if (!profile) return false;
   if (profile.agreed_to_terms !== true) return true;
   if (profile.agreed_to_privacy !== true) return true;
   if (!profile.consent_agreed_at) return true;
@@ -153,7 +154,8 @@ export function postLoginPath(
   opts?: { rolesReady?: boolean; loginIntent?: "admin" | "worker" | null },
 ): string {
   const intent = opts?.loginIntent ?? readLoginIntent();
-  if (needsConsent(profile ?? null, roles, { loginIntent: intent })) return "/consent";
+  if (!profile) return "";
+  if (needsConsent(profile, roles, { loginIntent: intent })) return "/consent";
   return afterConsentHomePath(roles, profile ?? null, {
     rolesReady: opts?.rolesReady,
     loginIntent: intent,
@@ -223,11 +225,15 @@ function AccountBlockedScreen({
  * ⑤ shell mismatch → correct home; else children
  */
 export default function AuthGuard({ children, shell, allowAnonymous = false }: AuthGuardProps) {
-  const { user, session, isAuthLoading, roles, rolesReady, profile } = useAuth();
+  const { user, session, isAuthLoading, roles, rolesReady, profileReady, profile } = useAuth();
   const location = useLocation();
 
   // ① Global auth bootstrap
   if (isAuthLoading) return <LoadingSpinner />;
+  if (session && !profile && !profileReady) return <LoadingSpinner />;
+  if (session && !profile && profileReady && !isAuthSystemPath(location.pathname)) {
+    return <LoadingSpinner />;
+  }
 
   const status = (profile as { account_status?: string | null } | null)?.account_status;
   const path = location.pathname.replace(/\/+$/, "") || "/";
@@ -312,11 +318,11 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
 }
 
 export function RoleHomeRedirect() {
-  const { user, session, isAuthLoading, roles, rolesReady, profile } = useAuth();
+  const { user, session, isAuthLoading, roles, rolesReady, profileReady, profile } = useAuth();
   if (isAuthLoading) return <LoadingSpinner />;
   if (!session && !user) return <Navigate to="/login" replace />;
-  if (!rolesReady) return <LoadingSpinner />;
+  if (!rolesReady || !profileReady || !profile) return <LoadingSpinner />;
   const dest = postLoginPath(roles, profile, { rolesReady });
-  if (dest === "/" || dest === "") return <Navigate to="/login" replace />;
+  if (dest === "/" || dest === "") return <LoadingSpinner />;
   return <Navigate to={dest} replace />;
 }

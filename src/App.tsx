@@ -49,7 +49,7 @@ function PageFallback() {
 }
 
 function AuthRoute() {
-  const { user, isAuthLoading, roles, rolesReady, profile, signOut } = useAuth();
+  const { user, isAuthLoading, roles, rolesReady, profileReady, profile, signOut } = useAuth();
   const [params] = useSearchParams();
   if (isAuthLoading) {
     return (
@@ -59,7 +59,7 @@ function AuthRoute() {
     );
   }
   if (user) {
-    if (!rolesReady) {
+    if (!rolesReady || !profileReady || !profile) {
       return (
         <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
           세션 확인 중…
@@ -102,7 +102,14 @@ function AuthRoute() {
       }
       return <Navigate to={next} replace />;
     }
-    return <Navigate to={dest === "/" ? "/consent" : dest} replace />;
+    if (!dest || dest === "/") {
+      return (
+        <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+          세션 확인 중…
+        </div>
+      );
+    }
+    return <Navigate to={dest} replace />;
   }
   return <Auth />;
 }
@@ -186,7 +193,7 @@ function OfflineSyncMount() {
 }
 
 function RoleAwareRootRedirect() {
-  const { user, isAuthLoading, roles, rolesReady, profile } = useAuth();
+  const { user, isAuthLoading, roles, rolesReady, profileReady, profile } = useAuth();
   if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
@@ -195,7 +202,7 @@ function RoleAwareRootRedirect() {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (!rolesReady) {
+  if (!rolesReady || !profileReady || !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
@@ -203,8 +210,14 @@ function RoleAwareRootRedirect() {
     );
   }
   const dest = postLoginPath(roles, profile, { rolesReady });
-  // Never Navigate to "/" (would re-enter this redirect)
-  if (!dest || dest === "/") return <Navigate to="/consent" replace />;
+  // Never Navigate to "/" (would re-enter this redirect) or fake /consent
+  if (!dest || dest === "/") {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        세션 확인 중…
+      </div>
+    );
+  }
   return <Navigate to={dest} replace />;
 }
 

@@ -45,7 +45,7 @@ const ICONS: Record<ConsentDocId, typeof FileText> = {
 };
 
 export default function ConsentPage() {
-  const { user, session, isAuthLoading, roles, profile, applyProfilePatch, reloadAuthProfile } =
+  const { user, session, isAuthLoading, roles, profileReady, profile, applyProfilePatch, reloadAuthProfile } =
     useAuth();
   const navigate = useNavigate();
   const shell = resolvePostLoginShell(roles, {
@@ -59,8 +59,8 @@ export default function ConsentPage() {
   const [modal, setModal] = useState<ConsentDocId | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // ① Wait for global auth boot only
-  if (isAuthLoading) {
+  // ① Wait for global auth boot + profile row (null profile is not "unsigned")
+  if (isAuthLoading || (session && !profileReady) || (session && !profile)) {
     return (
       <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
         세션 확인 중…

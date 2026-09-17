@@ -13,6 +13,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 import * as jose from "https://esm.sh/jose@5.9.6";
+import {
+  DISPATCH_CONCURRENCY,
+  DISPATCH_MAX_IDS,
+  chunkArray,
+  uniqueNotificationIds,
+} from "./batch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -151,43 +157,15 @@ function dataPayload(
   };
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+type DispatchClient = ReturnType<typeof createClient>;
+type DispatchOneResult = {
+  skipped?: string;
+  web: { sent: number; failed: number };
+  native: { sent: number; failed: number };
+  native_mode: string;
+};
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-  const authHeader = req.headers.get("Authorization") || "";
-  const triggerSecretHeader = req.headers.get("X-Push-Trigger-Secret") || "";
-  const triggerSecret = Deno.env.get("PUSH_TRIGGER_SECRET") || "";
-  const bearerOk = authHeader.startsWith("Bearer ") && authHeader.slice(7) === serviceRoleKey;
-  const secretOk = !!triggerSecret && triggerSecretHeader === triggerSecret;
-  if (!bearerOk && !secretOk) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  let payload: any;
-  try {
-    payload = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "invalid_json" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const n: NotificationRow = payload?.record ?? payload;
-  if (!n?.user_id || !n?.title) {
-    return new Response(JSON.stringify({ error: "user_id, title required" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promise<DispatchOneResult> {
 
   try {
     const { data: allowed } = await supabase.rpc("should_push_notify", {
@@ -195,9 +173,12 @@ Deno.serve(async (req) => {
       _type: n.type || "general",
     });
     if (allowed === false) {
-      return new Response(JSON.stringify({ ok: true, skipped: "prefs" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return {
+        skipped: "prefs",
+        web: { sent: 0, failed: 0 },
+        native: { sent: 0, failed: 0 },
+        native_mode: "none",
+      };
     }
   } catch (_e) {
     // preference table missing shouldn't block delivery
@@ -423,7 +404,92 @@ Deno.serve(async (req) => {
     );
   }
 
-  return new Response(JSON.stringify({ ok: true, ...result }), {
+  return result;
+}
+
+function json(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  const authHeader = req.headers.get("Authorization") || "";
+  const triggerSecretHeader = req.headers.get("X-Push-Trigger-Secret") || "";
+  const triggerSecret = Deno.env.get("PUSH_TRIGGER_SECRET") || "";
+  const bearerOk = authHeader.startsWith("Bearer ") && authHeader.slice(7) === serviceRoleKey;
+  const secretOk = !!triggerSecret && triggerSecretHeader === triggerSecret;
+  if (!bearerOk && !secretOk) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  let payload: any;
+  try {
+    payload = await req.json();
+  } catch {
+    return json({ error: "invalid_json" }, 400);
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  let rows: NotificationRow[] = [];
+  const ids = uniqueNotificationIds(payload?.notification_ids).slice(0, DISPATCH_MAX_IDS);
+  if (ids.length > 0) {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select(
+        "id, user_id, title, body, message, link, type, related_id, related_type, project_id, severity",
+      )
+      .in("id", ids);
+    if (error) {
+      console.warn("[dispatch] batch fetch failed", error.message);
+      return json({ error: "fetch_failed" }, 500);
+    }
+    rows = ((data || []) as NotificationRow[]).filter((r) => r?.user_id && r?.title);
+  } else {
+    const n: NotificationRow = payload?.record ?? payload;
+    if (n?.user_id && n?.title) rows = [n];
+  }
+
+  if (rows.length === 0) {
+    return json({ error: "user_id, title required" }, 400);
+  }
+
+  const aggregated = {
+    web: { sent: 0, failed: 0 },
+    native: { sent: 0, failed: 0 },
+    native_mode: "none",
+    skipped: 0,
+  };
+  for (const batch of chunkArray(rows, DISPATCH_CONCURRENCY)) {
+    const parts = await Promise.all(batch.map((n) => dispatchOne(supabase, n)));
+    for (const part of parts) {
+      aggregated.web.sent += part.web.sent;
+      aggregated.web.failed += part.web.failed;
+      aggregated.native.sent += part.native.sent;
+      aggregated.native.failed += part.native.failed;
+      if (part.native_mode !== "none") aggregated.native_mode = part.native_mode;
+      if (part.skipped) aggregated.skipped += 1;
+    }
+  }
+
+  if (rows.length === 1 && aggregated.skipped === 1) {
+    return json({ ok: true, skipped: "prefs", ...aggregated });
+  }
+  if (rows.length === 1) {
+    return json({ ok: true, web: aggregated.web, native: aggregated.native, native_mode: aggregated.native_mode });
+  }
+  return json({
+    ok: true,
+    count: rows.length,
+    skipped: aggregated.skipped,
+    web: aggregated.web,
+    native: aggregated.native,
+    native_mode: aggregated.native_mode,
   });
 });

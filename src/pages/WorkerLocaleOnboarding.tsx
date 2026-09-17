@@ -24,12 +24,12 @@ const HINTS: Record<WorkerLocale, string> = {
 };
 
 export default function WorkerLocaleOnboarding() {
-  const { user, session, isAuthLoading, roles, profile, applyProfilePatch } = useAuth();
+  const { user, session, isAuthLoading, roles, profileReady, profile, applyProfilePatch } = useAuth();
   const { setLocale } = useWorkerLocale();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<WorkerLocale | null>(null);
 
-  if (isAuthLoading) {
+  if (isAuthLoading || (session && (!profileReady || !profile))) {
     return (
       <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
         …

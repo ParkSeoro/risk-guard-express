@@ -131,6 +131,17 @@ describe("현장 42t / 53.5t / 60° / 2인치 샤클", () => {
     expect(r.slingOk).toBe(true);
     expect(r.shackleOk).toBe(true);
     expect(r.overallOk).toBe(true);
+    expect(r.loadUtilizationPct).toBeCloseTo((42 / 53.5) * 100, 5);
+    expect(r.messages.some((m) => m.includes("부하율"))).toBe(true);
+  });
+
+  it("부하율 96%는 경고만 하고 상신 게이트(overallOk)는 통과한다", () => {
+    const r = calculateFullRigging(baseInput({ loadWeight: 48.96 }));
+    expect(r.loadUtilizationPct).toBeGreaterThan(85);
+    expect(r.loadUtilizationPct).toBeLessThan(100);
+    expect(r.equipmentOk).toBe(true);
+    expect(r.overallOk).toBe(true);
+    expect(r.messages.some((m) => m.includes("최대"))).toBe(true);
   });
 
   it("선회·경사·주행을 무조건 0.8³ 하면 법령과 어긋나 부적합이 된다", () => {

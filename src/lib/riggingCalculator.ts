@@ -12,6 +12,10 @@ import {
   getRoundSlingRatedLoadByColor,
   getShackleSafeLoadByInch,
 } from "@/lib/riggingHardwareCatalog";
+import {
+  RIGGING_UTIL_MAX_PCT,
+  RIGGING_UTIL_STANDARD_PCT,
+} from "@/lib/riggingLoadBand";
 
 export {
   ROUND_SLING_BY_COLOR,
@@ -380,6 +384,7 @@ export interface RiggingResult {
   equipmentWorkingLoad: number;
   equipmentOk: boolean;
   equipmentSafetyFactor: number;
+  loadUtilizationPct: number;
   windStop: boolean;
   slingAngleFactor: number;
   slingAngleWarn: boolean;
@@ -444,8 +449,15 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
   } else if (!equipmentOk) {
     messages.push(`⚠️ 장비 안전성 부적합: 적용 정격 ${equipmentWorkingLoad.toFixed(1)}t < 총중량 ${totalWeightMax.toFixed(1)}t (규칙 제146조)`);
   }
-  if (!wind.stopWork && equipmentSafetyFactor > 0 && equipmentSafetyFactor < 1.25) {
-    messages.push(`⚠️ 여유율 ${equipmentSafetyFactor.toFixed(2)} < 1.25 (권고, 법령 필수 아님)`);
+  const loadUtilizationPct = totalWeightMax > 0 && equipmentWorkingLoad > 0
+    ? (totalWeightMax / equipmentWorkingLoad) * 100
+    : 0;
+  if (!wind.stopWork && loadUtilizationPct > RIGGING_UTIL_STANDARD_PCT) {
+    messages.push(
+      loadUtilizationPct > RIGGING_UTIL_MAX_PCT
+        ? `⚠️ 부하율 ${loadUtilizationPct.toFixed(1)}% > 최대 ${RIGGING_UTIL_MAX_PCT}% (경고만, 상신 가능)`
+        : `⚠️ 부하율 ${loadUtilizationPct.toFixed(1)}% > 기준 ${RIGGING_UTIL_STANDARD_PCT}% (최대 ${RIGGING_UTIL_MAX_PCT}%)`,
+    );
   }
   if (slingAngleWarn) {
     messages.push(`⚠️ 인양각도(수평) ${horizontalDeg}° < 60° — 줄이 벌어져 장력이 커집니다. 60° 이상 권고`);
@@ -515,7 +527,7 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
 
   return {
     totalWeightMax, totalWeightMin, tensionPerLeg,
-    equipmentWorkingLoad, equipmentOk, equipmentSafetyFactor,
+    equipmentWorkingLoad, equipmentOk, equipmentSafetyFactor, loadUtilizationPct,
     windStop: wind.stopWork,
     slingAngleFactor,
     slingAngleWarn,

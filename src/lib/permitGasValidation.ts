@@ -6,6 +6,14 @@
 import type { PermitKindId } from '@/lib/permitKinds';
 import { normalizePermitKinds } from '@/lib/permitKinds';
 
+export const GAS_EXTRA_ROUNDS = [2, 3, 4] as const;
+export type GasExtraRound = (typeof GAS_EXTRA_ROUNDS)[number];
+
+export const GAS_RESULT_BASES = ['gas_o2', 'gas_co2', 'gas_h2s', 'gas_co', 'gas_hc'] as const;
+export type GasResultBase = (typeof GAS_RESULT_BASES)[number];
+
+export type GasExtraFieldKey = `${GasResultBase}_${GasExtraRound}`;
+
 export type GasFieldKey =
   | 'gas_o2'
   | 'gas_co2'
@@ -13,7 +21,32 @@ export type GasFieldKey =
   | 'gas_co'
   | 'gas_hc'
   | 'gas_time'
-  | 'gas_measurer';
+  | 'gas_measurer'
+  | GasExtraFieldKey;
+
+export function extraGasKey(base: GasResultBase, n: GasExtraRound): GasExtraFieldKey {
+  return `${base}_${n}`;
+}
+
+export const GAS_EXTRA_READING_KEYS: GasExtraFieldKey[] = GAS_EXTRA_ROUNDS.flatMap((n) =>
+  GAS_RESULT_BASES.map((base) => extraGasKey(base, n)),
+);
+
+const GAS_BASE_LABEL: Record<GasResultBase, string> = {
+  gas_o2: 'O₂ 농도',
+  gas_co2: 'CO₂ 농도',
+  gas_h2s: 'H₂S 농도',
+  gas_co: 'CO 농도',
+  gas_hc: 'H·C 농도',
+};
+
+const GAS_EXTRA_LABELS = Object.fromEntries(
+  GAS_EXTRA_READING_KEYS.map((k) => {
+    const n = k.slice(-1);
+    const base = k.slice(0, -2) as GasResultBase;
+    return [k, `${GAS_BASE_LABEL[base]} (${n}회)`];
+  }),
+) as Record<GasExtraFieldKey, string>;
 
 export const GAS_FIELD_LABEL: Record<GasFieldKey, string> = {
   gas_o2: 'O₂ 농도',
@@ -23,9 +56,10 @@ export const GAS_FIELD_LABEL: Record<GasFieldKey, string> = {
   gas_hc: 'H·C 농도',
   gas_time: '측정시간',
   gas_measurer: '측정자',
+  ...GAS_EXTRA_LABELS,
 };
 
-/** Only these keys may be written via save_permit_gas_readings. */
+/** Only these keys may be written via save_permit_gas_readings. Extra 2~4회 rows are optional. */
 export const GAS_READING_KEYS: GasFieldKey[] = [
   'gas_o2',
   'gas_co2',
@@ -34,6 +68,7 @@ export const GAS_READING_KEYS: GasFieldKey[] = [
   'gas_hc',
   'gas_time',
   'gas_measurer',
+  ...GAS_EXTRA_READING_KEYS,
 ];
 
 const GENERAL_REQUIRED: GasFieldKey[] = [

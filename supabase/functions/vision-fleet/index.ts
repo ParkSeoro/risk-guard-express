@@ -87,6 +87,38 @@ function bearer(req: Request): string | null {
   return m?.[1] || null;
 }
 
+function safePlaybackUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.username || parsed.password) return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureLteGateway(sb: SupabaseClient, projectId: string) {
+  const externalId = `lte-cloud:${projectId}`;
+  const existing = await sb.from("vision_gateways").select("*").eq("external_id", externalId).maybeSingle();
+  if (existing.data) return existing.data;
+  const inserted = await sb
+    .from("vision_gateways")
+    .insert({
+      project_id: projectId,
+      external_id: externalId,
+      device_name: "LTE 클라우드",
+      enroll_status: "enrolled",
+      connection_state: "cloud",
+    })
+    .select("*")
+    .single();
+  if (inserted.error || !inserted.data) throw new Error(inserted.error?.message || "lte gateway failed");
+  return inserted.data;
+}
+
 async function audit(
   sb: SupabaseClient,
   row: { project_id?: string | null; actor_id?: string | null; action: string; entity_type?: string; entity_id?: string; detail?: unknown },
@@ -612,17 +644,23 @@ Deno.serve(async (req) => {
       const projectId = cam.project_id;
       const member = await assertVisionOperator(sb, userData.user.id, projectId);
       if (!member) return json({ error: "forbidden" }, 403);
-      const expires = new Date(Date.now() + 5 * 60_000).toISOString();
+      const action =
+        body.action === "live_substream" || body.action === "playback" || body.action === "evidence.request"
+          ? body.action
+          : "live_mainstream";
+      const ttlMs = action === "live_mainstream" ? 30 * 60_000 : 5 * 60_000;
+      const bitrate = action === "live_substream" ? 700 : 4096;
+      const expires = new Date(Date.now() + ttlMs).toISOString();
       const { data: grant, error } = await sb
         .from("vision_stream_grants")
         .insert({
           project_id: projectId,
           gateway_id: cam.gateway_id,
           camera_id: cam.camera_id,
-          action: body.action || "live_substream",
+          action,
           subject_id: userData.user.id,
           expires_at: expires,
-          max_bitrate_kbps: 700,
+          max_bitrate_kbps: bitrate,
           watermark: `${userData.user.email || userData.user.id} · ${new Date().toISOString()}`,
           relay_url: `${fleetBase(req)}/v1/relay/sessions`,
         })
@@ -637,7 +675,51 @@ Deno.serve(async (req) => {
         entity_id: grant.id,
         detail: { camera_id: cam.camera_id, action: grant.action },
       });
-      return json({ data: grant });
+      return json({ data: { ...grant, playback_url: cam.playback_url || null } });
+    }
+
+    if (req.method === "POST" && path === "/v1/cloud-cameras") {
+      const jwt = bearer(req);
+      if (!jwt) return json({ error: "auth required" }, 401);
+      const userSb = userClient(jwt);
+      const { data: userData } = await userSb.auth.getUser(jwt);
+      if (!userData?.user) return json({ error: "invalid session" }, 401);
+      const body = await req.json();
+      const projectId = String(body.project_id || "");
+      if (!projectId) return json({ error: "project_id required" }, 400);
+      const member = await assertVisionOperator(sb, userData.user.id, projectId);
+      if (!member) return json({ error: "forbidden" }, 403);
+      const name = String(body.name || "").trim();
+      if (!name) return json({ error: "name required" }, 400);
+      const playbackUrl = body.playback_url ? safePlaybackUrl(body.playback_url) : null;
+      if (body.playback_url && !playbackUrl) return json({ error: "playback_url must be http(s)" }, 400);
+      const gw = await ensureLteGateway(sb, projectId);
+      const cameraId = String(body.camera_id || `lte-${crypto.randomUUID().slice(0, 8)}`);
+      const { data: cam, error } = await sb
+        .from("vision_cameras")
+        .upsert(
+          {
+            gateway_id: gw.id,
+            project_id: projectId,
+            camera_id: cameraId,
+            name,
+            health_state: playbackUrl ? "online" : "pending",
+            playback_url: playbackUrl,
+          },
+          { onConflict: "gateway_id,camera_id" },
+        )
+        .select("*")
+        .single();
+      if (error) return json({ error: error.message }, 400);
+      await audit(sb, {
+        project_id: projectId,
+        actor_id: userData.user.id,
+        action: "vision.cloud_camera.upsert",
+        entity_type: "camera",
+        entity_id: cam.id,
+        detail: { camera_id: cam.camera_id },
+      });
+      return json({ data: cam });
     }
 
     return json({ error: "not found", path }, 404);

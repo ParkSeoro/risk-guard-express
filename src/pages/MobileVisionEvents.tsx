@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
+import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
 import { visionCanOperate, visionRoleLabel } from "@/lib/visionFleetApi";
 
 type EventRow = {
@@ -29,21 +30,34 @@ export default function MobileVisionEvents() {
   const { projectId } = useMobileAccess();
   const canOperate = visionCanOperate(roles);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [cameras, setCameras] = useState<QuadCamera[]>([]);
+  const [page, setPage] = useState(0);
   const focus = params.get("event");
 
   const load = async () => {
     if (!projectId) {
       setEvents([]);
+      setCameras([]);
       return;
     }
-    const { data, error } = await supabase
-      .from("vision_safety_events" as any)
-      .select("id, event_id, camera_id, rule_outcome, severity, occurred_at, review_status")
-      .eq("project_id", projectId)
-      .order("occurred_at", { ascending: false })
-      .limit(40);
-    if (error) toast.error(error.message);
-    setEvents((data || []) as EventRow[]);
+    const [ev, cam] = await Promise.all([
+      supabase
+        .from("vision_safety_events" as any)
+        .select("id, event_id, camera_id, rule_outcome, severity, occurred_at, review_status")
+        .eq("project_id", projectId)
+        .order("occurred_at", { ascending: false })
+        .limit(40),
+      supabase
+        .from("vision_cameras" as any)
+        .select("id, camera_id, name, health_state, playback_url")
+        .eq("project_id", projectId)
+        .order("name"),
+    ]);
+    if (ev.error) toast.error(ev.error.message);
+    if (cam.error) toast.error(cam.error.message);
+    setEvents((ev.data || []) as EventRow[]);
+    setCameras((cam.data || []) as QuadCamera[]);
+    setPage(0);
   };
 
   useEffect(() => {
@@ -78,7 +92,7 @@ export default function MobileVisionEvents() {
       <MobilePageHeader title="비전 관제" onBack={() => navigate("/app/worker/today")} />
       <main className="px-4 pb-8 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">CCTV 미연결이어도 큐는 그대로 둡니다. 실시간 영상 없음.</p>
+          <p className="text-xs text-muted-foreground">고화질 4화면. 카메라는 4대씩 넘깁니다.</p>
           <Badge variant="secondary">{visionRoleLabel(roles)}</Badge>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -95,6 +109,7 @@ export default function MobileVisionEvents() {
             </CardContent>
           </Card>
         </div>
+        <VisionQuadGrid cameras={cameras} page={page} onPageChange={setPage} />
         {events.map((ev) => (
           <Card key={ev.id} className={focus === ev.event_id ? "border-amber-500" : ""}>
             <CardContent className="p-3 space-y-1 text-sm">

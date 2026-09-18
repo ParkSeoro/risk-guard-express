@@ -9,9 +9,19 @@ export function visionFleetFnPath(path: string): string {
 
 export type VisionGrantAction = "live_substream" | "live_mainstream" | "playback" | "evidence.request";
 
+/** Default live view: full quality, 4-pane wall. Substream stays available for metered sites. */
+export const VISION_LIVE_ACTION: VisionGrantAction = "live_mainstream";
+export const VISION_LIVE_BITRATE_KBPS = 4096;
+export const VISION_LIVE_TTL_MS = 30 * 60_000;
+
 export function visionGrantTtlMs(action: VisionGrantAction): number {
-  if (action === "live_mainstream") return 3 * 60_000;
+  if (action === "live_mainstream") return VISION_LIVE_TTL_MS;
   return 5 * 60_000;
+}
+
+export function visionGrantBitrateKbps(action: VisionGrantAction): number {
+  if (action === "live_substream") return 700;
+  return VISION_LIVE_BITRATE_KBPS;
 }
 
 export const VISION_VIEW_ROLES = [
@@ -55,10 +65,31 @@ export function visionRoleLabel(roles: readonly string[] | null | undefined): st
 
 export const VISION_CAMERA_SLOTS = 4;
 
-export function visionCameraSlots<T extends { id: string }>(cameras: T[]): Array<T | null> {
-  const slots: Array<T | null> = cameras.slice(0, VISION_CAMERA_SLOTS);
+export function visionQuadPageCount(cameraCount: number, pageSize = VISION_CAMERA_SLOTS): number {
+  if (cameraCount <= pageSize) return 1;
+  return Math.ceil(cameraCount / pageSize);
+}
+
+export function visionCameraSlots<T extends { id: string }>(cameras: T[], page = 0): Array<T | null> {
+  const start = Math.max(0, page) * VISION_CAMERA_SLOTS;
+  const slots: Array<T | null> = cameras.slice(start, start + VISION_CAMERA_SLOTS);
   while (slots.length < VISION_CAMERA_SLOTS) slots.push(null);
   return slots;
+}
+
+/** Browser playback only. RTSP/file URLs never go into <video>. */
+export function visionSafePlaybackUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  if (parsed.username || parsed.password) return null;
+  return trimmed;
 }
 
 export function visionEventSirenAllowed(opts: {

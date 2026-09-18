@@ -6,15 +6,20 @@ import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Video, Radio, CheckCircle2, Camera, WifiOff } from "lucide-react";
+import { Video, Radio, CheckCircle2, Camera } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { toast } from "sonner";
+import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
+import VisionRelaySetup from "@/components/vision/VisionRelaySetup";
 import {
-  visionCameraSlots,
+  VISION_LIVE_ACTION,
   visionCanOperate,
+  visionQuadPageCount,
   visionRoleLabel,
+  visionSafePlaybackUrl,
 } from "@/lib/visionFleetApi";
 
 type Gateway = {
@@ -35,7 +40,7 @@ type EventRow = {
   review_status: string;
   review_note: string | null;
 };
-type CameraRow = { id: string; camera_id: string; name: string; health_state: string | null; gateway_id: string };
+type CameraRow = QuadCamera & { gateway_id: string };
 
 export default function VisionFleet() {
   const access = useGlobalProjectAccess();
@@ -51,6 +56,9 @@ export default function VisionFleet() {
   const [loading, setLoading] = useState(true);
   const [kitBlob, setKitBlob] = useState<string | null>(null);
   const [selectedGw, setSelectedGw] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [newCamName, setNewCamName] = useState("");
+  const [newCamUrl, setNewCamUrl] = useState("");
 
   const load = async () => {
     if (!projectId) {
@@ -64,7 +72,7 @@ export default function VisionFleet() {
     const [g, e, c] = await Promise.all([
       supabase.from("vision_gateways" as any).select("id, external_id, device_name, enroll_status, last_seen_at, connection_state").eq("project_id", projectId).order("last_seen_at", { ascending: false }),
       supabase.from("vision_safety_events" as any).select("id, event_id, camera_id, rule_outcome, severity, occurred_at, review_status, review_note").eq("project_id", projectId).order("occurred_at", { ascending: false }).limit(50),
-      supabase.from("vision_cameras" as any).select("id, camera_id, name, health_state, gateway_id").eq("project_id", projectId),
+      supabase.from("vision_cameras" as any).select("id, camera_id, name, health_state, gateway_id, playback_url").eq("project_id", projectId).order("name"),
     ]);
     if (g.error || e.error || c.error) {
       toast.error(g.error?.message || e.error?.message || c.error?.message || "관제 데이터를 불러오지 못했습니다");
@@ -72,6 +80,7 @@ export default function VisionFleet() {
     setGateways((g.data || []) as Gateway[]);
     setEvents((e.data || []) as EventRow[]);
     setCameras((c.data || []) as CameraRow[]);
+    setPage(0);
     setLoading(false);
   };
 
@@ -123,11 +132,51 @@ export default function VisionFleet() {
       return;
     }
     try {
-      await fleetPost("/v1/stream-grants", { camera_row_id: cam.id, action: "live_substream" });
-      toast.success("5분 보기 권한이 발급되었습니다. 중계는 Gateway가 outbound로만 연결합니다.");
+      await fleetPost("/v1/stream-grants", { camera_row_id: cam.id, action: VISION_LIVE_ACTION });
+      toast.success("고화질 보기 권한이 발급되었습니다. 4화면에 재생 주소가 있으면 바로 나옵니다.");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "grant 실패");
     }
+  };
+
+  const addCloudCamera = async (opts?: { camera_id?: string; name?: string; playback_url?: string | null }) => {
+    if (!projectId || !canOperate) return;
+    const name = (opts?.name ?? newCamName).trim();
+    if (!name) {
+      toast.error("카메라 이름을 입력하세요");
+      return;
+    }
+    const rawUrl = opts?.playback_url !== undefined ? opts.playback_url : newCamUrl.trim();
+    const playback_url = rawUrl ? visionSafePlaybackUrl(rawUrl) : null;
+    if (rawUrl && !playback_url) {
+      toast.error("중계주소가 올바르지 않습니다. 시작.bat이 알려준 값을 그대로 쓰세요.");
+      return;
+    }
+    try {
+      await fleetPost("/v1/cloud-cameras", {
+        project_id: projectId,
+        name,
+        playback_url,
+        camera_id: opts?.camera_id,
+      });
+      if (!opts?.camera_id) {
+        toast.success("4화면에 카메라를 넣었습니다");
+        setNewCamName("");
+        setNewCamUrl("");
+        void load();
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "카메라 추가 실패");
+      throw e;
+    }
+  };
+
+  const fillRelaySlots = async (slots: Array<{ camera_id: string; name: string; playback_url: string }>) => {
+    for (const slot of slots) {
+      await addCloudCamera(slot);
+    }
+    toast.success("4칸을 만들었습니다. 아래 RTMP를 카메라에 붙여넣으면 영상이 나옵니다.");
+    void load();
   };
 
   const issueKit = async () => {
@@ -144,21 +193,21 @@ export default function VisionFleet() {
   const fleetUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-fleet`;
   const focusEvent = params.get("event");
   const visibleCams = cameras.filter((c) => !selectedGw || c.gateway_id === selectedGw);
-  const extraCams = visibleCams.slice(4);
-  const slots = visionCameraSlots(visibleCams);
+  const pageCount = visionQuadPageCount(visibleCams.length);
+  const safePage = Math.min(page, pageCount - 1);
   const onlineCams = cameras.filter((c) => c.health_state === "online").length;
   const openEvents = events.filter((ev) => ev.review_status === "open").length;
-  const onlineGw = gateways.filter((g) => g.connection_state === "online").length;
+  const onlineGw = gateways.filter((g) => g.connection_state === "online" || g.connection_state === "cloud").length;
 
   return (
-    <div className="p-6 space-y-4 max-w-5xl mx-auto" data-testid="vision-fleet">
+    <div className="p-6 space-y-4 max-w-6xl mx-auto" data-testid="vision-fleet">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Video className="h-5 w-5" /> 비전 관제
           </h1>
           <p className="text-xs text-muted-foreground">
-            파일럿 · NVR 원본은 현장에 남습니다. CCTV가 없어도 상태·슬롯·이벤트 큐는 항상 표시됩니다.
+            기본은 고화질 4화면입니다. 카메라는 수십 대여도 4대씩 넘깁니다.
           </p>
         </div>
         <Badge variant="secondary">{roleLabel}{canOperate ? " · 운영" : " · 조회"}</Badge>
@@ -171,10 +220,10 @@ export default function VisionFleet() {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Gateway" value={loading ? "…" : String(gateways.length)} hint={onlineGw ? `${onlineGw}대 온라인` : "미연결"} />
+        <Stat label="Gateway" value={loading ? "…" : String(gateways.length)} hint={onlineGw ? `${onlineGw}대 연결` : "미연결"} />
         <Stat label="카메라" value={loading ? "…" : String(cameras.length)} hint={cameras.length ? `${onlineCams}대 온라인` : "슬롯 대기"} />
         <Stat label="열린 이벤트" value={loading ? "…" : String(openEvents)} hint="사이렌 없음" />
-        <Stat label="연결 상태" value={gateways.length === 0 ? "대기" : onlineGw > 0 ? "수신" : "오프라인"} hint="현장 Gateway 기준" />
+        <Stat label="연결 상태" value={visibleCams.some((c) => c.playback_url) || onlineGw > 0 ? "수신" : "대기"} hint="4화면 송출 기준" />
       </div>
 
       <Card>
@@ -185,53 +234,40 @@ export default function VisionFleet() {
         </CardHeader>
         <CardContent>
           <p className="text-[11px] text-muted-foreground mb-3">
-            웹에는 실시간 모자이크가 없습니다. 연결 전에도 4슬롯을 보여 주고, 연결된 카메라만 health를 채웁니다.
+            아래 세 단계만 하면 4칸에 영상이 붙습니다. 주소는 직접 외울 필요 없습니다.
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {slots.map((cam, idx) => (
-              <div
-                key={cam?.id || `slot-${idx}`}
-                className="rounded-md border bg-muted/30 min-h-[112px] p-3 flex flex-col justify-between"
-              >
-                {cam ? (
-                  <>
-                    <div>
-                      <p className="text-sm font-medium">{cam.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{cam.camera_id}</p>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge variant={cam.health_state === "online" ? "default" : "secondary"}>
-                        {cam.health_state || "unknown"}
-                      </Badge>
-                      {canOperate && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void requestGrant(cam)}>
-                          보기 권한
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <p className="text-sm font-medium">카메라 {idx + 1}</p>
-                      <p className="text-[11px] text-muted-foreground">미연결 · 현장 Gateway 대기</p>
-                    </div>
-                    <WifiOff className="h-4 w-4 text-muted-foreground" />
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          {extraCams.length > 0 && (
+          <VisionQuadGrid cameras={visibleCams} page={safePage} onPageChange={setPage} />
+          {canOperate && <VisionRelaySetup onCreateSlots={fillRelaySlots} />}
+          {canOperate && (
+            <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
+              <Input
+                value={newCamName}
+                onChange={(e) => setNewCamName(e.target.value)}
+                placeholder="카메라 이름"
+                className="h-8 text-sm"
+              />
+              <Input
+                value={newCamUrl}
+                onChange={(e) => setNewCamUrl(e.target.value)}
+                placeholder="https 재생 주소 (HLS/MP4, 선택)"
+                className="h-8 text-sm"
+              />
+              <Button size="sm" className="h-8" onClick={() => void addCloudCamera()}>
+                4화면에 추가
+              </Button>
+            </div>
+          )}
+          {visibleCams.length > 0 && canOperate && (
             <ul className="mt-3 space-y-1 text-sm">
-              {extraCams.map((c) => (
+              {visibleCams.map((c) => (
                 <li key={c.id} className="flex items-center justify-between border-t pt-1.5">
-                  <span>{c.name} <span className="text-xs text-muted-foreground">{c.health_state || "unknown"}</span></span>
-                  {canOperate && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void requestGrant(c)}>
-                      보기 권한
-                    </Button>
-                  )}
+                  <span>
+                    {c.name}{" "}
+                    <span className="text-xs text-muted-foreground">{c.playback_url ? "재생중" : c.health_state || "대기"}</span>
+                  </span>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void requestGrant(c)}>
+                    고화질 보기
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -248,8 +284,7 @@ export default function VisionFleet() {
         <CardContent className="space-y-2">
           {gateways.length === 0 && (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              등록된 Gateway가 없습니다. 현장 PC에 Vision Edge를 설치한 뒤 QR 또는 설치 키트로 이 프로젝트에 연결하세요.
-              연결 전에도 위 카메라 슬롯과 아래 이벤트 큐는 그대로 둡니다.
+              등록된 Gateway가 없습니다. LTE 카메라는 위 4화면에 바로 넣을 수 있습니다. 현장 PC Vision Edge는 QR 또는 설치 키트로 연결합니다.
             </div>
           )}
           <div className="grid md:grid-cols-2 gap-3">

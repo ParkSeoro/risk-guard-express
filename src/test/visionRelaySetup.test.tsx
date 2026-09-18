@@ -24,7 +24,7 @@ describe("VisionRelaySetup", () => {
       root!.render(<VisionRelaySetup onCreateSlots={async () => undefined} />);
     });
     expect(el.textContent).toContain("세 번만 하면 됩니다");
-    expect(el.textContent).toContain("시작.bat");
+    expect(el.textContent).toContain("start.cmd");
     expect(el.textContent).toContain("4칸 만들기");
   });
 });

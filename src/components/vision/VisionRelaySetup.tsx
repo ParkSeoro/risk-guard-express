@@ -26,7 +26,7 @@ export default function VisionRelaySetup({ onCreateSlots }: Props) {
 
   const fill = async () => {
     if (!base) {
-      toast.error("시작.bat 창에 나온 중계주소를 그대로 붙여넣으세요");
+      toast.error("메모장의 SafeNex URL을 그대로 붙여넣으세요");
       return;
     }
     const slots = VISION_RELAY_SLOTS.map((camera_id, i) => {
@@ -55,9 +55,12 @@ export default function VisionRelaySetup({ onCreateSlots }: Props) {
       <ol className="list-decimal pl-5 text-xs text-muted-foreground space-y-1">
         <li>
           컴퓨터에 Docker Desktop을 켠 뒤, 폴더 <span className="font-mono">vision-relay</span> 안의{" "}
-          <span className="font-medium text-foreground">시작.bat</span> 을 더블클릭합니다.
+          <span className="font-medium text-foreground">start.cmd</span> 를 더블클릭합니다. 메모장이 열리면 성공입니다.
         </li>
-        <li>검은 창에 나온 <span className="font-medium text-foreground">중계주소</span>를 아래에 붙여넣습니다.</li>
+        <li>
+          메모장 <span className="font-mono">relay-urls.txt</span> 의{" "}
+          <span className="font-medium text-foreground">SafeNex URL</span> 한 줄을 아래에 붙여넣습니다.
+        </li>
         <li>
           <span className="font-medium text-foreground">4칸 만들기</span>를 누른 다음, 아래 RTMP 주소를 카메라 RTMP란에
           한 대씩 붙여넣고 영상 코덱은 H.264로 둡니다.

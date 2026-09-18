@@ -13,6 +13,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { toast } from "sonner";
 import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
+import VisionRelaySetup from "@/components/vision/VisionRelaySetup";
 import {
   VISION_LIVE_ACTION,
   visionCanOperate,
@@ -138,27 +139,44 @@ export default function VisionFleet() {
     }
   };
 
-  const addCloudCamera = async () => {
+  const addCloudCamera = async (opts?: { camera_id?: string; name?: string; playback_url?: string | null }) => {
     if (!projectId || !canOperate) return;
-    const name = newCamName.trim();
+    const name = (opts?.name ?? newCamName).trim();
     if (!name) {
       toast.error("카메라 이름을 입력하세요");
       return;
     }
-    const playback_url = newCamUrl.trim() ? visionSafePlaybackUrl(newCamUrl) : null;
-    if (newCamUrl.trim() && !playback_url) {
-      toast.error("브라우저에서 재생하려면 https HLS/MP4 주소만 넣으세요. RTSP는 웹에서 재생되지 않습니다.");
+    const rawUrl = opts?.playback_url !== undefined ? opts.playback_url : newCamUrl.trim();
+    const playback_url = rawUrl ? visionSafePlaybackUrl(rawUrl) : null;
+    if (rawUrl && !playback_url) {
+      toast.error("중계주소가 올바르지 않습니다. 시작.bat이 알려준 값을 그대로 쓰세요.");
       return;
     }
     try {
-      await fleetPost("/v1/cloud-cameras", { project_id: projectId, name, playback_url });
-      toast.success("4화면에 카메라를 넣었습니다");
-      setNewCamName("");
-      setNewCamUrl("");
-      void load();
+      await fleetPost("/v1/cloud-cameras", {
+        project_id: projectId,
+        name,
+        playback_url,
+        camera_id: opts?.camera_id,
+      });
+      if (!opts?.camera_id) {
+        toast.success("4화면에 카메라를 넣었습니다");
+        setNewCamName("");
+        setNewCamUrl("");
+        void load();
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "카메라 추가 실패");
+      throw e;
     }
+  };
+
+  const fillRelaySlots = async (slots: Array<{ camera_id: string; name: string; playback_url: string }>) => {
+    for (const slot of slots) {
+      await addCloudCamera(slot);
+    }
+    toast.success("4칸을 만들었습니다. 아래 RTMP를 카메라에 붙여넣으면 영상이 나옵니다.");
+    void load();
   };
 
   const issueKit = async () => {
@@ -216,9 +234,10 @@ export default function VisionFleet() {
         </CardHeader>
         <CardContent>
           <p className="text-[11px] text-muted-foreground mb-3">
-            저화질 서브스트림을 쓰지 않습니다. HLS/MP4 주소가 있는 칸은 바로 재생합니다.
+            아래 세 단계만 하면 4칸에 영상이 붙습니다. 주소는 직접 외울 필요 없습니다.
           </p>
           <VisionQuadGrid cameras={visibleCams} page={safePage} onPageChange={setPage} />
+          {canOperate && <VisionRelaySetup onCreateSlots={fillRelaySlots} />}
           {canOperate && (
             <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
               <Input

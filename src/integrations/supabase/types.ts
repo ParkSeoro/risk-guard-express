@@ -10466,6 +10466,7 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      count_my_pending_entity_approvals: { Args: never; Returns: number }
       commit_safety_cost_legacy_import: {
         Args: { _batch_id: string }
         Returns: Json

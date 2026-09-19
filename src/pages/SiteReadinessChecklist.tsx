@@ -22,10 +22,11 @@ export default function SiteReadinessChecklist() {
     if (!projectId) return;
     setLoading(true);
     try {
-    const [{ data: runs }, { data: tbms }, { data: parts }, { data: permits }, { data: costs }, { data: insp }, { data: accidents }] = await Promise.all([
+    const [{ data: runs }, { data: tbms }, { data: parts }, { data: signedRows }, { data: permits }, { data: costs }, { data: insp }, { data: accidents }] = await Promise.all([
       supabase.from('assessment_runs').select('id, status, start_date, end_date').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId),
-      supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed, signature_data').limit(1000),
+      supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed').limit(1000),
+      supabase.from('tbm_participations' as any).select('id').not('signature_data', 'is', null).limit(1000),
       supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
       (supabase.from('safety_costs' as any).select('id').eq('project_id', projectId).limit(1) as any).then((r: any) => r, () => ({ data: [] })),
       supabase.from('inspection_responses' as any).select('id').eq('project_id', projectId),
@@ -50,7 +51,8 @@ export default function SiteReadinessChecklist() {
       { key: 'a5', label: '산업안전보건관리비 입력', ok: ((costs as any)?.data?.length || 0) > 0 || ((costs as any)?.length || 0) > 0, detail: '내역 등록 확인' },
     ];
 
-    const signed = myParts.filter((p: any) => p.signature_data && p.briefing_confirmed).length;
+    const signedIds = new Set((signedRows || []).map((r: any) => r.id));
+    const signed = myParts.filter((p: any) => signedIds.has(p.id) && p.briefing_confirmed).length;
     const worker: Item[] = [
       { key: 'w1', label: 'QR 참여자 1명 이상', ok: myParts.length > 0, detail: `${myParts.length}명` },
       { key: 'w2', label: '위험성평가 브리핑 확인 완료', ok: myParts.every((p: any) => p.briefing_confirmed) && myParts.length > 0, detail: `${myParts.filter((p: any) => p.briefing_confirmed).length}/${myParts.length}` },

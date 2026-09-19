@@ -20,7 +20,7 @@ describe("count_my_pending_entity_approvals", () => {
     expect(countSrc).toContain("idx_approvals_status_approver");
     expect(countSrc).toContain("idx_approvals_project_created");
 
-    expect(inboxSrc).toContain("CREATE OR REPLACE FUNCTION public.get_my_pending_entity_approvals()");
+    expect(inboxSrc).toContain("CREATE FUNCTION public.get_my_pending_entity_approvals()");
     expect(inboxSrc).toContain("a.status='진행중' AND a.entity_type IS NOT NULL");
     expect(inboxSrc).toContain("approval_entity_is_voided");
   });

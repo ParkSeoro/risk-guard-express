@@ -238,6 +238,87 @@ async function muxDeleteLiveStream(creds: { token: string; secret: string }, liv
   }).catch(() => undefined);
 }
 
+function vpsIsIpv4(host: string): boolean {
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
+}
+
+function vpsNormalizeHost(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const parsed = new URL(withScheme);
+    if (parsed.username || parsed.password) return null;
+    const host = parsed.hostname.trim().toLowerCase();
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
+function vpsRelayFromHost(host: string): { host: string; rtmp_url: string; hls_base: string } {
+  const hlsHost = vpsIsIpv4(host) ? `${host.replace(/\./g, "-")}.sslip.io` : host;
+  return { host, rtmp_url: `rtmp://${host}:1935/live`, hls_base: `https://${hlsHost}` };
+}
+
+function vpsCameraId(streamKey: string): string {
+  return `vps_${streamKey}`;
+}
+
+function vpsStreamKey(cameraId: string | null | undefined): string | null {
+  if (!cameraId || !cameraId.startsWith("vps_")) return null;
+  const key = cameraId.slice(4).trim();
+  return key || null;
+}
+
+function vpsPlaybackUrl(hlsBase: string, streamKey: string): string {
+  return `${hlsBase.replace(/\/+$/, "")}/live/${streamKey}/index.m3u8`;
+}
+
+function vpsStreamKeyNew(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function upsertSecret(sb: SupabaseClient, key: string, value: string, actorId: string | null) {
+  await sb.from("integration_secrets").upsert({
+    key,
+    value,
+    hint: value.length > 12 ? `${value.slice(0, 6)}…` : value,
+    updated_by: actorId,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function vpsRelay(sb: SupabaseClient): Promise<{ host: string; rtmp_url: string; hls_base: string } | null> {
+  const envHost = vpsNormalizeHost(Deno.env.get("VISION_VPS_HOST") || "");
+  if (envHost) return vpsRelayFromHost(envHost);
+  const { data, error } = await sb
+    .from("integration_secrets")
+    .select("key, value")
+    .in("key", ["VISION_VPS_HOST", "VISION_RTMP_SERVER", "VISION_HLS_BASE"]);
+  if (error) return null;
+  const map: Record<string, string> = {};
+  for (const row of data || []) {
+    if (row?.key && typeof row.value === "string" && row.value.trim()) map[row.key] = row.value.trim();
+  }
+  const host = vpsNormalizeHost(map.VISION_VPS_HOST || "");
+  if (host) {
+    const built = vpsRelayFromHost(host);
+    return {
+      host,
+      rtmp_url: map.VISION_RTMP_SERVER || built.rtmp_url,
+      hls_base: map.VISION_HLS_BASE || built.hls_base,
+    };
+  }
+  if (map.VISION_RTMP_SERVER && map.VISION_HLS_BASE) {
+    const fromRtmp = vpsNormalizeHost(map.VISION_RTMP_SERVER);
+    return { host: fromRtmp || "", rtmp_url: map.VISION_RTMP_SERVER, hls_base: map.VISION_HLS_BASE };
+  }
+  return null;
+}
+
 function enrollmentBundle(opts: {
   gatewayId: string;
   projectId: string;
@@ -775,6 +856,43 @@ Deno.serve(async (req) => {
       return json({ data: { ...grant, playback_url: cam.playback_url || null } });
     }
 
+    if (req.method === "GET" && path === "/v1/cloud-relay") {
+      const jwt = bearer(req);
+      if (!jwt) return json({ error: "auth required" }, 401);
+      const userSb = userClient(jwt);
+      const { data: userData } = await userSb.auth.getUser(jwt);
+      if (!userData?.user) return json({ error: "invalid session" }, 401);
+      const master = await assertVisionMaster(sb, userData.user.id);
+      if (!master) return json({ error: "forbidden" }, 403);
+      const relay = await vpsRelay(sb);
+      if (!relay) return json({ data: null });
+      return json({ data: relay });
+    }
+
+    if ((req.method === "PUT" || req.method === "POST") && path === "/v1/cloud-relay") {
+      const jwt = bearer(req);
+      if (!jwt) return json({ error: "auth required" }, 401);
+      const userSb = userClient(jwt);
+      const { data: userData } = await userSb.auth.getUser(jwt);
+      if (!userData?.user) return json({ error: "invalid session" }, 401);
+      const master = await assertVisionMaster(sb, userData.user.id);
+      if (!master) return json({ error: "forbidden" }, 403);
+      const body = await req.json().catch(() => ({}));
+      const host = vpsNormalizeHost(String((body as { host?: string }).host || ""));
+      if (!host) return json({ error: "host required" }, 400);
+      const relay = vpsRelayFromHost(host);
+      await upsertSecret(sb, "VISION_VPS_HOST", relay.host, userData.user.id);
+      await upsertSecret(sb, "VISION_RTMP_SERVER", relay.rtmp_url, userData.user.id);
+      await upsertSecret(sb, "VISION_HLS_BASE", relay.hls_base, userData.user.id);
+      await audit(sb, {
+        actor_id: userData.user.id,
+        action: "vision.cloud_relay.upsert",
+        entity_type: "relay",
+        detail: { host: relay.host },
+      });
+      return json({ data: relay });
+    }
+
     if (req.method === "POST" && path === "/v1/cloud-cameras") {
       const jwt = bearer(req);
       if (!jwt) return json({ error: "auth required" }, 401);
@@ -788,12 +906,21 @@ Deno.serve(async (req) => {
       if (!master) return json({ error: "forbidden" }, 403);
       const name = String(body.name || "").trim();
       if (!name) return json({ error: "name required" }, 400);
-      const wantMux = body.provision === "mux" || (!body.playback_url && !body.camera_id);
+      const wantMux = body.provision === "mux";
+      const wantVps = body.provision === "vps" || (!wantMux && !body.playback_url && !body.camera_id);
       let playbackUrl = body.playback_url ? safePlaybackUrl(body.playback_url) : null;
       if (body.playback_url && !playbackUrl) return json({ error: "playback_url must be http(s)" }, 400);
-      let ingest: { rtmp_url: string; stream_key: string; playback_url: string; live_stream_id: string } | null = null;
+      let ingest: { rtmp_url: string; stream_key: string; playback_url: string; live_stream_id?: string } | null = null;
       let cameraId = String(body.camera_id || "");
-      if (wantMux) {
+      if (wantVps) {
+        const relay = await vpsRelay(sb);
+        if (!relay) return json({ error: "VPS 중계 주소를 먼저 저장하세요" }, 400);
+        const streamKey = vpsStreamKeyNew();
+        cameraId = vpsCameraId(streamKey);
+        const playback = vpsPlaybackUrl(relay.hls_base, streamKey);
+        playbackUrl = safePlaybackUrl(playback);
+        ingest = { rtmp_url: relay.rtmp_url, stream_key: streamKey, playback_url: playback };
+      } else if (wantMux) {
         const creds = await muxCredentials(sb);
         if (!creds) return json({ error: "Mux 키가 없습니다" }, 400);
         try {
@@ -801,7 +928,7 @@ Deno.serve(async (req) => {
         } catch (e) {
           return json({ error: String((e as Error).message || e) }, 400);
         }
-        cameraId = muxCameraId(ingest.live_stream_id);
+        cameraId = muxCameraId(ingest.live_stream_id || "");
         playbackUrl = safePlaybackUrl(ingest.playback_url);
       }
       if (!cameraId) cameraId = `lte-${crypto.randomUUID().slice(0, 8)}`;
@@ -828,7 +955,7 @@ Deno.serve(async (req) => {
         action: "vision.cloud_camera.upsert",
         entity_type: "camera",
         entity_id: cam.id,
-        detail: { camera_id: cam.camera_id, mux: Boolean(ingest) },
+        detail: { camera_id: cam.camera_id, vps: Boolean(ingest && !ingest.live_stream_id), mux: Boolean(ingest?.live_stream_id) },
       });
       return json({ data: cam, ingest });
     }
@@ -852,6 +979,18 @@ Deno.serve(async (req) => {
         .eq("project_id", projectId)
         .maybeSingle();
       if (!existing) return json({ error: "camera not found" }, 404);
+      const vpsKey = vpsStreamKey(existing.camera_id);
+      if (vpsKey) {
+        const relay = await vpsRelay(sb);
+        if (!relay) return json({ error: "VPS 중계 주소가 없습니다" }, 400);
+        return json({
+          ingest: {
+            rtmp_url: relay.rtmp_url,
+            stream_key: vpsKey,
+            playback_url: vpsPlaybackUrl(relay.hls_base, vpsKey),
+          },
+        });
+      }
       const liveId = muxLiveStreamId(existing.camera_id);
       if (!liveId) return json({ error: "이 카메라는 클라우드 송출이 아닙니다" }, 400);
       const creds = await muxCredentials(sb);

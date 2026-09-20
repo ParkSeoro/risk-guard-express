@@ -7,3 +7,21 @@ services:
       - "8888:8888"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HLS_HOST: ${HLS_HOST:?set HLS_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

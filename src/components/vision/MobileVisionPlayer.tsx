@@ -53,6 +53,7 @@ export default function MobileVisionPlayer({ cameras }: Props) {
           cameraId={selected.camera_id}
           healthState={selected.health_state}
           playbackUrl={selected.playback_url}
+          waitingHint="송출 대기"
         />
       ) : (
         <div

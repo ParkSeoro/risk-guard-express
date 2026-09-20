@@ -8,6 +8,7 @@ type Props = {
   cameraId?: string;
   healthState?: string | null;
   playbackUrl?: string | null;
+  waitingHint?: string;
 };
 
 export default function VisionLivePane({
@@ -16,6 +17,7 @@ export default function VisionLivePane({
   cameraId,
   healthState,
   playbackUrl,
+  waitingHint = "송출 대기 · 고화질 4화면",
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const safeUrl = visionSafePlaybackUrl(playbackUrl);
@@ -99,7 +101,7 @@ export default function VisionLivePane({
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80">
           <WifiOff className="h-5 w-5" />
           <p className="text-sm font-medium">{label}</p>
-          <p className="text-[11px] text-white/60">송출 대기 · 고화질 4화면</p>
+          <p className="text-[11px] text-white/60">{waitingHint}</p>
         </div>
       )}
       {!waiting && (

@@ -3,26 +3,32 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker가 없습니다. Docker Desktop 또는 docker.io를 설치하세요."
+  echo "Docker가 없습니다. Ubuntu면: sudo apt-get install -y docker.io docker-compose-v2"
   exit 1
 fi
 
-docker compose up -d
 PUB="$(curl -fsS https://api.ipify.org || true)"
 PUB="${PUB:-여기.공인.IP}"
+HLS_HOST="${HLS_HOST:-${PUB//./-}.sslip.io}"
+export HLS_HOST
+
+docker compose up -d
 
 cat <<EOF
 
 ===============================
- 1) SafeNex 비전 관제에 붙여넣을 중계주소
-    http://${PUB}:8888
+ SafeNex 비전 관제 → 중계 저장에 넣을 값
+    ${PUB}
 
- 2) 카메라 RTMP 서버 주소 (H.264, 한 대씩)
-    rtmp://${PUB}:1935/cam1
-    rtmp://${PUB}:1935/cam2
-    rtmp://${PUB}:1935/cam3
-    rtmp://${PUB}:1935/cam4
+ VIGI RTMP 서버 주소 (H.264, RTMP)
+    rtmp://${PUB}:1935/live
+
+ 브라우저 HLS (자동 HTTPS)
+    https://${HLS_HOST}
+
+ 이 서버에서 열 포트
+    1935 (RTMP), 80, 443 (HLS 인증서)
 ===============================
 
-공인 IP가 틀리면 공유기에서 1935, 8888 포트포워드를 이 컴퓨터로 열어 주세요.
+사무실 PC/공유기 NAT는 쓰지 마세요. VPS 방화벽에서 위 포트만 열면 됩니다.
 EOF

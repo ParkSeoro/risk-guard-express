@@ -5,3 +5,5 @@ hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
 rtmpAddress: :1935
+pathDefaults:
+  source: publisher

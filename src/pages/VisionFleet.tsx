@@ -7,10 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Camera, Video } from "lucide-react";
 import { toast } from "sonner";
 import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
-import VisionMuxSetup from "@/components/vision/VisionMuxSetup";
+import VisionVpsSetup from "@/components/vision/VisionVpsSetup";
 import VisionCameraManageList, { type ManageCamera } from "@/components/vision/VisionCameraManageList";
 import { visionCanManage, visionQuadPageCount, visionRoleLabel, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
-import { type VisionMuxIngest } from "@/lib/visionMux";
+import { visionVpsFromHost, type VisionVpsIngest, type VisionVpsRelay } from "@/lib/visionVps";
 
 type CameraRow = QuadCamera & { gateway_id: string };
 
@@ -24,8 +24,10 @@ export default function VisionFleet() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [newCamName, setNewCamName] = useState("");
+  const [host, setHost] = useState("");
+  const [relay, setRelay] = useState<VisionVpsRelay | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ingest, setIngest] = useState<VisionMuxIngest | null>(null);
+  const [ingest, setIngest] = useState<VisionVpsIngest | null>(null);
 
   const load = async () => {
     if (!projectId) {
@@ -45,11 +47,7 @@ export default function VisionFleet() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    void load();
-  }, [projectId]);
-
-  const fleetPost = async (method: string, path: string, body: unknown) => {
+  const fleetCall = async (method: string, path: string, body?: unknown) => {
     const session = await supabase.auth.getSession();
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-fleet${path}`;
     const res = await fetch(url, {
@@ -59,11 +57,54 @@ export default function VisionFleet() {
         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((j as { error?: string }).error || res.statusText);
     return j;
+  };
+
+  const loadRelay = async () => {
+    if (!canManage) return;
+    try {
+      const j = await fleetCall("GET", "/v1/cloud-relay");
+      const next = (j as { data?: VisionVpsRelay }).data;
+      if (next?.host) {
+        setRelay(next);
+        setHost(next.host);
+      }
+    } catch {
+      /* not configured yet */
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadRelay();
+  }, [canManage]);
+
+  const saveRelay = async () => {
+    const parsed = visionVpsFromHost(host);
+    if (!parsed) {
+      toast.error("VPS 공인 IP 또는 도메인을 입력하세요");
+      return;
+    }
+    setBusy(true);
+    try {
+      const j = await fleetCall("PUT", "/v1/cloud-relay", { host: parsed.host });
+      const next = (j as { data?: VisionVpsRelay }).data;
+      if (!next?.host) throw new Error("중계 주소를 저장하지 못했습니다");
+      setRelay(next);
+      setHost(next.host);
+      toast.success("중계 주소를 저장했습니다");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "중계 저장 실패");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const addCloudCamera = async () => {
@@ -75,12 +116,12 @@ export default function VisionFleet() {
     }
     setBusy(true);
     try {
-      const j = await fleetPost("POST", "/v1/cloud-cameras", {
+      const j = await fleetCall("POST", "/v1/cloud-cameras", {
         project_id: projectId,
         name,
-        provision: "mux",
+        provision: "vps",
       });
-      const next = (j as { ingest?: VisionMuxIngest }).ingest;
+      const next = (j as { ingest?: VisionVpsIngest }).ingest;
       if (next?.stream_key) setIngest(next);
       toast.success("카메라를 만들었습니다. 아래 키를 VIGI RTMP에 넣으세요.");
       setNewCamName("");
@@ -100,7 +141,7 @@ export default function VisionFleet() {
       return;
     }
     try {
-      await fleetPost("PATCH", "/v1/cloud-cameras", {
+      await fleetCall("PATCH", "/v1/cloud-cameras", {
         project_id: projectId,
         id: cam.id,
         name: next.name,
@@ -116,7 +157,7 @@ export default function VisionFleet() {
   const deleteCamera = async (cam: ManageCamera) => {
     if (!projectId) return;
     try {
-      await fleetPost("DELETE", "/v1/cloud-cameras", { project_id: projectId, id: cam.id });
+      await fleetCall("DELETE", "/v1/cloud-cameras", { project_id: projectId, id: cam.id });
       toast.success("카메라를 삭제했습니다");
       void load();
     } catch (e: unknown) {
@@ -127,8 +168,8 @@ export default function VisionFleet() {
   const revealIngest = async (cam: ManageCamera) => {
     if (!projectId) return;
     try {
-      const j = await fleetPost("POST", "/v1/cloud-cameras/ingest", { project_id: projectId, id: cam.id });
-      const next = (j as { ingest?: VisionMuxIngest }).ingest;
+      const j = await fleetCall("POST", "/v1/cloud-cameras/ingest", { project_id: projectId, id: cam.id });
+      const next = (j as { ingest?: VisionVpsIngest }).ingest;
       if (!next?.stream_key) throw new Error("송출 정보가 없습니다");
       setIngest(next);
       toast.success("송출 정보를 다시 불러왔습니다");
@@ -170,10 +211,14 @@ export default function VisionFleet() {
           <VisionQuadGrid cameras={cameras} page={safePage} onPageChange={setPage} />
           {canManage && (
             <>
-              <VisionMuxSetup
+              <VisionVpsSetup
+                host={host}
+                onHostChange={setHost}
+                onHostSave={saveRelay}
                 name={newCamName}
                 onNameChange={setNewCamName}
                 ingest={ingest}
+                relay={relay}
                 busy={busy}
                 onCreate={addCloudCamera}
               />

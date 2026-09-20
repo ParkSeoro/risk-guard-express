@@ -7,6 +7,10 @@ const auth = { roles: ["master"] as string[] };
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
+vi.mock("@/components/vision/VisionLivePane", () => ({
+  default: () => <div data-testid="vision-live-pane-stub" />,
+}));
+
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: () => ({
@@ -20,7 +24,7 @@ vi.mock("@/integrations/supabase/client", () => ({
                 name: "정문",
                 health_state: "online",
                 gateway_id: "g1",
-                playback_url: "http://10.0.0.1:8888/cam1/index.m3u8",
+                playback_url: null,
               },
             ],
             error: null,

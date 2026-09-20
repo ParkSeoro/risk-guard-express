@@ -87,6 +87,8 @@ describe("vision fleet client helpers", () => {
     const src = readFileSync("src/pages/VisionFleet.tsx", "utf8");
     expect(src).toContain("visionCanManage");
     expect(src).toContain("VisionCameraManageList");
+    expect(src).toContain("VisionMuxSetup");
+    expect(src).not.toContain("시작.bat");
     expect(src).not.toContain("설치 키트");
     expect(src).not.toContain("현장 Gateway");
     expect(src).not.toContain("안전 이벤트");

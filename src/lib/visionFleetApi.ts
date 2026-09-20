@@ -52,6 +52,11 @@ export function visionCanOperate(roles: readonly string[] | null | undefined): b
   return visionHasAnyRole(roles, VISION_OPERATOR_ROLES);
 }
 
+/** Setup, rename, delete. Everyone else only sees the 4-pane wall. */
+export function visionCanManage(roles: readonly string[] | null | undefined): boolean {
+  return visionHasAnyRole(roles, ["master"]);
+}
+
 export function visionRoleLabel(roles: readonly string[] | null | undefined): string {
   const set = new Set(roles || []);
   if (set.has("master")) return "본사 마스터";

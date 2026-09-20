@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { WifiOff } from "lucide-react";
+import { Maximize2, WifiOff } from "lucide-react";
 import { visionSafePlaybackUrl } from "@/lib/visionFleetApi";
 
 type Props = {
@@ -41,7 +41,15 @@ export default function VisionLivePane({
         const { default: Hls } = await import("hls.js");
         if (cancelled) return;
         if (Hls.isSupported()) {
-          const player = new Hls({ maxBufferLength: 12, enableWorker: true });
+          const player = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            liveSyncDurationCount: 2,
+            liveMaxLatencyDurationCount: 6,
+            maxBufferLength: 4,
+            maxMaxBufferLength: 8,
+            backBufferLength: 8,
+          });
           player.loadSource(safeUrl);
           player.attachMedia(video);
           hls = player;
@@ -60,6 +68,16 @@ export default function VisionLivePane({
       video.removeAttribute("src");
     };
   }, [safeUrl]);
+
+  const enterFullscreen = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const node = video.parentElement || video;
+    const req =
+      node.requestFullscreen ||
+      (node as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen;
+    void req?.call(node);
+  };
 
   const label = name || `카메라 ${index + 1}`;
   const waiting = !safeUrl;
@@ -85,12 +103,26 @@ export default function VisionLivePane({
         </div>
       )}
       {!waiting && (
-        <div className="absolute left-0 right-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
-          <p className="text-xs text-white font-medium truncate">{label}</p>
-          <p className="text-[10px] text-white/70 truncate">
-            {cameraId || ""} {healthState ? `· ${healthState}` : ""}
-          </p>
-        </div>
+        <>
+          <div
+            className="pointer-events-none absolute left-0 right-0 top-0 bg-gradient-to-b from-black/80 to-transparent px-2 py-1.5"
+            data-testid={`vision-pane-overlay-${index}`}
+          >
+            <p className="text-xs text-white font-medium truncate">{label}</p>
+            <p className="text-[10px] text-white/70 truncate">
+              {cameraId || ""} {healthState ? `· ${healthState}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="absolute right-1.5 top-1.5 z-10 h-7 w-7 rounded bg-black/60 text-white hover:bg-black/80"
+            aria-label="전체화면"
+            data-testid={`vision-pane-fullscreen-${index}`}
+            onClick={enterFullscreen}
+          >
+            <Maximize2 className="mx-auto h-3.5 w-3.5" />
+          </button>
+        </>
       )}
     </div>
   );

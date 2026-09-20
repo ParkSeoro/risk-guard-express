@@ -6,7 +6,8 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
+import MobileVisionPlayer from "@/components/vision/MobileVisionPlayer";
+import type { MobileVisionCamera } from "@/lib/mobileVisionPlayer";
 import { visionCanManage, visionRoleLabel } from "@/lib/visionFleetApi";
 
 export default function MobileVisionEvents() {
@@ -14,8 +15,7 @@ export default function MobileVisionEvents() {
   const { roles } = useAuth();
   const { projectId } = useMobileAccess();
   const canManage = visionCanManage(roles);
-  const [cameras, setCameras] = useState<QuadCamera[]>([]);
-  const [page, setPage] = useState(0);
+  const [cameras, setCameras] = useState<MobileVisionCamera[]>([]);
 
   const load = async () => {
     if (!projectId) {
@@ -28,8 +28,7 @@ export default function MobileVisionEvents() {
       .eq("project_id", projectId)
       .order("name");
     if (error) toast.error(error.message);
-    setCameras((data || []) as QuadCamera[]);
-    setPage(0);
+    setCameras((data || []) as MobileVisionCamera[]);
   };
 
   useEffect(() => {
@@ -38,7 +37,7 @@ export default function MobileVisionEvents() {
 
   return (
     <div className="max-w-md mx-auto" data-testid="mobile-vision-events">
-      <MobilePageHeader title="비전 관제" onBack={() => navigate("/app/worker/today")} />
+      <MobilePageHeader title="비전 관제" onBack={() => navigate("/app/worker/tasks")} />
       <main className="px-4 pb-8 space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
@@ -46,7 +45,7 @@ export default function MobileVisionEvents() {
           </p>
           <Badge variant="secondary">{visionRoleLabel(roles)}</Badge>
         </div>
-        <VisionQuadGrid cameras={cameras} page={page} onPageChange={setPage} />
+        <MobileVisionPlayer cameras={cameras} />
       </main>
     </div>
   );

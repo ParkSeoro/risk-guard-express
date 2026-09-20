@@ -13,9 +13,7 @@ import {
   ChevronRight,
   LogOut,
   Monitor,
-  QrCode,
   ScanLine,
-  Video,
   User,
   BookOpen,
   Bell,
@@ -23,8 +21,6 @@ import {
   FolderOpen,
   Crosshair,
   MapPin,
-  LogIn,
-  PenLine,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +35,7 @@ import { anyMapHasGeoref } from "@/lib/mapBounds";
 import { useGpsUi } from "@/lib/tracking/gpsStatusUi";
 import MobileProjectSwitcher from "@/components/mobile/MobileProjectSwitcher";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
+import { managerMoreLinks, workerMoreLinks } from "@/lib/mobileFieldMenu";
 
 export default function MobileMore() {
   const { signOut, profile } = useAuth();
@@ -155,35 +152,42 @@ export default function MobileMore() {
       <Card>
         <CardContent className="p-0 divide-y">
           {(manager
-            ? [
-                { label: t("menuAlerts"), to: "/app/worker/alerts", icon: Inbox, badge: unread },
-                { label: t("menuAlertSettings"), to: "/app/worker/notifications", icon: Bell },
-                { label: t("menuApprovedDocs"), to: "/app/worker/docs", icon: FolderOpen },
-                { label: t("menuQr"), to: "/app/worker/scan", icon: ScanLine },
-                { label: t("menuVision"), to: "/app/worker/vision-events", icon: Video },
-                { label: t("menuWorkers"), to: "/app/worker/workers", icon: QrCode },
-                { label: t("menuAttendance"), to: "/app/worker/workers?tab=attendance", icon: LogIn },
-                { label: t("menuSignatures"), to: "/app/worker/workers?tab=signatures", icon: PenLine },
-                { label: t("menuDistribution"), to: "/app/worker/distribution", icon: MapPin },
-                { label: t("menuAccount"), to: "/app/worker/account", icon: User },
-                ...(!isNativeApp()
-                  ? [{ label: t("menuManual"), to: "/manual", icon: BookOpen }]
-                  : []),
-              ]
-            : [
-                { label: t("menuAlerts"), to: "/app/worker/alerts", icon: Inbox, badge: unread },
-                { label: t("menuAlertSettings"), to: "/app/worker/notifications", icon: Bell },
-                { label: t("menuLocation"), to: "/app/worker/location", icon: MapPin },
-                { label: t("menuQr"), to: "/app/worker/scan", icon: ScanLine },
-                { label: t("menuAccount"), to: "/app/worker/account", icon: User },
-                ...(!isNativeApp()
-                  ? [{ label: t("menuManual"), to: "/manual", icon: BookOpen }]
-                  : []),
-              ]
+            ? managerMoreLinks(!isNativeApp()).map((row) => ({
+                ...row,
+                label: t(row.labelKey),
+                icon:
+                  row.key === "alert-settings"
+                    ? Bell
+                    : row.key === "docs"
+                      ? FolderOpen
+                      : row.key === "qr"
+                        ? ScanLine
+                        : row.key === "manual"
+                          ? BookOpen
+                          : User,
+              }))
+            : workerMoreLinks(!isNativeApp()).map((row) => ({
+                ...row,
+                label: t(row.labelKey),
+                badge: row.key === "alerts" ? unread : undefined,
+                icon:
+                  row.key === "alerts"
+                    ? Inbox
+                    : row.key === "alert-settings"
+                      ? Bell
+                      : row.key === "location"
+                        ? MapPin
+                        : row.key === "qr"
+                          ? ScanLine
+                          : row.key === "manual"
+                            ? BookOpen
+                            : User,
+              }))
           ).map((row) => (
             <Link
               key={row.to}
               to={row.to}
+              data-testid={`more-link-${row.key}`}
               className="flex items-center gap-3 px-3 py-3 text-sm hover:bg-muted/50"
             >
               <row.icon className="h-4 w-4 text-muted-foreground" />

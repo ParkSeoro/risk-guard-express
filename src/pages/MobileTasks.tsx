@@ -1,10 +1,35 @@
 import { Link } from "react-router-dom";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole } from "@/lib/mobileShell";
+import { managerFieldSections } from "@/lib/mobileFieldMenu";
 import { usePreview } from "@/contexts/PreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronRight, ClipboardCheck, AlertOctagon, Users, Wrench, HeartPulse, CloudSun, HardHat, MapPin, PenLine, LogIn } from "lucide-react";
+import {
+  ChevronRight,
+  ClipboardCheck,
+  AlertOctagon,
+  Users,
+  Wrench,
+  HeartPulse,
+  CloudSun,
+  HardHat,
+  MapPin,
+  Video,
+} from "lucide-react";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
+
+const FIELD_ICONS: Record<string, typeof Video> = {
+  vision: Video,
+  inspect: ClipboardCheck,
+  actions: Wrench,
+  "work-stop": AlertOctagon,
+  incident: AlertOctagon,
+  tbm: Users,
+  workers: Users,
+  distribution: MapPin,
+  weather: CloudSun,
+  ppe: HardHat,
+};
 
 export default function MobileTasks() {
   const { role, isMaster } = useMobileAccess();
@@ -25,50 +50,74 @@ export default function MobileTasks() {
     { label: t("taskPpe"), sub: t("taskPpeSub"), to: "/app/worker/ppe-receipt", icon: HardHat },
   ];
 
-  const managerItems = [
-    { label: "안전점검", sub: "현장 점검 등록", to: "/app/worker/inspect", icon: ClipboardCheck },
-    { label: "조치 관리", sub: "진행·완료 확인", to: "/app/worker/actions", icon: Wrench },
-    { label: "사고 신고", sub: "아차/경미/중대", to: "/app/worker/incident", icon: AlertOctagon },
-    { label: "TBM 진행", sub: "QR·참여 관리", to: "/app/worker/tbm", icon: Users },
-    { label: "근로자·출입", sub: "명부·입퇴장·서명", to: "/app/worker/workers", icon: Users },
-    { label: "입퇴장 현황", sub: "오늘 출역·퇴근", to: "/app/worker/workers?tab=attendance", icon: LogIn },
-    { label: "서명·서약", sub: "오늘 일일서약·TBM", to: "/app/worker/workers?tab=signatures", icon: PenLine },
-    { label: "근로자 분포", sub: "출근·구역 · 권한별 범위", to: "/app/worker/distribution", icon: MapPin },
-    { label: "작업중지", sub: "접수·처리중 확인", to: "/app/worker/work-stop", icon: AlertOctagon },
-    { label: "현장 일기예보", sub: "레이더·시간별·영향분석", to: "/app/worker/site-weather", icon: CloudSun },
-    { label: "보호구 수령확인", sub: "지급대기 서명", to: "/app/worker/ppe-receipt", icon: HardHat },
-  ];
+  if (!manager) {
+    return (
+      <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-tasks">
+        <div>
+          <h1 className="text-base font-bold">{t("tasksTitle")}</h1>
+          <p className="text-xs text-muted-foreground">{t("tasksSub")}</p>
+        </div>
+        <Card>
+          <CardContent className="p-0 divide-y">
+            {workerItems.map((it) => (
+              <Link
+                key={it.to + it.label}
+                to={it.to}
+                className="flex items-center gap-3 px-3 py-3 hover:bg-muted/50"
+              >
+                <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                  <it.icon className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{it.label}</div>
+                  <div className="text-xs text-muted-foreground">{it.sub}</div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-  const items = manager ? managerItems : workerItems;
+  const sections = managerFieldSections();
 
   return (
-    <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-tasks">
+    <div className="p-4 space-y-4 max-w-md mx-auto" data-testid="mobile-tasks">
       <div>
-        <h1 className="text-base font-bold">{manager ? "현장" : t("tasksTitle")}</h1>
-        <p className="text-xs text-muted-foreground">
-          {manager ? "점검·조치·TBM·출입 바로가기" : t("tasksSub")}
-        </p>
+        <h1 className="text-base font-bold">현장</h1>
+        <p className="text-xs text-muted-foreground">관제·점검·사람·현장 환경</p>
       </div>
-      <Card>
-        <CardContent className="p-0 divide-y">
-          {items.map((it) => (
-            <Link
-              key={it.to + it.label}
-              to={it.to}
-              className="flex items-center gap-3 px-3 py-3 hover:bg-muted/50"
-            >
-              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <it.icon className="h-4 w-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">{it.label}</div>
-                <div className="text-xs text-muted-foreground">{it.sub}</div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
+      {sections.map((section) => (
+        <div key={section.key} data-testid={`field-section-${section.key}`}>
+          <h2 className="text-xs font-medium text-muted-foreground px-0.5 mb-1.5">{section.title}</h2>
+          <Card>
+            <CardContent className="p-0 divide-y">
+              {section.items.map((it) => {
+                const Icon = FIELD_ICONS[it.key] || ClipboardCheck;
+                return (
+                  <Link
+                    key={it.to + it.label}
+                    to={it.to}
+                    data-testid={`field-link-${it.key}`}
+                    className="flex items-center gap-3 px-3 py-3 hover:bg-muted/50"
+                  >
+                    <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{it.label}</div>
+                      <div className="text-xs text-muted-foreground">{it.sub}</div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </Link>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+      ))}
     </div>
   );
 }

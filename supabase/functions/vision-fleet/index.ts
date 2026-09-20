@@ -8,6 +8,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-gateway-id, x-request-id",
+  "Access-Control-Allow-Methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
 };
 
 const DUMMY_CERT = `-----BEGIN CERTIFICATE-----
@@ -138,6 +139,11 @@ async function assertVisionOperator(sb: SupabaseClient, userId: string, projectI
     _user_id: userId,
     _project_id: projectId,
   });
+  return !error && data === true;
+}
+
+async function assertVisionMaster(sb: SupabaseClient, userId: string) {
+  const { data, error } = await sb.rpc("is_master", { _user_id: userId });
   return !error && data === true;
 }
 
@@ -687,8 +693,8 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const projectId = String(body.project_id || "");
       if (!projectId) return json({ error: "project_id required" }, 400);
-      const member = await assertVisionOperator(sb, userData.user.id, projectId);
-      if (!member) return json({ error: "forbidden" }, 403);
+      const master = await assertVisionMaster(sb, userData.user.id);
+      if (!master) return json({ error: "forbidden" }, 403);
       const name = String(body.name || "").trim();
       if (!name) return json({ error: "name required" }, 400);
       const playbackUrl = body.playback_url ? safePlaybackUrl(body.playback_url) : null;
@@ -720,6 +726,94 @@ Deno.serve(async (req) => {
         detail: { camera_id: cam.camera_id },
       });
       return json({ data: cam });
+    }
+
+    if ((req.method === "PATCH" || req.method === "PUT") && path === "/v1/cloud-cameras") {
+      const jwt = bearer(req);
+      if (!jwt) return json({ error: "auth required" }, 401);
+      const userSb = userClient(jwt);
+      const { data: userData } = await userSb.auth.getUser(jwt);
+      if (!userData?.user) return json({ error: "invalid session" }, 401);
+      const master = await assertVisionMaster(sb, userData.user.id);
+      if (!master) return json({ error: "forbidden" }, 403);
+      const body = await req.json();
+      const projectId = String(body.project_id || "");
+      const cameraId = String(body.id || body.camera_row_id || "");
+      if (!projectId || !cameraId) return json({ error: "project_id and id required" }, 400);
+      const { data: existing } = await sb
+        .from("vision_cameras")
+        .select("id")
+        .eq("id", cameraId)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (!existing) return json({ error: "camera not found" }, 404);
+      const patch: Record<string, unknown> = {};
+      if (body.name !== undefined) {
+        const name = String(body.name || "").trim();
+        if (!name) return json({ error: "name required" }, 400);
+        patch.name = name;
+      }
+      if (body.playback_url !== undefined) {
+        if (!body.playback_url) {
+          patch.playback_url = null;
+          patch.health_state = "pending";
+        } else {
+          const playbackUrl = safePlaybackUrl(body.playback_url);
+          if (!playbackUrl) return json({ error: "playback_url must be http(s)" }, 400);
+          patch.playback_url = playbackUrl;
+          patch.health_state = "online";
+        }
+      }
+      if (Object.keys(patch).length === 0) return json({ error: "nothing to update" }, 400);
+      const { data: cam, error } = await sb
+        .from("vision_cameras")
+        .update(patch)
+        .eq("id", cameraId)
+        .eq("project_id", projectId)
+        .select("*")
+        .single();
+      if (error) return json({ error: error.message }, 400);
+      await audit(sb, {
+        project_id: projectId,
+        actor_id: userData.user.id,
+        action: "vision.cloud_camera.update",
+        entity_type: "camera",
+        entity_id: cam.id,
+        detail: { camera_id: cam.camera_id },
+      });
+      return json({ data: cam });
+    }
+
+    if (req.method === "DELETE" && path === "/v1/cloud-cameras") {
+      const jwt = bearer(req);
+      if (!jwt) return json({ error: "auth required" }, 401);
+      const userSb = userClient(jwt);
+      const { data: userData } = await userSb.auth.getUser(jwt);
+      if (!userData?.user) return json({ error: "invalid session" }, 401);
+      const master = await assertVisionMaster(sb, userData.user.id);
+      if (!master) return json({ error: "forbidden" }, 403);
+      const body = await req.json();
+      const projectId = String(body.project_id || "");
+      const cameraId = String(body.id || body.camera_row_id || "");
+      if (!projectId || !cameraId) return json({ error: "project_id and id required" }, 400);
+      const { data: existing } = await sb
+        .from("vision_cameras")
+        .select("id, camera_id")
+        .eq("id", cameraId)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (!existing) return json({ error: "camera not found" }, 404);
+      const { error } = await sb.from("vision_cameras").delete().eq("id", cameraId).eq("project_id", projectId);
+      if (error) return json({ error: error.message }, 400);
+      await audit(sb, {
+        project_id: projectId,
+        actor_id: userData.user.id,
+        action: "vision.cloud_camera.delete",
+        entity_type: "camera",
+        entity_id: existing.id,
+        detail: { camera_id: existing.camera_id },
+      });
+      return json({ ok: true });
     }
 
     return json({ error: "not found", path }, 404);

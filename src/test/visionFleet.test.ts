@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   VISION_LIVE_ACTION,
   VISION_RELAY_SLOTS,
   visionCameraSlots,
+  visionCanManage,
   visionCanOperate,
   visionCanViewConsole,
   visionEventSirenAllowed,
@@ -72,6 +74,22 @@ describe("vision fleet client helpers", () => {
     expect(visionCanOperate(["supervisor"])).toBe(false);
     expect(visionCanOperate(["safety_manager"])).toBe(true);
     expect(visionRoleLabel(["site_manager"])).toBe("현장소장");
+  });
+
+  it("restricts camera setup to master only", () => {
+    expect(visionCanManage(["master"])).toBe(true);
+    expect(visionCanManage(["safety_manager"])).toBe(false);
+    expect(visionCanManage(["project_admin"])).toBe(false);
+    expect(visionCanManage(["site_manager"])).toBe(false);
+  });
+
+  it("keeps setup, edit, and delete off the wall for everyone except master", () => {
+    const src = readFileSync("src/pages/VisionFleet.tsx", "utf8");
+    expect(src).toContain("visionCanManage");
+    expect(src).toContain("VisionCameraManageList");
+    expect(src).not.toContain("설치 키트");
+    expect(src).not.toContain("현장 Gateway");
+    expect(src).not.toContain("안전 이벤트");
   });
 
   it("never allows a siren for vision_safety_event", () => {

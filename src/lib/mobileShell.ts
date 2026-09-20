@@ -44,7 +44,7 @@ export function mobileTabsForBucket(bucket: MobileShellBucket): MobileTab[] {
       { key: "more", label: "더보기", path: `${BASE}/more` },
     ];
   }
-  // manager + master — 「현장」= 기능 디렉터리(옛 할 일 메뉴). 알림 탭 유지.
+  // manager + master — 「현장」= 관제·점검·사람·환경. 알림 탭 유지.
   return [
     { key: "today", label: "오늘", path: `${BASE}/today` },
     { key: "tasks", label: "현장", path: `${BASE}/tasks` },

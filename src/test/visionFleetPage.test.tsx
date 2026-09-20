@@ -106,11 +106,12 @@ describe("VisionFleet role wall", () => {
     expect(el!.textContent).not.toContain("삭제");
   });
 
-  it("keeps mobile vision as a wall for every role", async () => {
+  it("keeps mobile vision as a single-camera view for every role", async () => {
     auth.roles = ["master"];
     await mount(<MobileVisionEvents />);
     expect(el!.querySelector('[data-testid="mobile-vision-events"]')).toBeTruthy();
-    expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="mobile-vision-player"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeNull();
     expect(el!.textContent).toContain("설정은 PC 비전 관제에서 합니다");
     expect(el!.querySelector('[data-testid="vision-vps-setup"]')).toBeNull();
     expect(el!.textContent).not.toContain("수정");

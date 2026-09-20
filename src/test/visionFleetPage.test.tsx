@@ -85,7 +85,7 @@ describe("VisionFleet role wall", () => {
     await mount(<VisionFleet />);
     expect(el!.querySelector('[data-testid="vision-fleet"]')).toBeTruthy();
     expect(el!.textContent).toContain("설정은 마스터만 합니다");
-    expect(el!.querySelector('[data-testid="vision-relay-setup"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="vision-mux-setup"]')).toBeTruthy();
     expect(el!.querySelector('[data-testid="vision-camera-manage"]')).toBeTruthy();
     expect(el!.textContent).toContain("추가");
     expect(el!.textContent).toContain("수정");
@@ -99,7 +99,7 @@ describe("VisionFleet role wall", () => {
     await mount(<VisionFleet />);
     expect(el!.textContent).toContain("현장 화면입니다");
     expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeTruthy();
-    expect(el!.querySelector('[data-testid="vision-relay-setup"]')).toBeNull();
+    expect(el!.querySelector('[data-testid="vision-mux-setup"]')).toBeNull();
     expect(el!.querySelector('[data-testid="vision-camera-manage"]')).toBeNull();
     expect(el!.textContent).not.toContain("추가");
     expect(el!.textContent).not.toContain("수정");
@@ -112,7 +112,7 @@ describe("VisionFleet role wall", () => {
     expect(el!.querySelector('[data-testid="mobile-vision-events"]')).toBeTruthy();
     expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeTruthy();
     expect(el!.textContent).toContain("설정은 PC 비전 관제에서 합니다");
-    expect(el!.querySelector('[data-testid="vision-relay-setup"]')).toBeNull();
+    expect(el!.querySelector('[data-testid="vision-mux-setup"]')).toBeNull();
     expect(el!.textContent).not.toContain("수정");
     expect(el!.textContent).not.toContain("삭제");
   });

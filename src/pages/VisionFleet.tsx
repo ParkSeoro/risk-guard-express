@@ -4,19 +4,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Camera, Video } from "lucide-react";
 import { toast } from "sonner";
 import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
-import VisionRelaySetup from "@/components/vision/VisionRelaySetup";
+import VisionMuxSetup from "@/components/vision/VisionMuxSetup";
 import VisionCameraManageList, { type ManageCamera } from "@/components/vision/VisionCameraManageList";
-import {
-  visionCanManage,
-  visionQuadPageCount,
-  visionRoleLabel,
-  visionSafePlaybackUrl,
-} from "@/lib/visionFleetApi";
+import { visionCanManage, visionQuadPageCount, visionRoleLabel, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
+import { type VisionMuxIngest } from "@/lib/visionMux";
 
 type CameraRow = QuadCamera & { gateway_id: string };
 
@@ -30,7 +24,8 @@ export default function VisionFleet() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [newCamName, setNewCamName] = useState("");
-  const [newCamUrl, setNewCamUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ingest, setIngest] = useState<VisionMuxIngest | null>(null);
 
   const load = async () => {
     if (!projectId) {
@@ -71,44 +66,30 @@ export default function VisionFleet() {
     return j;
   };
 
-  const addCloudCamera = async (opts?: { camera_id?: string; name?: string; playback_url?: string | null }) => {
+  const addCloudCamera = async () => {
     if (!projectId || !canManage) return;
-    const name = (opts?.name ?? newCamName).trim();
+    const name = newCamName.trim();
     if (!name) {
       toast.error("카메라 이름을 입력하세요");
       return;
     }
-    const rawUrl = opts?.playback_url !== undefined ? opts.playback_url : newCamUrl.trim();
-    const playback_url = rawUrl ? visionSafePlaybackUrl(rawUrl) : null;
-    if (rawUrl && !playback_url) {
-      toast.error("중계주소가 올바르지 않습니다. 시작.bat이 알려준 값을 그대로 쓰세요.");
-      return;
-    }
+    setBusy(true);
     try {
-      await fleetPost("POST", "/v1/cloud-cameras", {
+      const j = await fleetPost("POST", "/v1/cloud-cameras", {
         project_id: projectId,
         name,
-        playback_url,
-        camera_id: opts?.camera_id,
+        provision: "mux",
       });
-      if (!opts?.camera_id) {
-        toast.success("4화면에 카메라를 넣었습니다");
-        setNewCamName("");
-        setNewCamUrl("");
-        void load();
-      }
+      const next = (j as { ingest?: VisionMuxIngest }).ingest;
+      if (next?.stream_key) setIngest(next);
+      toast.success("카메라를 만들었습니다. 아래 키를 VIGI RTMP에 넣으세요.");
+      setNewCamName("");
+      void load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "카메라 추가 실패");
-      throw e;
+    } finally {
+      setBusy(false);
     }
-  };
-
-  const fillRelaySlots = async (slots: Array<{ camera_id: string; name: string; playback_url: string }>) => {
-    for (const slot of slots) {
-      await addCloudCamera(slot);
-    }
-    toast.success("4칸을 만들었습니다. 아래 RTMP를 카메라에 붙여넣으면 영상이 나옵니다.");
-    void load();
   };
 
   const saveCamera = async (cam: ManageCamera, next: { name: string; playback_url: string }) => {
@@ -140,6 +121,19 @@ export default function VisionFleet() {
       void load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "삭제 실패");
+    }
+  };
+
+  const revealIngest = async (cam: ManageCamera) => {
+    if (!projectId) return;
+    try {
+      const j = await fleetPost("POST", "/v1/cloud-cameras/ingest", { project_id: projectId, id: cam.id });
+      const next = (j as { ingest?: VisionMuxIngest }).ingest;
+      if (!next?.stream_key) throw new Error("송출 정보가 없습니다");
+      setIngest(next);
+      toast.success("송출 정보를 다시 불러왔습니다");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "송출 정보 실패");
     }
   };
 
@@ -176,25 +170,19 @@ export default function VisionFleet() {
           <VisionQuadGrid cameras={cameras} page={safePage} onPageChange={setPage} />
           {canManage && (
             <>
-              <VisionRelaySetup onCreateSlots={fillRelaySlots} />
-              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
-                <Input
-                  value={newCamName}
-                  onChange={(e) => setNewCamName(e.target.value)}
-                  placeholder="카메라 이름"
-                  className="h-8 text-sm"
-                />
-                <Input
-                  value={newCamUrl}
-                  onChange={(e) => setNewCamUrl(e.target.value)}
-                  placeholder="재생 주소 (선택)"
-                  className="h-8 text-sm"
-                />
-                <Button size="sm" className="h-8" onClick={() => void addCloudCamera()}>
-                  추가
-                </Button>
-              </div>
-              <VisionCameraManageList cameras={cameras} onSave={saveCamera} onDelete={deleteCamera} />
+              <VisionMuxSetup
+                name={newCamName}
+                onNameChange={setNewCamName}
+                ingest={ingest}
+                busy={busy}
+                onCreate={addCloudCamera}
+              />
+              <VisionCameraManageList
+                cameras={cameras}
+                onSave={saveCamera}
+                onDelete={deleteCamera}
+                onRevealIngest={revealIngest}
+              />
             </>
           )}
         </CardContent>

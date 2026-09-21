@@ -46,7 +46,7 @@
 - **근로자 현장 등록 QR 가입은 승인 없이 즉시 active.** 관리자 가입만 pending.
 - 전체 `bun run lint`는 `no-explicit-any` 때문에 원래 실패하는 것이 정상.
 - Cursor MCP: 공식 Vercel 원격 서버는 `.cursor/mcp.json` (`https://mcp.vercel.com`). Cursor의 **Needs login**으로 OAuth. AWS Deployments는 기본 켜지 않음.
-- 현장 테두리: 관제맵 [2]에서 다각형/원/네모(선만). 출퇴근은 도형 안 또는 바깥 100–300m (`project_site_boundaries`). 없으면 기존 출근 반경. 위험구역과 별개.
+- GPS 개소: 관제맵 [2]에서 이름+다각형/원/네모(선만). 여러 개소는 합집합. 출퇴근은 도형 안 또는 바깥 100–300m. 개소가 있으면 주소핀·단일 테두리보다 우선. 프로젝트 설정의 GPS 개소 카드는 목록+관제맵 링크만.
 
 ## 2026-08-31 기준 main에 올라간 최근 결정
 

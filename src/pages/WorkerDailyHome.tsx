@@ -10,9 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import {
-  distanceToSiteBoundaryEdgeM,
-  fetchActiveSiteBoundary,
-  isWithinSiteAttendance,
+  distanceToNearestSiteOutlineM,
+  fetchAttendanceOutlines,
+  isWithinAnySiteAttendance,
+  pickCurrentSiteOutline,
   type SiteBoundary,
 } from "@/lib/tracking/siteBoundary";
 import {
@@ -99,7 +100,7 @@ export default function WorkerDailyHome({
   const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [probeNonce, setProbeNonce] = useState(0);
   const [checkInFences, setCheckInFences] = useState<SiteTrackingFence[]>([]);
-  const [siteBoundary, setSiteBoundary] = useState<SiteBoundary | null>(null);
+  const [siteOutlines, setSiteOutlines] = useState<SiteBoundary[]>([]);
   const [projectName, setProjectName] = useState("");
   const [workerId, setWorkerId] = useState<string | null>(null);
   const [todayLog, setTodayLog] = useState<EntryLog | null>(null);
@@ -132,6 +133,14 @@ export default function WorkerDailyHome({
     [lastGpsFix, probeFix],
   );
 
+  const currentOutline = useMemo(() => {
+    if (!siteOutlines.length || !effectiveFix) return null;
+    return pickCurrentSiteOutline(siteOutlines, effectiveFix.lat, effectiveFix.lng, {
+      lastId: projectId ? readLastSiteSpotId(projectId) : null,
+      accuracyM: effectiveFix.accuracy,
+    });
+  }, [effectiveFix, projectId, siteOutlines]);
+
   const currentSpot = useMemo(() => {
     if (!checkInFences.length || !effectiveFix) return null;
     return pickCurrentSiteSpot(checkInFences, effectiveFix.lat, effectiveFix.lng, {
@@ -143,20 +152,20 @@ export default function WorkerDailyHome({
 
   const distanceM = useMemo(() => {
     if (!effectiveFix) return null;
-    if (siteBoundary) {
-      return distanceToSiteBoundaryEdgeM(effectiveFix.lat, effectiveFix.lng, siteBoundary);
+    if (siteOutlines.length) {
+      return distanceToNearestSiteOutlineM(siteOutlines, effectiveFix.lat, effectiveFix.lng);
     }
     if (!checkInFences.length) return null;
     return nearestFenceDistanceM(checkInFences, effectiveFix.lat, effectiveFix.lng);
-  }, [checkInFences, effectiveFix, siteBoundary]);
+  }, [checkInFences, effectiveFix, siteOutlines]);
 
   const withinCheckIn = useMemo(() => {
     if (!effectiveFix) return false;
-    if (siteBoundary) {
-      return isWithinSiteAttendance(
+    if (siteOutlines.length) {
+      return isWithinAnySiteAttendance(
+        siteOutlines,
         effectiveFix.lat,
         effectiveFix.lng,
-        siteBoundary,
         effectiveFix.accuracy,
       );
     }
@@ -167,14 +176,17 @@ export default function WorkerDailyHome({
       effectiveFix.lng,
       effectiveFix.accuracy,
     );
-  }, [checkInFences, effectiveFix, siteBoundary]);
+  }, [checkInFences, effectiveFix, siteOutlines]);
 
   const displayFence = currentSpot || checkInFences[0] || null;
-  const hasFence = !!siteBoundary || checkInFences.length > 0;
+  const displayOutline = currentOutline || siteOutlines[0] || null;
+  const hasFence = siteOutlines.length > 0 || checkInFences.length > 0;
 
   useEffect(() => {
-    if (projectId && currentSpot?.id) writeLastSiteSpotId(projectId, currentSpot.id);
-  }, [projectId, currentSpot?.id]);
+    if (projectId && (currentOutline?.id || currentSpot?.id)) {
+      writeLastSiteSpotId(projectId, currentOutline?.id || currentSpot?.id);
+    }
+  }, [projectId, currentOutline?.id, currentSpot?.id]);
 
   const isCheckedIn = !!todayLog && !todayLog.exit_at;
   const checkedOut = !!todayLog?.exit_at;
@@ -197,12 +209,12 @@ export default function WorkerDailyHome({
       setProjectName(proj.name || "");
     }
     // Prefer georeferenced site_maps footprint over address-geocoded pin
-    const [fences, boundary] = await Promise.all([
+    const [fences, outlines] = await Promise.all([
       resolveSiteCheckInFences(pid),
-      fetchActiveSiteBoundary(pid),
+      fetchAttendanceOutlines(pid),
     ]);
     setCheckInFences(fences);
-    setSiteBoundary(boundary);
+    setSiteOutlines(outlines);
 
     let wid: string | null = null;
     let workerCompanyId: string | null = null;
@@ -394,18 +406,18 @@ export default function WorkerDailyHome({
     const fresh = await readFreshCheckInFix();
     if (fresh) setProbeFix(fresh);
     const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
-    if (!siteBoundary && !checkInFences.length) {
-      toast.error("현장 좌표가 없습니다. 관리자에게 관제맵 현장 테두리 또는 GPS 개소·주소핀을 요청하세요.");
+    if (!siteOutlines.length && !checkInFences.length) {
+      toast.error("현장 좌표가 없습니다. 관리자에게 관제맵 GPS 개소 또는 주소핀을 요청하세요.");
       return;
     }
     if (!fix) {
       toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 출근하세요.");
       return;
     }
-    if (siteBoundary) {
-      if (!isWithinSiteAttendance(fix.lat, fix.lng, siteBoundary, fix.accuracy)) {
-        const d = Math.round(distanceToSiteBoundaryEdgeM(fix.lat, fix.lng, siteBoundary));
-        toast.error(`현장 테두리 안(바깥 ${siteBoundary.buffer_m}m까지)에서만 출근할 수 있습니다 · 테두리까지 ${d}m`);
+    if (siteOutlines.length) {
+      if (!isWithinAnySiteAttendance(siteOutlines, fix.lat, fix.lng, fix.accuracy)) {
+        const d = Math.round(distanceToNearestSiteOutlineM(siteOutlines, fix.lat, fix.lng) || 0);
+        toast.error(`개소 안(바깥 100~300m까지)에서만 출근할 수 있습니다 · 테두리까지 ${d}m`);
         return;
       }
     } else if (!isInsideAnyCheckInFence(checkInFences, fix.lat, fix.lng, fix.accuracy)) {
@@ -457,8 +469,8 @@ export default function WorkerDailyHome({
           _lat: effectiveFix?.lat ?? null,
           _lng: effectiveFix?.lng ?? null,
           _accuracy: effectiveFix?.accuracy ?? null,
-          _site_spot_id: currentSpot?.id ?? null,
-          _site_spot_name: currentSpot?.name ?? null,
+          _site_spot_id: currentOutline?.id ?? currentSpot?.id ?? null,
+          _site_spot_name: currentOutline?.name ?? currentSpot?.name ?? null,
         });
         if (error) throw error;
         const res = data as any;
@@ -544,14 +556,14 @@ export default function WorkerDailyHome({
     const fresh = await readFreshCheckInFix();
     if (fresh) setProbeFix(fresh);
     const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
-    if (siteBoundary) {
+    if (siteOutlines.length) {
       if (!fix) {
         toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 퇴근하세요.");
         return;
       }
-      if (!isWithinSiteAttendance(fix.lat, fix.lng, siteBoundary, fix.accuracy)) {
-        const d = Math.round(distanceToSiteBoundaryEdgeM(fix.lat, fix.lng, siteBoundary));
-        toast.error(`현장 테두리 안(바깥 ${siteBoundary.buffer_m}m까지)에서만 퇴근할 수 있습니다 · 테두리까지 ${d}m`);
+      if (!isWithinAnySiteAttendance(siteOutlines, fix.lat, fix.lng, fix.accuracy)) {
+        const d = Math.round(distanceToNearestSiteOutlineM(siteOutlines, fix.lat, fix.lng) || 0);
+        toast.error(`개소 안(바깥 100~300m까지)에서만 퇴근할 수 있습니다 · 테두리까지 ${d}m`);
         return;
       }
     }
@@ -673,8 +685,8 @@ export default function WorkerDailyHome({
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <MapPin className="h-4 w-4 text-emerald-600" />
             {diagnosticsOnly ? "위치 · GPS" : "출근 위치"}
-            {siteBoundary
-              ? ` · 테두리 밖 ${siteBoundary.buffer_m}m`
+            {displayOutline
+              ? ` · ${displayOutline.name} · 바깥 ${displayOutline.buffer_m}m`
               : displayFence
                 ? ` · ${displayFence.name ? `${displayFence.name} ` : ""}${Math.round(displayFence.radiusM)}m`
                 : ` · ${SITE_CHECKIN_MIN_M}m`}
@@ -699,8 +711,8 @@ export default function WorkerDailyHome({
                 </div>
                 <div className="col-span-2">
                   현장 기준:{" "}
-                  {siteBoundary
-                    ? `현장 테두리 · 바깥 ${siteBoundary.buffer_m}m까지 출퇴근`
+                  {displayOutline
+                    ? `${siteOutlines.length > 1 ? `${siteOutlines.length}개 개소` : displayOutline.name} · 바깥 ${displayOutline.buffer_m}m까지 출퇴근`
                     : displayFence
                     ? `${displayFence.lat.toFixed(5)}, ${displayFence.lng.toFixed(5)} (${
                         displayFence.name
@@ -722,13 +734,13 @@ export default function WorkerDailyHome({
                 {!hasFence
                   ? "현장 좌표 없음 — 출근 불가"
                   : withinCheckIn
-                    ? siteBoundary
-                      ? "현장 안 — 출근 가능"
+                    ? displayOutline
+                      ? `${displayOutline.name} 안 — 출근 가능`
                       : currentSpot?.name
                         ? `${currentSpot.name} 안`
                         : `반경 ${Math.round(displayFence!.radiusM)}m 이내`
-                    : siteBoundary
-                      ? "현장 밖"
+                    : displayOutline
+                      ? "개소 밖"
                       : "반경 밖"}
               </Badge>
               <Button
@@ -771,13 +783,13 @@ export default function WorkerDailyHome({
                     : !effectiveFix
                       ? (gpsError ? "GPS 오류" : "위치 확인 중…")
                       : withinCheckIn
-                        ? siteBoundary
-                          ? "현장 안 — 출근 가능"
+                        ? displayOutline
+                          ? `${displayOutline.name} — 출근 가능`
                           : currentSpot?.name
                             ? `${currentSpot.name} — 출근 가능`
                             : "반경 안 — 출근 가능"
-                        : siteBoundary
-                          ? "현장 밖 — 출근 불가"
+                        : displayOutline
+                          ? "개소 밖 — 출근 불가"
                           : "반경 밖 — 출근 불가"}
                 </Badge>
                 {effectiveFix && distanceM != null && hasFence && (

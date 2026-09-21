@@ -152,7 +152,7 @@ export default function MobileMore() {
       <Card>
         <CardContent className="p-0 divide-y">
           {(manager
-            ? managerMoreLinks(!isNativeApp()).map((row) => ({
+            ? managerMoreLinks().map((row) => ({
                 ...row,
                 label: t(row.labelKey),
                 icon:
@@ -166,7 +166,7 @@ export default function MobileMore() {
                           ? BookOpen
                           : User,
               }))
-            : workerMoreLinks(!isNativeApp()).map((row) => ({
+            : workerMoreLinks().map((row) => ({
                 ...row,
                 label: t(row.labelKey),
                 badge: row.key === "alerts" ? unread : undefined,

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import MobilePageHeader from "@/components/mobile/MobilePageHeader";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,7 @@ export default function MobileWorkStop() {
   const focusId = searchParams.get("id");
   const blockWrite = usePreviewWriteBlock();
   const manager = isManagerMobileRole(role, isMaster);
+  const onBack = useMobileSubpageBack(manager ? "/app/worker/tasks" : "/app/worker/today");
   const [legalNames, setLegalNames] = useState<Record<string, string>>({});
   const [projectLabel, setProjectLabel] = useState("");
   const [focused, setFocused] = useState<StopRow | null>(null);
@@ -209,6 +212,8 @@ export default function MobileWorkStop() {
 
   if (submitted) {
     return (
+      <div className="max-w-md mx-auto">
+        <MobilePageHeader title="작업중지권" onBack={onBack} />
       <div className="p-4 flex items-center justify-center">
         <Card className="max-w-md w-full">
           <CardContent className="p-6 text-center space-y-3">
@@ -235,11 +240,14 @@ export default function MobileWorkStop() {
           </CardContent>
         </Card>
       </div>
+      </div>
     );
   }
 
   return (
-    <div className="p-4 space-y-4 max-w-md mx-auto" data-testid="mobile-work-stop">
+    <div className="max-w-md mx-auto" data-testid="mobile-work-stop">
+      <MobilePageHeader title="작업중지권" onBack={onBack} />
+      <div className="p-4 space-y-4">
       <header className="text-center pt-2">
         <OctagonAlert className="size-12 text-destructive mx-auto" />
         <h1 className="text-xl font-bold mt-2">작업중지권 행사</h1>
@@ -455,6 +463,7 @@ export default function MobileWorkStop() {
       <div className="text-xs text-muted-foreground p-1">
         사업주는 작업중지권 행사 근로자에게 해고·전보·임금삭감 등 어떠한 불리한 처우도 할 수
         없습니다 ({WORK_STOP_LEGAL_CITE}).
+      </div>
       </div>
     </div>
   );

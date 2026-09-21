@@ -127,7 +127,7 @@ function highlight(text: string, q: string) {
 const matches = (q: string, ...fields: string[]) =>
   !q || fields.some(f => f.toLowerCase().includes(q.toLowerCase()));
 
-export default function Manual() {
+export default function Manual({ embedded = false }: { embedded?: boolean }) {
   const [query, setQuery] = useState("");
   const q = query.trim();
 
@@ -142,7 +142,8 @@ export default function Manual() {
   const noResults = q && filteredSections.length === 0 && filteredFaqs.length === 0;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedded ? "bg-background" : "min-h-screen bg-background"}>
+      {!embedded && (
       <div className="border-b bg-card">
         <div className="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -169,8 +170,9 @@ export default function Manual() {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+      <div className={embedded ? "px-4 pb-8 space-y-6" : "max-w-5xl mx-auto px-4 py-8 space-y-8"}>
         {/* Search */}
         <Card className="border-primary/30">
           <CardContent className="p-4 space-y-3">

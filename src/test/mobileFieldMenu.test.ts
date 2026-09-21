@@ -28,6 +28,8 @@ describe("manager field / more IA", () => {
     const keys = more.map((row) => row.key);
     const tos = more.map((row) => row.to);
     expect(keys).toEqual(["alert-settings", "docs", "qr", "account", "manual"]);
+    expect(tos).toContain("/app/worker/manual");
+    expect(tos).not.toContain("/manual");
     expect(tos).not.toContain("/app/worker/vision-events");
     expect(tos).not.toContain("/app/worker/alerts");
     expect(tos).not.toContain("/app/worker/workers");
@@ -42,6 +44,8 @@ describe("manager field / more IA", () => {
       "location",
       "qr",
       "account",
+      "manual",
     ]);
+    expect(more.at(-1)?.to).toBe("/app/worker/manual");
   });
 });

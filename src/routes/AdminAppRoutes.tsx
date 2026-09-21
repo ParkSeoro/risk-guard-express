@@ -109,6 +109,7 @@ function AdminAppRoutesInner() {
             <Route path="audit-logs" element={<RoleGuard><P.LazyAuditLogs /></RoleGuard>} />
             <Route path="user-management" element={<Navigate to="/app/admin/settings/permissions" replace />} />
             <Route path="permission-test" element={<RoleGuard><P.LazyPermissionTest /></RoleGuard>} />
+            <Route path="manual" element={<Navigate to="/manual" replace />} />
             <Route path="profile" element={<P.LazyProfile />} />
             <Route path="settings" element={<RoleGuard><P.LazySettings /></RoleGuard>} />
             <Route path="settings/account" element={<P.LazySettingsAccount />} />

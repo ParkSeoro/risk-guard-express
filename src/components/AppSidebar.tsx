@@ -21,19 +21,12 @@ import {
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
+import { ADMIN_APP_BASE, toAdminUrl } from "@/lib/adminNav";
+
+export { ADMIN_APP_BASE } from "@/lib/adminNav";
 
 type Item = { title: string; url: string; icon: any; badgeKey?: 'approvals' };
 type Group = { label: string; key: string; items: Item[] };
-
-/** Canonical admin shell prefix (role-split routing). */
-export const ADMIN_APP_BASE = "/app/admin";
-
-function toAdminUrl(url: string) {
-  if (!url || url.startsWith("http")) return url;
-  if (url === "/") return ADMIN_APP_BASE;
-  if (url.startsWith(ADMIN_APP_BASE)) return url;
-  return `${ADMIN_APP_BASE}${url.startsWith("/") ? url : `/${url}`}`;
-}
 
 const groups: Group[] = [
   {

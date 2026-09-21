@@ -81,6 +81,10 @@ import {
   fetchActiveSiteOutlines,
   outlineToDrawnShape,
   ringCentroid,
+  siteOutlineBounds,
+  unassignedZones,
+  zoneSpotLabel,
+  zonesForWorkSpot,
   SITE_BOUNDARY_BUFFER_DEFAULT_M,
   SITE_BOUNDARY_BUFFER_MAX_M,
   SITE_BOUNDARY_BUFFER_MIN_M,
@@ -135,6 +139,7 @@ type Zone = {
   rule_type?: string | null;
   zone_color?: string | null;
   buffer_m?: number | null;
+  site_spot_id?: string | null;
 };
 
 type LayerState = {
@@ -210,6 +215,7 @@ function FitToTargets({
   sitePin,
   pinRadiusM = ADDRESS_PIN_RADIUS_M,
   maxZoom = 19,
+  focusBox = null,
 }: {
   imageBounds: L.LatLngBoundsExpression | null;
   zones: Zone[];
@@ -219,19 +225,33 @@ function FitToTargets({
   sitePin?: AddressPin | null;
   pinRadiusM?: number;
   maxZoom?: number;
+  focusBox?: { south: number; west: number; north: number; east: number } | null;
 }) {
   const map = useMap();
   const imageRef = useRef(imageBounds);
   const zonesRef = useRef(zones);
   const viewRef = useRef(savedView);
   const pinRef = useRef(sitePin);
+  const focusRef = useRef(focusBox);
   imageRef.current = imageBounds;
   zonesRef.current = zones;
   viewRef.current = savedView;
   pinRef.current = sitePin;
+  focusRef.current = focusBox;
 
   useEffect(() => {
     if (!enabled) return;
+    const focus = focusRef.current;
+    if (focus) {
+      map.fitBounds(
+        [
+          [focus.south, focus.west],
+          [focus.north, focus.east],
+        ],
+        { padding: [40, 40], maxZoom },
+      );
+      return;
+    }
     const view = viewRef.current;
     // Saved overlay view only applies when a drawing is on the map.
     if (view && !pinRef.current) {
@@ -462,6 +482,22 @@ export default function SiteControlMap() {
     pin: sitePin,
     zoneCount: zones.filter((z) => z.is_active !== false).length,
   });
+  const workSpot = useMemo(() => {
+    if (!siteSpots.length) return null;
+    return siteSpots.find((s) => s.id === selectedSpotId) || (panelTab === "zones" ? siteSpots[0] : null);
+  }, [siteSpots, selectedSpotId, panelTab]);
+  const workSpotBounds = useMemo(
+    () => (panelTab === "zones" && workSpot ? siteOutlineBounds(workSpot) : null),
+    [panelTab, workSpot],
+  );
+  const listedZones = useMemo(
+    () => zonesForWorkSpot(zones, workSpot?.id ?? selectedSpotId, siteSpots.length),
+    [zones, workSpot?.id, selectedSpotId, siteSpots.length],
+  );
+  const leftoverZones = useMemo(
+    () => unassignedZones(zones, siteSpots.length),
+    [zones, siteSpots.length],
+  );
 
   useEffect(() => {
     supabase
@@ -709,10 +745,24 @@ export default function SiteControlMap() {
 
   useEffect(() => {
     if (!addressPinMode || !projectId || !sitePinLoaded || !zonesLoaded) return;
+    if (panelTab === "zones" && siteSpots.length > 0) return;
     setFitToken(
       `address-${projectId}-${sitePin ? `${sitePin.lat.toFixed(5)},${sitePin.lng.toFixed(5)}` : "none"}`,
     );
-  }, [addressPinMode, projectId, sitePinLoaded, zonesLoaded, sitePin?.lat, sitePin?.lng]);
+  }, [addressPinMode, projectId, sitePinLoaded, zonesLoaded, sitePin?.lat, sitePin?.lng, panelTab, siteSpots.length]);
+
+  useEffect(() => {
+    if (panelTab !== "zones") return;
+    if (!siteSpots.length) return;
+    if (!selectedSpotId || !siteSpots.some((s) => s.id === selectedSpotId)) {
+      const first = siteSpots[0];
+      setSelectedSpotId(first.id);
+      setSiteName(first.name);
+      setSiteBufferM(first.buffer_m);
+      return;
+    }
+    setFitToken(`spot-${selectedSpotId}`);
+  }, [panelTab, siteSpots, selectedSpotId]);
 
   const loadMaps = async () => {
     const { data } = await supabase
@@ -742,7 +792,7 @@ export default function SiteControlMap() {
     const { data } = await supabase
       .from("restricted_zones")
       .select(
-        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,buffer_m,zone_category,access_rules,is_active,rule_type,zone_color",
+        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,buffer_m,zone_category,access_rules,is_active,rule_type,zone_color,site_spot_id",
       )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
@@ -1059,13 +1109,17 @@ export default function SiteControlMap() {
         void updateZoneGeometry(redrawZoneId, shape);
         return;
       }
+      if (siteSpots.length >= 2 && !(selectedSpotId || workSpot?.id)) {
+        toast.error("먼저 작업 개소를 고르세요");
+        return;
+      }
       setEditingZone(null);
       setPendingShape(shape);
       setZoneModalOpen(true);
       setLayers((l) => ({ ...l, zones: true }));
       setPanelTab("zones");
     },
-    [redrawZoneId, updateZoneGeometry],
+    [redrawZoneId, updateZoneGeometry, siteSpots.length, selectedSpotId, workSpot?.id],
   );
 
   const onGeoShapeEdited = useCallback(
@@ -1083,6 +1137,14 @@ export default function SiteControlMap() {
     setGeometryEditZoneId(z.id);
     setFocusZoneId(z.id);
     setDrawColor(z.zone_color || "#ef4444");
+    if (z.site_spot_id && siteSpots.some((s) => s.id === z.site_spot_id)) {
+      const s = siteSpots.find((x) => x.id === z.site_spot_id);
+      if (s) {
+        setSelectedSpotId(s.id);
+        setSiteName(s.name);
+        setSiteBufferM(s.buffer_m);
+      }
+    }
     toast.message("꼭짓점·이동 편집", {
       description: "도형을 수정한 뒤 「도형 저장」을 누르세요.",
       duration: 4000,
@@ -1095,6 +1157,14 @@ export default function SiteControlMap() {
     setRedrawZoneId(z.id);
     setFocusZoneId(z.id);
     setDrawColor(z.zone_color || "#ef4444");
+    if (z.site_spot_id && siteSpots.some((s) => s.id === z.site_spot_id)) {
+      const s = siteSpots.find((x) => x.id === z.site_spot_id);
+      if (s) {
+        setSelectedSpotId(s.id);
+        setSiteName(s.name);
+        setSiteBufferM(s.buffer_m);
+      }
+    }
     const tool: DrawTool = z.geometry_type === "radius" ? "circle" : "polygon";
     setDrawTool(tool);
     toast.message("다시 그리기", {
@@ -1186,12 +1256,24 @@ export default function SiteControlMap() {
       rule_type: payload.rule_type,
       access_rules: payload.access_rules,
       buffer_m: payload.buffer_m,
+      site_spot_id:
+        siteSpots.length === 0
+          ? null
+          : selectedSpotId && siteSpots.some((s) => s.id === selectedSpotId)
+            ? selectedSpotId
+            : siteSpots[0]?.id ?? null,
       banned_worker_ids: [] as string[],
       banned_company_ids: [] as string[],
       banned_job_types: [] as string[],
       is_active: true,
       created_by: (await supabase.auth.getUser()).data.user?.id,
     };
+
+    if (siteSpots.length >= 2 && !base.site_spot_id) {
+      setSaving(false);
+      toast.error("먼저 작업 개소를 고르세요");
+      return;
+    }
 
     const row =
       payload.shape.kind === "circle"
@@ -1248,6 +1330,14 @@ export default function SiteControlMap() {
   }, [addressPinMode, geometryEditZoneId, zones]);
 
   const focusZone = (z: Zone) => {
+    if (z.site_spot_id && siteSpots.some((s) => s.id === z.site_spot_id)) {
+      const s = siteSpots.find((x) => x.id === z.site_spot_id);
+      if (s) {
+        setSelectedSpotId(s.id);
+        setSiteName(s.name);
+        setSiteBufferM(s.buffer_m);
+      }
+    }
     // Zones tab + drawing uses CRS canvas (leaflet hidden) — fly there instead.
     if (panelTab === "zones" && hasDrawing) {
       setFocusZoneId(z.id);
@@ -1261,7 +1351,7 @@ export default function SiteControlMap() {
       }
       return;
     }
-    setPanelTab("mapping");
+    if (panelTab !== "zones") setPanelTab("mapping");
     setLayers((l) => ({ ...l, zones: true, satellite: true }));
     const map = mapRef.current;
     if (!map) return;
@@ -1922,7 +2012,32 @@ export default function SiteControlMap() {
                   {addressPinMode
                     ? "도면이 없으면 위성(WGS84) 위에 바로 그립니다. 주소 핀은 화면만 맞출 뿐 출퇴근·사이렌 기준이 아닙니다."
                     : "아래 버튼으로 평면 도면에 구역을 그립니다. 완료 후 허용/차단 목록 통제를 설정하면 GPS 좌표로 자동 변환·저장됩니다."}
+                  {siteSpots.length >= 2
+                    ? " 개소가 여러 곳이면 먼저 작업 개소를 고르세요. 지도가 그 테두리로 맞춰지고, 그리는 구역은 그 개소 목록에 붙습니다. 사이렌은 프로젝트 전체입니다."
+                    : ""}
                 </p>
+                {siteSpots.length >= 2 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">작업 개소</Label>
+                    <Select
+                      value={workSpot?.id || selectedSpotId || ""}
+                      onValueChange={(id) => {
+                        const s = siteSpots.find((x) => x.id === id);
+                        if (!s) return;
+                        setSelectedSpotId(s.id);
+                        setSiteName(s.name);
+                        setSiteBufferM(s.buffer_m);
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder="개소를 고르세요" /></SelectTrigger>
+                      <SelectContent>
+                        {siteSpots.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 {addressPinMode && (
                   <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2 leading-relaxed">
                     {sitePin
@@ -1956,7 +2071,7 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "rectangle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners)}
+                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners) || (siteSpots.length >= 2 && !workSpot)}
                       onClick={() => {
                         setGeometryEditZoneId(null);
                         setRedrawZoneId(null);
@@ -1969,7 +2084,7 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "polygon" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners)}
+                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners) || (siteSpots.length >= 2 && !workSpot)}
                       onClick={() => {
                         setGeometryEditZoneId(null);
                         setRedrawZoneId(null);
@@ -1982,7 +2097,7 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "circle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners)}
+                      disabled={!!geometryEditZoneId || (hasDrawing && !draftCorners) || (siteSpots.length >= 2 && !workSpot)}
                       onClick={() => {
                         setGeometryEditZoneId(null);
                         setRedrawZoneId(null);
@@ -2221,13 +2336,14 @@ export default function SiteControlMap() {
                   enabled
                   token={fitToken}
                   savedView={hasDrawing ? restoredView : null}
-                  sitePin={addressPinMode ? sitePin : null}
+                  sitePin={addressPinMode && !workSpotBounds ? sitePin : null}
                   pinRadiusM={
                     addressFit.mode === "pin" || addressFit.mode === "pin+zones"
                       ? addressFit.radiusM
                       : ADDRESS_PIN_RADIUS_M
                   }
                   maxZoom={addressPinMode ? (addressFit.mode === "none" ? 16 : addressFit.maxZoom) : 19}
+                  focusBox={workSpotBounds}
                 />
 
                 {layers.site &&
@@ -2299,8 +2415,18 @@ export default function SiteControlMap() {
                 {layers.zones &&
                   zones
                     .filter((z) => z.is_active !== false)
-                    .map((z) =>
-                    z.geometry_type === "radius" &&
+                    .map((z) => {
+                    const dim =
+                      siteSpots.length >= 2
+                      && !!workSpot
+                      && !!z.site_spot_id
+                      && z.site_spot_id !== workSpot.id;
+                    const path = {
+                      color: z.zone_color || "#ef4444",
+                      fillOpacity: dim ? 0.06 : 0.2,
+                      weight: dim ? 1 : 2,
+                    };
+                    return z.geometry_type === "radius" &&
                     z.center_lat != null &&
                     z.center_lng != null &&
                     z.radius_m ? (
@@ -2308,18 +2434,18 @@ export default function SiteControlMap() {
                         key={z.id}
                         center={[z.center_lat, z.center_lng]}
                         radius={Number(z.radius_m)}
-                        pathOptions={{ color: "#ef4444", fillOpacity: 0.2 }}
+                        pathOptions={path}
                         eventHandlers={{ click: () => focusZone(z) }}
                       />
                     ) : z.geo_polygon && z.geo_polygon.length >= 3 ? (
                       <Polygon
                         key={z.id}
                         positions={z.geo_polygon.map((p) => [p.lat, p.lng] as [number, number])}
-                        pathOptions={{ color: "#ef4444", fillOpacity: 0.2 }}
+                        pathOptions={path}
                         eventHandlers={{ click: () => focusZone(z) }}
                       />
-                    ) : null,
-                  )}
+                    ) : null;
+                    })}
               </MapContainer>
 
               {activeMap?.image_url && !draftCorners && panelTab === "mapping" && (
@@ -2336,16 +2462,28 @@ export default function SiteControlMap() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-1.5">
                 <ShieldAlert className="h-4 w-4 text-destructive" />
-                등록 구역 {zones.length}
+                등록 구역 {siteSpots.length >= 2 ? listedZones.length : zones.length}
+                {siteSpots.length >= 2 && workSpot ? (
+                  <span className="text-xs font-normal text-muted-foreground">· {workSpot.name}</span>
+                ) : null}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0 space-y-2 max-h-[70vh] overflow-auto">
-              {zones.length === 0 && (
+              {listedZones.length === 0 && leftoverZones.length === 0 && (
                 <div className="text-muted-foreground text-center py-8 text-xs border rounded-md">
                   등록된 구역이 없습니다. 일반·작업구역은 분포용(알람 없음), 위험 유형은 출입 알람용입니다.
                 </div>
               )}
-              {zones.map((z) => {
+              {siteSpots.length >= 2 && listedZones.length === 0 && leftoverZones.length > 0 && (
+                <div className="text-muted-foreground text-center py-4 text-xs border rounded-md">
+                  이 개소에 그린 구역이 없습니다.
+                </div>
+              )}
+              {[
+                ...listedZones.map((z) => ({ z, unassigned: false as const })),
+                ...leftoverZones.map((z) => ({ z, unassigned: true as const })),
+              ].map(({ z, unassigned }, i, arr) => {
+                const showUnassignedHeader = unassigned && (i === 0 || !arr[i - 1].unassigned);
                 const rules = parseAccessRules(z.access_rules);
                 const rt =
                   z.rule_type === "ALLOW" || z.rule_type === "DENY" ? z.rule_type : rules.rule_type;
@@ -2354,8 +2492,13 @@ export default function SiteControlMap() {
                   .slice(0, 6);
                 const jobs = (rules.job_types || []).slice(0, 6);
                 return (
+                  <div key={z.id}>
+                    {showUnassignedHeader && (
+                      <p className="text-[11px] font-medium text-muted-foreground pt-1 pb-1">
+                        개소 미지정 {leftoverZones.length}
+                      </p>
+                    )}
                   <div
-                    key={z.id}
                     className="rounded-md border p-2.5 space-y-2 hover:bg-muted/40 transition-colors"
                     style={{ borderLeftWidth: 4, borderLeftColor: z.zone_color || "#ef4444" }}
                   >
@@ -2369,6 +2512,11 @@ export default function SiteControlMap() {
                         <div className="flex flex-wrap gap-1 mt-1">
                           {z.zone_category && (
                             <Badge variant="outline" className="text-[10px]">{z.zone_category}</Badge>
+                          )}
+                          {siteSpots.length >= 2 && (
+                            <Badge variant="outline" className="text-[10px] text-teal-800 border-teal-700">
+                              {zoneSpotLabel(z.site_spot_id, siteSpots)}
+                            </Badge>
                           )}
                           {draftCorners && isZoneOffImage(z, draftCorners) && (
                             <Badge
@@ -2469,6 +2617,7 @@ export default function SiteControlMap() {
                         onCheckedChange={(v) => void toggleZoneActive(z.id, v)}
                       />
                     </label>
+                  </div>
                   </div>
                 );
               })}

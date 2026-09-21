@@ -7118,6 +7118,7 @@ export type Database = {
           name: string
           project_id: string
           radius_m: number | null
+          site_spot_id: string | null
           updated_at: string
           zone_category: string
           access_rules: Json
@@ -7143,6 +7144,7 @@ export type Database = {
           name: string
           project_id: string
           radius_m?: number | null
+          site_spot_id?: string | null
           updated_at?: string
           zone_category?: string
           access_rules?: Json
@@ -7168,6 +7170,7 @@ export type Database = {
           name?: string
           project_id?: string
           radius_m?: number | null
+          site_spot_id?: string | null
           updated_at?: string
           zone_category?: string
           access_rules?: Json
@@ -7178,6 +7181,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "restricted_zones_site_spot_id_fkey"
+            columns: ["site_spot_id"]
+            isOneToOne: false
+            referencedRelation: "project_site_spots"
             referencedColumns: ["id"]
           },
         ]

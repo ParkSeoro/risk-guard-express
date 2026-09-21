@@ -10,6 +10,10 @@ import {
   outlineToDrawnShape,
   parseSiteBoundaryRow,
   pointInSiteBoundary,
+  siteOutlineBounds,
+  unassignedZones,
+  zoneSpotLabel,
+  zonesForWorkSpot,
   SITE_BOUNDARY_BUFFER_DEFAULT_M,
   SITE_BOUNDARY_BUFFER_MAX_M,
   SITE_BOUNDARY_BUFFER_MIN_M,
@@ -125,6 +129,33 @@ describe("siteBoundary", () => {
         radius_m: 0,
       }),
     ).toBeNull();
+  });
+
+  it("fits a camera box around an 개소 outline", () => {
+    const box = siteOutlineBounds(square, 0);
+    expect(box).not.toBeNull();
+    expect(box!.south).toBeCloseTo(37.5, 5);
+    expect(box!.north).toBeCloseTo(37.501, 5);
+    expect(box!.west).toBeCloseTo(127.0, 5);
+    expect(box!.east).toBeCloseTo(127.001, 5);
+    const circled = siteOutlineBounds(circle, 0);
+    expect(circled).not.toBeNull();
+    expect(circled!.south).toBeLessThan(37.5);
+    expect(circled!.north).toBeGreaterThan(37.5);
+  });
+
+  it("lists danger zones per 개소 without dropping unassigned rows", () => {
+    const zones = [
+      { id: "z1", site_spot_id: "b1" },
+      { id: "z2", site_spot_id: "b2" },
+      { id: "z3", site_spot_id: null },
+    ];
+    expect(zonesForWorkSpot(zones, "b1", 2).map((z) => z.id)).toEqual(["z1"]);
+    expect(unassignedZones(zones, 2).map((z) => z.id)).toEqual(["z3"]);
+    expect(zonesForWorkSpot(zones, "b1", 1)).toHaveLength(3);
+    expect(zoneSpotLabel("b1", [square, circle])).toBe("현장");
+    expect(zoneSpotLabel(null, [square])).toBe("개소 미지정");
+    expect(zoneSpotLabel("gone", [square])).toBe("삭제된 개소");
   });
 
   it("parses a stored row and ignores junk geometry", () => {

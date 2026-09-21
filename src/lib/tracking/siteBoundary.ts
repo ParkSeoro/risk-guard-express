@@ -314,3 +314,75 @@ export async function fetchAttendanceOutlines(projectId: string): Promise<SiteBo
   const one = await fetchActiveSiteBoundary(projectId);
   return one ? [one] : [];
 }
+
+export type LatLngBox = { south: number; west: number; north: number; east: number };
+
+/** Bounding box around an 개소 outline, padded in meters (camera only). */
+export function siteOutlineBounds(outline: SiteBoundary, padM = 40): LatLngBox | null {
+  if (
+    outline.geometry_type === "radius"
+    && outline.center_lat != null
+    && outline.center_lng != null
+    && Number(outline.radius_m) > 0
+  ) {
+    const r = Number(outline.radius_m) + Math.max(0, padM);
+    const lat = outline.center_lat;
+    const lng = outline.center_lng;
+    const dLat = r / 111_195;
+    const dLng = r / (111_195 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+    return {
+      south: lat - dLat,
+      west: lng - dLng,
+      north: lat + dLat,
+      east: lng + dLng,
+    };
+  }
+  const poly = outline.geo_polygon;
+  if (!poly || poly.length < 3) return null;
+  let south = Infinity;
+  let north = -Infinity;
+  let west = Infinity;
+  let east = -Infinity;
+  for (const p of poly) {
+    south = Math.min(south, p.lat);
+    north = Math.max(north, p.lat);
+    west = Math.min(west, p.lng);
+    east = Math.max(east, p.lng);
+  }
+  const pad = Math.max(0, padM);
+  const dLat = pad / 111_195;
+  const mid = (south + north) / 2;
+  const dLng = pad / (111_195 * Math.max(0.2, Math.cos((mid * Math.PI) / 180)));
+  return {
+    south: south - dLat,
+    west: west - dLng,
+    north: north + dLat,
+    east: east + dLng,
+  };
+}
+
+export function zoneSpotLabel(
+  siteSpotId: string | null | undefined,
+  spots: { id: string; name: string }[],
+): string {
+  if (!siteSpotId) return "개소 미지정";
+  return spots.find((s) => s.id === siteSpotId)?.name ?? "삭제된 개소";
+}
+
+/** When 2+ 개소, the zone list for the 개소 currently being drawn. */
+export function zonesForWorkSpot<T extends { site_spot_id?: string | null }>(
+  zones: T[],
+  spotId: string | null,
+  spotCount: number,
+): T[] {
+  if (spotCount < 2 || !spotId) return zones;
+  return zones.filter((z) => z.site_spot_id === spotId);
+}
+
+export function unassignedZones<T extends { site_spot_id?: string | null }>(
+  zones: T[],
+  spotCount: number,
+): T[] {
+  if (spotCount < 2) return [];
+  return zones.filter((z) => !z.site_spot_id);
+}

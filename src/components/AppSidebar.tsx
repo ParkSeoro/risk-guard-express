@@ -141,6 +141,15 @@ const masterOnlyItems: Item[] = [
   { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
 ];
 
+/** Sidebar labels for manual drift tests — keep in sync with the menus above. */
+export function sidebarMenuTitles(): string[] {
+  return [
+    ...groups.flatMap((g) => g.items.map((i) => i.title)),
+    ...adminItems.map((i) => i.title),
+    ...masterOnlyItems.map((i) => i.title),
+  ];
+}
+
 export function AppSidebar() {
   const { state, toggleSidebar, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed";

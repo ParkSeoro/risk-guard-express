@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAssistWorkPlanWrite,
+  canDeleteDraftWorkPlan,
   defaultAuthorUserId,
   hasWorkPlanLegalAuthor,
   isSiteSupervisorRole,
@@ -157,5 +158,39 @@ describe('work plan approval line is author-composed', () => {
     expect(validateWorkPlanApprovalSteps([author, sm]).ok).toBe(true);
     expect(validateWorkPlanApprovalSteps([author, cm, extraCm, sm]).ok).toBe(true);
     expect(validateWorkPlanApprovalSteps([cm, sm]).ok).toBe(false);
+  });
+});
+
+describe('canDeleteDraftWorkPlan', () => {
+  const me = 'u-author';
+
+  it('lets the creator or named 관리감독자 delete 작성중 / 반려', () => {
+    expect(canDeleteDraftWorkPlan({
+      status: '작성중', createdBy: me, authorUserId: 'other', userId: me, roleCanDelete: false,
+    })).toBe(true);
+    expect(canDeleteDraftWorkPlan({
+      status: '반려', createdBy: 'other', authorUserId: me, userId: me, roleCanDelete: false,
+    })).toBe(true);
+  });
+
+  it('hides delete on 결재중 / 승인완료 even for role delete', () => {
+    expect(canDeleteDraftWorkPlan({
+      status: '결재중', createdBy: me, authorUserId: me, userId: me, roleCanDelete: true,
+    })).toBe(false);
+    expect(canDeleteDraftWorkPlan({
+      status: '승인완료', createdBy: me, authorUserId: me, userId: me, roleCanDelete: true,
+    })).toBe(false);
+  });
+
+  it('lets master/SM delete someone else\'s draft', () => {
+    expect(canDeleteDraftWorkPlan({
+      status: '작성중', createdBy: 'other', authorUserId: 'sup', userId: 'sm', roleCanDelete: true,
+    })).toBe(true);
+  });
+
+  it('does not let a bystander delete a draft', () => {
+    expect(canDeleteDraftWorkPlan({
+      status: '작성중', createdBy: 'a', authorUserId: 'b', userId: 'c', roleCanDelete: false,
+    })).toBe(false);
   });
 });

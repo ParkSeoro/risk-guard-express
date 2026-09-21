@@ -8,7 +8,7 @@ import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { WORK_PLAN_TYPES, getWorkPlanTypesGrouped } from '@/lib/workPlanTemplates';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
-import { defaultAuthorUserId, prefillOverviewSupervisor, workPlanAuthorCompanyIds } from '@/lib/workPlanAuthor';
+import { canDeleteDraftWorkPlan, defaultAuthorUserId, prefillOverviewSupervisor, workPlanAuthorCompanyIds } from '@/lib/workPlanAuthor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -431,6 +431,13 @@ const WorkPlans = () => {
             const wpType = WORK_PLAN_TYPES.find(t => t.id === plan.work_type);
             const company = companies.find(c => c.id === plan.company_id);
             const isExpired = plan.end_date && isPast(parseISO(plan.end_date));
+            const canDeletePlan = canDeleteDraftWorkPlan({
+              status: plan.status,
+              createdBy: plan.created_by,
+              authorUserId: plan.author_user_id,
+              userId: user?.id,
+              roleCanDelete: access.canDelete('work_plan'),
+            });
             return (
               <Card key={plan.id} className={`hover:border-primary/40 transition-colors ${plan.status === '만료' ? 'opacity-60' : ''} ${plan.status === '작업취소' ? 'border-red-600/60' : ''}`}>
                 <CardHeader className="pb-2">
@@ -491,11 +498,13 @@ const WorkPlans = () => {
                               <Copy className="h-3.5 w-3.5 mr-2" /> 이 계획서로 새로 만들기
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuSeparator />
-                          {access.canDelete('work_plan') && (
-                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(plan)}>
-                              <Trash2 className="h-3.5 w-3.5 mr-2" /> 삭제
-                            </DropdownMenuItem>
+                          {canDeletePlan && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(plan)}>
+                                <Trash2 className="h-3.5 w-3.5 mr-2" /> 삭제
+                              </DropdownMenuItem>
+                            </>
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>

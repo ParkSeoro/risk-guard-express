@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -11,105 +11,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { restartTutorial } from "@/components/TutorialOverlay";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   HardHat, ShieldAlert, FileText, FileSignature, QrCode, ClipboardCheck,
   Users, ClipboardList, BookOpen, ArrowLeft, CheckCircle2, AlertTriangle,
-  LogIn, Bot, Sparkles, Search, X, MessageSquare, Printer, PlayCircle,
-  ReceiptText, Scale, ScanLine, Hand, PenLine
+  Search, X, MessageSquare, Printer, PlayCircle,
+  ReceiptText, Bell, Map, OctagonAlert, GraduationCap, HeartPulse,
+  AlertOctagon, FileCheck, ListTodo,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { calculateRiskGrade, GRADES } from "@/lib/riskGrade";
+import {
+  MANUAL_AUDIENCE_OPTIONS,
+  type ManualAudience,
+  clearStoredManualAudience,
+  readStoredManualAudience,
+  resolveManualAudience,
+  writeStoredManualAudience,
+} from "@/lib/manualAudience";
+import {
+  ADMIN_FLOW_STEPS,
+  filterManualFaqs,
+  filterManualSections,
+  filterManualTerms,
+  MANUAL_QUICK_SEARCH,
+  SUPERVISOR_FLOW_STEPS,
+  WORKER_DAY_STEPS,
+  type ManualSection,
+} from "@/lib/manualContent";
 
-type Section = {
-  id: string;
-  icon: JSX.Element;
-  title: string;
-  keywords: string[];
-  bullets: string[];
+const ICONS: Record<string, LucideIcon> = {
+  HardHat,
+  ShieldAlert,
+  FileText,
+  FileSignature,
+  QrCode,
+  ClipboardCheck,
+  Users,
+  ClipboardList,
+  ReceiptText,
+  Bell,
+  Map,
+  OctagonAlert,
+  GraduationCap,
+  HeartPulse,
+  AlertOctagon,
+  FileCheck,
+  ListTodo,
 };
-
-const SECTIONS: Section[] = [
-  {
-    id: "risk", icon: <ShieldAlert className="h-4 w-4" />, title: "위험성평가",
-    keywords: ["위험성평가", "AI", "매트릭스", "등급", "사진", "결재"],
-    bullets: [
-      "좌측 메뉴 안전관리 > 위험성평가 진입",
-      "+ 새 평가 클릭 → 작업명/공종 선택 → AI 자동생성 버튼",
-      "3x3 위험도 매트릭스(빈도×강도)로 등급 산정 (저/중/고)",
-      "'고' 등급은 사진(전·후) 첨부 후 결재 상신",
-      "검증센터에서 누락 항목 자동 점검",
-    ],
-  },
-  {
-    id: "workplan", icon: <FileText className="h-4 w-4" />, title: "작업계획서",
-    keywords: ["작업계획서", "템플릿", "AI", "교육자료", "TBM", "토글"],
-    bullets: [
-      "법정 11종 작업계획서 템플릿 제공 (굴착·고소·중량물 등)",
-      "7개 탭 구조: 개요 / 장비 / 절차 / 위험 / 대책 / 첨부 / 결재",
-      "AI 교육자료 자동생성 ON/OFF 토글 — 켜두면 결재 후 TBM 자료까지 자동 생성",
-    ],
-  },
-  {
-    id: "permit", icon: <FileSignature className="h-4 w-4" />, title: "작업허가서",
-    keywords: ["작업허가", "허가서", "화기", "밀폐", "고소", "굴착", "결재", "승인"],
-    bullets: [
-      "화기·밀폐·고소·굴착 등 위험작업 사전 허가",
-      "허가 승인 + 교육확인 + TBM 참여 + 입장완료 = 작업 가능",
-      "조건 미충족 시 시스템에서 작업 차단",
-    ],
-  },
-  {
-    id: "tbm", icon: <QrCode className="h-4 w-4" />, title: "TBM 일지",
-    keywords: ["TBM", "QR", "참여", "서명", "사진"],
-    bullets: [
-      "당일 TBM 생성 → QR 발급 → 근로자가 스캔하여 참여 서명",
-      "참여자 사진(셀카) 필수",
-    ],
-  },
-  {
-    id: "inspection", icon: <ClipboardCheck className="h-4 w-4" />, title: "안전점검",
-    keywords: ["점검", "부적합", "사진", "사진 업로드", "알림", "조치"],
-    bullets: [
-      "점검 템플릿 선택 → 항목별 적합/부적합 체크 + 사진 첨부",
-      "부적합 시 담당자에게 자동 알림 + 조치 요청 생성",
-    ],
-  },
-  {
-    id: "workers", icon: <Users className="h-4 w-4" />, title: "근로자 관리",
-    keywords: ["근로자", "QR", "등록", "회사", "협력사"],
-    bullets: [
-      "회사 선택 후 등록 QR 생성 → 인쇄하여 현장 게시",
-      "근로자가 QR 스캔 시 회사가 자동 지정됨",
-      "등록된 근로자 목록·소속·연락처 확인",
-    ],
-  },
-  {
-    id: "attendance", icon: <ClipboardList className="h-4 w-4" />, title: "입퇴장 현황",
-    keywords: ["입장", "퇴장", "출입", "서명", "현황"],
-    bullets: [
-      "실시간 현장 인원 현황 확인",
-      "입장/퇴장 시간, 전자서명 기록 조회",
-      "일자별 / 회사별 필터 제공",
-    ],
-  },
-  {
-    id: "ai", icon: <Bot className="h-4 w-4" />, title: "AI 어시스턴트",
-    keywords: ["AI", "법령", "질의", "사고사례"],
-    bullets: [
-      "법령 질의, 위험요인 추천, 사고사례 검색",
-      "한국 산업안전보건법/규칙 기준으로 응답",
-    ],
-  },
-];
-
-type Faq = { q: string; a: string; keywords: string[] };
-const FAQS: Faq[] = [
-  { q: "가입했는데 로그인이 안 돼요.", a: "근로자는 현장 등록 QR로 가입하면 승인 없이 바로 전화번호·PIN으로 로그인됩니다. 관리자(이메일) 가입은 승인 대기일 수 있습니다. Play에서 앱만 설치해서는 가입되지 않으니, 현장에서 받은 등록 QR을 스캔하세요.", keywords: ["로그인", "가입", "승인", "QR"] },
-  { q: "QR 스캔 후 회사를 선택하는 화면이 안 나와요.", a: "관리자가 회사를 지정해 발급한 QR입니다. 자동으로 소속이 지정되니 그대로 진행하세요.", keywords: ["QR", "회사", "근로자"] },
-  { q: "사진 업로드가 안 됩니다.", a: "프로젝트 소속 확인 후 다시 시도하세요. 권한 문제가 지속되면 관리자에게 문의하세요.", keywords: ["사진", "사진 업로드", "권한", "오류"] },
-  { q: "작업 시작 버튼이 비활성화입니다.", a: "①허가 승인 ②교육 확인 ③TBM 참여 ④입장 완료 — 4가지 조건이 모두 충족되어야 합니다.", keywords: ["작업", "허가", "TBM", "입장"] },
-  { q: "결재가 반려되면 어떻게 되나요?", a: "사유와 함께 작성자에게 알림이 가며, 수정 후 재상신 시 버전이 증가합니다.", keywords: ["결재", "반려", "재상신"] },
-];
-
-const QUICK = ["QR", "로그인", "결재", "사진 업로드", "TBM", "근로자", "허가서"];
 
 function highlight(text: string, q: string) {
   if (!q) return text;
@@ -124,56 +73,72 @@ function highlight(text: string, q: string) {
   );
 }
 
-const matches = (q: string, ...fields: string[]) =>
-  !q || fields.some(f => f.toLowerCase().includes(q.toLowerCase()));
+function audienceLabel(ids: ManualAudience[]): string {
+  return ids
+    .map((id) => MANUAL_AUDIENCE_OPTIONS.find((o) => o.id === id)?.label || id)
+    .join(" · ");
+}
 
 export default function Manual({ embedded = false }: { embedded?: boolean }) {
+  const { user, roles } = useAuth();
   const [query, setQuery] = useState("");
+  const [audience, setAudience] = useState<ManualAudience | null>(null);
   const q = query.trim();
+  const searchAll = Boolean(q);
+
+  useEffect(() => {
+    setAudience(resolveManualAudience(readStoredManualAudience(), roles));
+  }, [roles]);
+
+  const pickAudience = (next: ManualAudience) => {
+    setAudience(next);
+    writeStoredManualAudience(next);
+  };
 
   const filteredSections = useMemo(
-    () => SECTIONS.filter(s => matches(q, s.title, s.keywords.join(" "), s.bullets.join(" "))),
-    [q]
+    () => filterManualSections(q, audience, searchAll),
+    [q, audience, searchAll],
   );
   const filteredFaqs = useMemo(
-    () => FAQS.filter(f => matches(q, f.q, f.a, f.keywords.join(" "))),
-    [q]
+    () => filterManualFaqs(q, audience, searchAll),
+    [q, audience, searchAll],
   );
-  const noResults = q && filteredSections.length === 0 && filteredFaqs.length === 0;
+  const filteredTerms = useMemo(() => filterManualTerms(q), [q]);
+  const noResults = q && filteredSections.length === 0 && filteredFaqs.length === 0 && filteredTerms.length === 0;
+  const suggested = user ? resolveManualAudience(null, roles) : null;
 
   return (
-    <div className={embedded ? "bg-background" : "min-h-screen bg-background"}>
+    <div className={embedded ? "bg-background" : "min-h-screen bg-background"} data-testid="manual-page">
       {!embedded && (
-      <div className="border-b bg-card">
-        <div className="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-              <BookOpen className="h-5 w-5 text-primary-foreground" />
+        <div className="border-b bg-card">
+          <div className="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
+                <BookOpen className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">사용 설명서</h1>
+                <p className="text-xs text-muted-foreground">역할을 고르면 자기 설명만 보입니다</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold">사용 설명서</h1>
-              <p className="text-xs text-muted-foreground">안전관리시스템 · 관리자 & 근로자용</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 print:hidden">
-            <Button variant="outline" size="sm" onClick={() => { restartTutorial(); window.location.assign("/"); }}>
-              <PlayCircle className="h-4 w-4 mr-1" /> 따라하기 다시 보기
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-1" /> PDF 저장/인쇄
-            </Button>
-            <Link to="/auth">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-1" /> 로그인
+            <div className="flex items-center gap-2 print:hidden">
+              <Button variant="outline" size="sm" onClick={() => { restartTutorial(); window.location.assign("/"); }}>
+                <PlayCircle className="h-4 w-4 mr-1" /> 따라하기 다시 보기
               </Button>
-            </Link>
+              <Button variant="outline" size="sm" onClick={() => window.print()}>
+                <Printer className="h-4 w-4 mr-1" /> PDF 저장/인쇄
+              </Button>
+              <Link to="/auth">
+                <Button variant="outline" size="sm">
+                  <ArrowLeft className="h-4 w-4 mr-1" /> 로그인
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       <div className={embedded ? "px-4 pb-8 space-y-6" : "max-w-5xl mx-auto px-4 py-8 space-y-8"}>
-        {/* Search */}
         <Card className="border-primary/30">
           <CardContent className="p-4 space-y-3">
             <div className="relative">
@@ -181,7 +146,7 @@ export default function Manual({ embedded = false }: { embedded?: boolean }) {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="키워드 검색 (예: QR, 로그인, 결재, 사진 업로드)"
+                placeholder="키워드 검색 (예: GPS, 출근, 결재, 가능성)"
                 className="pl-9 pr-9 h-11 text-base"
               />
               {query && (
@@ -196,7 +161,7 @@ export default function Manual({ embedded = false }: { embedded?: boolean }) {
             </div>
             <div className="flex flex-wrap gap-1.5">
               <span className="text-xs text-muted-foreground self-center mr-1">빠른 검색:</span>
-              {QUICK.map(k => (
+              {MANUAL_QUICK_SEARCH.map((k) => (
                 <button
                   key={k}
                   onClick={() => setQuery(k)}
@@ -208,182 +173,170 @@ export default function Manual({ embedded = false }: { embedded?: boolean }) {
             </div>
             {q && (
               <p className="text-xs text-muted-foreground">
-                "<b>{q}</b>" 검색 결과 — 메뉴 {filteredSections.length}건 · FAQ {filteredFaqs.length}건
+                「{q}」 전체 검색 — 메뉴 {filteredSections.length}건 · FAQ {filteredFaqs.length}건 · 용어 {filteredTerms.length}건
               </p>
             )}
           </CardContent>
         </Card>
 
-        {!q && (
-          <>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  이 시스템은 무엇인가요?
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm leading-relaxed">
-                <p>대한민국 산업안전보건법 기준의 <b>건설현장 안전관리 통합 플랫폼</b>입니다.</p>
-                <p>위험성평가 · 작업계획서 · 작업허가 · TBM · 교육 · 점검 · 근로자 입퇴장까지 한 화면에서 처리할 수 있습니다.</p>
-                <div className="flex flex-wrap gap-2 pt-2">
-                  <Badge variant="secondary">관리자(PM/안전관리자)</Badge>
-                  <Badge variant="secondary">근로자</Badge>
-                  <Badge variant="secondary">원청/협력사</Badge>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="flex flex-wrap items-center gap-2" data-testid="manual-role-bar">
+          <span className="text-xs text-muted-foreground">역할</span>
+          {audience ? (
+            <>
+              <Badge variant="secondary" data-testid={`manual-audience-${audience}`}>
+                {MANUAL_AUDIENCE_OPTIONS.find((o) => o.id === audience)?.label}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                data-testid="manual-switch-role"
+                onClick={() => {
+                  clearStoredManualAudience();
+                  setAudience(null);
+                }}
+              >
+                역할 바꾸기
+              </Button>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground">아래에서 고르면 자기 설명만 펼칩니다</span>
+          )}
+        </div>
 
-            <section>
-              <div className="flex items-center gap-2 mb-3">
-                <HardHat className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">관리자 빠른 시작 (5단계)</h2>
-              </div>
-              <div className="grid gap-3 md:grid-cols-5">
-                {[
-                  { n: 1, t: "회원가입/로그인", d: "이메일로 가입 후 관리자 승인" },
-                  { n: 2, t: "프로젝트 선택", d: "소속 현장 선택" },
-                  { n: 3, t: "위험성평가 작성", d: "AI 자동생성 + 검토" },
-                  { n: 4, t: "작업계획서/허가서", d: "결재 상신" },
-                  { n: 5, t: "근로자 QR 발급", d: "현장 게시" },
-                ].map(s => (
-                  <Card key={s.n}>
-                    <CardContent className="p-4">
-                      <div className="text-2xl font-bold text-primary mb-1">{s.n}</div>
-                      <div className="font-semibold text-sm">{s.t}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{s.d}</div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">근로자 빠른 시작 (3초 흐름)</h2>
-              </div>
-              <Card className="bg-accent/5">
-                <CardContent className="p-6">
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-center">
-                    <Step icon={<QrCode className="h-6 w-6" />} title="① QR 스캔" desc="현장 입구 QR" />
-                    <Arrow />
-                    <Step icon={<LogIn className="h-6 w-6" />} title="② 간편 등록" desc="이름 + 전화번호" />
-                    <Arrow />
-                    <Step icon={<CheckCircle2 className="h-6 w-6" />} title="③ 확인/서명" desc="위험성평가·교육·TBM" />
-                    <Arrow />
-                    <Step icon={<HardHat className="h-6 w-6" />} title="④ 입장" desc="작업 시작" />
-                  </div>
-                  <p className="text-xs text-muted-foreground text-center mt-4">
-                    ※ 작업 종료 시 같은 QR로 <b>퇴장 + 무재해 확인 + 전자서명</b>을 진행합니다.
-                  </p>
-                </CardContent>
-              </Card>
-            </section>
-
-            {/* 전체 작업 흐름 */}
-            <section>
-              <div className="flex items-center gap-2 mb-3">
-                <FileSignature className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">전체 작업 흐름 (관리자)</h2>
-              </div>
-              <Card>
-                <CardContent className="p-5">
-                  <div className="grid gap-2 md:grid-cols-8 text-center text-xs">
-                    {[
-                      { i: <ShieldAlert className="h-5 w-5" />, t: "위험성평가" },
-                      { i: <FileText className="h-5 w-5" />, t: "작업계획서" },
-                      { i: <FileSignature className="h-5 w-5" />, t: "작업허가" },
-                      { i: <QrCode className="h-5 w-5" />, t: "TBM" },
-                      { i: <HardHat className="h-5 w-5" />, t: "작업" },
-                      { i: <ClipboardCheck className="h-5 w-5" />, t: "점검/조치" },
-                      { i: <AlertTriangle className="h-5 w-5" />, t: "사고 대응" },
-                      { i: <ReceiptText className="h-5 w-5" />, t: "비용 정산" },
-                    ].map((s, i) => (
-                      <div key={i} className="flex flex-col items-center gap-1 p-2 rounded-md bg-muted/40">
-                        <div className="h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center">{s.i}</div>
-                        <div className="font-semibold">{i + 1}. {s.t}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    각 단계는 결재/검증을 거쳐 다음 단계로 진행됩니다. 조건 미충족 시 시스템이 자동으로 차단합니다.
-                  </p>
-                </CardContent>
-              </Card>
-            </section>
-
-            {/* 근로자 시각 가이드 */}
-            <section>
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold">근로자 시각 가이드 (그림 중심)</h2>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <PicCard
-                  icon={<ScanLine className="h-10 w-10" />}
-                  step="STEP 1"
-                  title="QR 스캔"
-                  desc="휴대폰 카메라로 현장 입구의 QR을 비추세요."
-                />
-                <PicCard
-                  icon={<Hand className="h-10 w-10" />}
-                  step="STEP 2"
-                  title="확인 (체크)"
-                  desc="위험성평가·교육·TBM 안내를 읽고 모두 체크합니다."
-                />
-                <PicCard
-                  icon={<PenLine className="h-10 w-10" />}
-                  step="STEP 3"
-                  title="서명 후 입장"
-                  desc="화면에 손가락으로 서명하면 입장이 완료됩니다."
-                />
-              </div>
-              <p className="text-xs text-center text-muted-foreground mt-3">
-                ※ 퇴근 시에도 같은 방법으로 <b>퇴장 + 무재해 확인 + 서명</b>을 진행합니다.
+        {!audience && (
+          <section data-testid="manual-role-gate">
+            <h2 className="text-lg font-bold mb-3">나는 누구인가요?</h2>
+            {suggested && (
+              <p className="text-xs text-muted-foreground mb-2">
+                로그인 역할로 「{MANUAL_AUDIENCE_OPTIONS.find((o) => o.id === suggested)?.label}」을 제안합니다.
               </p>
-            </section>
-          </>
+            )}
+            <div className="grid gap-3 md:grid-cols-3">
+              {MANUAL_AUDIENCE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  data-testid={`manual-pick-${opt.id}`}
+                  onClick={() => pickAudience(opt.id)}
+                  className={`text-left rounded-lg border p-4 hover:border-primary hover:bg-accent/20 ${
+                    suggested === opt.id ? "border-primary" : ""
+                  }`}
+                >
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+          </section>
         )}
 
-        {/* Sections */}
-        {filteredSections.length > 0 && (
+        {!q && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                이 시스템은 무엇인가요?
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm leading-relaxed">
+              <p>대한민국 산업안전보건법 기준의 <b>건설현장 안전관리 통합 플랫폼</b>입니다.</p>
+              <p>위험성평가부터 허가·TBM·출퇴근·점검·비용까지, 역할에 맞는 화면만 쓰면 됩니다.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!q && audience === "worker" && (
+          <section data-testid="manual-worker-flow">
+            <h2 className="text-lg font-bold mb-3">근로자 — 하루 흐름</h2>
+            <div className="grid gap-3 md:grid-cols-4">
+              {WORKER_DAY_STEPS.map((s) => (
+                <Card key={s.n} className="border-2 border-primary/20">
+                  <CardContent className="p-5 text-center space-y-2">
+                    <div className="text-xs font-bold text-primary tracking-wider">STEP {s.n}</div>
+                    <div className="text-lg font-bold">{s.title}</div>
+                    <div className="text-sm text-muted-foreground">{s.desc}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!q && audience === "supervisor" && (
+          <section data-testid="manual-supervisor-flow">
+            <h2 className="text-lg font-bold mb-3">관리감독자 — 작성 순서</h2>
+            <div className="grid gap-3 md:grid-cols-4">
+              {SUPERVISOR_FLOW_STEPS.map((s) => (
+                <Card key={s.n}>
+                  <CardContent className="p-4">
+                    <div className="text-2xl font-bold text-primary mb-1">{s.n}</div>
+                    <div className="font-semibold text-sm">{s.title}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{s.desc}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!q && audience === "admin" && (
+          <section data-testid="manual-admin-flow">
+            <h2 className="text-lg font-bold mb-3">안전관리자·관리자 — 업무 순서</h2>
+            <div className="grid gap-2 md:grid-cols-8 text-center text-xs">
+              {ADMIN_FLOW_STEPS.map((s) => (
+                <div key={s.n} className="flex flex-col items-center gap-1 p-2 rounded-md bg-muted/40">
+                  <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+                    {s.n}
+                  </div>
+                  <div className="font-semibold">{s.title}</div>
+                  <div className="text-muted-foreground">{s.desc}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {filteredSections.length > 0 && audience && (
           <section>
             <div className="flex items-center gap-2 mb-3">
               <FileText className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-bold">메뉴별 상세 설명</h2>
+              <h2 className="text-lg font-bold">{q ? "검색된 설명" : "설명"}</h2>
             </div>
-            <Accordion type="multiple" defaultValue={q ? filteredSections.map(s => s.id) : []} className="bg-card rounded-lg border">
-              {filteredSections.map(s => (
-                <AccordionItem key={s.id} value={s.id}>
-                  <AccordionTrigger className="px-4 hover:no-underline">
-                    <span className="flex items-center gap-2 font-semibold text-sm">
-                      {s.icon}{highlight(s.title, q)}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 text-sm text-muted-foreground">
-                    <ul className="list-disc pl-5 space-y-1">
-                      {s.bullets.map((b, i) => <li key={i}>{highlight(b, q)}</li>)}
-                    </ul>
-                  </AccordionContent>
-                </AccordionItem>
+            <Accordion type="multiple" defaultValue={q ? filteredSections.map((s) => s.id) : []} className="bg-card rounded-lg border">
+              {filteredSections.map((s) => (
+                <SectionItem key={s.id} section={s} query={q} selected={audience} />
               ))}
             </Accordion>
           </section>
         )}
 
-        {/* FAQ */}
-        {filteredFaqs.length > 0 && (
+        {q && !audience && filteredSections.length > 0 && (
+          <section>
+            <h2 className="text-lg font-bold mb-3">검색된 설명</h2>
+            <Accordion type="multiple" defaultValue={filteredSections.map((s) => s.id)} className="bg-card rounded-lg border">
+              {filteredSections.map((s) => (
+                <SectionItem key={s.id} section={s} query={q} selected={null} />
+              ))}
+            </Accordion>
+          </section>
+        )}
+
+        {filteredFaqs.length > 0 && (audience || q) && (
           <section>
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="h-5 w-5 text-primary" />
               <h2 className="text-lg font-bold">자주 묻는 질문</h2>
             </div>
-            <Accordion type="multiple" defaultValue={q ? filteredFaqs.map(f => f.q) : []} className="bg-card rounded-lg border">
-              {filteredFaqs.map(f => (
-                <AccordionItem key={f.q} value={f.q}>
+            <Accordion type="multiple" defaultValue={q ? filteredFaqs.map((f) => f.id) : []} className="bg-card rounded-lg border">
+              {filteredFaqs.map((f) => (
+                <AccordionItem key={f.id} value={f.id}>
                   <AccordionTrigger className="px-4 hover:no-underline text-left text-sm font-semibold">
-                    Q. {highlight(f.q, q)}
+                    <span className="flex flex-wrap items-center gap-2">
+                      Q. {highlight(f.q, q)}
+                      {q && audience && !f.audience.includes(audience) && (
+                        <Badge variant="outline" className="text-[10px] font-normal">{audienceLabel(f.audience)}</Badge>
+                      )}
+                    </span>
                   </AccordionTrigger>
                   <AccordionContent className="px-4 text-sm text-muted-foreground">
                     A. {highlight(f.a, q)}
@@ -394,10 +347,26 @@ export default function Manual({ embedded = false }: { embedded?: boolean }) {
           </section>
         )}
 
+        {(audience || q) && filteredTerms.length > 0 && (
+          <section data-testid="manual-glossary">
+            <h2 className="text-lg font-bold mb-3">용어 사전</h2>
+            <Card>
+              <CardContent className="p-0 divide-y">
+                {filteredTerms.map((t) => (
+                  <div key={t.term} className="px-4 py-3">
+                    <div className="text-sm font-semibold">{highlight(t.term, q)}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{highlight(t.plain, q)}</div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
         {noResults && (
           <Card>
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              "{q}" 에 대한 결과가 없습니다. 다른 키워드를 입력해 보세요.
+              「{q}」에 대한 결과가 없습니다. 다른 키워드를 입력해 보세요.
             </CardContent>
           </Card>
         )}
@@ -407,12 +376,76 @@ export default function Manual({ embedded = false }: { embedded?: boolean }) {
         </div>
 
         <div className="text-center pt-4 pb-8 text-xs text-muted-foreground">
-          본 메뉴얼은 누구나 열람할 수 있습니다 · 시스템 관련 문의는 현장 안전관리자에게 연락 바랍니다.
+          본 설명서는 로그인 없이 열 수 있습니다 · 문의는 현장 안전관리자에게
           <div className="mt-3">
             <Link to="/auth"><Button size="sm">시스템 시작하기</Button></Link>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SectionItem({
+  section,
+  query,
+  selected,
+}: {
+  section: ManualSection;
+  query: string;
+  selected: ManualAudience | null;
+}) {
+  const Icon = ICONS[section.icon] || FileText;
+  const foreign = selected && !section.audience.includes(selected);
+  return (
+    <AccordionItem value={section.id}>
+      <AccordionTrigger className="px-4 hover:no-underline">
+        <span className="flex items-center gap-2 font-semibold text-sm">
+          <Icon className="h-4 w-4" />
+          {highlight(section.title, query)}
+          {foreign && (
+            <Badge variant="outline" className="text-[10px] font-normal">{audienceLabel(section.audience)}</Badge>
+          )}
+        </span>
+      </AccordionTrigger>
+      <AccordionContent className="px-4 text-sm text-muted-foreground space-y-3">
+        <ul className="list-disc pl-5 space-y-1">
+          {section.bullets.map((b, i) => <li key={i}>{highlight(b, query)}</li>)}
+        </ul>
+        {section.showMatrix && <RiskMatrixTable />}
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
+function RiskMatrixTable() {
+  return (
+    <div className="overflow-x-auto" data-testid="manual-risk-matrix">
+      <p className="text-xs mb-2">가능성(행) × 중대성(열) → 위험도 상/중/하</p>
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr>
+            <th className="border p-1.5 bg-muted">가능성 \\ 중대성</th>
+            {GRADES.map((s) => (
+              <th key={s} className="border p-1.5 bg-muted">중대성 {s}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((l) => (
+            <tr key={l}>
+              <th className="border p-1.5 bg-muted text-left">가능성 {l}</th>
+              {GRADES.map((s) => {
+                const grade = calculateRiskGrade(l, s);
+                const tone = grade === "상" ? "bg-red-100" : grade === "중" ? "bg-yellow-100" : "bg-green-100";
+                return (
+                  <td key={s} className={`border p-1.5 text-center font-semibold ${tone}`}>{grade}</td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -515,31 +548,4 @@ function InquiryForm() {
       </Card>
     </section>
   );
-}
-
-function Step({ icon, title, desc }: any) {
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="h-12 w-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center">{icon}</div>
-      <div className="font-semibold text-sm">{title}</div>
-      <div className="text-xs text-muted-foreground">{desc}</div>
-    </div>
-  );
-}
-function PicCard({ icon, step, title, desc }: any) {
-  return (
-    <Card className="border-2 border-primary/20">
-      <CardContent className="p-6 text-center space-y-2">
-        <div className="mx-auto h-20 w-20 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-          {icon}
-        </div>
-        <div className="text-xs font-bold text-primary tracking-wider">{step}</div>
-        <div className="text-lg font-bold">{title}</div>
-        <div className="text-sm text-muted-foreground">{desc}</div>
-      </CardContent>
-    </Card>
-  );
-}
-function Arrow() {
-  return <div className="text-muted-foreground hidden md:block">→</div>;
 }

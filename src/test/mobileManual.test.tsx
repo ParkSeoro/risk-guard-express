@@ -11,6 +11,14 @@ vi.mock("@/hooks/use-toast", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    user: null,
+    roles: [],
+    hasRole: () => false,
+  }),
+}));
+
 import MobileManual from "@/pages/MobileManual";
 
 describe("MobileManual", () => {

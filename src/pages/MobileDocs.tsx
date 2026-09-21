@@ -25,9 +25,9 @@ export default function MobileDocs() {
       icon: ClipboardList,
     },
     {
-      label: "Manual",
+      label: t("menuManual"),
       sub: "",
-      to: "/manual",
+      to: "/app/worker/manual",
       icon: BookOpen,
     },
   ];

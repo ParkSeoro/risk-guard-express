@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ResponsiveSignaturePad, { type ResponsiveSignaturePadHandle } from "@/components/ResponsiveSignaturePad";
 import { toast } from "sonner";
-import { HardHat, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import MobilePageHeader from "@/components/mobile/MobilePageHeader";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 
 type PendingReceipt = {
   id: string;
@@ -34,6 +36,7 @@ function asRows(data: unknown): PendingReceipt[] {
 }
 
 export default function MobilePpeReceipt() {
+  const onBack = useMobileSubpageBack("/app/worker/tasks");
   const blockWrite = usePreviewWriteBlock();
   const [rows, setRows] = useState<PendingReceipt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,15 +91,13 @@ export default function MobilePpeReceipt() {
   }
 
   return (
-    <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-ppe-receipt">
-      <div>
-        <h1 className="text-base font-bold flex items-center gap-2">
-          <HardHat className="h-4 w-4" /> 보호구 수령확인
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          서명하면 지급대장과 수불대장에 수령 일시가 함께 기록됩니다.
-        </p>
-      </div>
+    <div className="max-w-md mx-auto" data-testid="mobile-ppe-receipt">
+      <MobilePageHeader
+        title="보호구 수령확인"
+        subtitle="서명하면 지급대장·수불대장에 기록됩니다"
+        onBack={onBack}
+      />
+      <div className="px-4 pb-8 space-y-3">
 
       {loading ? (
         <div className="text-sm text-muted-foreground py-8 flex items-center gap-2">
@@ -155,6 +156,7 @@ export default function MobilePpeReceipt() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   );
 }

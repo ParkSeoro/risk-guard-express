@@ -40,6 +40,7 @@ export const LazyMobileGeofenceDrop = L(() => import("@/pages/MobileGeofenceDrop
 export const LazyMobileMapCalibration = L(() => import("@/pages/MobileMapCalibration"));
 export const LazyMobileSiteWeather = L(() => import("@/pages/MobileSiteWeather"));
 export const LazyMobilePpeReceipt = L(() => import("@/pages/MobilePpeReceipt"));
+export const LazyMobileManual = L(() => import("@/pages/MobileManual"));
 export const LazyWorkerPortal = L(() => import("@/pages/WorkerPortal"));
 export const LazyWorkerEntry = L(() => import("@/pages/WorkerEntry"));
 export const LazyWorkerRegister = L(() => import("@/pages/WorkerRegister"));

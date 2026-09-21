@@ -146,10 +146,11 @@ export default function LeafletDrawControl({
     map.boxZoom?.enable?.();
   };
 
-  // External activeTool: block panning while drawing so draw clicks/drags win.
+  // Polygon is click-to-add vertices, so disable panning. Rectangle/circle need
+  // click-drag; turning off map.dragging makes those handlers never finish.
   useEffect(() => {
     if (!enabled || showToolbar) return;
-    if (activeTool) {
+    if (activeTool === "polygon") {
       suspendMapGestures();
       return () => restoreMapGestures();
     }

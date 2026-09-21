@@ -7,6 +7,7 @@ import {
   isDefinitelyOutsideSiteBoundary,
   isWithinAnySiteAttendance,
   isWithinSiteAttendance,
+  outlineToDrawnShape,
   parseSiteBoundaryRow,
   pointInSiteBoundary,
   SITE_BOUNDARY_BUFFER_DEFAULT_M,
@@ -104,6 +105,26 @@ describe("siteBoundary", () => {
     const leave = evaluateSiteLeave([square, office], [], 37.54, 127.0, 10);
     expect(leave?.outside).toBe(true);
     expect(canResumeOnSite([square, office], [], 37.52, 127.0, 10)).toBe(true);
+  });
+
+  it("converts stored 개소 outlines back into leaflet edit shapes", () => {
+    expect(outlineToDrawnShape(square)).toEqual({
+      kind: "polygon",
+      latlngs: square.geo_polygon,
+    });
+    expect(outlineToDrawnShape(circle)).toEqual({
+      kind: "circle",
+      center: { lat: 37.5, lng: 127.0 },
+      radius_m: 80,
+    });
+    expect(
+      outlineToDrawnShape({
+        ...circle,
+        geometry_type: "radius",
+        center_lat: null,
+        radius_m: 0,
+      }),
+    ).toBeNull();
   });
 
   it("parses a stored row and ignores junk geometry", () => {

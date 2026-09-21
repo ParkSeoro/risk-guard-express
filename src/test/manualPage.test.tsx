@@ -71,8 +71,8 @@ describe("Manual page", () => {
       pick.click();
     });
     expect(el!.querySelector('[data-testid="manual-worker-flow"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="manual-admin-flow"]')).toBeFalsy();
     expect(el!.textContent).toContain("하단 탭");
-    expect(el!.textContent).not.toContain("결재선 저장");
     expect(window.localStorage.getItem(MANUAL_AUDIENCE_STORAGE_KEY)).toBe("worker");
     expect(el!.querySelector('[data-testid="manual-switch-role"]')).toBeTruthy();
   });

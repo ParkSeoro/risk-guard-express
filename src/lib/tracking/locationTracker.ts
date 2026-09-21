@@ -17,9 +17,12 @@ import {
 } from "@/lib/tracking/gpsCalibration";
 import { watchGpsCalibrationInvalidation } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
+  canResumeOnSite,
+  evaluateSiteLeave,
+  type SiteBoundary,
+} from "@/lib/tracking/siteBoundary";
+import {
   DANGER_PROXIMITY_M,
-  isDefinitelyOutsideAllSites,
-  isInsideAnyResumeFence,
   listTrackingFences,
   SITE_EXIT_MAX_ACCURACY_M,
   SITE_EXIT_STREAK,
@@ -128,6 +131,8 @@ export type TrackerOptions = {
   siteCenter?: SiteTrackingFence | null;
   /** 여러 GPS 개소. 있으면 합집합이 SSOT이고 siteCenter는 무시한다. */
   siteFences?: SiteTrackingFence[] | null;
+  /** Drawn site outline. When set, attendance/leave uses this instead of circular fences. */
+  siteBoundary?: SiteBoundary | null;
   onLeaveSite?: (info: { distanceM: number; lat: number; lng: number; radiusM: number }) => void;
   onResumeSite?: () => void;
   onPreview?: (info: TrackerFixInfo) => void;
@@ -270,10 +275,11 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     };
 
     const probeResume = async () => {
-      if (sessionStopped || phase !== "suspended" || fences.length === 0) return;
+      if (sessionStopped || phase !== "suspended") return;
+      if (!opts.siteBoundary && fences.length === 0) return;
       const pos = await probeCurrentPosition();
       if (!pos || sessionStopped || phase !== "suspended") return;
-      if (!isInsideAnyResumeFence(fences, pos.lat, pos.lng, pos.accuracy)) return;
+      if (!canResumeOnSite(opts.siteBoundary, fences, pos.lat, pos.lng, pos.accuracy)) return;
       phase = "tracking";
       outsideStreak = 0;
       clearResumeTimers();
@@ -320,21 +326,16 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         const accuracy = Number(location.accuracy) || 30;
         const disp = applyGpsCalibration(rawLat, rawLng, cal);
 
-        if (fences.length > 0) {
-          const { outside, distanceM: d, radiusM } = isDefinitelyOutsideAllSites(
-            fences,
-            rawLat,
-            rawLng,
-            accuracy,
-          );
-          const bump = nextOutsideStreak(outside, outsideStreak);
+        const leave = evaluateSiteLeave(opts.siteBoundary, fences, rawLat, rawLng, accuracy);
+        if (leave) {
+          const bump = nextOutsideStreak(leave.outside, outsideStreak);
           outsideStreak = bump.streak;
           if (bump.suspend) {
             enterSuspended({
-              distanceM: d,
+              distanceM: leave.distanceM,
               lat: rawLat,
               lng: rawLng,
-              radiusM,
+              radiusM: leave.radiusM,
             });
             return;
           }
@@ -694,10 +695,11 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   };
 
   const probeResume = async () => {
-    if (stopped || phase !== "suspended" || fences.length === 0) return;
+    if (stopped || phase !== "suspended") return;
+    if (!opts.siteBoundary && fences.length === 0) return;
     const pos = await probeCurrentPosition();
     if (!pos || stopped || phase !== "suspended") return;
-    if (!isInsideAnyResumeFence(fences, pos.lat, pos.lng, pos.accuracy)) return;
+    if (!canResumeOnSite(opts.siteBoundary, fences, pos.lat, pos.lng, pos.accuracy)) return;
     phase = "tracking";
     outsideStreak = 0;
     clearResumeTimers();
@@ -738,21 +740,16 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
     const here = { lat: disp.lat, lng: disp.lng, ts: now };
 
-    if (fences.length > 0) {
-      const { outside, distanceM: d, radiusM } = isDefinitelyOutsideAllSites(
-        fences,
-        raw.lat,
-        raw.lng,
-        accuracy,
-      );
-      const bump = nextOutsideStreak(outside, outsideStreak);
+    const leave = evaluateSiteLeave(opts.siteBoundary, fences, raw.lat, raw.lng, accuracy);
+    if (leave) {
+      const bump = nextOutsideStreak(leave.outside, outsideStreak);
       outsideStreak = bump.streak;
       if (bump.suspend) {
         enterSuspended({
-          distanceM: d,
+          distanceM: leave.distanceM,
           lat: raw.lat,
           lng: raw.lng,
-          radiusM,
+          radiusM: leave.radiusM,
         });
         return;
       }

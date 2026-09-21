@@ -61,7 +61,7 @@ export function pointToSegmentM(p: GeoPoint, a: GeoPoint, b: GeoPoint): number {
   return Math.hypot(dx, dy);
 }
 
-function distanceToPolygonEdgeM(here: GeoPoint, poly: GeoPoint[]): number {
+export function distanceToPolygonEdgeM(here: GeoPoint, poly: GeoPoint[]): number {
   const n = poly.length;
   if (n < 2) return Number.POSITIVE_INFINITY;
   const closed =

@@ -10,6 +10,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import {
+  distanceToSiteBoundaryEdgeM,
+  fetchActiveSiteBoundary,
+  isWithinSiteAttendance,
+  type SiteBoundary,
+} from "@/lib/tracking/siteBoundary";
+import {
   isInsideAnyCheckInFence,
   nearestFenceDistanceM,
   pickCurrentSiteSpot,
@@ -93,6 +99,7 @@ export default function WorkerDailyHome({
   const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [probeNonce, setProbeNonce] = useState(0);
   const [checkInFences, setCheckInFences] = useState<SiteTrackingFence[]>([]);
+  const [siteBoundary, setSiteBoundary] = useState<SiteBoundary | null>(null);
   const [projectName, setProjectName] = useState("");
   const [workerId, setWorkerId] = useState<string | null>(null);
   const [todayLog, setTodayLog] = useState<EntryLog | null>(null);
@@ -135,22 +142,35 @@ export default function WorkerDailyHome({
   }, [checkInFences, effectiveFix, projectId]);
 
   const distanceM = useMemo(() => {
-    if (!checkInFences.length || !effectiveFix) return null;
+    if (!effectiveFix) return null;
+    if (siteBoundary) {
+      return distanceToSiteBoundaryEdgeM(effectiveFix.lat, effectiveFix.lng, siteBoundary);
+    }
+    if (!checkInFences.length) return null;
     return nearestFenceDistanceM(checkInFences, effectiveFix.lat, effectiveFix.lng);
-  }, [checkInFences, effectiveFix]);
+  }, [checkInFences, effectiveFix, siteBoundary]);
 
   const withinCheckIn = useMemo(() => {
-    if (!checkInFences.length || !effectiveFix) return false;
+    if (!effectiveFix) return false;
+    if (siteBoundary) {
+      return isWithinSiteAttendance(
+        effectiveFix.lat,
+        effectiveFix.lng,
+        siteBoundary,
+        effectiveFix.accuracy,
+      );
+    }
+    if (!checkInFences.length) return false;
     return isInsideAnyCheckInFence(
       checkInFences,
       effectiveFix.lat,
       effectiveFix.lng,
       effectiveFix.accuracy,
     );
-  }, [checkInFences, effectiveFix]);
+  }, [checkInFences, effectiveFix, siteBoundary]);
 
   const displayFence = currentSpot || checkInFences[0] || null;
-  const hasFence = checkInFences.length > 0;
+  const hasFence = !!siteBoundary || checkInFences.length > 0;
 
   useEffect(() => {
     if (projectId && currentSpot?.id) writeLastSiteSpotId(projectId, currentSpot.id);
@@ -177,8 +197,12 @@ export default function WorkerDailyHome({
       setProjectName(proj.name || "");
     }
     // Prefer georeferenced site_maps footprint over address-geocoded pin
-    const fences = await resolveSiteCheckInFences(pid);
+    const [fences, boundary] = await Promise.all([
+      resolveSiteCheckInFences(pid),
+      fetchActiveSiteBoundary(pid),
+    ]);
     setCheckInFences(fences);
+    setSiteBoundary(boundary);
 
     let wid: string | null = null;
     let workerCompanyId: string | null = null;
@@ -370,15 +394,21 @@ export default function WorkerDailyHome({
     const fresh = await readFreshCheckInFix();
     if (fresh) setProbeFix(fresh);
     const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
-    if (!checkInFences.length) {
-      toast.error("현장 좌표가 없습니다. 관리자에게 GPS 개소 또는 현장맵 지오레프·주소핀을 요청하세요.");
+    if (!siteBoundary && !checkInFences.length) {
+      toast.error("현장 좌표가 없습니다. 관리자에게 관제맵 현장 테두리 또는 GPS 개소·주소핀을 요청하세요.");
       return;
     }
     if (!fix) {
       toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 출근하세요.");
       return;
     }
-    if (!isInsideAnyCheckInFence(checkInFences, fix.lat, fix.lng, fix.accuracy)) {
+    if (siteBoundary) {
+      if (!isWithinSiteAttendance(fix.lat, fix.lng, siteBoundary, fix.accuracy)) {
+        const d = Math.round(distanceToSiteBoundaryEdgeM(fix.lat, fix.lng, siteBoundary));
+        toast.error(`현장 테두리 안(바깥 ${siteBoundary.buffer_m}m까지)에서만 출근할 수 있습니다 · 테두리까지 ${d}m`);
+        return;
+      }
+    } else if (!isInsideAnyCheckInFence(checkInFences, fix.lat, fix.lng, fix.accuracy)) {
       const d = Math.round(nearestFenceDistanceM(checkInFences, fix.lat, fix.lng) || 0);
       toast.error(`개소 펜스 안에서만 출근할 수 있습니다 · 가장 가까운 개소 ${d}m`);
       return;
@@ -511,6 +541,20 @@ export default function WorkerDailyHome({
       return;
     }
     if (!todayLog || !workerId || !projectId) return;
+    const fresh = await readFreshCheckInFix();
+    if (fresh) setProbeFix(fresh);
+    const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
+    if (siteBoundary) {
+      if (!fix) {
+        toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 퇴근하세요.");
+        return;
+      }
+      if (!isWithinSiteAttendance(fix.lat, fix.lng, siteBoundary, fix.accuracy)) {
+        const d = Math.round(distanceToSiteBoundaryEdgeM(fix.lat, fix.lng, siteBoundary));
+        toast.error(`현장 테두리 안(바깥 ${siteBoundary.buffer_m}m까지)에서만 퇴근할 수 있습니다 · 테두리까지 ${d}m`);
+        return;
+      }
+    }
     const signatureData = exitSigRef.current.toDataURL("image/png");
     if (!signatureData || signatureData.length < 100) {
       toast.error("퇴근 서명이 유효하지 않습니다. 다시 서명해 주세요");
@@ -629,9 +673,11 @@ export default function WorkerDailyHome({
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <MapPin className="h-4 w-4 text-emerald-600" />
             {diagnosticsOnly ? "위치 · GPS" : "출근 위치"}
-            {displayFence
-              ? ` · ${displayFence.name ? `${displayFence.name} ` : ""}${Math.round(displayFence.radiusM)}m`
-              : ` · ${SITE_CHECKIN_MIN_M}m`}
+            {siteBoundary
+              ? ` · 테두리 밖 ${siteBoundary.buffer_m}m`
+              : displayFence
+                ? ` · ${displayFence.name ? `${displayFence.name} ` : ""}${Math.round(displayFence.radiusM)}m`
+                : ` · ${SITE_CHECKIN_MIN_M}m`}
           </div>
           {diagnosticsOnly ? (
             <>
@@ -653,7 +699,9 @@ export default function WorkerDailyHome({
                 </div>
                 <div className="col-span-2">
                   현장 기준:{" "}
-                  {displayFence
+                  {siteBoundary
+                    ? `현장 테두리 · 바깥 ${siteBoundary.buffer_m}m까지 출퇴근`
+                    : displayFence
                     ? `${displayFence.lat.toFixed(5)}, ${displayFence.lng.toFixed(5)} (${
                         displayFence.name
                           || (displayFence.source === "site_map"
@@ -664,7 +712,7 @@ export default function WorkerDailyHome({
                               ? "개소"
                               : "주소핀")
                       }${checkInFences.length > 1 ? ` · ${checkInFences.length}개소` : ""})`
-                    : "GPS 개소 또는 현장맵 지오레프·주소핀 필요"}
+                    : "관제맵 현장 테두리 또는 GPS 개소·주소핀 필요"}
                 </div>
                 {gpsError && (
                   <div className="col-span-2 text-destructive">GPS: {gpsError}</div>
@@ -674,10 +722,14 @@ export default function WorkerDailyHome({
                 {!hasFence
                   ? "현장 좌표 없음 — 출근 불가"
                   : withinCheckIn
-                    ? currentSpot?.name
-                      ? `${currentSpot.name} 안`
-                      : `반경 ${Math.round(displayFence!.radiusM)}m 이내`
-                    : "반경 밖"}
+                    ? siteBoundary
+                      ? "현장 안 — 출근 가능"
+                      : currentSpot?.name
+                        ? `${currentSpot.name} 안`
+                        : `반경 ${Math.round(displayFence!.radiusM)}m 이내`
+                    : siteBoundary
+                      ? "현장 밖"
+                      : "반경 밖"}
               </Badge>
               <Button
                 size="sm"
@@ -719,10 +771,14 @@ export default function WorkerDailyHome({
                     : !effectiveFix
                       ? (gpsError ? "GPS 오류" : "위치 확인 중…")
                       : withinCheckIn
-                        ? currentSpot?.name
-                          ? `${currentSpot.name} — 출근 가능`
-                          : "반경 안 — 출근 가능"
-                        : "반경 밖 — 출근 불가"}
+                        ? siteBoundary
+                          ? "현장 안 — 출근 가능"
+                          : currentSpot?.name
+                            ? `${currentSpot.name} — 출근 가능`
+                            : "반경 안 — 출근 가능"
+                        : siteBoundary
+                          ? "현장 밖 — 출근 불가"
+                          : "반경 밖 — 출근 불가"}
                 </Badge>
                 {effectiveFix && distanceM != null && hasFence && (
                   <span className="text-xs text-slate-500">{Math.round(distanceM)}m</span>

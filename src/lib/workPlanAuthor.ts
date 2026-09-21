@@ -14,6 +14,31 @@ export {
   type AssessmentAuthorCandidate,
 } from '@/lib/assessmentAuthor';
 
+/** Soft-delete is allowed only before submit lock (작성중 / 반려). */
+export const WORK_PLAN_DELETABLE_STATUSES = ['작성중', '반려'] as const;
+
+export function isWorkPlanDeletableStatus(status?: string | null): boolean {
+  return WORK_PLAN_DELETABLE_STATUSES.includes(status as (typeof WORK_PLAN_DELETABLE_STATUSES)[number]);
+}
+
+/**
+ * List-menu delete: role delete, or I created it, or I am the named 관리감독자.
+ * Approved / in-approval plans stay hidden even for master (DB hard-lock).
+ */
+export function canDeleteDraftWorkPlan(opts: {
+  status?: string | null;
+  createdBy?: string | null;
+  authorUserId?: string | null;
+  userId?: string | null;
+  roleCanDelete?: boolean;
+}): boolean {
+  if (!isWorkPlanDeletableStatus(opts.status)) return false;
+  if (opts.roleCanDelete) return true;
+  const uid = opts.userId || '';
+  if (!uid) return false;
+  return opts.createdBy === uid || opts.authorUserId === uid;
+}
+
 /** 지정만 필수. 누가 입력·상신하는지는 막지 않는다. 인쇄·PDF에 이 이름이 표시된다. */
 export function workPlanAuthorDisplayMessage(authorUserId?: string | null): string | null {
   if (hasAssessmentLegalAuthor(authorUserId)) return null;

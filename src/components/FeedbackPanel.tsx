@@ -20,6 +20,16 @@ import {
   removeAtIndex,
 } from '@/lib/feedbackPhotos';
 import { feedbackStatusBadge } from '@/lib/assessmentApprovalPhase';
+import {
+  FEEDBACK_EXCLUDE_REASONS,
+  canAssignFeedbackToItem,
+  getFeedbackTargetItems,
+  isAutoManagedTarget,
+  isCheckedFeedbackTarget,
+  missingHighFeedbackCount,
+  splitFeedbackOverrides,
+  type FeedbackExcludeReason,
+} from '@/lib/feedbackTargets';
 
 interface FeedbackItem {
   id: string;
@@ -72,13 +82,7 @@ interface FeedbackPanelProps {
 
 const FEEDBACK_TYPES = ['보완', '지적', '개선'] as const;
 const FEEDBACK_STATUSES = ['미조치', '진행중', '완료'] as const;
-
-// Allow both auto (improved_risk_grade === '상') and manual selection
-function getFeedbackTargetItems(riskItems: RiskItemBasic[], manualIds: Set<string>): RiskItemBasic[] {
-  return riskItems.filter(item => 
-    (item as any).improved_risk_grade === '상' || manualIds.has(item.id)
-  );
-}
+const OVERRIDE_TABLE = 'assessment_run_feedback_overrides';
 
 export default function FeedbackPanel({
   runId,
@@ -101,14 +105,19 @@ export default function FeedbackPanel({
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [manualFeedbackTargets, setManualFeedbackTargets] = useState<Set<string>>(new Set());
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  const [excludeReasons, setExcludeReasons] = useState<Record<string, string>>({});
+  const [pendingExcludeItem, setPendingExcludeItem] = useState<RiskItemBasic | null>(null);
   const [showTargetSelection, setShowTargetSelection] = useState(false);
   const [showFeedbackApproval, setShowFeedbackApproval] = useState(false);
 
-  const highRemainItems = riskItems.filter((i) => i.improved_risk_grade === '상');
+  const targetOverrides = { manualIds: manualFeedbackTargets, excludedIds };
+  const highRemainItems = riskItems.filter((i) => isAutoManagedTarget(i));
   const coveredHighIds = new Set(
     feedbackList.map((f) => f.risk_item_id).filter(Boolean) as string[],
   );
-  const missingHighCount = highRemainItems.filter((i) => !coveredHighIds.has(i.id)).length;
+  const excludedHighCount = highRemainItems.filter((i) => excludedIds.has(i.id)).length;
+  const missingHighCount = missingHighFeedbackCount(highRemainItems, coveredHighIds, excludedIds);
   const feedbackClosed = feedbackStatus === 'closed' || feedbackStatus === 'approved';
   const feedbackPending = feedbackStatus === 'pending_approval';
   const canEditFeedback = isApproved && !feedbackClosed && !feedbackPending;
@@ -141,7 +150,104 @@ export default function FeedbackPanel({
     setLoading(false);
   }, [runId]);
 
+  const fetchOverrides = useCallback(async () => {
+    const { data, error } = await supabase
+      .from(OVERRIDE_TABLE as any)
+      .select('risk_item_id, kind, reason')
+      .eq('assessment_run_id', runId);
+    if (error) return;
+    const split = splitFeedbackOverrides((data || []) as any);
+    setManualFeedbackTargets(split.manualIds);
+    setExcludedIds(split.excludedIds);
+    setExcludeReasons(split.excludeReasons);
+  }, [runId]);
+
   useEffect(() => { fetchFeedback(); }, [fetchFeedback]);
+  useEffect(() => { void fetchOverrides(); }, [fetchOverrides]);
+
+  const upsertOverride = async (
+    riskItemId: string,
+    kind: 'manual_include' | 'exclude',
+    reason: string | null,
+  ) => {
+    const { error } = await supabase.from(OVERRIDE_TABLE as any).upsert(
+      {
+        project_id: projectId,
+        assessment_run_id: runId,
+        risk_item_id: riskItemId,
+        kind,
+        reason,
+        created_by: user?.id || null,
+      },
+      { onConflict: 'assessment_run_id,risk_item_id' },
+    );
+    if (error) {
+      toast({ title: '대상 저장 실패', description: error.message, variant: 'destructive' });
+      return false;
+    }
+    return true;
+  };
+
+  const deleteOverride = async (riskItemId: string) => {
+    const { error } = await supabase
+      .from(OVERRIDE_TABLE as any)
+      .delete()
+      .eq('assessment_run_id', runId)
+      .eq('risk_item_id', riskItemId);
+    if (error) {
+      toast({ title: '대상 저장 실패', description: error.message, variant: 'destructive' });
+      return false;
+    }
+    return true;
+  };
+
+  const confirmExclude = async (reason: FeedbackExcludeReason) => {
+    if (!pendingExcludeItem) return;
+    const itemId = pendingExcludeItem.id;
+    if (!(await upsertOverride(itemId, 'exclude', reason))) return;
+    setExcludedIds((prev) => new Set(prev).add(itemId));
+    setExcludeReasons((prev) => ({ ...prev, [itemId]: reason }));
+    setManualFeedbackTargets((prev) => {
+      const next = new Set(prev);
+      next.delete(itemId);
+      return next;
+    });
+    setPendingExcludeItem(null);
+    toast({ title: '이번 주 이행 대상에서 뺐습니다.', description: reason });
+  };
+
+  const handleTargetCheck = async (item: RiskItemBasic, checked: boolean) => {
+    if (!canEditFeedback) return;
+    if (isAutoManagedTarget(item)) {
+      if (!checked) {
+        setPendingExcludeItem(item);
+        return;
+      }
+      if (!(await deleteOverride(item.id))) return;
+      setExcludedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      setExcludeReasons((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+      return;
+    }
+    if (checked) {
+      if (!(await upsertOverride(item.id, 'manual_include', null))) return;
+      setManualFeedbackTargets((prev) => new Set(prev).add(item.id));
+      return;
+    }
+    if (!(await deleteOverride(item.id))) return;
+    setManualFeedbackTargets((prev) => {
+      const next = new Set(prev);
+      next.delete(item.id);
+      return next;
+    });
+  };
 
   const uploadImages = async (files: File[], prefix: string): Promise<string[]> => {
     const urls: string[] = [];
@@ -163,11 +269,15 @@ export default function FeedbackPanel({
       toast({ title: '조치내용을 입력하세요.', variant: 'destructive' });
       return;
     }
-    // Validate: feedback only for items with improved_risk_grade === '상' (관리대상) OR manually selected
     if (formRiskItemId) {
       const selectedItem = riskItems.find(i => i.id === formRiskItemId);
-      if (selectedItem && (selectedItem as any).improved_risk_grade !== '상' && !manualFeedbackTargets.has(formRiskItemId)) {
-        toast({ title: "개선 후 위험도 '상'(관리대상) 또는 수동 선택 항목만 피드백 대상입니다.", variant: 'destructive' });
+      if (!canAssignFeedbackToItem(selectedItem, targetOverrides)) {
+        toast({
+          title: excludedIds.has(formRiskItemId)
+            ? '해당없음으로 뺀 항목에는 피드백을 달 수 없습니다.'
+            : "개선 후 위험도 '상'(관리대상) 또는 수동 선택 항목만 피드백 대상입니다.",
+          variant: 'destructive',
+        });
         return;
       }
     }
@@ -415,7 +525,8 @@ export default function FeedbackPanel({
       </div>
       <p className="text-[10px] text-muted-foreground">
         {helperText || '※ 금주 이행 확인은 전회차 승인 회차에 저장됩니다. 차주 관리대상과 섞지 않습니다.'}
-        {highRemainItems.length > 0 && ` 관리대상 상 ${highRemainItems.length}건 · 미등록 ${missingHighCount}건.`}
+        {highRemainItems.length > 0 &&
+          ` 관리대상 상 ${highRemainItems.length}건 · 해당없음 ${excludedHighCount}건 · 미등록 ${missingHighCount}건.`}
       </p>
 
       {highRemainItems.length > 0 && (
@@ -431,6 +542,7 @@ export default function FeedbackPanel({
           <CardContent className="py-2 px-3 space-y-1">
             {highRemainItems.map((item, idx) => {
               const registered = coveredHighIds.has(item.id);
+              const excluded = excludedIds.has(item.id);
               return (
                 <div key={item.id} className="flex items-start justify-between gap-2 rounded border px-2 py-1.5 text-xs">
                   <div className="min-w-0 space-y-0.5">
@@ -438,13 +550,15 @@ export default function FeedbackPanel({
                       <span className="text-muted-foreground">{idx + 1}.</span>
                       <Badge variant="outline" className="text-[8px] text-destructive">상</Badge>
                       <span className="font-medium truncate">{item.process}</span>
-                      {registered
-                        ? <Badge variant="outline" className="text-[8px]">피드백 있음</Badge>
-                        : <Badge variant="outline" className="text-[8px] text-warning">미등록</Badge>}
+                      {excluded
+                        ? <Badge variant="outline" className="text-[8px]">{excludeReasons[item.id] || '해당없음'}</Badge>
+                        : registered
+                          ? <Badge variant="outline" className="text-[8px]">피드백 있음</Badge>
+                          : <Badge variant="outline" className="text-[8px] text-warning">미등록</Badge>}
                     </div>
                     <p className="text-muted-foreground truncate">{item.sub_task || ''}{item.hazard ? ` · ${item.hazard}` : ''}</p>
                   </div>
-                  {canEditFeedback && !registered && (
+                  {canEditFeedback && !registered && !excluded && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -489,31 +603,31 @@ export default function FeedbackPanel({
       {showTargetSelection && (
         <Card className="border-accent">
           <CardContent className="py-3 space-y-2">
-            <p className="text-xs font-medium">피드백 대상 항목 선택 (체크박스로 수동 지정)</p>
+            <p className="text-xs font-medium">피드백 대상 항목 선택 (자동 관리대상은 해당없을 때 해제)</p>
+            <p className="text-[10px] text-muted-foreground">위평 본문은 그대로 두고, 이번 주 이행에서만 뺍니다.</p>
             <div className="max-h-48 overflow-y-auto space-y-1">
               {riskItems.map(item => {
-                const isAuto = (item as any).improved_risk_grade === '상';
+                const isAuto = isAutoManagedTarget(item);
                 const isManual = manualFeedbackTargets.has(item.id);
+                const excluded = excludedIds.has(item.id);
+                const checked = isCheckedFeedbackTarget(item, targetOverrides);
                 return (
                   <label key={item.id} className="flex items-center gap-2 text-xs p-1.5 rounded hover:bg-accent/10 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={isAuto || isManual}
-                      disabled={isAuto}
+                      data-testid={`feedback-target-${item.id}`}
+                      checked={checked}
+                      disabled={!canEditFeedback}
                       onChange={(e) => {
-                        setManualFeedbackTargets(prev => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(item.id);
-                          else next.delete(item.id);
-                          return next;
-                        });
+                        void handleTargetCheck(item, e.target.checked);
                       }}
                       className="rounded"
                     />
-                    <span className={isAuto ? 'text-destructive font-medium' : ''}>
+                    <span className={isAuto && !excluded ? 'text-destructive font-medium' : ''}>
                       {item.process} – {item.sub_task || ''} – {item.hazard || ''}
                     </span>
-                    {isAuto && <Badge variant="outline" className="text-[8px] text-destructive">자동(관리대상)</Badge>}
+                    {isAuto && !excluded && <Badge variant="outline" className="text-[8px] text-destructive">자동(관리대상)</Badge>}
+                    {excluded && <Badge variant="outline" className="text-[8px]">{excludeReasons[item.id] || '해당없음'}</Badge>}
                     {isManual && !isAuto && <Badge variant="outline" className="text-[8px] text-accent">수동선택</Badge>}
                   </label>
                 );
@@ -523,12 +637,40 @@ export default function FeedbackPanel({
         </Card>
       )}
 
+      <Dialog open={!!pendingExcludeItem} onOpenChange={(open) => { if (!open) setPendingExcludeItem(null); }}>
+        <DialogContent className="max-w-sm" data-testid="feedback-exclude-reason">
+          <DialogHeader>
+            <DialogTitle>이번 주 이행에서 빼기</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            {pendingExcludeItem
+              ? `${pendingExcludeItem.process} – ${pendingExcludeItem.sub_task || ''} – ${pendingExcludeItem.hazard || ''}`
+              : ''}
+          </p>
+          <p className="text-[11px] text-muted-foreground">위평 항목은 지우지 않습니다. 이유만 남깁니다.</p>
+          <div className="flex flex-col gap-2">
+            {FEEDBACK_EXCLUDE_REASONS.map((reason) => (
+              <Button
+                key={reason}
+                type="button"
+                variant="outline"
+                className="justify-start"
+                data-testid={`feedback-exclude-${reason}`}
+                onClick={() => void confirmExclude(reason)}
+              >
+                {reason}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Feedback list */}
       {loading ? (
         <p className="text-xs text-muted-foreground text-center py-4">로딩 중...</p>
       ) : feedbackList.length === 0 ? (
         <p className="text-xs text-muted-foreground text-center py-6">
-          {highRemainItems.length > 0
+          {missingHighCount > 0
             ? '위 관리대상에 대한 조치 전후 사진(피드백)이 아직 없습니다.'
             : '등록된 피드백이 없습니다.'}
         </p>
@@ -602,13 +744,13 @@ export default function FeedbackPanel({
                 <SelectTrigger className="text-xs"><SelectValue placeholder="항목 선택 (선택사항)" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">(전체/일반)</SelectItem>
-                  {getFeedbackTargetItems(riskItems, manualFeedbackTargets).map(item => (
+                  {getFeedbackTargetItems(riskItems, targetOverrides).map(item => (
                     <SelectItem key={item.id} value={item.id} className="text-xs">
                       {item.process} – {item.sub_task || ''} – {item.hazard || ''} 
-                      {(item as any).improved_risk_grade === '상' ? ' [관리대상]' : ' [수동선택]'}
+                      {isAutoManagedTarget(item) ? ' [관리대상]' : ' [수동선택]'}
                     </SelectItem>
                   ))}
-                  {getFeedbackTargetItems(riskItems, manualFeedbackTargets).length === 0 && (
+                  {getFeedbackTargetItems(riskItems, targetOverrides).length === 0 && (
                     <div className="px-2 py-1.5 text-[10px] text-muted-foreground">피드백 대상 항목이 없습니다. [피드백 대상 선택]에서 수동 지정하세요.</div>
                   )}
                 </SelectContent>

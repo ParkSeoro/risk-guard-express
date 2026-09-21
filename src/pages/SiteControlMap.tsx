@@ -79,6 +79,7 @@ import {
   clampSiteBoundaryBufferM,
   fetchActiveSiteBoundary,
   fetchActiveSiteOutlines,
+  outlineToDrawnShape,
   ringCentroid,
   SITE_BOUNDARY_BUFFER_DEFAULT_M,
   SITE_BOUNDARY_BUFFER_MAX_M,
@@ -425,6 +426,7 @@ export default function SiteControlMap() {
   const [siteBoundary, setSiteBoundary] = useState<SiteBoundary | null>(null);
   const [siteSpots, setSiteSpots] = useState<SiteBoundary[]>([]);
   const [selectedSpotId, setSelectedSpotId] = useState<string | null>(null);
+  const [editingSpotId, setEditingSpotId] = useState<string | null>(null);
   const [siteName, setSiteName] = useState("");
   const [siteBufferM, setSiteBufferM] = useState(SITE_BOUNDARY_BUFFER_DEFAULT_M);
   const [savingSite, setSavingSite] = useState(false);
@@ -771,16 +773,16 @@ export default function SiteControlMap() {
     }
   };
 
-  const persistSiteSpot = async (shape: DrawnShape, bufferM = siteBufferM) => {
+  const persistSiteSpot = async (
+    shape: DrawnShape,
+    bufferM = siteBufferM,
+    targetId: string | null = selectedSpotId,
+  ) => {
     if (!projectId) {
       toast.error("프로젝트를 먼저 선택하세요");
       return;
     }
-    const name = siteName.trim();
-    if (!name) {
-      toast.error("개소 이름을 먼저 입력하세요. 예: H2 패드");
-      return;
-    }
+    const name = siteName.trim() || `개소 ${siteSpots.length + (targetId ? 0 : 1)}`;
     const gpsOk =
       shape.kind === "circle"
         ? looksLikeWgs84(shape.center)
@@ -809,12 +811,12 @@ export default function SiteControlMap() {
           };
     const uid = (await supabase.auth.getUser()).data.user?.id;
     let error: { message: string } | null = null;
-    let savedId = selectedSpotId;
-    if (selectedSpotId) {
+    let savedId = targetId;
+    if (targetId) {
       const res = await supabase
         .from("project_site_spots" as any)
         .update({ ...geom, buffer_m: buffer, name } as any)
-        .eq("id", selectedSpotId);
+        .eq("id", targetId);
       error = res.error;
     } else {
       const res = await supabase.from("project_site_spots" as any).insert({
@@ -836,6 +838,8 @@ export default function SiteControlMap() {
     toast.success("개소를 저장했습니다. 출퇴근은 이 도형들의 합집합입니다.");
     setPendingShape(null);
     setDrawTool(null);
+    setEditingSpotId(null);
+    setSiteName(name);
     if (savedId) setSelectedSpotId(savedId);
     await loadBoundary();
   };
@@ -855,23 +859,46 @@ export default function SiteControlMap() {
     setSiteSpots((list) => list.map((s) => (s.id === selectedSpotId ? { ...s, buffer_m: buffer } : s)));
   };
 
-  const deleteSelectedSpot = async () => {
-    if (!selectedSpotId) return;
+  const deleteSpot = async (id: string) => {
     setSavingSite(true);
     const { error } = await supabase
       .from("project_site_spots" as any)
       .update({ is_deleted: true, is_active: false } as any)
-      .eq("id", selectedSpotId);
+      .eq("id", id);
     setSavingSite(false);
     if (error) {
       toast.error("개소 삭제 실패: " + error.message);
       return;
     }
     toast.success("개소를 삭제했습니다.");
-    setSelectedSpotId(null);
-    setSiteName("");
+    if (selectedSpotId === id) {
+      setSelectedSpotId(null);
+      setSiteName("");
+    }
+    if (editingSpotId === id) setEditingSpotId(null);
     setPendingShape(null);
     await loadBoundary();
+  };
+
+  const startEditSpot = (s: SiteBoundary) => {
+    setSelectedSpotId(s.id);
+    setSiteName(s.name);
+    setSiteBufferM(s.buffer_m);
+    setDrawTool(null);
+    setEditingSpotId(s.id);
+    toast.message("꼭짓점·이동 편집", {
+      description: "맵에서 도형을 고친 뒤 「도형 저장」을 누르세요.",
+      duration: 4000,
+    });
+  };
+
+  const beginNewSpotDraw = (tool: DrawTool) => {
+    setEditingSpotId(null);
+    if (selectedSpotId) {
+      setSelectedSpotId(null);
+      setSiteName("");
+    }
+    setDrawTool((t) => (t === tool ? null : tool));
   };
 
   const onSiteShapeCreated = useCallback(
@@ -879,11 +906,28 @@ export default function SiteControlMap() {
       setDrawTool(null);
       setPendingShape(shape);
       setLayers((l) => ({ ...l, site: true }));
-      void persistSiteSpot(shape);
+      // Always insert. Replacing a selected 개소 is 수정 → 도형 저장.
+      void persistSiteSpot(shape, siteBufferM, null);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, selectedSpotId, siteName, siteBufferM, siteSpots.length],
+    [projectId, siteName, siteBufferM, siteSpots.length],
   );
+
+  const onSiteShapeEdited = useCallback(
+    (shape: DrawnShape) => {
+      if (!editingSpotId) return;
+      setSelectedSpotId(editingSpotId);
+      void persistSiteSpot(shape, siteBufferM, editingSpotId);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editingSpotId, siteName, siteBufferM, projectId],
+  );
+
+  const siteEditShape = useMemo(() => {
+    if (panelTab !== "site" || !editingSpotId) return null;
+    const spot = siteSpots.find((s) => s.id === editingSpotId);
+    return spot ? outlineToDrawnShape(spot) : null;
+  }, [editingSpotId, panelTab, siteSpots]);
 
   const leafletBounds = useMemo(
     () => (draftCorners ? cornersToLeafletBounds(draftCorners) : null),
@@ -1720,23 +1764,49 @@ export default function SiteControlMap() {
                     <Label className="text-xs">등록된 개소 {siteSpots.length}</Label>
                     <div className="space-y-1">
                       {siteSpots.map((s) => (
-                        <button
+                        <div
                           key={s.id}
-                          type="button"
-                          className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
+                          className={`rounded-md border px-2 py-1.5 text-xs ${
                             selectedSpotId === s.id ? "border-teal-700 bg-teal-50" : "bg-background"
                           }`}
-                          onClick={() => {
-                            setSelectedSpotId(s.id);
-                            setSiteName(s.name);
-                            setSiteBufferM(s.buffer_m);
-                          }}
                         >
-                          <div className="font-medium truncate">{s.name}</div>
-                          <div className="text-[10px] text-muted-foreground">
-                            {s.geometry_type === "radius" ? "원" : "다각형"} · 버퍼 {s.buffer_m}m
+                          <button
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() => {
+                              setSelectedSpotId(s.id);
+                              setSiteName(s.name);
+                              setSiteBufferM(s.buffer_m);
+                            }}
+                          >
+                            <div className="font-medium truncate">{s.name}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {s.geometry_type === "radius" ? "원" : "다각형"} · 버퍼 {s.buffer_m}m
+                            </div>
+                          </button>
+                          <div className="mt-1.5 grid grid-cols-2 gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-[11px]"
+                              disabled={savingSite}
+                              onClick={() => startEditSpot(s)}
+                            >
+                              <Pencil className="h-3 w-3 mr-1" /> 수정
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-[11px] text-destructive"
+                              disabled={savingSite}
+                              onClick={() => void deleteSpot(s.id)}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" /> 삭제
+                            </Button>
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                     <Button
@@ -1746,6 +1816,7 @@ export default function SiteControlMap() {
                       className="h-8 w-full text-xs"
                       onClick={() => {
                         setSelectedSpotId(null);
+                        setEditingSpotId(null);
                         setSiteName("");
                       }}
                     >
@@ -1782,8 +1853,8 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "rectangle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={savingSite}
-                      onClick={() => setDrawTool((t) => (t === "rectangle" ? null : "rectangle"))}
+                      disabled={savingSite || !!editingSpotId}
+                      onClick={() => beginNewSpotDraw("rectangle")}
                     >
                       <Square className="h-4 w-4 mr-2" /> 네모 그리기
                     </Button>
@@ -1791,8 +1862,8 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "polygon" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={savingSite}
-                      onClick={() => setDrawTool((t) => (t === "polygon" ? null : "polygon"))}
+                      disabled={savingSite || !!editingSpotId}
+                      onClick={() => beginNewSpotDraw("polygon")}
                     >
                       <Pentagon className="h-4 w-4 mr-2" /> 다각형 그리기
                     </Button>
@@ -1800,30 +1871,50 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "circle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={savingSite}
-                      onClick={() => setDrawTool((t) => (t === "circle" ? null : "circle"))}
+                      disabled={savingSite || !!editingSpotId}
+                      onClick={() => beginNewSpotDraw("circle")}
                     >
                       <CircleIcon className="h-4 w-4 mr-2" /> 원 그리기
                     </Button>
                   </div>
                   {drawTool && (
                     <p className="text-[10px] text-primary">
-                      {drawTool === "rectangle" ? "네모" : drawTool === "polygon" ? "다각형" : "원"}
-                      {selectedSpotId ? " — 선택한 개소 도형을 교체합니다." : " — 새 개소로 저장됩니다."}
+                      {drawTool === "rectangle"
+                        ? "네모 — 클릭한 채로 드래그하면 그려집니다."
+                        : drawTool === "polygon"
+                          ? "다각형 — 클릭으로 꼭짓점을 찍고 더블클릭하면 닫힙니다."
+                          : "원 — 클릭한 채로 드래그하면 그려집니다."}{" "}
+                      새 개소로 저장됩니다. 이미 그린 테두리는 목록에서 수정·삭제하세요.
                     </p>
                   )}
+                  {editingSpotId && (
+                    <div className="rounded-md border border-primary/40 bg-primary/5 p-2 space-y-2">
+                      <p className="text-[10px] text-primary">꼭짓점·이동 편집 중 — 맵에서 도형을 수정하세요</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-9"
+                          disabled={savingSite}
+                          onClick={() => setEditCommitToken((n) => n + 1)}
+                        >
+                          {savingSite ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                          도형 저장
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-9"
+                          disabled={savingSite}
+                          onClick={() => setEditingSpotId(null)}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {selectedSpotId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full text-destructive"
-                    disabled={savingSite}
-                    onClick={() => void deleteSelectedSpot()}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" /> 이 개소 삭제
-                  </Button>
-                )}
               </TabsContent>
 
               <TabsContent value="zones" className="mt-3 space-y-3 focus-visible:outline-none">
@@ -2086,9 +2177,9 @@ export default function SiteControlMap() {
                     drawColor={panelTab === "site" ? SITE_OUTLINE_COLOR : drawColor}
                     onShapeCreated={panelTab === "site" ? onSiteShapeCreated : onShapeCreated}
                     onToolFinished={() => setDrawTool(null)}
-                    editShape={panelTab === "site" ? null : satEditShape}
+                    editShape={panelTab === "site" ? siteEditShape : satEditShape}
                     editCommitToken={editCommitToken}
-                    onShapeEdited={onGeoShapeEdited}
+                    onShapeEdited={panelTab === "site" ? onSiteShapeEdited : onGeoShapeEdited}
                   />
                 )}
 
@@ -2140,7 +2231,9 @@ export default function SiteControlMap() {
                 />
 
                 {layers.site &&
-                  (siteSpots.length > 0 ? siteSpots : siteBoundary ? [siteBoundary] : []).map((s) => {
+                  (siteSpots.length > 0 ? siteSpots : siteBoundary ? [siteBoundary] : [])
+                    .filter((s) => s.id !== editingSpotId)
+                    .map((s) => {
                     const selected = s.id === selectedSpotId;
                     const path = {
                       color: SITE_OUTLINE_COLOR,

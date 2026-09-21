@@ -184,6 +184,28 @@ export function pickCurrentSiteOutline(
   return best.o;
 }
 
+export function outlineToDrawnShape(outline: SiteBoundary):
+  | { kind: "circle"; center: GeoPoint; radius_m: number }
+  | { kind: "polygon"; latlngs: GeoPoint[] }
+  | null {
+  if (
+    outline.geometry_type === "radius"
+    && outline.center_lat != null
+    && outline.center_lng != null
+    && Number(outline.radius_m) > 0
+  ) {
+    return {
+      kind: "circle",
+      center: { lat: outline.center_lat, lng: outline.center_lng },
+      radius_m: Number(outline.radius_m),
+    };
+  }
+  if (outline.geo_polygon && outline.geo_polygon.length >= 3) {
+    return { kind: "polygon", latlngs: outline.geo_polygon };
+  }
+  return null;
+}
+
 export function ringCentroid(poly: GeoPoint[]): { lat: number; lng: number } | null {
   const pts = poly.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
   if (!pts.length) return null;

@@ -2,6 +2,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { formatLegalCalcPrintHtml } from "../_shared/legalCalcPrint.ts";
 import { formatSectionPrintHtml } from "../_shared/formatSectionContent.ts";
 import { renderRiggingPrintHtml } from "../_shared/riggingPrintHtml.ts";
+import {
+  APPROVAL_COMMENTS_PRINT_CSS,
+  approvalCommentsPrintHtml,
+} from "../_shared/approvalPrintComments.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -207,6 +211,7 @@ Deno.serve(async (req) => {
     } else {
       sigRowsHtml = `<tr><td colspan="5" class="center" style="color:#64748b">결재 기록이 없습니다</td></tr>`;
     }
+    const commentHtml = approvalCommentsPrintHtml(latestApprovals, escapeHtml);
 
     function renderSection(section: any): string {
       const data = parseJsonSafe(section.content);
@@ -433,6 +438,7 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
 .sig-table th { background: #f1f5f9; font-weight: 600; font-size: 7pt; color: #475569; }
 .sig-role { font-weight: 600; background: #f8fafc; white-space: nowrap; }
 .sig-stamp { font-size: 7pt; color: #64748b; }
+${APPROVAL_COMMENTS_PRINT_CSS}
 
 .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8pt; }
 .info-table td { border: 1px solid #e2e8f0; padding: 4pt 8pt; font-size: 8pt; }
@@ -558,6 +564,7 @@ ${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-h
   <thead><tr><th>단계</th><th>성명</th><th>소속</th><th>직책</th><th>서명/일시</th></tr></thead>
   <tbody>${sigRowsHtml}</tbody>
 </table>
+${commentHtml}
 
 ${basicInfoHtml ? `<div class="section-header">작업 개요</div>${basicInfoHtml}` : ""}
 

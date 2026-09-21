@@ -114,29 +114,133 @@ export function isDefinitelyOutsideSiteBoundary(
   return { outside: distanceM > buffer, distanceM, radiusM: buffer };
 }
 
-/** Prefer the drawn site outline; otherwise the legacy circular fences. */
+export function asSiteOutlines(
+  boundary: SiteBoundary | SiteBoundary[] | null | undefined,
+): SiteBoundary[] {
+  if (!boundary) return [];
+  return Array.isArray(boundary) ? boundary.filter(Boolean) : [boundary];
+}
+
+export function isWithinAnySiteAttendance(
+  outlines: SiteBoundary[],
+  lat: number,
+  lng: number,
+  accuracyM?: number,
+): boolean {
+  return outlines.some((o) => isWithinSiteAttendance(lat, lng, o, accuracyM));
+}
+
+export function distanceToNearestSiteOutlineM(
+  outlines: SiteBoundary[],
+  lat: number,
+  lng: number,
+): number | null {
+  if (!outlines.length) return null;
+  let best = Number.POSITIVE_INFINITY;
+  for (const o of outlines) {
+    best = Math.min(best, distanceToSiteBoundaryEdgeM(lat, lng, o));
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+export function isDefinitelyOutsideAnySiteOutline(
+  outlines: SiteBoundary[],
+  rawLat: number,
+  rawLng: number,
+  accuracyM: number,
+): { outside: boolean; distanceM: number; radiusM: number } {
+  let nearest = {
+    outside: true,
+    distanceM: Number.POSITIVE_INFINITY,
+    radiusM: clampSiteBoundaryBufferM(outlines[0]?.buffer_m),
+  };
+  for (const o of outlines) {
+    const r = isDefinitelyOutsideSiteBoundary(o, rawLat, rawLng, accuracyM);
+    if (!r.outside) return r;
+    if (r.distanceM < nearest.distanceM) nearest = r;
+  }
+  return nearest;
+}
+
+export function pickCurrentSiteOutline(
+  outlines: SiteBoundary[],
+  lat: number,
+  lng: number,
+  opts?: { lastId?: string | null; accuracyM?: number },
+): SiteBoundary | null {
+  const inside = outlines.filter((o) =>
+    isWithinSiteAttendance(lat, lng, o, opts?.accuracyM),
+  );
+  if (!inside.length) return null;
+  const ranked = inside
+    .map((o) => ({ o, d: distanceToSiteBoundaryEdgeM(lat, lng, o) }))
+    .sort((a, b) => a.d - b.d);
+  const best = ranked[0];
+  const lastId = opts?.lastId;
+  if (lastId) {
+    const last = ranked.find((r) => r.o.id === lastId);
+    if (last && last.d - best.d <= 40) return last.o;
+  }
+  return best.o;
+}
+
+export function ringCentroid(poly: GeoPoint[]): { lat: number; lng: number } | null {
+  const pts = poly.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (!pts.length) return null;
+  let lat = 0;
+  let lng = 0;
+  for (const p of pts) {
+    lat += p.lat;
+    lng += p.lng;
+  }
+  return { lat: lat / pts.length, lng: lng / pts.length };
+}
+
+export function parseSiteSpotRow(row: Record<string, unknown> | null | undefined): SiteBoundary | null {
+  if (!row || typeof row.id !== "string" || typeof row.project_id !== "string") return null;
+  const fromBoundary = parseSiteBoundaryRow({
+    ...row,
+    name: typeof row.name === "string" && row.name.trim() ? row.name : "개소",
+  });
+  if (!fromBoundary) return null;
+  if (fromBoundary.geometry_type === "polygon" && (fromBoundary.geo_polygon?.length ?? 0) >= 3) {
+    return fromBoundary;
+  }
+  if (
+    fromBoundary.center_lat != null
+    && fromBoundary.center_lng != null
+    && Number(fromBoundary.radius_m) > 0
+  ) {
+    return { ...fromBoundary, geometry_type: "radius" };
+  }
+  return null;
+}
+
+/** Prefer 개소 outlines, then a single project outline; otherwise circular fences. */
 export function evaluateSiteLeave(
-  boundary: SiteBoundary | null | undefined,
+  boundary: SiteBoundary | SiteBoundary[] | null | undefined,
   fences: SiteTrackingFence[],
   rawLat: number,
   rawLng: number,
   accuracyM: number,
 ): { outside: boolean; distanceM: number; radiusM: number } | null {
-  if (boundary) return isDefinitelyOutsideSiteBoundary(boundary, rawLat, rawLng, accuracyM);
+  const outlines = asSiteOutlines(boundary);
+  if (outlines.length) return isDefinitelyOutsideAnySiteOutline(outlines, rawLat, rawLng, accuracyM);
   if (!fences.length) return null;
   return isDefinitelyOutsideAllSites(fences, rawLat, rawLng, accuracyM);
 }
 
 export function canResumeOnSite(
-  boundary: SiteBoundary | null | undefined,
+  boundary: SiteBoundary | SiteBoundary[] | null | undefined,
   fences: SiteTrackingFence[],
   lat: number,
   lng: number,
   accuracyM: number,
 ): boolean {
-  if (boundary) {
+  const outlines = asSiteOutlines(boundary);
+  if (outlines.length) {
     if (accuracyM > SITE_EXIT_MAX_ACCURACY_M) return false;
-    return isWithinSiteAttendance(lat, lng, boundary, accuracyM);
+    return isWithinAnySiteAttendance(outlines, lat, lng, accuracyM);
   }
   return fences.length > 0 && isInsideAnyResumeFence(fences, lat, lng, accuracyM);
 }
@@ -158,4 +262,33 @@ export async function fetchActiveSiteBoundary(projectId: string): Promise<SiteBo
   } catch {
     return null;
   }
+}
+
+export async function fetchActiveSiteOutlines(projectId: string): Promise<SiteBoundary[]> {
+  if (!projectId) return [];
+  try {
+    const { data, error } = await supabase
+      .from("project_site_spots" as any)
+      .select(
+        "id, project_id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, buffer_m, sort_order",
+      )
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    if (error) return [];
+    return ((data || []) as Record<string, unknown>[])
+      .map((row) => parseSiteSpotRow(row))
+      .filter((row): row is SiteBoundary => !!row);
+  } catch {
+    return [];
+  }
+}
+
+/** 개소가 있으면 그 합집합, 없으면 프로젝트 테두리 하나. */
+export async function fetchAttendanceOutlines(projectId: string): Promise<SiteBoundary[]> {
+  const spots = await fetchActiveSiteOutlines(projectId);
+  if (spots.length > 0) return spots;
+  const one = await fetchActiveSiteBoundary(projectId);
+  return one ? [one] : [];
 }

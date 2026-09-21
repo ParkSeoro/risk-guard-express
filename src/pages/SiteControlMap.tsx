@@ -78,6 +78,8 @@ import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDang
 import {
   clampSiteBoundaryBufferM,
   fetchActiveSiteBoundary,
+  fetchActiveSiteOutlines,
+  ringCentroid,
   SITE_BOUNDARY_BUFFER_DEFAULT_M,
   SITE_BOUNDARY_BUFFER_MAX_M,
   SITE_BOUNDARY_BUFFER_MIN_M,
@@ -421,6 +423,9 @@ export default function SiteControlMap() {
     site: true,
   });
   const [siteBoundary, setSiteBoundary] = useState<SiteBoundary | null>(null);
+  const [siteSpots, setSiteSpots] = useState<SiteBoundary[]>([]);
+  const [selectedSpotId, setSelectedSpotId] = useState<string | null>(null);
+  const [siteName, setSiteName] = useState("");
   const [siteBufferM, setSiteBufferM] = useState(SITE_BOUNDARY_BUFFER_DEFAULT_M);
   const [savingSite, setSavingSite] = useState(false);
   const [fitToken, setFitToken] = useState("init");
@@ -749,16 +754,31 @@ export default function SiteControlMap() {
   const loadBoundary = async () => {
     if (!projectId) {
       setSiteBoundary(null);
+      setSiteSpots([]);
       return;
     }
-    const row = await fetchActiveSiteBoundary(projectId);
+    const [row, spots] = await Promise.all([
+      fetchActiveSiteBoundary(projectId),
+      fetchActiveSiteOutlines(projectId),
+    ]);
     setSiteBoundary(row);
-    if (row) setSiteBufferM(row.buffer_m);
+    setSiteSpots(spots);
+    const selected = spots.find((s) => s.id === selectedSpotId) || spots[0] || null;
+    if (selected) {
+      setSelectedSpotId(selected.id);
+      setSiteName(selected.name);
+      setSiteBufferM(selected.buffer_m);
+    }
   };
 
-  const persistSiteBoundary = async (shape: DrawnShape, bufferM = siteBufferM) => {
+  const persistSiteSpot = async (shape: DrawnShape, bufferM = siteBufferM) => {
     if (!projectId) {
       toast.error("프로젝트를 먼저 선택하세요");
+      return;
+    }
+    const name = siteName.trim();
+    if (!name) {
+      toast.error("개소 이름을 먼저 입력하세요. 예: H2 패드");
       return;
     }
     const gpsOk =
@@ -783,69 +803,75 @@ export default function SiteControlMap() {
         : {
             geometry_type: "polygon" as const,
             geo_polygon: shape.latlngs,
-            center_lat: null,
-            center_lng: null,
-            radius_m: null,
+            center_lat: ringCentroid(shape.latlngs)?.lat ?? 0,
+            center_lng: ringCentroid(shape.latlngs)?.lng ?? 0,
+            radius_m: 400,
           };
     const uid = (await supabase.auth.getUser()).data.user?.id;
     let error: { message: string } | null = null;
-    if (siteBoundary) {
+    let savedId = selectedSpotId;
+    if (selectedSpotId) {
       const res = await supabase
-        .from("project_site_boundaries" as any)
-        .update({ ...geom, buffer_m: buffer, name: siteBoundary.name } as any)
-        .eq("id", siteBoundary.id);
+        .from("project_site_spots" as any)
+        .update({ ...geom, buffer_m: buffer, name } as any)
+        .eq("id", selectedSpotId);
       error = res.error;
     } else {
-      const res = await supabase.from("project_site_boundaries" as any).insert({
+      const res = await supabase.from("project_site_spots" as any).insert({
         project_id: projectId,
-        name: "현장 테두리",
+        name,
         buffer_m: buffer,
         created_by: uid,
+        sort_order: siteSpots.length,
         ...geom,
-      } as any);
+      } as any).select("id").maybeSingle();
       error = res.error;
+      savedId = (res.data as { id?: string } | null)?.id ?? null;
     }
     setSavingSite(false);
     if (error) {
-      toast.error("현장 테두리 저장 실패: " + error.message);
+      toast.error("개소 저장 실패: " + error.message);
       return;
     }
-    toast.success("현장 테두리를 저장했습니다. 출퇴근은 도형 안과 바깥 버퍼에서만 됩니다.");
+    toast.success("개소를 저장했습니다. 출퇴근은 이 도형들의 합집합입니다.");
     setPendingShape(null);
     setDrawTool(null);
+    if (savedId) setSelectedSpotId(savedId);
     await loadBoundary();
   };
 
   const saveSiteBufferOnly = async (next: number) => {
     const buffer = clampSiteBoundaryBufferM(next);
     setSiteBufferM(buffer);
-    if (!siteBoundary) return;
+    if (!selectedSpotId) return;
     const { error } = await supabase
-      .from("project_site_boundaries" as any)
+      .from("project_site_spots" as any)
       .update({ buffer_m: buffer } as any)
-      .eq("id", siteBoundary.id);
+      .eq("id", selectedSpotId);
     if (error) {
       toast.error("버퍼 저장 실패: " + error.message);
       return;
     }
-    setSiteBoundary({ ...siteBoundary, buffer_m: buffer });
+    setSiteSpots((list) => list.map((s) => (s.id === selectedSpotId ? { ...s, buffer_m: buffer } : s)));
   };
 
-  const deleteSiteBoundary = async () => {
-    if (!siteBoundary) return;
+  const deleteSelectedSpot = async () => {
+    if (!selectedSpotId) return;
     setSavingSite(true);
     const { error } = await supabase
-      .from("project_site_boundaries" as any)
+      .from("project_site_spots" as any)
       .update({ is_deleted: true, is_active: false } as any)
-      .eq("id", siteBoundary.id);
+      .eq("id", selectedSpotId);
     setSavingSite(false);
     if (error) {
-      toast.error("현장 테두리 삭제 실패: " + error.message);
+      toast.error("개소 삭제 실패: " + error.message);
       return;
     }
-    toast.success("현장 테두리를 삭제했습니다. 출퇴근은 기존 반경을 씁니다.");
-    setSiteBoundary(null);
+    toast.success("개소를 삭제했습니다.");
+    setSelectedSpotId(null);
+    setSiteName("");
     setPendingShape(null);
+    await loadBoundary();
   };
 
   const onSiteShapeCreated = useCallback(
@@ -853,11 +879,10 @@ export default function SiteControlMap() {
       setDrawTool(null);
       setPendingShape(shape);
       setLayers((l) => ({ ...l, site: true }));
-      void persistSiteBoundary(shape);
+      void persistSiteSpot(shape);
     },
-    // persistSiteBoundary closes over latest project/boundary via render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, siteBoundary, siteBufferM],
+    [projectId, selectedSpotId, siteName, siteBufferM, siteSpots.length],
   );
 
   const leafletBounds = useMemo(
@@ -1425,7 +1450,7 @@ export default function SiteControlMap() {
                   [1] 도면
                 </TabsTrigger>
                 <TabsTrigger value="site" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
-                  [2] 현장 테두리
+                  [2] GPS 개소
                 </TabsTrigger>
                 <TabsTrigger value="zones" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
                   [3] 위험구역
@@ -1674,7 +1699,7 @@ export default function SiteControlMap() {
                   </Accordion>
                 ) : (
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    도면이 없으면 프로젝트 주소로 위성을 엽니다. 현장 테두리는 [2] 탭, 위험구역은 [3] 탭에서
+                    도면이 없으면 프로젝트 주소로 위성을 엽니다. GPS 개소는 [2] 탭, 위험구역은 [3] 탭에서
                     위성 위에 그립니다. 도면을 올리면 모바일 워킹 보정으로 맞출 수 있습니다.
                   </p>
                 )}
@@ -1682,21 +1707,60 @@ export default function SiteControlMap() {
 
               <TabsContent value="site" className="mt-3 space-y-3 focus-visible:outline-none">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  다각형·원·네모로 현장 테두리만 그립니다. 색을 채우지 않습니다.
-                  출퇴근은 도형 안이거나 바깥 {SITE_BOUNDARY_BUFFER_MIN_M}~{SITE_BOUNDARY_BUFFER_MAX_M}m입니다.
+                  현장이 여러 곳이면 개소를 여러 개 그립니다. 선만 있고 색은 안 채웁니다.
+                  출퇴근은 개소 도형들의 합집합(안 또는 바깥 {SITE_BOUNDARY_BUFFER_MIN_M}~{SITE_BOUNDARY_BUFFER_MAX_M}m)입니다.
                 </p>
-                {siteBoundary ? (
-                  <div className="rounded-md border border-teal-700/30 bg-teal-50/70 p-2 text-[11px] text-teal-950 space-y-1">
-                    <div className="font-medium">
-                      저장됨 · {siteBoundary.geometry_type === "radius" ? "원" : "다각형"} · 버퍼 {siteBoundary.buffer_m}m
-                    </div>
-                    <p className="text-teal-800">새 도형을 그리면 기존 테두리를 교체합니다.</p>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">
-                    아직 없습니다. 아래 도구로 그린 뒤 자동 저장됩니다. 없으면 기존 출근 반경을 씁니다.
+                {siteSpots.length === 0 && siteBoundary && (
+                  <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+                    개소가 없어 예전 프로젝트 테두리를 출퇴근에 씁니다. 개소를 하나라도 그리면 개소가 기준이 됩니다.
                   </p>
                 )}
+                {siteSpots.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">등록된 개소 {siteSpots.length}</Label>
+                    <div className="space-y-1">
+                      {siteSpots.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
+                            selectedSpotId === s.id ? "border-teal-700 bg-teal-50" : "bg-background"
+                          }`}
+                          onClick={() => {
+                            setSelectedSpotId(s.id);
+                            setSiteName(s.name);
+                            setSiteBufferM(s.buffer_m);
+                          }}
+                        >
+                          <div className="font-medium truncate">{s.name}</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {s.geometry_type === "radius" ? "원" : "다각형"} · 버퍼 {s.buffer_m}m
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-full text-xs"
+                      onClick={() => {
+                        setSelectedSpotId(null);
+                        setSiteName("");
+                      }}
+                    >
+                      새 개소 추가
+                    </Button>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">개소 이름</Label>
+                  <Input
+                    value={siteName}
+                    onChange={(e) => setSiteName(e.target.value)}
+                    placeholder="예: H2 패드, 적량동 사무실"
+                  />
+                </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">출근 버퍼 {siteBufferM}m</Label>
                   <Slider
@@ -1708,7 +1772,7 @@ export default function SiteControlMap() {
                     onValueCommit={(v) => void saveSiteBufferOnly(v[0] ?? SITE_BOUNDARY_BUFFER_DEFAULT_M)}
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    테두리 바깥 {SITE_BOUNDARY_BUFFER_MIN_M}~{SITE_BOUNDARY_BUFFER_MAX_M}m까지 출퇴근 가능. 기본 {SITE_BOUNDARY_BUFFER_DEFAULT_M}m.
+                    테두리 바깥 {SITE_BOUNDARY_BUFFER_MIN_M}~{SITE_BOUNDARY_BUFFER_MAX_M}m까지 출퇴근. 기본 {SITE_BOUNDARY_BUFFER_DEFAULT_M}m.
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -1744,19 +1808,20 @@ export default function SiteControlMap() {
                   </div>
                   {drawTool && (
                     <p className="text-[10px] text-primary">
-                      {drawTool === "rectangle" ? "네모" : drawTool === "polygon" ? "다각형" : "원"} 모드 — 지도에서 그리면 저장됩니다. (Esc 취소)
+                      {drawTool === "rectangle" ? "네모" : drawTool === "polygon" ? "다각형" : "원"}
+                      {selectedSpotId ? " — 선택한 개소 도형을 교체합니다." : " — 새 개소로 저장됩니다."}
                     </p>
                   )}
                 </div>
-                {siteBoundary && (
+                {selectedSpotId && (
                   <Button
                     type="button"
                     variant="outline"
                     className="w-full text-destructive"
                     disabled={savingSite}
-                    onClick={() => void deleteSiteBoundary()}
+                    onClick={() => void deleteSelectedSpot()}
                   >
-                    <Trash2 className="h-4 w-4 mr-1" /> 현장 테두리 삭제
+                    <Trash2 className="h-4 w-4 mr-1" /> 이 개소 삭제
                   </Button>
                 )}
               </TabsContent>
@@ -2000,7 +2065,7 @@ export default function SiteControlMap() {
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
                   <span className="flex items-center gap-1.5">
-                    <Pentagon className="h-3.5 w-3.5 text-teal-700" /> 현장 테두리
+                    <Pentagon className="h-3.5 w-3.5 text-teal-700" /> GPS 개소
                   </span>
                   <Switch
                     checked={layers.site}
@@ -2074,31 +2139,55 @@ export default function SiteControlMap() {
                   maxZoom={addressPinMode ? (addressFit.mode === "none" ? 16 : addressFit.maxZoom) : 19}
                 />
 
-                {layers.site && siteBoundary?.geometry_type === "radius"
-                  && siteBoundary.center_lat != null
-                  && siteBoundary.center_lng != null
-                  && siteBoundary.radius_m ? (
-                  <Circle
-                    center={[siteBoundary.center_lat, siteBoundary.center_lng]}
-                    radius={Number(siteBoundary.radius_m)}
-                    pathOptions={{
+                {layers.site &&
+                  (siteSpots.length > 0 ? siteSpots : siteBoundary ? [siteBoundary] : []).map((s) => {
+                    const selected = s.id === selectedSpotId;
+                    const path = {
                       color: SITE_OUTLINE_COLOR,
-                      weight: 3,
+                      weight: selected ? 4 : 3,
                       fillOpacity: 0,
-                      dashArray: undefined,
-                    }}
-                  />
-                ) : null}
-                {layers.site && siteBoundary?.geo_polygon && siteBoundary.geo_polygon.length >= 3 ? (
-                  <Polygon
-                    positions={siteBoundary.geo_polygon.map((p) => [p.lat, p.lng] as [number, number])}
-                    pathOptions={{
-                      color: SITE_OUTLINE_COLOR,
-                      weight: 3,
-                      fillOpacity: 0,
-                    }}
-                  />
-                ) : null}
+                      dashArray: selected ? undefined : "6 4",
+                    };
+                    if (
+                      s.geometry_type === "radius"
+                      && s.center_lat != null
+                      && s.center_lng != null
+                      && s.radius_m
+                    ) {
+                      return (
+                        <Circle
+                          key={s.id}
+                          center={[s.center_lat, s.center_lng]}
+                          radius={Number(s.radius_m)}
+                          pathOptions={path}
+                          eventHandlers={{
+                            click: () => {
+                              setSelectedSpotId(s.id);
+                              setSiteName(s.name);
+                              setSiteBufferM(s.buffer_m);
+                            },
+                          }}
+                        />
+                      );
+                    }
+                    if (s.geo_polygon && s.geo_polygon.length >= 3) {
+                      return (
+                        <Polygon
+                          key={s.id}
+                          positions={s.geo_polygon.map((p) => [p.lat, p.lng] as [number, number])}
+                          pathOptions={path}
+                          eventHandlers={{
+                            click: () => {
+                              setSelectedSpotId(s.id);
+                              setSiteName(s.name);
+                              setSiteBufferM(s.buffer_m);
+                            },
+                          }}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
 
                 {layers.zones && pendingShape?.kind === "polygon" && (
                   <Polygon

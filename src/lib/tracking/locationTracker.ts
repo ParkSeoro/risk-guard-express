@@ -131,8 +131,8 @@ export type TrackerOptions = {
   siteCenter?: SiteTrackingFence | null;
   /** 여러 GPS 개소. 있으면 합집합이 SSOT이고 siteCenter는 무시한다. */
   siteFences?: SiteTrackingFence[] | null;
-  /** Drawn site outline. When set, attendance/leave uses this instead of circular fences. */
-  siteBoundary?: SiteBoundary | null;
+  /** Drawn 개소/테두리. One or many; leave/resume uses the union. */
+  siteBoundary?: SiteBoundary | SiteBoundary[] | null;
   onLeaveSite?: (info: { distanceM: number; lat: number; lng: number; radiusM: number }) => void;
   onResumeSite?: () => void;
   onPreview?: (info: TrackerFixInfo) => void;

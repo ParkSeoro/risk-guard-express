@@ -5,6 +5,7 @@ import {
   distanceToSiteBoundaryEdgeM,
   evaluateSiteLeave,
   isDefinitelyOutsideSiteBoundary,
+  isWithinAnySiteAttendance,
   isWithinSiteAttendance,
   parseSiteBoundaryRow,
   pointInSiteBoundary,
@@ -85,6 +86,24 @@ describe("siteBoundary", () => {
     expect(far?.outside).toBe(true);
     expect(canResumeOnSite(square, [fence], 37.5005, 127.0005, 10)).toBe(true);
     expect(canResumeOnSite(null, [fence], fence.lat, fence.lng, 10)).toBe(true);
+  });
+
+  it("treats several 개소 as a union for attendance", () => {
+    const office: SiteBoundary = {
+      ...circle,
+      id: "office",
+      name: "사무실",
+      center_lat: 37.52,
+      center_lng: 127.0,
+      radius_m: 60,
+      buffer_m: 150,
+    };
+    expect(isWithinAnySiteAttendance([square, office], 37.5005, 127.0005, 8)).toBe(true);
+    expect(isWithinAnySiteAttendance([square, office], 37.52, 127.0, 8)).toBe(true);
+    expect(isWithinAnySiteAttendance([square, office], 37.54, 127.0, 8)).toBe(false);
+    const leave = evaluateSiteLeave([square, office], [], 37.54, 127.0, 10);
+    expect(leave?.outside).toBe(true);
+    expect(canResumeOnSite([square, office], [], 37.52, 127.0, 10)).toBe(true);
   });
 
   it("parses a stored row and ignores junk geometry", () => {

@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import PushNotificationBridge from "@/components/PushNotificationBridge";
 import type { TrackingIdentity } from "@/lib/tracking/locationTracker";
+import { fetchActiveSiteBoundary } from "@/lib/tracking/siteBoundary";
 import { resolveSiteTrackingFences } from "@/lib/tracking/siteTrackBounds";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { readActiveProjectId } from "@/lib/activeProject";
@@ -197,12 +198,16 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         // Default: every role auto-stops when raw GPS leaves the site fence.
         // Master "현장 외 알람 테스트" is the only exception (no last-position write).
         let siteFences: Awaited<ReturnType<typeof resolveSiteTrackingFences>> = [];
+        let siteBoundary: Awaited<ReturnType<typeof fetchActiveSiteBoundary>> = null;
         const skipFence =
           identity.worker_role === "master" &&
           (await import("@/lib/tracking/masterOffsiteAlarmTest")).readMasterOffsiteAlarmTest();
         if (!skipFence) {
           try {
-            siteFences = await resolveSiteTrackingFences(identity.project_id);
+            [siteFences, siteBoundary] = await Promise.all([
+              resolveSiteTrackingFences(identity.project_id),
+              fetchActiveSiteBoundary(identity.project_id),
+            ]);
           } catch {
             /* tracking still works without site center */
           }
@@ -214,6 +219,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           identity,
           getIdentity: () => identityRef.current || identity,
           siteFences,
+          siteBoundary,
           siteCenter: siteFences[0] ?? null,
           onLeaveSite: (info) => {
             clearStickyDangerAlert();

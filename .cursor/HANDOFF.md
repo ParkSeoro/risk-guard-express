@@ -45,6 +45,7 @@
 - 안관비 당월 신규 작성은 증빙 패키지 있음. **이관(최초본)은 증빙 없음**.
 - **근로자 현장 등록 QR 가입은 승인 없이 즉시 active.** 관리자 가입만 pending.
 - 전체 `bun run lint`는 `no-explicit-any` 때문에 원래 실패하는 것이 정상.
+- Cursor MCP: 공식 Vercel 원격 서버는 `.cursor/mcp.json` (`https://mcp.vercel.com`). Cursor의 **Needs login**으로 OAuth. AWS Deployments는 기본 켜지 않음.
 
 ## 2026-08-31 기준 main에 올라간 최근 결정
 

@@ -25,6 +25,18 @@ export function useNavigateMobileHome() {
   }, [navigate, roles]);
 }
 
+/** Sub-page back: history if possible, otherwise a parent tab. */
+export function useMobileSubpageBack(fallbackPath: string) {
+  const navigate = useNavigate();
+  return useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(fallbackPath);
+  }, [navigate, fallbackPath]);
+}
+
 /**
  * Map entity → best mobile path. Falls back to menu when no mobile page exists.
  * Desktop-only entities return `{ path, desktopFallback }` for optional labeling.

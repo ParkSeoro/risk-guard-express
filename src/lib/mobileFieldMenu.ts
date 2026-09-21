@@ -80,25 +80,25 @@ export type MobileMoreLink = {
   to: string;
 };
 
-/** Settings / account only. Vision and worker tools live on 현장. */
-export function managerMoreLinks(includeManual: boolean): MobileMoreLink[] {
+/** Settings / account + in-shell 사용 설명서. Vision and worker tools live on 현장. */
+export function managerMoreLinks(_includeManual = true): MobileMoreLink[] {
   return [
     { key: "alert-settings", labelKey: "menuAlertSettings", to: "/app/worker/notifications" },
     { key: "docs", labelKey: "menuApprovedDocs", to: "/app/worker/docs" },
     { key: "qr", labelKey: "menuQr", to: "/app/worker/scan" },
     { key: "account", labelKey: "menuAccount", to: "/app/worker/account" },
-    ...(includeManual ? [{ key: "manual", labelKey: "menuManual" as const, to: "/manual" }] : []),
+    { key: "manual", labelKey: "menuManual", to: "/app/worker/manual" },
   ];
 }
 
-export function workerMoreLinks(includeManual: boolean): MobileMoreLink[] {
+export function workerMoreLinks(_includeManual = true): MobileMoreLink[] {
   return [
     { key: "alerts", labelKey: "menuAlerts", to: "/app/worker/alerts" },
     { key: "alert-settings", labelKey: "menuAlertSettings", to: "/app/worker/notifications" },
     { key: "location", labelKey: "menuLocation", to: "/app/worker/location" },
     { key: "qr", labelKey: "menuQr", to: "/app/worker/scan" },
     { key: "account", labelKey: "menuAccount", to: "/app/worker/account" },
-    ...(includeManual ? [{ key: "manual", labelKey: "menuManual" as const, to: "/manual" }] : []),
+    { key: "manual", labelKey: "menuManual", to: "/app/worker/manual" },
   ];
 }
 

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Users, MapPin, Building2, Activity, Radio, RefreshCw } from "lucide-react";
+import MobilePageHeader from "@/components/mobile/MobilePageHeader";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
@@ -88,6 +90,7 @@ export default function WorkerDistribution() {
     scopeLabel,
     compact,
   } = useDistributionAccess();
+  const onBack = useMobileSubpageBack("/app/worker/tasks");
   const projectId = selectedProject || "";
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
@@ -396,14 +399,19 @@ export default function WorkerDistribution() {
 
   if (!canView) {
     return (
-      <div className="p-4 max-w-md mx-auto text-sm text-muted-foreground">
-        근로자 분포는 현장 관리자(마스터·프로젝트관리자·안전관리자·현장소장·감리·관리감독자)만 볼 수 있습니다.
+      <div className="max-w-md mx-auto">
+        {compact && <MobilePageHeader title="근로자 분포" onBack={onBack} />}
+        <div className="p-4 text-sm text-muted-foreground">
+          근로자 분포는 현장 관리자(마스터·프로젝트관리자·안전관리자·현장소장·감리·관리감독자)만 볼 수 있습니다.
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={compact ? "p-3 space-y-3" : "container mx-auto p-4 md:p-6 space-y-4"}>
+    <div className={compact ? "max-w-md mx-auto" : "container mx-auto p-4 md:p-6 space-y-4"}>
+      {compact && <MobilePageHeader title="근로자 분포" subtitle="출근 · 구역 · 권한별 범위" onBack={onBack} />}
+      <div className={compact ? "p-3 space-y-3" : undefined}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className={`${compact ? "text-lg" : "text-2xl"} font-bold flex items-center gap-2`}>
@@ -750,6 +758,7 @@ export default function WorkerDistribution() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

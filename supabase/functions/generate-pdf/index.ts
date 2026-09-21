@@ -1,4 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  APPROVAL_COMMENTS_PRINT_CSS,
+  approvalCommentsPrintHtml,
+} from "../_shared/approvalPrintComments.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -576,6 +580,7 @@ Deno.serve(async (req) => {
     }
 
     const sigRowsHtml = sigRows.join("");
+    const commentHtml = approvalCommentsPrintHtml(latestApprovals, htmlEsc);
 
     // ===== FEEDBACK IMAGES: No slicing, show ALL before AND after (PDF stays a chip) =====
     type FeedbackPhoto = { label: string; kind: "image" | "pdf"; src: string; name?: string };
@@ -946,6 +951,7 @@ th { background: #1e293b; color: white; font-weight: 500; text-align: center; wh
 .sig-table td { min-width: 60pt; height: 24pt; }
 .sig-role { background: #f8fafc; font-weight: 500; }
 .sig-stamp { min-width: 80pt; }
+${APPROVAL_COMMENTS_PRINT_CSS}
 
 thead { display: table-header-group; }
 img { max-width: 100%; height: auto; display: inline-block; }
@@ -1003,6 +1009,7 @@ td, th { page-break-inside: auto; }
     <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>직책</th><th>서명 / 일자</th></tr></thead>
     <tbody>${sigRowsHtml}</tbody>
   </table>
+  ${commentHtml}
 
   <!-- Risk Assessment Table -->
   <div class="section-header">위험성평가 항목</div>

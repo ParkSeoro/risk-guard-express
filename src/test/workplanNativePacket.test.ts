@@ -101,6 +101,8 @@ describe("preview / print / save split contracts", () => {
     expect(edge).not.toContain("attachment-print-page");
     expect(edge).not.toContain("PDF 미리보기 이미지를 만들지 못했습니다");
     expect(edge).not.toMatch(/position:\s*fixed/);
+    expect(edge).toContain("approvalCommentsPrintHtml");
+    expect(edge).toContain("commentHtml");
   });
 
   it("print helper can wait for afterprint", () => {

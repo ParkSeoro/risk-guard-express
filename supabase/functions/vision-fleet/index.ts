@@ -32,6 +32,15 @@ function json(data: unknown, status = 200) {
   });
 }
 
+const COMPANY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseCompanyId(raw: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (raw === null || raw === "") return { ok: true, value: null };
+  const value = String(raw).trim();
+  if (!COMPANY_ID_RE.test(value)) return { ok: false };
+  return { ok: true, value };
+}
+
 function sha256Hex(input: string): Promise<string> {
   return crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)).then((buf) =>
     [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join(""),
@@ -662,6 +671,7 @@ Deno.serve(async (req) => {
           await sb.from("vision_cameras").insert({
             gateway_id: auth.gateway.id,
             project_id: auth.gateway.project_id,
+            company_id: auth.gateway.company_id || null,
             camera_id: cameraId,
             name: String(cam.name || cameraId),
             health_state: cam.state || "unknown",
@@ -906,6 +916,8 @@ Deno.serve(async (req) => {
       if (!master) return json({ error: "forbidden" }, 403);
       const name = String(body.name || "").trim();
       if (!name) return json({ error: "name required" }, 400);
+      const company = body.company_id === undefined ? { ok: true as const, value: null } : parseCompanyId(body.company_id);
+      if (!company.ok) return json({ error: "company_id must be a uuid or empty" }, 400);
       const wantMux = body.provision === "mux";
       const wantVps = body.provision === "vps" || (!wantMux && !body.playback_url && !body.camera_id);
       let playbackUrl = body.playback_url ? safePlaybackUrl(body.playback_url) : null;
@@ -941,6 +953,7 @@ Deno.serve(async (req) => {
             project_id: projectId,
             camera_id: cameraId,
             name,
+            company_id: company.value,
             health_state: playbackUrl ? "online" : "pending",
             playback_url: playbackUrl,
           },
@@ -1038,6 +1051,11 @@ Deno.serve(async (req) => {
           patch.playback_url = playbackUrl;
           patch.health_state = "online";
         }
+      }
+      if (body.company_id !== undefined) {
+        const company = parseCompanyId(body.company_id);
+        if (!company.ok) return json({ error: "company_id must be a uuid or empty" }, 400);
+        patch.company_id = company.value;
       }
       if (Object.keys(patch).length === 0) return json({ error: "nothing to update" }, 400);
       const { data: cam, error } = await sb

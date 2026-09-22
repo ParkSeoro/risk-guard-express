@@ -88,6 +88,9 @@ describe("vision fleet client helpers", () => {
     expect(src).toContain("visionCanManage");
     expect(src).toContain("VisionCameraManageList");
     expect(src).toContain("VisionVpsSetup");
+    expect(src).toContain("applyCompanyFilter");
+    expect(src).toContain("includeOrphans");
+    expect(src).toContain("company_id");
     expect(src).not.toContain("VisionMuxSetup");
     expect(src).not.toContain("시작.bat");
     expect(src).not.toContain("설치 키트");

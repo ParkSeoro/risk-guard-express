@@ -13,7 +13,7 @@ import { visionCanManage, visionRoleLabel } from "@/lib/visionFleetApi";
 export default function MobileVisionEvents() {
   const navigate = useNavigate();
   const { roles } = useAuth();
-  const { projectId } = useMobileAccess();
+  const { projectId, applyCompanyFilter, scopeStatus } = useMobileAccess();
   const canManage = visionCanManage(roles);
   const [cameras, setCameras] = useState<MobileVisionCamera[]>([]);
 
@@ -22,18 +22,20 @@ export default function MobileVisionEvents() {
       setCameras([]);
       return;
     }
-    const { data, error } = await supabase
+    if (scopeStatus !== "ready") return;
+    let query = supabase
       .from("vision_cameras" as any)
-      .select("id, camera_id, name, health_state, playback_url")
-      .eq("project_id", projectId)
-      .order("name");
+      .select("id, camera_id, name, health_state, playback_url, company_id")
+      .eq("project_id", projectId);
+    query = applyCompanyFilter(query, { includeOrphans: true });
+    const { data, error } = await query.order("name");
     if (error) toast.error(error.message);
     setCameras((data || []) as MobileVisionCamera[]);
   };
 
   useEffect(() => {
     void load();
-  }, [projectId]);
+  }, [projectId, scopeStatus, applyCompanyFilter]);
 
   return (
     <div className="max-w-md mx-auto" data-testid="mobile-vision-events">

@@ -29,6 +29,7 @@ export const CONTRACTOR_ALLOWED_PREFIXES = [
   "/education-materials",
   "/worker-education",
   "/manual",
+  "/vision-fleet",
 ] as const;
 
 /** Strip /app/admin so legacy allowlist rules still apply. */

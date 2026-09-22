@@ -58,10 +58,17 @@ Gateway가 호출하는 제어 API:
 
 조회: `supervisor` / `site_supervisor`는 보드만. 키트·grant·ack는 `master` / `project_admin` / `safety_manager` / `site_manager`.
 
+카메라 회사 범위 (`vision_cameras.company_id`):
+
+- master / 발주처 PA·SM: 프로젝트 전체
+- 시공사: 자사 + 하위 협력사 + `company_id` NULL(현장 공용)
+- 협력사: 자사 + 현장 공용
+- 기존 카메라는 공용. 마스터가 소속을 배정하기 전 NULL
+
 ## 역할 매핑
 
 기존 `master` / `safety_manager` / `site_manager` / `project_admin`. 새 슈퍼롤 없음.
-협력사·공급사 계정은 메뉴 비표시(RoleGuard)이고, `vision_*` RLS/`is_vision_operator`로 읽기·승인·키트·grant도 차단한다.
+카메라 SELECT는 `can_view_vision_camera`(뷰어 + 회사 트리). Gateway/NVR 등 인프라는 `is_vision_infra_viewer`(협력사 제외). 설정·삭제·중계는 마스터만.
 
 ## 알림
 

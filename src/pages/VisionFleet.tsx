@@ -11,8 +11,9 @@ import VisionVpsSetup from "@/components/vision/VisionVpsSetup";
 import VisionCameraManageList, { type ManageCamera } from "@/components/vision/VisionCameraManageList";
 import { visionCanManage, visionQuadPageCount, visionRoleLabel, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
 import { visionVpsFromHost, type VisionVpsIngest, type VisionVpsRelay } from "@/lib/visionVps";
+import { fetchProjectCompanies, type ProjectCompany } from "@/lib/projectCompanies";
 
-type CameraRow = QuadCamera & { gateway_id: string };
+type CameraRow = QuadCamera & { gateway_id: string; company_id?: string | null };
 
 export default function VisionFleet() {
   const access = useGlobalProjectAccess();
@@ -21,9 +22,11 @@ export default function VisionFleet() {
   const canManage = visionCanManage(roles);
   const roleLabel = visionRoleLabel(roles);
   const [cameras, setCameras] = useState<CameraRow[]>([]);
+  const [companies, setCompanies] = useState<ProjectCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [newCamName, setNewCamName] = useState("");
+  const [newCamCompanyId, setNewCamCompanyId] = useState<string | null>(null);
   const [host, setHost] = useState("");
   const [relay, setRelay] = useState<VisionVpsRelay | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,12 +38,17 @@ export default function VisionFleet() {
       setLoading(false);
       return;
     }
+    if (access.scopeStatus !== "ready") {
+      setLoading(true);
+      return;
+    }
     setLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from("vision_cameras" as any)
-      .select("id, camera_id, name, health_state, gateway_id, playback_url")
-      .eq("project_id", projectId)
-      .order("name");
+      .select("id, camera_id, name, health_state, gateway_id, playback_url, company_id")
+      .eq("project_id", projectId);
+    query = access.applyCompanyFilter(query, { includeOrphans: true });
+    const { data, error } = await query.order("name");
     if (error) toast.error(error.message);
     setCameras((data || []) as CameraRow[]);
     setPage(0);
@@ -80,7 +88,15 @@ export default function VisionFleet() {
 
   useEffect(() => {
     void load();
-  }, [projectId]);
+  }, [projectId, access.scopeStatus, access.applyCompanyFilter]);
+
+  useEffect(() => {
+    if (!projectId || !canManage) {
+      setCompanies([]);
+      return;
+    }
+    void fetchProjectCompanies(projectId).then(setCompanies);
+  }, [projectId, canManage]);
 
   useEffect(() => {
     void loadRelay();
@@ -119,6 +135,7 @@ export default function VisionFleet() {
       const j = await fleetCall("POST", "/v1/cloud-cameras", {
         project_id: projectId,
         name,
+        company_id: newCamCompanyId,
         provision: "vps",
       });
       const next = (j as { ingest?: VisionVpsIngest }).ingest;
@@ -133,7 +150,10 @@ export default function VisionFleet() {
     }
   };
 
-  const saveCamera = async (cam: ManageCamera, next: { name: string; playback_url: string }) => {
+  const saveCamera = async (
+    cam: ManageCamera,
+    next: { name: string; playback_url: string; company_id: string | null },
+  ) => {
     if (!projectId) return;
     const playback_url = next.playback_url ? visionSafePlaybackUrl(next.playback_url) : null;
     if (next.playback_url && !playback_url) {
@@ -146,6 +166,7 @@ export default function VisionFleet() {
         id: cam.id,
         name: next.name,
         playback_url,
+        company_id: next.company_id,
       });
       toast.success("카메라 정보를 수정했습니다");
       void load();
@@ -189,7 +210,9 @@ export default function VisionFleet() {
             <Video className="h-5 w-5" /> 비전 관제
           </h1>
           <p className="text-xs text-muted-foreground">
-            {canManage ? "설정은 마스터만 합니다. 카메라는 4대씩 넘깁니다." : "현장 화면입니다. 카메라는 4대씩 넘깁니다."}
+            {canManage
+              ? "설정은 마스터만 합니다. 소속을 정하면 시공사는 하위까지, 협력사는 자사만 봅니다."
+              : "현장 화면입니다. 자사·하위 협력사와 현장 공용 카메라만 보입니다."}
           </p>
         </div>
         <Badge variant="secondary">{roleLabel}{canManage ? " · 설정" : ""}</Badge>
@@ -217,6 +240,9 @@ export default function VisionFleet() {
                 onHostSave={saveRelay}
                 name={newCamName}
                 onNameChange={setNewCamName}
+                companyId={newCamCompanyId}
+                onCompanyChange={setNewCamCompanyId}
+                companies={companies}
                 ingest={ingest}
                 relay={relay}
                 busy={busy}
@@ -224,6 +250,7 @@ export default function VisionFleet() {
               />
               <VisionCameraManageList
                 cameras={cameras}
+                companies={companies}
                 onSave={saveCamera}
                 onDelete={deleteCamera}
                 onRevealIngest={revealIngest}

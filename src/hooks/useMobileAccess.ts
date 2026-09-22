@@ -176,13 +176,14 @@ export function useMobileAccess() {
     accessibleCompanyIds: isMaster ? null : accessibleCompanyIds,
   });
 
-  const applyCompanyFilter = useCallback(<T,>(query: T): T => {
+  const applyCompanyFilter = useCallback(<T,>(query: T, opts?: { includeOrphans?: boolean }): T => {
     return applyOwnCompanyFilter(query, {
       role,
       companyType,
       companyId,
       isMaster,
       accessibleCompanyIds,
+      includeOrphans: opts?.includeOrphans,
     }) as T;
   }, [isMaster, role, companyId, companyType, accessibleCompanyIds]);
 

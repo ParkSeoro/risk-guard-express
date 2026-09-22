@@ -4,12 +4,17 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { type VisionVpsIngest, type VisionVpsRelay } from "@/lib/visionVps";
 
+export type VisionCompanyOption = { id: string; name: string };
+
 type Props = {
   host: string;
   onHostChange: (host: string) => void;
   onHostSave: () => Promise<void>;
   name: string;
   onNameChange: (name: string) => void;
+  companyId?: string | null;
+  onCompanyChange?: (companyId: string | null) => void;
+  companies?: VisionCompanyOption[];
   ingest: VisionVpsIngest | null;
   relay: VisionVpsRelay | null;
   busy?: boolean;
@@ -27,6 +32,9 @@ export default function VisionVpsSetup({
   onHostSave,
   name,
   onNameChange,
+  companyId,
+  onCompanyChange,
+  companies,
   ingest,
   relay,
   busy,
@@ -72,7 +80,7 @@ export default function VisionVpsSetup({
           {relay.rtmp_url}
         </p>
       )}
-      <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+      <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
         <Input
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
@@ -80,6 +88,22 @@ export default function VisionVpsSetup({
           className="h-8 text-sm"
           aria-label="카메라 이름"
         />
+        {onCompanyChange && (
+          <select
+            value={companyId || ""}
+            onChange={(e) => onCompanyChange(e.target.value || null)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="소속 회사"
+            data-testid="vision-camera-company"
+          >
+            <option value="">현장 공용</option>
+            {(companies || []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
         <Button size="sm" className="h-8" disabled={busy} onClick={() => void onCreate()}>
           추가
         </Button>

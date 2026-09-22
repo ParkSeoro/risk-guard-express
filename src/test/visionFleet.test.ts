@@ -72,6 +72,7 @@ describe("vision fleet client helpers", () => {
     expect(src).toContain("VisionCameraManageList");
     expect(src).toContain("VisionVpsSetup");
     expect(src).toContain("MobileVisionPlayer");
+    expect(src).toContain("created_at");
     expect(src).toContain("applyCompanyFilter");
     expect(src).toContain("includeOrphans");
     expect(src).toContain("company_id");

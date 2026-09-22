@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   VISION_LIVE_ACTION,
-  VISION_RELAY_SLOTS,
   visionCameraSlots,
   visionCanManage,
   visionCanOperate,
@@ -12,9 +11,6 @@ import {
   visionGrantBitrateKbps,
   visionGrantTtlMs,
   visionQuadPageCount,
-  visionRelayBase,
-  visionRelayPlaybackUrl,
-  visionRelayPublishUrl,
   visionRoleLabel,
   visionSafePlaybackUrl,
 } from "@/lib/visionFleetApi";
@@ -60,15 +56,6 @@ describe("vision fleet client helpers", () => {
     expect(visionSafePlaybackUrl("https://cdn.example.com/live.m3u8")).toBe("https://cdn.example.com/live.m3u8");
   });
 
-  it("builds four relay publish and playback URLs from the address the start script prints", () => {
-    expect(visionRelayBase("123.45.67.89:8888")).toBe("http://123.45.67.89:8888");
-    expect(visionRelayPlaybackUrl("http://123.45.67.89:8888", "cam1")).toBe(
-      "http://123.45.67.89:8888/cam1/index.m3u8",
-    );
-    expect(visionRelayPublishUrl("http://123.45.67.89:8888", "cam2")).toBe("rtmp://123.45.67.89:1935/cam2");
-    expect(VISION_RELAY_SLOTS).toHaveLength(4);
-  });
-
   it("lets supervisors open the console but not provision", () => {
     expect(visionCanViewConsole(["supervisor"])).toBe(true);
     expect(visionCanOperate(["supervisor"])).toBe(false);
@@ -92,10 +79,20 @@ describe("vision fleet client helpers", () => {
     expect(src).toContain("includeOrphans");
     expect(src).toContain("company_id");
     expect(src).not.toContain("VisionMuxSetup");
+    expect(src).not.toContain("VisionRelaySetup");
     expect(src).not.toContain("시작.bat");
     expect(src).not.toContain("설치 키트");
     expect(src).not.toContain("현장 Gateway");
     expect(src).not.toContain("안전 이벤트");
+  });
+
+  it("drops unused Mux and local-relay helpers", () => {
+    const api = readFileSync("src/lib/visionFleetApi.ts", "utf8");
+    expect(api).not.toContain("VISION_RELAY_SLOTS");
+    expect(api).not.toContain("visionRelayBase");
+    const edge = readFileSync("supabase/functions/vision-fleet/index.ts", "utf8");
+    expect(edge).not.toContain("mux.com");
+    expect(edge).not.toContain("wantMux");
   });
 
   it("never allows a siren for vision_safety_event", () => {

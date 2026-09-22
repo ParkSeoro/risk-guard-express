@@ -17,6 +17,7 @@ describe("VisionLivePane", () => {
   let el: HTMLDivElement | null = null;
 
   afterEach(() => {
+    vi.useRealTimers();
     act(() => {
       root?.unmount();
     });
@@ -46,5 +47,36 @@ describe("VisionLivePane", () => {
     expect(overlay.className).toContain("top-0");
     expect(el.querySelector('[data-testid="vision-pane-fullscreen-0"]')).toBeTruthy();
     expect((el.querySelector("video") as HTMLVideoElement).controls).toBe(true);
+  });
+
+  it("stops HLS pull after the idle window and lets the viewer resume", () => {
+    vi.useFakeTimers();
+    el = document.createElement("div");
+    document.body.appendChild(el);
+    root = createRoot(el);
+    act(() => {
+      root!.render(
+        <VisionLivePane
+          index={0}
+          name="정문"
+          cameraId="vps_ab"
+          healthState="online"
+          playbackUrl="https://example.com/live/ab/index.m3u8"
+        />,
+      );
+    });
+    expect(el.querySelector('[data-testid="vision-pane-idle-0"]')).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    expect(el.querySelector('[data-testid="vision-pane-idle-0"]')).toBeTruthy();
+    expect(el.textContent).toContain("트래픽 절약을 위해 재생을 멈췄습니다");
+    expect((el.querySelector("video") as HTMLVideoElement).controls).toBe(false);
+    act(() => {
+      (el!.querySelector('[data-testid="vision-pane-resume-0"]') as HTMLButtonElement).click();
+    });
+    expect(el.querySelector('[data-testid="vision-pane-idle-0"]')).toBeNull();
+    expect((el.querySelector("video") as HTMLVideoElement).controls).toBe(true);
+    vi.useRealTimers();
   });
 });

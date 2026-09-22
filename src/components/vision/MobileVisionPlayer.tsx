@@ -17,7 +17,7 @@ export default function MobileVisionPlayer({ cameras }: Props) {
 
   return (
     <div className="space-y-3" data-testid="mobile-vision-player">
-      <p className="text-sm font-medium">카메라 1대</p>
+      <p className="text-sm font-medium">카메라 선택</p>
       {cameras.length > 0 && (
         <div
           className="flex gap-2 overflow-x-auto pb-0.5"

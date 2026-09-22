@@ -6,14 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, Video } from "lucide-react";
 import { toast } from "sonner";
-import VisionQuadGrid, { type QuadCamera } from "@/components/vision/VisionQuadGrid";
+import MobileVisionPlayer from "@/components/vision/MobileVisionPlayer";
+import type { MobileVisionCamera } from "@/lib/mobileVisionPlayer";
 import VisionVpsSetup from "@/components/vision/VisionVpsSetup";
 import VisionCameraManageList, { type ManageCamera } from "@/components/vision/VisionCameraManageList";
-import { visionCanManage, visionQuadPageCount, visionRoleLabel, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
+import { sortVisionCamerasByRegistered, visionCanManage, visionRoleLabel, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
 import { visionVpsFromHost, type VisionVpsIngest, type VisionVpsRelay } from "@/lib/visionVps";
 import { fetchProjectCompanies, type ProjectCompany } from "@/lib/projectCompanies";
 
-type CameraRow = QuadCamera & { gateway_id: string; company_id?: string | null };
+type CameraRow = MobileVisionCamera & { gateway_id: string; company_id?: string | null };
 
 async function persistCameraCompany(
   projectId: string,
@@ -42,7 +43,6 @@ export default function VisionFleet() {
   const [cameras, setCameras] = useState<CameraRow[]>([]);
   const [companies, setCompanies] = useState<ProjectCompany[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
   const [newCamName, setNewCamName] = useState("");
   const [newCamCompanyId, setNewCamCompanyId] = useState<string | null>(null);
   const [host, setHost] = useState("");
@@ -63,13 +63,12 @@ export default function VisionFleet() {
     setLoading(true);
     let query = supabase
       .from("vision_cameras" as any)
-      .select("id, camera_id, name, health_state, gateway_id, playback_url, company_id")
+      .select("id, camera_id, name, health_state, gateway_id, playback_url, company_id, created_at")
       .eq("project_id", projectId);
     query = access.applyCompanyFilter(query, { includeOrphans: true });
-    const { data, error } = await query.order("name");
+    const { data, error } = await query.order("created_at");
     if (error) toast.error(error.message);
-    setCameras((data || []) as CameraRow[]);
-    setPage(0);
+    setCameras(sortVisionCamerasByRegistered((data || []) as CameraRow[]));
     setLoading(false);
   };
 
@@ -222,9 +221,6 @@ export default function VisionFleet() {
     }
   };
 
-  const pageCount = visionQuadPageCount(cameras.length);
-  const safePage = Math.min(page, pageCount - 1);
-
   return (
     <div className="p-6 space-y-4 max-w-6xl mx-auto" data-testid="vision-fleet">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -254,7 +250,7 @@ export default function VisionFleet() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <VisionQuadGrid cameras={cameras} page={safePage} onPageChange={setPage} />
+          <MobileVisionPlayer cameras={cameras} />
           {canManage && (
             <>
               <VisionVpsSetup

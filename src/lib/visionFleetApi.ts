@@ -9,10 +9,12 @@ export function visionFleetFnPath(path: string): string {
 
 export type VisionGrantAction = "live_substream" | "live_mainstream" | "playback" | "evidence.request";
 
-/** Default live view: full quality, 4-pane wall. Substream stays available for metered sites. */
+/** Default live view: one camera at a time. Substream stays available for metered sites. */
 export const VISION_LIVE_ACTION: VisionGrantAction = "live_mainstream";
 export const VISION_LIVE_BITRATE_KBPS = 4096;
 export const VISION_LIVE_TTL_MS = 30 * 60_000;
+/** Stop HLS pull after this idle window. Camera RTMP ingest stays up. */
+export const VISION_LIVE_IDLE_MS = 10 * 60_000;
 
 export function visionGrantTtlMs(action: VisionGrantAction): number {
   if (action === "live_mainstream") return VISION_LIVE_TTL_MS;
@@ -52,7 +54,7 @@ export function visionCanOperate(roles: readonly string[] | null | undefined): b
   return visionHasAnyRole(roles, VISION_OPERATOR_ROLES);
 }
 
-/** Setup, rename, delete. Everyone else only sees the 4-pane wall. */
+/** Setup, rename, delete. Everyone else only sees the live player. */
 export function visionCanManage(roles: readonly string[] | null | undefined): boolean {
   return visionHasAnyRole(roles, ["master"]);
 }
@@ -68,18 +70,17 @@ export function visionRoleLabel(roles: readonly string[] | null | undefined): st
   return "조회";
 }
 
-export const VISION_CAMERA_SLOTS = 4;
-
-export function visionQuadPageCount(cameraCount: number, pageSize = VISION_CAMERA_SLOTS): number {
-  if (cameraCount <= pageSize) return 1;
-  return Math.ceil(cameraCount / pageSize);
-}
-
-export function visionCameraSlots<T extends { id: string }>(cameras: T[], page = 0): Array<T | null> {
-  const start = Math.max(0, page) * VISION_CAMERA_SLOTS;
-  const slots: Array<T | null> = cameras.slice(start, start + VISION_CAMERA_SLOTS);
-  while (slots.length < VISION_CAMERA_SLOTS) slots.push(null);
-  return slots;
+export function sortVisionCamerasByRegistered<T extends { id: string; created_at?: string | null }>(
+  cameras: T[],
+): T[] {
+  return [...cameras].sort((a, b) => {
+    const at = a.created_at || "";
+    const bt = b.created_at || "";
+    if (at && bt && at !== bt) return at.localeCompare(bt);
+    if (at && !bt) return -1;
+    if (!at && bt) return 1;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 /** Browser playback only. RTSP/file URLs never go into <video>. */

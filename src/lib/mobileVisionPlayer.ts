@@ -4,6 +4,7 @@ export type MobileVisionCamera = {
   name: string;
   health_state: string | null;
   playback_url?: string | null;
+  created_at?: string | null;
 };
 
 /** Keep one selected camera; fall back to the first if the id is gone. */

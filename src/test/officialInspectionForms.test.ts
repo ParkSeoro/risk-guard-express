@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { buildChecklist } from '@/lib/inspectionTemplates';
 import {
   OFFICIAL_APPROVAL_SEED_STEPS,
+  OFFICIAL_APPROVAL_STEP_TEMPLATES,
+  buildOfficialInspectionHtml,
+  extraOfficialRows,
   officialChecklist,
   officialItemCount,
   gradeToResult,
@@ -39,9 +42,42 @@ describe('official inspection forms', () => {
     expect(officialGradeScale('facility_sf009')).toBe('four');
   });
 
-  it('seeds 작성자 + 작성자가 고르는 최종결재', () => {
+  it('seeds 작성자 + 최종결재(승인), 작성자가 승인/합의를 고른다', () => {
     expect(OFFICIAL_APPROVAL_SEED_STEPS[0]).toEqual({ label: '작성자', position: 'contractor_supervisor' });
-    expect(OFFICIAL_APPROVAL_SEED_STEPS[1]).toEqual({ label: '최종결재', position: 'consent' });
+    expect(OFFICIAL_APPROVAL_SEED_STEPS[1]).toEqual({ label: '최종결재(승인)', position: 'contractor_site_director' });
+    expect(OFFICIAL_APPROVAL_STEP_TEMPLATES.map((t) => t.step_label)).toEqual([
+      '작성자',
+      '최종결재(승인)',
+      '최종결재(합의)',
+    ]);
+    expect(OFFICIAL_APPROVAL_STEP_TEMPLATES.find((t) => t.step_label === '최종결재(승인)')).toMatchObject({
+      openPool: true,
+      badgeLabel: '승인',
+    });
+    expect(OFFICIAL_APPROVAL_STEP_TEMPLATES.find((t) => t.step_label === '최종결재(합의)')).toMatchObject({
+      position: 'consent',
+      openPool: true,
+      badgeLabel: '합의',
+    });
     expect(officialChecklist('facility_sf009').some((i) => i.number === 9 && i.section === '위험물 저장소')).toBe(true);
+  });
+
+  it('prints extra checklist rows after the paper template', () => {
+    const rows = [
+      { code: 'FAC-01', label: '비계 고정', grade: 'good' as const, note: '' },
+      { code: 'EXTRA-1', label: '임시 개구부 덮개', grade: 'poor' as const, note: '즉시 조치' },
+    ];
+    expect(extraOfficialRows('facility_sf009', rows)).toHaveLength(1);
+    const html = buildOfficialInspectionHtml({
+      type: 'facility_sf009',
+      location: 'A동',
+      inspectorName: '홍길동',
+      inspectedAt: '2026-09-22',
+      payload: {},
+      rows,
+    });
+    expect(html).toContain('추가 항목');
+    expect(html).toContain('임시 개구부 덮개');
+    expect(html).toContain('즉시 조치');
   });
 });

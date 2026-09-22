@@ -43,7 +43,9 @@ import {
 } from '@/lib/legalForms/patrolLog';
 import {
   OFFICIAL_APPROVAL_SEED_STEPS,
+  OFFICIAL_APPROVAL_STEP_TEMPLATES,
   OFFICIAL_PROCESS_CATEGORY,
+  extraOfficialRows,
   buildOfficialInspectionHtml,
   emptyOfficialPayload,
   gradeToResult,
@@ -431,21 +433,39 @@ export default function SafetyInspections() {
   };
 
   const addDetailFinding = async () => {
-    if (!detail || !findingText.trim()) return toast({ title: '발견사항을 입력하세요.', variant: 'destructive' });
-    const sort = detailItems.length;
+    if (!detail || !assertEditable()) return;
+    if (!findingText.trim()) return toast({ title: '항목을 입력하세요.', variant: 'destructive' });
+    const patrol = isPatrolInspection(detail.inspection_type);
+    const official = isOfficialInspection(detail.inspection_type);
+    const prefix = patrol ? 'PT-FIND-' : 'EXTRA-';
+    const nextNum = detailItems.filter((x) => String(x.checklist_code || '').startsWith(prefix)).length + 1;
     const { data, error } = await supabase.from('safety_inspection_items' as any).insert({
       inspection_id: detail.id,
-      checklist_code: `PT-FIND-${sort + 1}`,
+      checklist_code: `${prefix}${nextNum}`,
       label: findingText.trim(),
-      legal_basis: '산업안전보건법 시행령 제18조제1항제5호',
-      sort_order: sort,
-      result: 'fail',
+      legal_basis: official
+        ? '추가 점검항목'
+        : patrol
+          ? '산업안전보건법 시행령 제18조제1항제5호'
+          : '추가 점검항목',
+      sort_order: detailItems.length,
+      result: patrol ? 'fail' : '',
     }).select().single();
     if (error) return toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
     setFindingText('');
     const row = { ...(data as any), photos: [] } as InspItem;
     setDetailItems((prev) => [...prev, row]);
-    await updateItemResult(row, 'fail');
+    if (patrol) await updateItemResult(row, 'fail');
+  };
+
+  const removeChecklistItem = async (item: InspItem) => {
+    if (!assertEditable()) return;
+    if (!confirm('이 점검항목을 삭제할까요?')) return;
+    await closePendingInspectionAction(item.id);
+    const { error } = await supabase.from('safety_inspection_items' as any).delete().eq('id', item.id);
+    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+    setDetailItems((prev) => prev.filter((x) => x.id !== item.id));
+    setDetailActions((prev) => prev.filter((a) => a.item_id !== item.id));
   };
 
   const updateItemResult = async (item: InspItem, result: 'pass' | 'fail' | 'na', grade?: OfficialGrade | null) => {
@@ -1249,7 +1269,13 @@ export default function SafetyInspections() {
               <h3 className="font-semibold mt-2">점검 항목</h3>
               <div className="space-y-2">
                 {(isOfficialInspection(detail.inspection_type)
-                  ? groupOfficialItems(officialChecklist(detail.inspection_type as OfficialInspectionType)).flatMap((g) => [
+                  ? groupOfficialItems(officialChecklist(detail.inspection_type as OfficialInspectionType))
+                    .map((g) => ({
+                      ...g,
+                      items: g.items.filter((def) => detailItems.some((x) => x.checklist_code === def.code)),
+                    }))
+                    .filter((g) => g.items.length)
+                    .flatMap((g) => [
                       { kind: 'section' as const, key: g.section, section: g.section },
                       ...g.items.map((def) => ({ kind: 'item' as const, key: def.code, def })),
                     ])
@@ -1269,12 +1295,19 @@ export default function SafetyInspections() {
                               <div className="text-sm font-medium">{row.def.number}. {it.label}</div>
                               {(row.def.hints || []).map((h) => <div key={h} className="text-[10px] text-muted-foreground">{h}</div>)}
                             </div>
-                            <OfficialGradeButtons
-                              type={detail.inspection_type as OfficialInspectionType}
-                              value={resultToGrade(it.result, it.grade)}
-                              disabled={isPatrolLogLocked(detail.status)}
-                              onPick={(g) => updateOfficialGrade(it, g)}
-                            />
+                            <div className="flex items-center gap-1">
+                              <OfficialGradeButtons
+                                type={detail.inspection_type as OfficialInspectionType}
+                                value={resultToGrade(it.result, it.grade)}
+                                disabled={isPatrolLogLocked(detail.status)}
+                                onPick={(g) => updateOfficialGrade(it, g)}
+                              />
+                              {!isPatrolLogLocked(detail.status) && (
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                           <div className="flex gap-2 items-start">
                             <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
@@ -1312,6 +1345,11 @@ export default function SafetyInspections() {
                           <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>{isPatrolInspection(detail.inspection_type) ? '양호' : '통과'}</Button>
                           <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'fail')}>{isPatrolInspection(detail.inspection_type) ? '불량' : '불합격'}</Button>
                           <Button size="sm" variant={it.result === 'na' ? 'secondary' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'na')}>해당없음</Button>
+                          {!isPatrolLogLocked(detail.status) && (
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 items-start">
@@ -1342,7 +1380,65 @@ export default function SafetyInspections() {
                   </Card>
                   );
                 })}
+                {isOfficialInspection(detail.inspection_type) && extraOfficialRows(detail.inspection_type as OfficialInspectionType, detailItems).length > 0 && (
+                  <div className="text-sm font-semibold pt-2">추가 항목</div>
+                )}
+                {isOfficialInspection(detail.inspection_type) && extraOfficialRows(detail.inspection_type as OfficialInspectionType, detailItems).map((it) => (
+                  <Card key={it.id} className={it.result === 'fail' ? 'border-destructive' : ''}>
+                    <CardContent className="p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{it.label}</div>
+                          <div className="text-[10px] text-muted-foreground">{it.checklist_code}</div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <OfficialGradeButtons
+                            type={detail.inspection_type as OfficialInspectionType}
+                            value={resultToGrade(it.result, it.grade)}
+                            disabled={isPatrolLogLocked(detail.status)}
+                            onPick={(g) => updateOfficialGrade(it, g)}
+                          />
+                          {!isPatrolLogLocked(detail.status) && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 items-start">
+                        <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
+                        <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
+                          <Camera className="h-3 w-3" />사진
+                          <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />
+                        </label>
+                      </div>
+                      {(it.photos || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {it.photos.map((p, idx) => (
+                            <div key={`${p}-${idx}`} className="relative">
+                              <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
+                              {!isPatrolLogLocked(detail.status) && (
+                                <button type="button" aria-label="점검 사진 삭제" className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center" onClick={() => void removeItemPhoto(it, idx)}>×</button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
+
+              {!isPatrolLogLocked(detail.status) && (
+                <div className="flex gap-2 mt-3">
+                  <Input
+                    value={findingText}
+                    onChange={(e) => setFindingText(e.target.value)}
+                    placeholder={isPatrolInspection(detail.inspection_type) ? '추가 발견사항' : '점검항목 추가'}
+                  />
+                  <Button variant="outline" onClick={addDetailFinding}><Plus className="h-4 w-4 mr-1" />추가</Button>
+                </div>
+              )}
 
               {isOfficialInspection(detail.inspection_type) && (
                 <OfficialFooterFields
@@ -1351,13 +1447,6 @@ export default function SafetyInspections() {
                   disabled={isPatrolLogLocked(detail.status)}
                   onChange={(next) => void persistOfficialPayload(next)}
                 />
-              )}
-
-              {isPatrolInspection(detail.inspection_type) && !isPatrolLogLocked(detail.status) && (
-                <div className="flex gap-2 mt-3">
-                  <Input value={findingText} onChange={(e) => setFindingText(e.target.value)} placeholder="추가 발견사항" />
-                  <Button variant="outline" onClick={addDetailFinding}><Plus className="h-4 w-4 mr-1" />추가</Button>
-                </div>
               )}
 
               {isPatrolInspection(detail.inspection_type) && (
@@ -1408,7 +1497,8 @@ export default function SafetyInspections() {
                     submitterCompanyId={detail.company_id}
                     readOnly={isPatrolLogLocked(detail.status)}
                     documentDraft={{ entityType: 'safety_inspection', entityId: detail.id, companyId: detail.company_id }}
-                    seedSteps={isOfficialInspection(detail.inspection_type) ? [...OFFICIAL_APPROVAL_SEED_STEPS] : patrolSeedSteps}
+                    seedSteps={isOfficialInspection(detail.inspection_type) ? OFFICIAL_APPROVAL_SEED_STEPS : patrolSeedSteps}
+                    stepTemplates={isOfficialInspection(detail.inspection_type) ? OFFICIAL_APPROVAL_STEP_TEMPLATES : undefined}
                     authorUserId={isOfficialInspection(detail.inspection_type) ? (detail.created_by || detail.inspector_id || profile?.user_id) : undefined}
                     authorName={isOfficialInspection(detail.inspection_type) ? (detail.inspector_name || profile?.display_name) : undefined}
                     onDraftStatusChange={setApprovalDraftInfo}

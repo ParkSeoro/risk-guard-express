@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, FileText, Presentation, Sparkles, Plus, Trash2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 import pptxgen from "pptxgenjs";
 
 type Material = {
@@ -40,6 +41,7 @@ const empty = (project_id: string): Material => ({
 export default function EducationMaterials() {
   const [params] = useSearchParams();
   const { projectId, setProjectId } = useActiveProject();
+  const { softDelete } = useSoftDelete();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [list, setList] = useState<Material[]>([]);
   const [runs, setRuns] = useState<Array<{ id: string; period_label: string }>>([]);
@@ -74,6 +76,7 @@ export default function EducationMaterials() {
       .from("safety_education_materials")
       .select("*")
       .eq("project_id", projectId)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false });
     if (error) { toast.error("불러오기 실패: " + error.message); return; }
     setList(data as any || []);
@@ -125,6 +128,18 @@ export default function EducationMaterials() {
       toast.error("저장 실패: " + e.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async (m: Material) => {
+    if (!m.id) return;
+    const res = await softDelete("safety_education_materials", m.id, {
+      projectId,
+      label: m.title || "교육자료",
+    });
+    if (res.ok) {
+      if (editing?.id === m.id) setEditing(null);
+      loadMaterials();
     }
   };
 
@@ -283,10 +298,11 @@ ${m.accident_cases.map(a=>`<div class="box"><strong>${a.title}</strong><br>${a.s
                       </div>
                       <div className="text-xs text-muted-foreground">{m.work_overview.slice(0, 100)}</div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap justify-end">
                       <Button size="sm" variant="outline" onClick={() => setEditing(m as any)}>수정</Button>
                       <Button size="sm" variant="outline" onClick={() => printPdf(m as any)}><FileText className="h-4 w-4 mr-1" />PDF</Button>
                       <Button size="sm" variant="outline" onClick={() => exportPpt(m as any)}><Presentation className="h-4 w-4 mr-1" />PPT</Button>
+                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(m)}>삭제</Button>
                     </div>
                   </div>
                 ))}

@@ -14,6 +14,16 @@ import { ArrowLeft, Camera, CheckCircle2, XCircle, MinusCircle, Loader2, AlertTr
 import { toast } from "sonner";
 import { z } from "zod";
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from "@/lib/inspectionTemplates";
+import {
+  OFFICIAL_PROCESS_CATEGORY,
+  emptyOfficialPayload,
+  gradeToResult,
+  isOfficialInspection,
+  resultToGrade,
+  type OfficialGrade,
+  type OfficialInspectionType,
+} from "@/lib/legalForms/officialInspectionForms";
+import { OfficialGradeButtons } from "@/components/inspections/OfficialInspectionFields";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { correctTerms } from "@/lib/termCorrection";
@@ -92,6 +102,7 @@ export default function MobileInspect() {
   const [findingText, setFindingText] = useState("");
   const [addingFinding, setAddingFinding] = useState(false);
   const patrol = isPatrolInspection(form.inspection_type);
+  const official = isOfficialInspection(form.inspection_type);
 
   useEffect(() => {
     if (profile?.user_id && !form.inspector_id) {
@@ -234,7 +245,7 @@ export default function MobileInspect() {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
     const payload = {
       ...form,
-      process_category: patrol ? PATROL_PROCESS_CATEGORY : form.process_category,
+      process_category: patrol ? PATROL_PROCESS_CATEGORY : official ? OFFICIAL_PROCESS_CATEGORY : form.process_category,
     };
     const parsed = inspectionSetupSchema.safeParse(payload);
     if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
@@ -255,6 +266,9 @@ export default function MobileInspect() {
         weather: weather || "",
         patrol_photos: [],
         director_items: emptyDirectorPatrolItems(),
+        form_payload: official
+          ? { ...emptyOfficialPayload(), work_name: payload.location, inspector_name: payload.inspector_name || profile?.display_name || "" }
+          : {},
       }).select().single();
       if (error) throw error;
       await auditLog("create", "safety_inspection", (ins as any).id, projectId, {
@@ -293,10 +307,11 @@ export default function MobileInspect() {
     return uploaded.publicUrl;
   };
 
-  const setResult = async (item: any, result: "pass" | "fail" | "na") => {
+  const setResult = async (item: any, result: "pass" | "fail" | "na", grade?: OfficialGrade | null) => {
     if (readOnly) return;
-    setItems(prev => prev.map(x => x.id === item.id ? { ...x, result } : x));
-    await supabase.from("safety_inspection_items" as any).update({ result }).eq("id", item.id);
+    const nextGrade = grade ?? (official ? resultToGrade(result, item.grade) : null);
+    setItems(prev => prev.map(x => x.id === item.id ? { ...x, result, grade: nextGrade } : x));
+    await supabase.from("safety_inspection_items" as any).update({ result, grade: nextGrade }).eq("id", item.id);
     if (result === "fail") {
       const { data: existing } = await supabase.from("safety_inspection_actions" as any)
         .select("id").eq("item_id", item.id).maybeSingle();
@@ -378,10 +393,10 @@ export default function MobileInspect() {
 
   const completeInspection = async () => {
     if (!inspectionId) return;
-    if (patrol) {
+    if (patrol || official) {
       const hasFact = items.some(i => i.result || (i.note && i.note.trim()) || (i.photos || []).length);
       if (!hasFact && !confirm("관찰 결과·사진이 없습니다. 그래도 저장할까요?")) return;
-      if (inspectionId) {
+      if (inspectionId && patrol) {
         await supabase.from("safety_inspections" as any).update({
           weather,
           patrol_photos: patrolPhotos,
@@ -506,7 +521,9 @@ export default function MobileInspect() {
                       inspection_type: next,
                       process_category: isPatrolInspection(next)
                         ? PATROL_PROCESS_CATEGORY
-                        : (form.process_category === PATROL_PROCESS_CATEGORY ? "굴착" : form.process_category),
+                        : isOfficialInspection(next)
+                          ? OFFICIAL_PROCESS_CATEGORY
+                          : (form.process_category === PATROL_PROCESS_CATEGORY || form.process_category === OFFICIAL_PROCESS_CATEGORY ? "굴착" : form.process_category),
                       location: isPatrolInspection(next) && !form.location.trim() ? todayRoute : form.location,
                     });
                   }}>
@@ -528,7 +545,7 @@ export default function MobileInspect() {
                 </div>
               )}
 
-              {!patrol && (
+              {!patrol && !official && (
                 <div>
                   <Label className="text-base">공종(작업종류) *</Label>
                   <Select value={form.process_category}
@@ -610,7 +627,7 @@ export default function MobileInspect() {
             <Card>
               <CardContent className="pt-4">
                 <div className="text-sm font-bold">
-                  {patrol ? PATROL_LOG_TITLE : `${INSPECTION_TYPE_LABELS[form.inspection_type]} · ${form.process_category}`}
+                  {patrol ? PATROL_LOG_TITLE : official ? INSPECTION_TYPE_LABELS[form.inspection_type] : `${INSPECTION_TYPE_LABELS[form.inspection_type]} · ${form.process_category}`}
                 </div>
                 <div className="text-xs text-muted-foreground">{form.location}</div>
                 {patrol && (
@@ -641,6 +658,14 @@ export default function MobileInspect() {
                     )}
                   </div>
 
+                  {official ? (
+                    <OfficialGradeButtons
+                      type={form.inspection_type as OfficialInspectionType}
+                      value={resultToGrade(it.result, it.grade)}
+                      disabled={readOnly}
+                      onPick={(g: OfficialGrade) => setResult(it, gradeToResult(g), g)}
+                    />
+                  ) : (
                   <div className="grid grid-cols-3 gap-2">
                     <Button size="sm" variant={it.result === "pass" ? "default" : "outline"}
                       className={`h-12 ${it.result === "pass" ? "bg-success hover:bg-success" : ""}`}
@@ -657,6 +682,7 @@ export default function MobileInspect() {
                       <MinusCircle className="h-4 w-4 mr-1" />해당없음
                     </Button>
                   </div>
+                  )}
 
                   {(patrol || it.result === "fail") && (
                     <div className={`space-y-2 rounded-lg p-2 ${it.result === "fail" ? "border border-destructive/30 bg-destructive/5" : "border bg-muted/30"}`}>

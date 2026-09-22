@@ -30,7 +30,7 @@ export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
   incident: '사고보고',
   emergency_drill: '비상대피훈련',
   tbm: 'TBM 일지',
-  safety_inspection: '순회 안전점검일지',
+  safety_inspection: '안전점검',
 };
 
 /** 전자결재 UI 공통 — 알 수 없는 키는 원문, 빈 값은 '문서' */

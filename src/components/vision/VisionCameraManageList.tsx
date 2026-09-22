@@ -8,21 +8,34 @@ export type ManageCamera = {
   camera_id?: string;
   playback_url?: string | null;
   health_state?: string | null;
+  company_id?: string | null;
 };
+
+export type ManageCompanyOption = { id: string; name: string };
+
+export type ManageCameraSave = { name: string; playback_url: string; company_id: string | null };
 
 type Props = {
   cameras: ManageCamera[];
-  onSave: (cam: ManageCamera, next: { name: string; playback_url: string }) => Promise<void>;
+  companies?: ManageCompanyOption[];
+  onSave: (cam: ManageCamera, next: ManageCameraSave) => Promise<void>;
   onDelete: (cam: ManageCamera) => Promise<void>;
   onRevealIngest?: (cam: ManageCamera) => Promise<void>;
 };
 
-export default function VisionCameraManageList({ cameras, onSave, onDelete, onRevealIngest }: Props) {
+export default function VisionCameraManageList({ cameras, companies, onSave, onDelete, onRevealIngest }: Props) {
   if (cameras.length === 0) return null;
   return (
     <ul className="mt-3 space-y-2 text-sm" data-testid="vision-camera-manage">
       {cameras.map((cam) => (
-        <CameraEditRow key={cam.id} cam={cam} onSave={onSave} onDelete={onDelete} onRevealIngest={onRevealIngest} />
+        <CameraEditRow
+          key={cam.id}
+          cam={cam}
+          companies={companies}
+          onSave={onSave}
+          onDelete={onDelete}
+          onRevealIngest={onRevealIngest}
+        />
       ))}
     </ul>
   );
@@ -30,23 +43,26 @@ export default function VisionCameraManageList({ cameras, onSave, onDelete, onRe
 
 function CameraEditRow({
   cam,
+  companies,
   onSave,
   onDelete,
   onRevealIngest,
 }: {
   cam: ManageCamera;
+  companies?: ManageCompanyOption[];
   onSave: Props["onSave"];
   onDelete: Props["onDelete"];
   onRevealIngest?: Props["onRevealIngest"];
 }) {
   const [name, setName] = useState(cam.name);
   const [url, setUrl] = useState(cam.playback_url || "");
+  const [companyId, setCompanyId] = useState(cam.company_id || "");
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     try {
-      await onSave(cam, { name: name.trim(), playback_url: url.trim() });
+      await onSave(cam, { name: name.trim(), playback_url: url.trim(), company_id: companyId || null });
     } finally {
       setBusy(false);
     }
@@ -73,8 +89,21 @@ function CameraEditRow({
   };
 
   return (
-    <li className="grid gap-2 border-t pt-2 md:grid-cols-[1fr_1.4fr_auto_auto_auto]">
+    <li className="grid gap-2 border-t pt-2 md:grid-cols-[1fr_1.2fr_0.9fr_auto_auto_auto]">
       <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-sm" aria-label="카메라 이름" />
+      <select
+        value={companyId}
+        onChange={(e) => setCompanyId(e.target.value)}
+        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+        aria-label="소속 회사"
+      >
+        <option value="">현장 공용</option>
+        {(companies || []).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
       <Input
         value={url}
         onChange={(e) => setUrl(e.target.value)}

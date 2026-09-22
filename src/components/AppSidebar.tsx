@@ -22,6 +22,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { ADMIN_APP_BASE, toAdminUrl } from "@/lib/adminNav";
+import { VISION_VIEW_ROLES } from "@/lib/visionFleetApi";
 
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
 
@@ -155,6 +156,7 @@ export function AppSidebar() {
   const LOW = new Set(['contractor', 'worker', 'viewer', 'user']);
   const isLowPriv = !isMaster && (roles.length === 0 || roles.every((r) => LOW.has(r as string)));
   const restrictToContractorUI = isContractorCo || isLowPriv;
+  const canViewVision = isMaster || roles.some((r) => (VISION_VIEW_ROLES as readonly string[]).includes(r));
   const location = useLocation();
   const pendingApprovals = usePendingApprovalsCount();
 
@@ -165,7 +167,10 @@ export function AppSidebar() {
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
-  const CONTRACTOR_GROUP_KEYS = new Set(['priority', 'field', 'risk', 'inspect_incident', 'people']);
+  const CONTRACTOR_GROUP_KEYS = new Set([
+    'priority', 'field', 'risk', 'inspect_incident', 'people',
+    ...(canViewVision ? ['vision'] : []),
+  ]);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
     '/', '/approvals',
     '/work-plans', '/work-permits', '/tbm-logs',
@@ -174,6 +179,7 @@ export function AppSidebar() {
     '/workers',
     '/project-library', '/education-materials', '/worker-education',
     '/profile', '/settings/account', '/manual',
+    ...(canViewVision ? ['/vision-fleet'] : []),
   ]);
   const visibleGroups = restrictToContractorUI
     ? groups

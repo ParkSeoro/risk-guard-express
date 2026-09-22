@@ -109,6 +109,25 @@ describe('applyOwnCompanyFilter', () => {
     expect(calls[0][0]).toBe('in');
     expect(calls[0][2]).toEqual(['gc-a', 'c1']);
   });
+
+  it('includes NULL company rows for GC tree (현장 공용 CCTV)', () => {
+    const calls: any[] = [];
+    const q = {
+      or: (expr: string) => {
+        calls.push(['or', expr]);
+        return q;
+      },
+    };
+    applyOwnCompanyFilter(q, {
+      role: 'safety_manager',
+      companyType: 'gc',
+      companyId: 'gc-a',
+      accessibleCompanyIds: ['gc-a', 'c1'],
+      includeOrphans: true,
+    });
+    expect(calls[0][0]).toBe('or');
+    expect(calls[0][1]).toBe('company_id.in.(gc-a,c1),company_id.is.null');
+  });
 });
 
 describe('filterRunsByCompanyScope', () => {

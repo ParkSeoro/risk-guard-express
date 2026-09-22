@@ -16,6 +16,38 @@ describe("VisionCameraManageList", () => {
     el = null;
   });
 
+  it("saves the assigned company", async () => {
+    const onSave = vi.fn(async () => undefined);
+    el = document.createElement("div");
+    document.body.appendChild(el);
+    root = createRoot(el);
+    act(() => {
+      root!.render(
+        <VisionCameraManageList
+          cameras={[{ id: "1", name: "정문", playback_url: "http://10.0.0.1/x.m3u8", company_id: null }]}
+          companies={[{ id: "co-1", name: "진남토건" }]}
+          onSave={onSave}
+          onDelete={async () => undefined}
+        />,
+      );
+    });
+    const select = el.querySelector('select[aria-label="소속 회사"]') as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    expect(el.textContent).toContain("현장 공용");
+    act(() => {
+      select.value = "co-1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const saveBtn = [...el.querySelectorAll("button")].find((b) => b.textContent === "수정");
+    await act(async () => {
+      saveBtn?.click();
+    });
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "1" }),
+      { name: "정문", playback_url: "http://10.0.0.1/x.m3u8", company_id: "co-1" },
+    );
+  });
+
   it("shows edit and delete for each camera", () => {
     el = document.createElement("div");
     document.body.appendChild(el);
@@ -55,7 +87,7 @@ describe("VisionCameraManageList", () => {
     });
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ id: "1", name: "정문" }),
-      { name: "정문", playback_url: "http://10.0.0.1/x.m3u8" },
+      { name: "정문", playback_url: "http://10.0.0.1/x.m3u8", company_id: null },
     );
   });
 });

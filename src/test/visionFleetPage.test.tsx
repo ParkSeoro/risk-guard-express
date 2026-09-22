@@ -11,27 +11,35 @@ vi.mock("@/components/vision/VisionLivePane", () => ({
   default: () => <div data-testid="vision-live-pane-stub" />,
 }));
 
+const cameraRows = [
+  {
+    id: "c1",
+    camera_id: "cam1",
+    name: "정문",
+    health_state: "online",
+    gateway_id: "g1",
+    playback_url: null,
+    company_id: null,
+  },
+];
+
+function chain(result: { data: unknown; error: null }) {
+  const q: Record<string, unknown> = {};
+  q.select = () => q;
+  q.eq = () => q;
+  q.or = () => q;
+  q.in = () => q;
+  q.order = async () => result;
+  q.then = (resolve: (v: unknown) => unknown) => resolve(result);
+  return q;
+}
+
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          order: async () => ({
-            data: [
-              {
-                id: "c1",
-                camera_id: "cam1",
-                name: "정문",
-                health_state: "online",
-                gateway_id: "g1",
-                playback_url: null,
-              },
-            ],
-            error: null,
-          }),
-        }),
-      }),
-    }),
+    from: (table: string) =>
+      table === "project_companies" || table === "companies"
+        ? chain({ data: [], error: null })
+        : chain({ data: cameraRows, error: null }),
     auth: { getSession: async () => ({ data: { session: { access_token: "t" } } }) },
   },
 }));
@@ -44,12 +52,23 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
+const applyCompanyFilter = (query: unknown) => query;
+
 vi.mock("@/components/AppLayout", () => ({
-  useGlobalProjectAccess: () => ({ selectedProject: "p1" }),
+  useGlobalProjectAccess: () => ({
+    selectedProject: "p1",
+    scopeStatus: "ready",
+    accessibleCompanyIds: null,
+    applyCompanyFilter,
+  }),
 }));
 
 vi.mock("@/hooks/useMobileAccess", () => ({
-  useMobileAccess: () => ({ projectId: "p1" }),
+  useMobileAccess: () => ({
+    projectId: "p1",
+    scopeStatus: "ready",
+    applyCompanyFilter,
+  }),
 }));
 
 import VisionFleet from "@/pages/VisionFleet";
@@ -85,6 +104,8 @@ describe("VisionFleet role wall", () => {
     await mount(<VisionFleet />);
     expect(el!.querySelector('[data-testid="vision-fleet"]')).toBeTruthy();
     expect(el!.textContent).toContain("설정은 마스터만 합니다");
+    expect(el!.querySelector('[data-testid="vision-camera-company"]')).toBeTruthy();
+    expect(el!.textContent).toContain("현장 공용");
     expect(el!.querySelector('[data-testid="vision-vps-setup"]')).toBeTruthy();
     expect(el!.querySelector('[data-testid="vision-camera-manage"]')).toBeTruthy();
     expect(el!.textContent).toContain("추가");

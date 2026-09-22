@@ -15,6 +15,24 @@ import { fetchProjectCompanies, type ProjectCompany } from "@/lib/projectCompani
 
 type CameraRow = QuadCamera & { gateway_id: string; company_id?: string | null };
 
+async function persistCameraCompany(
+  projectId: string,
+  cameraId: string,
+  companyId: string | null,
+) {
+  const { data, error } = await supabase
+    .from("vision_cameras" as any)
+    .update({ company_id: companyId })
+    .eq("id", cameraId)
+    .eq("project_id", projectId)
+    .select("id, company_id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("소속 회사를 저장할 권한이 없습니다");
+  const saved = (data as { company_id?: string | null }).company_id ?? null;
+  if (saved !== (companyId || null)) throw new Error("소속 회사가 저장되지 않았습니다");
+}
+
 export default function VisionFleet() {
   const access = useGlobalProjectAccess();
   const { roles } = useAuth();
@@ -141,11 +159,7 @@ export default function VisionFleet() {
       const created = (j as { data?: { id?: string }; ingest?: VisionVpsIngest }).data;
       const next = (j as { ingest?: VisionVpsIngest }).ingest;
       if (created?.id) {
-        await supabase
-          .from("vision_cameras" as any)
-          .update({ company_id: newCamCompanyId })
-          .eq("id", created.id)
-          .eq("project_id", projectId);
+        await persistCameraCompany(projectId, created.id, newCamCompanyId);
       }
       if (next?.stream_key) setIngest(next);
       toast.success("카메라를 만들었습니다. 아래 키를 VIGI RTMP에 넣으세요.");
@@ -176,11 +190,7 @@ export default function VisionFleet() {
         playback_url,
         company_id: next.company_id,
       });
-      await supabase
-        .from("vision_cameras" as any)
-        .update({ company_id: next.company_id })
-        .eq("id", cam.id)
-        .eq("project_id", projectId);
+      await persistCameraCompany(projectId, cam.id, next.company_id);
       toast.success("카메라 정보를 수정했습니다");
       void load();
     } catch (e: unknown) {

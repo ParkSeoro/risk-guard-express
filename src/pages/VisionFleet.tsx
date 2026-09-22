@@ -138,7 +138,15 @@ export default function VisionFleet() {
         company_id: newCamCompanyId,
         provision: "vps",
       });
+      const created = (j as { data?: { id?: string }; ingest?: VisionVpsIngest }).data;
       const next = (j as { ingest?: VisionVpsIngest }).ingest;
+      if (created?.id) {
+        await supabase
+          .from("vision_cameras" as any)
+          .update({ company_id: newCamCompanyId })
+          .eq("id", created.id)
+          .eq("project_id", projectId);
+      }
       if (next?.stream_key) setIngest(next);
       toast.success("카메라를 만들었습니다. 아래 키를 VIGI RTMP에 넣으세요.");
       setNewCamName("");
@@ -168,6 +176,11 @@ export default function VisionFleet() {
         playback_url,
         company_id: next.company_id,
       });
+      await supabase
+        .from("vision_cameras" as any)
+        .update({ company_id: next.company_id })
+        .eq("id", cam.id)
+        .eq("project_id", projectId);
       toast.success("카메라 정보를 수정했습니다");
       void load();
     } catch (e: unknown) {

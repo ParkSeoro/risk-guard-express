@@ -1269,7 +1269,13 @@ export default function SafetyInspections() {
               <h3 className="font-semibold mt-2">점검 항목</h3>
               <div className="space-y-2">
                 {(isOfficialInspection(detail.inspection_type)
-                  ? groupOfficialItems(officialChecklist(detail.inspection_type as OfficialInspectionType)).flatMap((g) => [
+                  ? groupOfficialItems(officialChecklist(detail.inspection_type as OfficialInspectionType))
+                    .map((g) => ({
+                      ...g,
+                      items: g.items.filter((def) => detailItems.some((x) => x.checklist_code === def.code)),
+                    }))
+                    .filter((g) => g.items.length)
+                    .flatMap((g) => [
                       { kind: 'section' as const, key: g.section, section: g.section },
                       ...g.items.map((def) => ({ kind: 'item' as const, key: def.code, def })),
                     ])

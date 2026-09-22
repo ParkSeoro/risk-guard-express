@@ -89,7 +89,14 @@ interface Props {
   documentDraft?: DocumentDraftTarget;
   onDraftStatusChange?: (info: DraftStatusInfo) => void;
   /** 저장된 draft가 없을 때 쓰는 기본 단계 (순회 2단 등). */
-  seedSteps?: Array<{ label: string; position: string }>;
+  seedSteps?: ReadonlyArray<{ label: string; position: string }>;
+  /** 구분 셀렉트. 없으면 프로젝트 기본 5단계. 최종결재 승인/합의 선택용. */
+  stepTemplates?: ReadonlyArray<{
+    step_label: string;
+    position: string;
+    openPool?: boolean;
+    badgeLabel?: string;
+  }>;
   /** 위평 등: 담당자(시공)를 이 작성자로 고정 */
   authorUserId?: string | null;
   authorName?: string | null;
@@ -169,6 +176,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
   documentDraft,
   onDraftStatusChange,
   seedSteps,
+  stepTemplates,
   authorUserId,
   authorName,
 }: Props, ref) {
@@ -190,9 +198,13 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
   const eligibleRef = useRef<EligibleApprover[]>([]);
   const projectMembersRef = useRef(projectMembers);
   const companiesRef = useRef(companies);
+  const seedStepsRef = useRef(seedSteps);
   projectMembersRef.current = projectMembers;
   companiesRef.current = companies;
   eligibleRef.current = eligible;
+  seedStepsRef.current = seedSteps;
+
+  const activeTemplates = stepTemplates && stepTemplates.length > 0 ? stepTemplates : STEP_TEMPLATES;
 
   const [authorCompanyId, setAuthorCompanyId] = useState<string | null>(
     () => submitterCompanyId
@@ -280,8 +292,9 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
           .select('*')
           .eq('project_id', projectId)
           .order('step_order');
-        if (seedSteps && seedSteps.length > 0) {
-          setLines(seedSteps.map((s, i) => ({
+        const seeds = seedStepsRef.current;
+        if (seeds && seeds.length > 0) {
+          setLines(seeds.map((s, i) => ({
             project_id: projectId,
             step_order: i,
             step_label: s.label,
@@ -316,7 +329,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
       setLines([]);
     }
     setLoading(false);
-  }, [projectId, documentDraft?.entityType, documentDraft?.entityId, documentDraft?.companyId, seedSteps]);
+  }, [projectId, documentDraft?.entityType, documentDraft?.entityId, documentDraft?.companyId]);
 
   useEffect(() => {
     void fetchLines();
@@ -341,10 +354,11 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
   }, [draftStatus, draftReady, dirty, lines.length, draftErrors, onDraftStatusChange]);
 
   const optionsForStep = useCallback(
-    (position: string): EligibleApprover[] => {
+    (position: string, openPool?: boolean): EligibleApprover[] => {
       if (!position) return [];
       let list = optionsForApprovalStep(eligible, position, filterCtx, {
         currentUserId: user?.id || null,
+        openPool,
       });
       // Optional: peer 협력사도 시공(상신) 단계에 표시
       if (
@@ -597,7 +611,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
       updated[index] = { ...updated[index], [field]: value };
 
       if (field === 'step_label' && value) {
-        const template = STEP_TEMPLATES.find((t) => t.step_label === value);
+        const template = activeTemplates.find((t) => t.step_label === value);
         if (template) {
           updated[index].position = template.position;
           // Clear approver when step type changes — old person may be wrong company
@@ -735,12 +749,14 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
                 {lines
                   .filter((l) => !(readOnly && l.position === 'cooperator' && !l.user_id))
                   .map((line, i) => {
-                    const options = optionsForStep(line.position);
+                    const stepTpl = activeTemplates.find((t) => t.step_label === line.step_label);
+                    const options = optionsForStep(line.position, stepTpl?.openPool);
                     const selected =
                       line.user_id && !options.some((a) => a.out_user_id === line.user_id)
                         ? eligible.find((a) => a.out_user_id === line.user_id)
                         : undefined;
                     const dropdown = selected ? [selected, ...options] : options;
+                    const knownLabels = new Set(activeTemplates.map((t) => t.step_label));
                     return (
                       <tr key={i} className="hover:bg-muted/30">
                         <td className="border px-2 py-1 text-center font-medium">{i + 1}</td>
@@ -756,18 +772,21 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
                                 <SelectValue placeholder="구분 선택" />
                               </SelectTrigger>
                               <SelectContent>
-                                {STEP_TEMPLATES.map((t) => (
+                                {activeTemplates.map((t) => (
                                   <SelectItem key={t.step_label} value={t.step_label}>
                                     {t.step_label}
                                   </SelectItem>
                                 ))}
+                                {line.step_label && !knownLabels.has(line.step_label) && (
+                                  <SelectItem value={line.step_label}>{line.step_label}</SelectItem>
+                                )}
                               </SelectContent>
                             </Select>
                           )}
                         </td>
                         <td className="border px-2 py-1">
                           <Badge variant="outline" className="text-[10px]">
-                            {POSITION_LABELS[line.position] || line.position || '미지정'}
+                            {stepTpl?.badgeLabel || POSITION_LABELS[line.position] || line.position || '미지정'}
                           </Badge>
                         </td>
                         <td className="border px-2 py-1">

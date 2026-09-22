@@ -55,10 +55,37 @@ export type OfficialFormPayload = {
 
 export const EQUIPMENT_TYPE_OPTIONS = ['굴삭기', '고소작업대', '크레인', '기타'] as const;
 
-export const OFFICIAL_APPROVAL_SEED_STEPS = [
+export type OfficialApprovalStepSeed = { label: string; position: string };
+export type OfficialApprovalStepTemplate = {
+  step_label: string;
+  position: string;
+  openPool?: boolean;
+  badgeLabel?: string;
+};
+
+/** 기본 최종단계는 승인. 작성자가 합의로 바꿀 수 있다. 결재자 후보는 직책 제한 없음(openPool). */
+export const OFFICIAL_APPROVAL_SEED_STEPS: readonly OfficialApprovalStepSeed[] = [
   { label: '작성자', position: 'contractor_supervisor' },
-  { label: '최종결재', position: 'consent' },
-] as const;
+  { label: '최종결재(승인)', position: 'contractor_site_director' },
+];
+
+export const OFFICIAL_APPROVAL_STEP_TEMPLATES: readonly OfficialApprovalStepTemplate[] = [
+  { step_label: '작성자', position: 'contractor_supervisor' },
+  { step_label: '최종결재(승인)', position: 'contractor_site_director', openPool: true, badgeLabel: '승인' },
+  { step_label: '최종결재(합의)', position: 'consent', openPool: true, badgeLabel: '합의' },
+];
+
+export function officialTemplateCodes(type: OfficialInspectionType): Set<string> {
+  return new Set(OFFICIAL_FORM_ITEMS[type].map((i) => i.code));
+}
+
+export function extraOfficialRows<T extends { code?: string; checklist_code?: string }>(
+  type: OfficialInspectionType,
+  rows: T[],
+): T[] {
+  const codes = officialTemplateCodes(type);
+  return rows.filter((r) => !codes.has(String(r.checklist_code || r.code || '')));
+}
 
 export function isOfficialInspection(type?: string | null): boolean {
   return (OFFICIAL_INSPECTION_TYPES as readonly string[]).includes(String(type || ''));
@@ -331,6 +358,23 @@ export function buildOfficialInspectionHtml(opts: {
     ? `<p>장비종류: ${esc((p.equipment_types || []).join(', ') || '-')}${p.equipment_other ? ` (${esc(p.equipment_other)})` : ''}</p>`
     : '';
 
+  const extras = extraOfficialRows(opts.type, opts.rows);
+  const extraBody = extras.length
+    ? `<h2>추가 항목</h2>
+      <table>
+        <thead><tr><th class="num">No</th><th>점검항목</th>${grades.map((gr) => `<th>${esc(gradeLabel(gr))}</th>`).join('')}<th>비고</th></tr></thead>
+        <tbody>${extras.map((row, i) => {
+          const marks = grades.map((gr) => `<td class="mark">${row.grade === gr ? '●' : ''}</td>`).join('');
+          return `<tr>
+            <td class="num">${i + 1}</td>
+            <td class="lbl">${esc(row.label)}</td>
+            ${marks}
+            <td class="note">${esc(row.note || '')}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`
+    : '';
+
   const footer = opts.type === 'daily_sf006'
     ? `<h2>순회 점검</h2>
        <p>지적 사항: ${esc(p.findings || '')}</p>
@@ -364,6 +408,7 @@ th{background:#f1f5f9}
 </div>
 ${equip}
 ${body}
+${extraBody}
 ${footer}
 </body></html>`;
 }

@@ -130,6 +130,26 @@ describe("RA 결재선 생성 → 소속 인원 → 권한별 결재", () => {
     expect(director.map((a) => a.out_user_id)).toEqual(["parent-sm"]);
   });
 
+  it("openPool: 소장 단계도 직책 제한 없이 전원(근로자 제외)", () => {
+    const pool = [
+      ...eligible,
+      mk({
+        out_user_id: "worker-1",
+        out_display_name: "근로자",
+        out_company_id: "hitech",
+        out_company_type: "contractor",
+        out_position: "WORKER",
+        out_role: "worker",
+      }),
+    ];
+    const opts = optionsForApprovalStep(pool, "contractor_site_director", ctx, { openPool: true });
+    expect(opts.some((a) => a.out_user_id === "worker-1")).toBe(false);
+    expect(opts.some((a) => a.out_user_id === "hitech-ss")).toBe(true);
+    expect(opts.some((a) => a.out_user_id === "parent-sm")).toBe(true);
+    expect(opts.some((a) => a.out_user_id === "client-sm")).toBe(true);
+    expect(opts).toHaveLength(eligible.length);
+  });
+
   it("CM/SM 드롭다운: 발주처만", () => {
     expect(
       optionsForApprovalStep(eligible, "owner_cm", ctx).map((a) => a.out_user_id),

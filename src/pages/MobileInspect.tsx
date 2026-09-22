@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Camera, CheckCircle2, XCircle, MinusCircle, Loader2, AlertTriangle, ChevronRight, Plus } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, XCircle, MinusCircle, Loader2, AlertTriangle, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from "@/lib/inspectionTemplates";
@@ -366,28 +366,43 @@ export default function MobileInspect() {
 
   const addFinding = async () => {
     const label = findingText.trim();
-    if (!inspectionId || !label) return toast.error("발견사항을 입력하세요");
+    if (!inspectionId || !label) return toast.error(patrol ? "발견사항을 입력하세요" : "항목을 입력하세요");
+    if (readOnly) return;
     setAddingFinding(true);
     try {
-      const sort = items.length;
+      const prefix = patrol ? "PT-FIND-" : "EXTRA-";
+      const nextNum = items.filter((x) => String(x.checklist_code || "").startsWith(prefix)).length + 1;
       const { data, error } = await supabase.from("safety_inspection_items" as any).insert({
         inspection_id: inspectionId,
-        checklist_code: `PT-FIND-${sort + 1}`,
+        checklist_code: `${prefix}${nextNum}`,
         label: correctTerms(label),
-        legal_basis: "산업안전보건법 시행령 제18조제1항제5호",
-        sort_order: sort,
-        result: "fail",
+        legal_basis: patrol ? "산업안전보건법 시행령 제18조제1항제5호" : "추가 점검항목",
+        sort_order: items.length,
+        result: patrol ? "fail" : "",
         note: "",
       }).select().single();
       if (error) throw error;
       const row = { ...(data as any), photos: [] };
       setItems(prev => [...prev, row]);
       setFindingText("");
-      await setResult(row, "fail");
+      if (patrol) await setResult(row, "fail");
     } catch (e: any) {
       toast.error("추가 실패: " + e.message);
     } finally {
       setAddingFinding(false);
+    }
+  };
+
+  const removeChecklistItem = async (item: any) => {
+    if (readOnly || !item?.id) return;
+    if (!confirm("이 점검항목을 삭제할까요?")) return;
+    try {
+      await closePendingInspectionAction(item.id);
+      const { error } = await supabase.from("safety_inspection_items" as any).delete().eq("id", item.id);
+      if (error) throw error;
+      setItems(prev => prev.filter((x) => x.id !== item.id));
+    } catch (e: any) {
+      toast.error("삭제 실패: " + e.message);
     }
   };
 
@@ -650,11 +665,18 @@ export default function MobileInspect() {
                 it.result === "pass" ? "border-success/50" : ""
               }>
                 <CardContent className="pt-4 space-y-3">
-                  <div>
-                    <div className="text-xs text-muted-foreground">{idx + 1} / {items.length} · {it.checklist_code}</div>
-                    <div className="font-semibold text-base mt-0.5">{it.label}</div>
-                    {it.legal_basis && (
-                      <div className="text-[11px] text-muted-foreground mt-1">근거: {it.legal_basis}</div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-muted-foreground">{idx + 1} / {items.length} · {it.checklist_code}</div>
+                      <div className="font-semibold text-base mt-0.5">{it.label}</div>
+                      {it.legal_basis && (
+                        <div className="text-[11px] text-muted-foreground mt-1">근거: {it.legal_basis}</div>
+                      )}
+                    </div>
+                    {!readOnly && (
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive shrink-0" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     )}
                   </div>
 
@@ -684,7 +706,7 @@ export default function MobileInspect() {
                   </div>
                   )}
 
-                  {(patrol || it.result === "fail") && (
+                  {(patrol || official || it.result === "fail") && (
                     <div className={`space-y-2 rounded-lg p-2 ${it.result === "fail" ? "border border-destructive/30 bg-destructive/5" : "border bg-muted/30"}`}>
                       {it.result === "fail" && (
                         <div className="flex items-center gap-1 text-xs text-destructive">
@@ -819,15 +841,15 @@ export default function MobileInspect() {
               </Card>
             )}
 
-            {patrol && !readOnly && (
+            {!readOnly && (
               <Card>
                 <CardContent className="pt-4 space-y-2">
-                  <Label>추가 발견사항</Label>
+                  <Label>{patrol ? "추가 발견사항" : "점검항목 추가"}</Label>
                   <Input value={findingText} onChange={e => setFindingText(e.target.value)}
-                    placeholder="체크리스트에 없는 이상 내용을 적고 추가" />
+                    placeholder={patrol ? "체크리스트에 없는 이상 내용을 적고 추가" : "체크리스트에 없는 항목을 적고 추가"} />
                   <Button className="w-full" variant="outline" onClick={addFinding} disabled={addingFinding}>
                     {addingFinding ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                    발견사항 추가 (조치 요청)
+                    {patrol ? "발견사항 추가 (조치 요청)" : "항목 추가"}
                   </Button>
                 </CardContent>
               </Card>

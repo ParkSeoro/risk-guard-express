@@ -626,8 +626,14 @@ export function optionsForApprovalStep(
   eligible: EligibleApprover[],
   position: string,
   ctx: ApproverFilterContextLike,
-  opts?: { currentUserId?: string | null },
+  opts?: { currentUserId?: string | null; openPool?: boolean },
 ): EligibleApprover[] {
+  if (opts?.openPool) {
+    return preferAuthorCompany(
+      eligible.filter((a) => !isWorkerApprover(a)),
+      ctx.authorCompanyId,
+    );
+  }
   let list = filterApproversForStep(eligible, position, ctx);
   const key = (position || '').toLowerCase();
   const isSupervisor =

@@ -52,11 +52,14 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
+const applyCompanyFilter = (query: unknown) => query;
+
 vi.mock("@/components/AppLayout", () => ({
   useGlobalProjectAccess: () => ({
     selectedProject: "p1",
     scopeStatus: "ready",
-    applyCompanyFilter: (query: unknown) => query,
+    accessibleCompanyIds: null,
+    applyCompanyFilter,
   }),
 }));
 
@@ -64,7 +67,7 @@ vi.mock("@/hooks/useMobileAccess", () => ({
   useMobileAccess: () => ({
     projectId: "p1",
     scopeStatus: "ready",
-    applyCompanyFilter: (query: unknown) => query,
+    applyCompanyFilter,
   }),
 }));
 

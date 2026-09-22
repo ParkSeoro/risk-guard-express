@@ -88,7 +88,7 @@ export default function VisionFleet() {
 
   useEffect(() => {
     void load();
-  }, [projectId, access.scopeStatus, access.applyCompanyFilter]);
+  }, [projectId, access.scopeStatus, access.accessibleCompanyIds]);
 
   useEffect(() => {
     if (!projectId || !canManage) {

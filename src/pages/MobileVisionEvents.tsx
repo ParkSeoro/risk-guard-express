@@ -35,7 +35,7 @@ export default function MobileVisionEvents() {
 
   useEffect(() => {
     void load();
-  }, [projectId, scopeStatus, applyCompanyFilter]);
+  }, [projectId, scopeStatus]);
 
   return (
     <div className="max-w-md mx-auto" data-testid="mobile-vision-events">

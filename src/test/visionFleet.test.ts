@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   VISION_LIVE_ACTION,
-  visionCameraSlots,
+  VISION_LIVE_IDLE_MS,
+  sortVisionCamerasByRegistered,
   visionCanManage,
   visionCanOperate,
   visionCanViewConsole,
@@ -10,7 +11,6 @@ import {
   visionFleetFnPath,
   visionGrantBitrateKbps,
   visionGrantTtlMs,
-  visionQuadPageCount,
   visionRoleLabel,
   visionSafePlaybackUrl,
 } from "@/lib/visionFleetApi";
@@ -36,18 +36,14 @@ describe("vision fleet client helpers", () => {
     expect(visionGrantBitrateKbps("live_substream")).toBe(700);
   });
 
-  it("shows a 4-slot camera board even when nothing is connected", () => {
-    expect(visionCameraSlots([]).every((s) => s === null)).toBe(true);
-    expect(visionCameraSlots([]).length).toBe(4);
-    expect(visionCameraSlots([{ id: "c1" }])[0]).toEqual({ id: "c1" });
-    expect(visionCameraSlots([{ id: "c1" }]).filter((s) => s === null)).toHaveLength(3);
-  });
-
-  it("pages cameras 4 at a time when there are dozens", () => {
-    const cams = Array.from({ length: 9 }, (_, i) => ({ id: `c${i + 1}` }));
-    expect(visionQuadPageCount(9)).toBe(3);
-    expect(visionCameraSlots(cams, 1).map((c) => c?.id)).toEqual(["c5", "c6", "c7", "c8"]);
-    expect(visionCameraSlots(cams, 2).filter(Boolean)).toHaveLength(1);
+  it("defaults live playback to the first registered camera", () => {
+    const cams = [
+      { id: "c2", created_at: "2026-09-22T02:00:00Z" },
+      { id: "c1", created_at: "2026-09-21T02:00:00Z" },
+      { id: "c3", created_at: null },
+    ];
+    expect(sortVisionCamerasByRegistered(cams).map((c) => c.id)).toEqual(["c1", "c2", "c3"]);
+    expect(VISION_LIVE_IDLE_MS).toBe(10 * 60_000);
   });
 
   it("rejects RTSP and credentialed URLs for web playback", () => {
@@ -75,9 +71,11 @@ describe("vision fleet client helpers", () => {
     expect(src).toContain("visionCanManage");
     expect(src).toContain("VisionCameraManageList");
     expect(src).toContain("VisionVpsSetup");
+    expect(src).toContain("MobileVisionPlayer");
     expect(src).toContain("applyCompanyFilter");
     expect(src).toContain("includeOrphans");
     expect(src).toContain("company_id");
+    expect(src).not.toContain("VisionQuadGrid");
     expect(src).not.toContain("VisionMuxSetup");
     expect(src).not.toContain("VisionRelaySetup");
     expect(src).not.toContain("시작.bat");
@@ -90,6 +88,8 @@ describe("vision fleet client helpers", () => {
     const api = readFileSync("src/lib/visionFleetApi.ts", "utf8");
     expect(api).not.toContain("VISION_RELAY_SLOTS");
     expect(api).not.toContain("visionRelayBase");
+    expect(api).not.toContain("VISION_CAMERA_SLOTS");
+    expect(api).not.toContain("visionCameraSlots");
     const edge = readFileSync("supabase/functions/vision-fleet/index.ts", "utf8");
     expect(edge).not.toContain("mux.com");
     expect(edge).not.toContain("wantMux");

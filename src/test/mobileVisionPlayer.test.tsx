@@ -58,6 +58,7 @@ describe("MobileVisionPlayer", () => {
     expect(el.querySelectorAll('[data-testid^="vision-pane-"]')).toHaveLength(1);
     expect(el.textContent).toContain("정문");
     expect(el.textContent).toContain("후문");
+    expect(el.textContent).toContain("카메라 선택");
     expect(el.textContent).toContain("송출 대기");
     expect(el.textContent).not.toContain("고화질 4화면");
 

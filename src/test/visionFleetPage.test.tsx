@@ -115,11 +115,12 @@ describe("VisionFleet role wall", () => {
     expect(el!.textContent).not.toContain("현장 Gateway");
   });
 
-  it("shows only the 4-pane wall to a site manager", async () => {
+  it("shows only the single-camera player to a site manager", async () => {
     auth.roles = ["site_manager"];
     await mount(<VisionFleet />);
     expect(el!.textContent).toContain("현장 화면입니다");
-    expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="mobile-vision-player"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeNull();
     expect(el!.querySelector('[data-testid="vision-vps-setup"]')).toBeNull();
     expect(el!.querySelector('[data-testid="vision-camera-manage"]')).toBeNull();
     expect(el!.textContent).not.toContain("추가");

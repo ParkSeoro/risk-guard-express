@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import MobileVisionPlayer from "@/components/vision/MobileVisionPlayer";
 import type { MobileVisionCamera } from "@/lib/mobileVisionPlayer";
-import { visionCanManage, visionRoleLabel } from "@/lib/visionFleetApi";
+import { sortVisionCamerasByRegistered, visionCanManage, visionRoleLabel } from "@/lib/visionFleetApi";
 
 export default function MobileVisionEvents() {
   const navigate = useNavigate();
@@ -25,12 +25,12 @@ export default function MobileVisionEvents() {
     if (scopeStatus !== "ready") return;
     let query = supabase
       .from("vision_cameras" as any)
-      .select("id, camera_id, name, health_state, playback_url, company_id")
+      .select("id, camera_id, name, health_state, playback_url, company_id, created_at")
       .eq("project_id", projectId);
     query = applyCompanyFilter(query, { includeOrphans: true });
-    const { data, error } = await query.order("name");
+    const { data, error } = await query.order("created_at");
     if (error) toast.error(error.message);
-    setCameras((data || []) as MobileVisionCamera[]);
+    setCameras(sortVisionCamerasByRegistered((data || []) as MobileVisionCamera[]));
   };
 
   useEffect(() => {

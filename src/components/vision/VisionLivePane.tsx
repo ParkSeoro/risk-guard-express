@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Maximize2, WifiOff } from "lucide-react";
-import { visionSafePlaybackUrl } from "@/lib/visionFleetApi";
+import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
 
 type Props = {
   index: number;
@@ -9,6 +9,7 @@ type Props = {
   healthState?: string | null;
   playbackUrl?: string | null;
   waitingHint?: string;
+  idleMs?: number;
 };
 
 export default function VisionLivePane({
@@ -17,16 +18,33 @@ export default function VisionLivePane({
   cameraId,
   healthState,
   playbackUrl,
-  waitingHint = "송출 대기 · 고화질 4화면",
+  waitingHint = "송출 대기",
+  idleMs = VISION_LIVE_IDLE_MS,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [paused, setPaused] = useState(false);
   const safeUrl = visionSafePlaybackUrl(playbackUrl);
+
+  useEffect(() => {
+    setPaused(false);
+  }, [safeUrl]);
+
+  useEffect(() => {
+    if (!safeUrl || paused) return;
+    const timer = window.setTimeout(() => setPaused(true), idleMs);
+    return () => window.clearTimeout(timer);
+  }, [safeUrl, paused, idleMs]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (!safeUrl) {
+    if (!safeUrl || paused) {
       video.removeAttribute("src");
+      try {
+        video.load();
+      } catch {
+        /* jsdom does not implement HTMLMediaElement.load */
+      }
       return;
     }
 
@@ -69,7 +87,7 @@ export default function VisionLivePane({
       hls?.destroy();
       video.removeAttribute("src");
     };
-  }, [safeUrl]);
+  }, [safeUrl, paused]);
 
   const enterFullscreen = () => {
     const video = videoRef.current;
@@ -95,7 +113,7 @@ export default function VisionLivePane({
         muted
         playsInline
         autoPlay
-        controls={Boolean(safeUrl)}
+        controls={Boolean(safeUrl) && !paused}
       />
       {waiting && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80">
@@ -104,7 +122,24 @@ export default function VisionLivePane({
           <p className="text-[11px] text-white/60">{waitingHint}</p>
         </div>
       )}
-      {!waiting && (
+      {!waiting && paused && (
+        <div
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80 px-4 text-center text-white"
+          data-testid={`vision-pane-idle-${index}`}
+        >
+          <p className="text-sm font-medium">트래픽 절약을 위해 재생을 멈췄습니다</p>
+          <p className="text-[11px] text-white/70">다시 보려면 아래 버튼을 누르거나 페이지를 새로고침하세요</p>
+          <button
+            type="button"
+            className="mt-1 rounded bg-white/90 px-3 py-1.5 text-xs font-medium text-black hover:bg-white"
+            data-testid={`vision-pane-resume-${index}`}
+            onClick={() => setPaused(false)}
+          >
+            다시 보기
+          </button>
+        </div>
+      )}
+      {!waiting && !paused && (
         <>
           <div
             className="pointer-events-none absolute left-0 right-0 top-0 bg-gradient-to-b from-black/80 to-transparent px-2 py-1.5"

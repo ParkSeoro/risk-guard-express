@@ -98,6 +98,17 @@
 | 종류 SSOT | `src/lib/permitKinds.ts` (`excavation` 라벨 = 굴착·중장비) |
 | 리깅 규격 | `src/lib/riggingHardwareCatalog.ts` (EN 1492-2 라운드슬링, Crosby G-2130 샤클) |
 
+## 다음 작업 (2026-09-29 월, 추석 연휴 후)
+
+관제 중계를 **시드니 Lightsail → iwinv 서울**로 옮긴다. 사용자는 아직 iwinv 서버를 만들지 않음. CCTV는 지금 Lightsail에서 보임. 윈도우 SSH 키 등록에서 멈춤 — 월요일에 비밀번호 로그인 또는 키 생성을 다시 한다.
+
+결정된 스펙 (아직 신청 전):
+- `gna_2.4_n` 단독 2핵 4G, KR1-Z02, Ubuntu 24.04 LTS, VPC, NAT 없음, 공인 IP
+- ELCAP `safenex-vision`: Inbound 22/80/443/1935, Outbound 53 TCP·UDP + 80/443 (+ UDP 123), 해외/봇 차단 없음
+- 앱/웹은 카메라 1대 + 10분 HLS 정지 (PR #489). 카메라 RTMP는 그대로
+
+같이 볼 것: **메일·저장소를 같은 iwinv에 둘지.** 결론 초안 — CCTV 박스에 같이 올리지 말 것. 메일은 25번/평판 때문에 별도(또는 지금 Supabase 메일 유지). 파일은 지금 `supabase.storage` (`attachments`). 50GB는 OS+Docker용. 녹화·문서 저장은 별도 디스크/오브젝트.
+
 ## 하지 말 것
 
 - 사용자 승인 없이 오류 수정·기능 개발 코딩을 시작하지 말 것.

@@ -3,6 +3,12 @@
 // 순회점검은 공종 체크리스트를 붙이지 않고 서식 팩 항목만 쓴다.
 
 import { PATROL_CHECKLIST_ITEMS } from '@/lib/legalForms/patrolLog';
+import {
+  isOfficialInspection,
+  officialChecklist,
+  OFFICIAL_TYPE_LABELS,
+  type OfficialInspectionType,
+} from '@/lib/legalForms/officialInspectionForms';
 
 export type InspectionType =
   | 'pre_work'      // 작업 전 점검 (일일)
@@ -10,7 +16,8 @@ export type InspectionType =
   | 'weekly'        // 주간 점검
   | 'monthly'       // 월간 점검
   | 'special'       // 특별 점검 (고위험/사고후)
-  | 'patrol';       // 순회 점검
+  | 'patrol'        // 순회 점검
+  | OfficialInspectionType;
 
 export const INSPECTION_TYPE_LABELS: Record<InspectionType, string> = {
   pre_work: '작업 전 점검(일일)',
@@ -19,6 +26,7 @@ export const INSPECTION_TYPE_LABELS: Record<InspectionType, string> = {
   monthly: '월간 점검',
   special: '특별 점검',
   patrol: '순회 점검',
+  ...OFFICIAL_TYPE_LABELS,
 };
 
 export interface ChecklistItem {
@@ -28,7 +36,7 @@ export interface ChecklistItem {
 }
 
 // 공통 항목 (모든 공종)
-const COMMON_ITEMS: Record<InspectionType, ChecklistItem[]> = {
+const COMMON_ITEMS: Partial<Record<InspectionType, ChecklistItem[]>> = {
   pre_work: [
     { code: 'PRE-001', label: '작업장 정리정돈 및 통로 확보', legal_basis: '산업안전보건기준에 관한 규칙 제3조' },
     { code: 'PRE-002', label: '근로자 개인보호구(안전모/안전화/안전대) 착용 확인', legal_basis: '산업안전보건기준에 관한 규칙 제32조' },
@@ -102,6 +110,13 @@ const PROCESS_SPECIFIC: Record<string, ChecklistItem[]> = {
 
 export function buildChecklist(type: InspectionType, processCategory: string): ChecklistItem[] {
   if (type === 'patrol') return [...PATROL_CHECKLIST_ITEMS];
+  if (isOfficialInspection(type)) {
+    return officialChecklist(type as OfficialInspectionType).map((it) => ({
+      code: it.code,
+      label: it.label,
+      legal_basis: it.legal_basis,
+    }));
+  }
   const base = COMMON_ITEMS[type] || [];
   // process category may be free text; match by includes
   const extras: ChecklistItem[] = [];

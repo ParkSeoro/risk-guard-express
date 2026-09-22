@@ -41,6 +41,23 @@ import {
   normalizeDirectorPatrolItems,
   type DirectorPatrolItem,
 } from '@/lib/legalForms/patrolLog';
+import {
+  OFFICIAL_APPROVAL_SEED_STEPS,
+  OFFICIAL_PROCESS_CATEGORY,
+  buildOfficialInspectionHtml,
+  emptyOfficialPayload,
+  gradeToResult,
+  groupOfficialItems,
+  isApprovalInspection,
+  isOfficialInspection,
+  normalizeOfficialPayload,
+  officialChecklist,
+  resultToGrade,
+  type OfficialFormPayload,
+  type OfficialGrade,
+  type OfficialInspectionType,
+} from '@/lib/legalForms/officialInspectionForms';
+import { OfficialFooterFields, OfficialGradeButtons, OfficialHeaderFields } from '@/components/inspections/OfficialInspectionFields';
 import ApprovalLineManager, { type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import ApprovalRejectReasonDialog from '@/components/approval/ApprovalRejectReasonDialog';
 import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
@@ -68,6 +85,8 @@ type Inspection = {
   patrol_photos?: string[];
   director_items?: DirectorPatrolItem[];
   submitted_payload?: Record<string, unknown> | null;
+  form_payload?: OfficialFormPayload | null;
+  created_by?: string | null;
 };
 
 type InspItem = {
@@ -77,10 +96,17 @@ type InspItem = {
   label: string;
   legal_basis: string;
   result: 'pass' | 'fail' | 'na';
+  grade?: OfficialGrade | null;
   note: string;
   photos: string[];
   sort_order: number;
 };
+
+function inspectionTitle(i: { inspection_type: InspectionType; process_category: string }) {
+  if (isPatrolInspection(i.inspection_type)) return PATROL_LOG_TITLE;
+  if (isOfficialInspection(i.inspection_type)) return INSPECTION_TYPE_LABELS[i.inspection_type];
+  return `${INSPECTION_TYPE_LABELS[i.inspection_type]} · ${i.process_category}`;
+}
 
 type InspAction = {
   id: string;
@@ -139,6 +165,7 @@ export default function SafetyInspections() {
   const [weather, setWeather] = useState('');
   const [patrolPhotos, setPatrolPhotos] = useState<string[]>([]);
   const [directorItems, setDirectorItems] = useState<DirectorPatrolItem[]>(emptyDirectorPatrolItems());
+  const [officialPayload, setOfficialPayload] = useState<OfficialFormPayload>(emptyOfficialPayload());
   const [approvalDraftInfo, setApprovalDraftInfo] = useState<DraftStatusInfo | null>(null);
   const [approverMembers, setApproverMembers] = useState<Array<{
     user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string;
@@ -186,6 +213,7 @@ export default function SafetyInspections() {
   const handleCreate = async () => {
     if (!projectId) return toast({ title: '프로젝트를 선택하세요.', variant: 'destructive' });
     const patrol = isPatrolInspection(form.inspection_type);
+    const official = isOfficialInspection(form.inspection_type);
     const location = form.location.trim() || (patrol ? todayRoute : '');
     if (!location) return toast({ title: patrol ? '순회 구간을 입력하세요.' : '점검 위치를 입력하세요.', variant: 'destructive' });
     setLoading(true);
@@ -197,7 +225,7 @@ export default function SafetyInspections() {
           // Prefer own company for GC peer isolation; NULL still allowed by RLS for managers
           company_id: userCompanyId || null,
           inspection_type: form.inspection_type,
-          process_category: patrol ? PATROL_PROCESS_CATEGORY : form.process_category,
+          process_category: patrol ? PATROL_PROCESS_CATEGORY : official ? OFFICIAL_PROCESS_CATEGORY : form.process_category,
           inspection_category: patrol ? PATROL_INSPECTION_CATEGORY : null,
           location,
           summary: form.summary,
@@ -208,6 +236,9 @@ export default function SafetyInspections() {
           weather: weather || '',
           patrol_photos: [],
           director_items: emptyDirectorPatrolItems(),
+          form_payload: official
+            ? { ...emptyOfficialPayload(), work_name: location, inspector_name: form.inspector_name || profile?.display_name || '' }
+            : {},
         })
         .select()
         .single();
@@ -225,7 +256,7 @@ export default function SafetyInspections() {
         const { error: e2 } = await supabase.from('safety_inspection_items' as any).insert(items);
         if (e2) throw e2;
       }
-      toast({ title: patrol ? '순회점검일지가 생성되었습니다.' : '점검이 생성되었습니다.', description: `체크리스트 ${items.length}개 항목 자동 생성` });
+      toast({ title: official ? '공식 점검표가 생성되었습니다.' : patrol ? '순회점검일지가 생성되었습니다.' : '점검이 생성되었습니다.', description: `체크리스트 ${items.length}개 항목 자동 생성` });
       setOpenCreate(false);
       await load();
       await openDetail((ins as any));
@@ -248,6 +279,7 @@ export default function SafetyInspections() {
     setWeather(String(insp.weather || ''));
     setPatrolPhotos(Array.isArray(insp.patrol_photos) ? insp.patrol_photos : []);
     setDirectorItems(normalizeDirectorPatrolItems(insp.director_items));
+    setOfficialPayload(normalizeOfficialPayload(insp.form_payload));
     setMyPendingApprovalId(null);
     if (insp.inspector_id && projectId) {
       const { data: mem } = await supabase
@@ -263,7 +295,7 @@ export default function SafetyInspections() {
     } else {
       setInspectorTitle('');
     }
-    if (isPatrolInspection(insp.inspection_type) && projectId) {
+    if (isApprovalInspection(insp.inspection_type) && projectId) {
       const [{ data: mems }, { data: cos }] = await Promise.all([
         supabase.from('project_members').select('user_id, role_new, position_new, company_id, companies(name, type, parent_company_id), profiles(display_name)').eq('project_id', projectId),
         supabase.from('project_companies').select('company_id, companies(id, name, type, parent_company_id)').eq('project_id', projectId),
@@ -328,8 +360,9 @@ export default function SafetyInspections() {
         project_id: projectId,
         company_id: (src as any).company_id || userCompanyId || null,
         inspection_type: src.inspection_type,
-        process_category: isPatrolInspection(src.inspection_type) ? PATROL_PROCESS_CATEGORY : src.process_category,
+        process_category: isPatrolInspection(src.inspection_type) ? PATROL_PROCESS_CATEGORY : isOfficialInspection(src.inspection_type) ? OFFICIAL_PROCESS_CATEGORY : src.process_category,
         inspection_category: isPatrolInspection(src.inspection_type) ? PATROL_INSPECTION_CATEGORY : null,
+        form_payload: isOfficialInspection(src.inspection_type) ? emptyOfficialPayload() : {},
         location: src.location,
         summary: src.summary ? `(복제) ${src.summary}` : '',
         inspector_name: profile?.display_name || src.inspector_name,
@@ -363,7 +396,7 @@ export default function SafetyInspections() {
 
   const startEdit = (insp: Inspection, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (isPatrolInspection(insp.inspection_type) && isPatrolLogLocked(insp.status)) {
+    if (isApprovalInspection(insp.inspection_type) && isPatrolLogLocked(insp.status)) {
       return toast({ title: patrolLockEditHint(insp.status), variant: 'destructive' });
     }
     const d = new Date(insp.inspected_at);
@@ -415,14 +448,15 @@ export default function SafetyInspections() {
     await updateItemResult(row, 'fail');
   };
 
-  const updateItemResult = async (item: InspItem, result: 'pass' | 'fail' | 'na') => {
-    if (detail && isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
+  const updateItemResult = async (item: InspItem, result: 'pass' | 'fail' | 'na', grade?: OfficialGrade | null) => {
+    if (detail && isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
       return toast({ title: patrolLockEditHint(detail.status), variant: 'destructive' });
     }
+    const nextGrade = grade ?? (isOfficialInspection(detail?.inspection_type) ? resultToGrade(result, item.grade) : null);
     const { error } = await supabase.from('safety_inspection_items' as any)
-      .update({ result }).eq('id', item.id);
+      .update({ result, grade: nextGrade }).eq('id', item.id);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-    setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, result } : x));
+    setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, result, grade: nextGrade } : x));
 
     // 조치 요청만 생성. 불합격 알람은 점검 완료 시점에 남은 fail 만 보낸다.
     if (result === 'fail' && detail) {
@@ -451,11 +485,22 @@ export default function SafetyInspections() {
   };
 
   const assertEditable = () => {
-    if (detail && isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
+    if (detail && isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
       toast({ title: patrolLockEditHint(detail.status), variant: 'destructive' });
       return false;
     }
     return true;
+  };
+
+  const persistOfficialPayload = async (next: OfficialFormPayload) => {
+    if (!detail || !assertEditable()) return;
+    setOfficialPayload(next);
+    await supabase.from('safety_inspections' as any).update({ form_payload: next }).eq('id', detail.id);
+    setDetail({ ...detail, form_payload: next });
+  };
+
+  const updateOfficialGrade = (item: InspItem, grade: OfficialGrade) => {
+    void updateItemResult(item, gradeToResult(grade), grade);
   };
 
   const updateItemNote = async (item: InspItem, note: string) => {
@@ -579,7 +624,9 @@ export default function SafetyInspections() {
     if (!approvalDraftInfo?.ready) {
       return toast({
         title: '결재선을 저장하세요.',
-        description: '안전관리자·안전보건관리책임자(현장소장)를 지정한 뒤 [저장]하세요.',
+        description: isOfficialInspection(detail.inspection_type)
+          ? '작성자는 본인으로 두고, 최종결재자를 고른 뒤 [저장]하세요.'
+          : '안전관리자·안전보건관리책임자(현장소장)를 지정한 뒤 [저장]하세요.',
         variant: 'destructive',
       });
     }
@@ -686,7 +733,7 @@ export default function SafetyInspections() {
 
   const finishInspection = async () => {
     if (!detail) return;
-    if (isPatrolInspection(detail.inspection_type)) {
+    if (isApprovalInspection(detail.inspection_type)) {
       return submitPatrolApproval();
     }
     const failLabels = detailItems.filter((i) => i.result === 'fail').map((i) => i.label);
@@ -710,7 +757,7 @@ export default function SafetyInspections() {
 
   const removeInspection = async (id: string) => {
     const target = inspections.find((x) => x.id === id) || (detail?.id === id ? detail : null);
-    if (target && isPatrolInspection(target.inspection_type) && isPatrolLogLocked(target.status)) {
+    if (target && isApprovalInspection(target.inspection_type) && isPatrolLogLocked(target.status)) {
       return toast({ title: patrolLockEditHint(target.status), variant: 'destructive' });
     }
     if (!confirm('점검을 삭제하시겠습니까?')) return;
@@ -725,6 +772,33 @@ export default function SafetyInspections() {
     if (!detail) return;
     const win = window.open('', '_blank', 'width=900,height=1200');
     if (!win) return;
+    if (isOfficialInspection(detail.inspection_type)) {
+      const snap = (detail.submitted_payload || null) as {
+        inspection?: Inspection;
+        items?: InspItem[];
+      } | null;
+      const locked = isPatrolLogLocked(detail.status);
+      const src = locked && snap?.inspection ? snap.inspection : detail;
+      const items = locked && snap?.items ? snap.items : detailItems;
+      const html = buildOfficialInspectionHtml({
+        type: detail.inspection_type as OfficialInspectionType,
+        location: src.location,
+        inspectorName: src.inspector_name,
+        inspectedAt: src.inspected_at,
+        projectLabel,
+        payload: normalizeOfficialPayload(src.form_payload || officialPayload),
+        rows: items.map((it) => ({
+          code: it.checklist_code,
+          label: it.label,
+          grade: resultToGrade(it.result, it.grade),
+          note: it.note || '',
+        })),
+      });
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      return;
+    }
     if (isPatrolInspection(detail.inspection_type)) {
       const snap = (detail.submitted_payload || null) as {
         inspection?: Inspection;
@@ -914,7 +988,7 @@ export default function SafetyInspections() {
                   <CardContent className="p-3 flex items-center justify-between text-sm gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold">
-                        {isPatrolInspection(i.inspection_type) ? PATROL_LOG_TITLE : `${INSPECTION_TYPE_LABELS[i.inspection_type]} · ${i.process_category}`}
+                        {inspectionTitle(i)}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
                     </div>
@@ -927,7 +1001,7 @@ export default function SafetyInspections() {
                         variant="ghost"
                         className="h-8 w-8"
                         title="수정"
-                        disabled={isPatrolInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
+                        disabled={isApprovalInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
                         onClick={(e) => startEdit(i, e)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -938,7 +1012,7 @@ export default function SafetyInspections() {
                         variant="ghost"
                         className="h-8 w-8"
                         title="삭제"
-                        disabled={isPatrolInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
+                        disabled={isApprovalInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
                         onClick={(e) => { e.stopPropagation(); removeInspection(i.id); }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -999,7 +1073,11 @@ export default function SafetyInspections() {
                 setForm({
                   ...form,
                   inspection_type: next,
-                  process_category: isPatrolInspection(next) ? PATROL_PROCESS_CATEGORY : (form.process_category === PATROL_PROCESS_CATEGORY ? '굴착' : form.process_category),
+                  process_category: isPatrolInspection(next)
+                    ? PATROL_PROCESS_CATEGORY
+                    : isOfficialInspection(next)
+                      ? OFFICIAL_PROCESS_CATEGORY
+                      : (form.process_category === PATROL_PROCESS_CATEGORY || form.process_category === OFFICIAL_PROCESS_CATEGORY ? '굴착' : form.process_category),
                   location: isPatrolInspection(next) && !form.location.trim() ? todayRoute : form.location,
                 });
               }}>
@@ -1018,7 +1096,7 @@ export default function SafetyInspections() {
                 <p className="text-muted-foreground">{PATROL_LOG_DISCLAIMER}</p>
               </div>
             )}
-            {!isPatrolInspection(form.inspection_type) && (
+            {!isPatrolInspection(form.inspection_type) && !isOfficialInspection(form.inspection_type) && (
             <div>
               <Label>공종</Label>
               <Select value={form.process_category} onValueChange={(v) => setForm({ ...form, process_category: v })}>
@@ -1070,12 +1148,12 @@ export default function SafetyInspections() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center justify-between">
-                  <span>{isPatrolInspection(detail.inspection_type) ? PATROL_LOG_TITLE : `${INSPECTION_TYPE_LABELS[detail.inspection_type]} · ${detail.process_category}`}</span>
+                  <span>{inspectionTitle(detail)}</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => startEdit(detail)} disabled={isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}><Pencil className="h-4 w-4 mr-1" />수정</Button>
+                    <Button size="sm" variant="outline" onClick={() => startEdit(detail)} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}><Pencil className="h-4 w-4 mr-1" />수정</Button>
                     <Button size="sm" variant="outline" onClick={() => cloneInspection(detail)}><Copy className="h-4 w-4 mr-1" />복제</Button>
                     <Button size="sm" variant="outline" onClick={printDetail}><Printer className="h-4 w-4 mr-1" />인쇄/PDF</Button>
-                    {isPatrolInspection(detail.inspection_type) ? (
+                    {isApprovalInspection(detail.inspection_type) ? (
                       <>
                         {myPendingApprovalId && (
                           <>
@@ -1090,12 +1168,12 @@ export default function SafetyInspections() {
                           </Button>
                         )}
                         {detail.status === '결재진행' && <Badge variant="outline">결재중</Badge>}
-                        {isPatrolInspection(detail.inspection_type) && canWithdrawPatrolLog(detail.status) && (
+                        {canWithdrawPatrolLog(detail.status) && (
                           <Button size="sm" variant="outline" className="text-destructive" onClick={() => void withdrawPatrolApproval()}>
                             <RotateCcw className="h-4 w-4 mr-1" />회수
                           </Button>
                         )}
-                        {isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status) && (
+                        {isPatrolLogLocked(detail.status) && (
                           <span className="text-[11px] text-muted-foreground max-w-[220px] leading-snug">
                             {patrolLockEditHint(detail.status)}
                           </span>
@@ -1107,7 +1185,7 @@ export default function SafetyInspections() {
                         <Button size="sm" onClick={finishInspection}><CheckCircle2 className="h-4 w-4 mr-1" />점검 완료</Button>
                       )
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => removeInspection(detail.id)} disabled={isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => removeInspection(detail.id)} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </DialogTitle>
               </DialogHeader>
@@ -1159,20 +1237,81 @@ export default function SafetyInspections() {
                 </div>
               )}
 
+              {isOfficialInspection(detail.inspection_type) && (
+                <OfficialHeaderFields
+                  type={detail.inspection_type as OfficialInspectionType}
+                  payload={officialPayload}
+                  disabled={isPatrolLogLocked(detail.status)}
+                  onChange={(next) => void persistOfficialPayload(next)}
+                />
+              )}
+
               <h3 className="font-semibold mt-2">점검 항목</h3>
               <div className="space-y-2">
-                {detailItems.map((it, i) => (
+                {(isOfficialInspection(detail.inspection_type)
+                  ? groupOfficialItems(officialChecklist(detail.inspection_type as OfficialInspectionType)).flatMap((g) => [
+                      { kind: 'section' as const, key: g.section, section: g.section },
+                      ...g.items.map((def) => ({ kind: 'item' as const, key: def.code, def })),
+                    ])
+                  : detailItems.map((it) => ({ kind: 'plain' as const, key: it.id, it }))
+                ).map((row) => {
+                  if (row.kind === 'section') {
+                    return <div key={row.key} className="text-sm font-semibold pt-2">{row.section}</div>;
+                  }
+                  if (row.kind === 'item') {
+                    const it = detailItems.find((x) => x.checklist_code === row.def.code);
+                    if (!it) return null;
+                    return (
+                      <Card key={it.id} className={it.result === 'fail' ? 'border-destructive' : ''}>
+                        <CardContent className="p-3 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">{row.def.number}. {it.label}</div>
+                              {(row.def.hints || []).map((h) => <div key={h} className="text-[10px] text-muted-foreground">{h}</div>)}
+                            </div>
+                            <OfficialGradeButtons
+                              type={detail.inspection_type as OfficialInspectionType}
+                              value={resultToGrade(it.result, it.grade)}
+                              disabled={isPatrolLogLocked(detail.status)}
+                              onPick={(g) => updateOfficialGrade(it, g)}
+                            />
+                          </div>
+                          <div className="flex gap-2 items-start">
+                            <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
+                            <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
+                              <Camera className="h-3 w-3" />사진
+                              <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />
+                            </label>
+                          </div>
+                          {(it.photos || []).length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {it.photos.map((p, idx) => (
+                                <div key={`${p}-${idx}`} className="relative">
+                                  <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
+                                  {!isPatrolLogLocked(detail.status) && (
+                                    <button type="button" aria-label="점검 사진 삭제" className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center" onClick={() => void removeItemPhoto(it, idx)}>×</button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  }
+                  const it = row.it;
+                  return (
                   <Card key={it.id} className={it.result === 'fail' ? 'border-destructive' : ''}>
                     <CardContent className="p-3 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
-                          <div className="text-sm font-medium">{i + 1}. [{it.checklist_code}] {it.label}</div>
+                          <div className="text-sm font-medium">{detailItems.indexOf(it) + 1}. [{it.checklist_code}] {it.label}</div>
                           <div className="text-[10px] text-muted-foreground">{it.legal_basis}</div>
                         </div>
                         <div className="flex gap-1">
-                          <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} disabled={isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>{isPatrolInspection(detail.inspection_type) ? '양호' : '통과'}</Button>
-                          <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} disabled={isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'fail')}>{isPatrolInspection(detail.inspection_type) ? '불량' : '불합격'}</Button>
-                          <Button size="sm" variant={it.result === 'na' ? 'secondary' : 'outline'} disabled={isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'na')}>해당없음</Button>
+                          <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>{isPatrolInspection(detail.inspection_type) ? '양호' : '통과'}</Button>
+                          <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'fail')}>{isPatrolInspection(detail.inspection_type) ? '불량' : '불합격'}</Button>
+                          <Button size="sm" variant={it.result === 'na' ? 'secondary' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'na')}>해당없음</Button>
                         </div>
                       </div>
                       <div className="flex gap-2 items-start">
@@ -1187,7 +1326,7 @@ export default function SafetyInspections() {
                           {it.photos.map((p, idx) => (
                             <div key={`${p}-${idx}`} className="relative">
                               <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
-                              {!(isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
+                              {!(isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
                                 <button
                                   type="button"
                                   aria-label="점검 사진 삭제"
@@ -1201,8 +1340,18 @@ export default function SafetyInspections() {
                       )}
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
+
+              {isOfficialInspection(detail.inspection_type) && (
+                <OfficialFooterFields
+                  type={detail.inspection_type as OfficialInspectionType}
+                  payload={officialPayload}
+                  disabled={isPatrolLogLocked(detail.status)}
+                  onChange={(next) => void persistOfficialPayload(next)}
+                />
+              )}
 
               {isPatrolInspection(detail.inspection_type) && !isPatrolLogLocked(detail.status) && (
                 <div className="flex gap-2 mt-3">
@@ -1250,7 +1399,7 @@ export default function SafetyInspections() {
                 </div>
               )}
 
-              {isPatrolInspection(detail.inspection_type) && projectId && (
+              {isApprovalInspection(detail.inspection_type) && projectId && (
                 <div className="mt-5">
                   <ApprovalLineManager
                     projectId={projectId}
@@ -1259,7 +1408,9 @@ export default function SafetyInspections() {
                     submitterCompanyId={detail.company_id}
                     readOnly={isPatrolLogLocked(detail.status)}
                     documentDraft={{ entityType: 'safety_inspection', entityId: detail.id, companyId: detail.company_id }}
-                    seedSteps={patrolSeedSteps}
+                    seedSteps={isOfficialInspection(detail.inspection_type) ? [...OFFICIAL_APPROVAL_SEED_STEPS] : patrolSeedSteps}
+                    authorUserId={isOfficialInspection(detail.inspection_type) ? (detail.created_by || detail.inspector_id || profile?.user_id) : undefined}
+                    authorName={isOfficialInspection(detail.inspection_type) ? (detail.inspector_name || profile?.display_name) : undefined}
                     onDraftStatusChange={setApprovalDraftInfo}
                   />
                 </div>
@@ -1277,7 +1428,7 @@ export default function SafetyInspections() {
                             <Label className="text-xs">조치 결과</Label>
                             <Input
                               value={a.completion_note || ''}
-                              disabled={isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}
+                              disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}
                               onChange={(e) => updateActionField(a, { completion_note: e.target.value })}
                               placeholder="조치 결과 문구"
                             />
@@ -1323,7 +1474,7 @@ export default function SafetyInspections() {
                               {a.evidence_photos.map((p, idx) => (
                                 <div key={`${p}-${idx}`} className="relative">
                                   <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
-                                  {!(isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
+                                  {!(isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
                                     <button
                                       type="button"
                                       aria-label="증빙 사진 삭제"

@@ -97,40 +97,6 @@ export function visionSafePlaybackUrl(raw: string | null | undefined): string | 
   return trimmed;
 }
 
-export const VISION_RELAY_SLOTS = ["cam1", "cam2", "cam3", "cam4"] as const;
-
-export function visionRelayBase(raw: string): string | null {
-  const trimmed = raw.trim().replace(/\/+$/, "");
-  if (!trimmed) return null;
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-  try {
-    const parsed = new URL(withScheme);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    if (parsed.username || parsed.password) return null;
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch {
-    return null;
-  }
-}
-
-export function visionRelayPlaybackUrl(base: string, slot: string): string | null {
-  return visionSafePlaybackUrl(`${base.replace(/\/+$/, "")}/${slot}/index.m3u8`);
-}
-
-export function visionRelayPublishUrl(base: string, slot: string): string | null {
-  try {
-    const host = new URL(base).hostname;
-    if (!host) return null;
-    return `rtmp://${host}:1935/${slot}`;
-  } catch {
-    return null;
-  }
-}
-
-export function visionRelaySlotLabel(index: number): string {
-  return `카메라 ${index + 1}`;
-}
-
 export function visionEventSirenAllowed(opts: {
   type?: string | null;
   severity?: string | null;

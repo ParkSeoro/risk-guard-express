@@ -156,97 +156,6 @@ async function assertVisionMaster(sb: SupabaseClient, userId: string) {
   return !error && data === true;
 }
 
-const MUX_RTMP_SERVER = "rtmp://global-live.mux.com:5222/app";
-
-function muxHlsUrl(playbackId: string): string {
-  return `https://stream.mux.com/${playbackId}.m3u8`;
-}
-
-function muxCameraId(liveStreamId: string): string {
-  return `mux_${liveStreamId}`;
-}
-
-function muxLiveStreamId(cameraId: string | null | undefined): string | null {
-  if (!cameraId || !cameraId.startsWith("mux_")) return null;
-  const id = cameraId.slice(4).trim();
-  return id || null;
-}
-
-async function muxCredentials(sb: SupabaseClient): Promise<{ token: string; secret: string } | null> {
-  const envToken = (Deno.env.get("MUX_TOKEN_ID") || "").trim();
-  const envSecret = (Deno.env.get("MUX_TOKEN_SECRET") || "").trim();
-  if (envToken && envSecret) return { token: envToken, secret: envSecret };
-  const { data, error } = await sb
-    .from("integration_secrets")
-    .select("key, value")
-    .in("key", ["MUX_TOKEN_ID", "MUX_TOKEN_SECRET"]);
-  if (error) return null;
-  const map: Record<string, string> = {};
-  for (const row of data || []) {
-    if (row?.key && typeof row.value === "string" && row.value.trim()) map[row.key] = row.value.trim();
-  }
-  if (!map.MUX_TOKEN_ID || !map.MUX_TOKEN_SECRET) return null;
-  return { token: map.MUX_TOKEN_ID, secret: map.MUX_TOKEN_SECRET };
-}
-
-function muxAuthHeader(creds: { token: string; secret: string }): string {
-  return `Basic ${btoa(`${creds.token}:${creds.secret}`)}`;
-}
-
-async function muxCreateLiveStream(creds: { token: string; secret: string }, name: string) {
-  const res = await fetch("https://api.mux.com/video/v1/live-streams", {
-    method: "POST",
-    headers: { Authorization: muxAuthHeader(creds), "Content-Type": "application/json" },
-    body: JSON.stringify({
-      playback_policies: ["public"],
-      new_asset_settings: { playback_policies: ["public"] },
-      reconnect_window: 60,
-      passthrough: name,
-    }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = Array.isArray(body?.error?.messages) ? body.error.messages.join(" ") : body?.error?.type || res.statusText;
-    if (String(msg).toLowerCase().includes("free plan")) {
-      throw new Error("Mux 유료 플랜이 필요합니다. 대시보드에서 Live를 연 뒤 다시 추가하세요.");
-    }
-    throw new Error(String(msg || "mux create failed"));
-  }
-  const data = body?.data || {};
-  const playbackId = data.playback_ids?.[0]?.id;
-  if (!data.id || !data.stream_key || !playbackId) throw new Error("mux response incomplete");
-  return {
-    live_stream_id: String(data.id),
-    stream_key: String(data.stream_key),
-    playback_url: muxHlsUrl(String(playbackId)),
-    rtmp_url: MUX_RTMP_SERVER,
-  };
-}
-
-async function muxGetLiveStream(creds: { token: string; secret: string }, liveStreamId: string) {
-  const res = await fetch(`https://api.mux.com/video/v1/live-streams/${liveStreamId}`, {
-    headers: { Authorization: muxAuthHeader(creds) },
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error?.messages?.[0] || "mux get failed");
-  const data = body?.data || {};
-  const playbackId = data.playback_ids?.[0]?.id;
-  if (!data.stream_key || !playbackId) throw new Error("mux stream missing key");
-  return {
-    live_stream_id: String(data.id || liveStreamId),
-    stream_key: String(data.stream_key),
-    playback_url: muxHlsUrl(String(playbackId)),
-    rtmp_url: MUX_RTMP_SERVER,
-  };
-}
-
-async function muxDeleteLiveStream(creds: { token: string; secret: string }, liveStreamId: string) {
-  await fetch(`https://api.mux.com/video/v1/live-streams/${liveStreamId}`, {
-    method: "DELETE",
-    headers: { Authorization: muxAuthHeader(creds) },
-  }).catch(() => undefined);
-}
-
 function vpsIsIpv4(host: string): boolean {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
 }
@@ -918,11 +827,10 @@ Deno.serve(async (req) => {
       if (!name) return json({ error: "name required" }, 400);
       const company = body.company_id === undefined ? { ok: true as const, value: null } : parseCompanyId(body.company_id);
       if (!company.ok) return json({ error: "company_id must be a uuid or empty" }, 400);
-      const wantMux = body.provision === "mux";
-      const wantVps = body.provision === "vps" || (!wantMux && !body.playback_url && !body.camera_id);
+      const wantVps = body.provision === "vps" || (!body.playback_url && !body.camera_id);
       let playbackUrl = body.playback_url ? safePlaybackUrl(body.playback_url) : null;
       if (body.playback_url && !playbackUrl) return json({ error: "playback_url must be http(s)" }, 400);
-      let ingest: { rtmp_url: string; stream_key: string; playback_url: string; live_stream_id?: string } | null = null;
+      let ingest: { rtmp_url: string; stream_key: string; playback_url: string } | null = null;
       let cameraId = String(body.camera_id || "");
       if (wantVps) {
         const relay = await vpsRelay(sb);
@@ -932,16 +840,6 @@ Deno.serve(async (req) => {
         const playback = vpsPlaybackUrl(relay.hls_base, streamKey);
         playbackUrl = safePlaybackUrl(playback);
         ingest = { rtmp_url: relay.rtmp_url, stream_key: streamKey, playback_url: playback };
-      } else if (wantMux) {
-        const creds = await muxCredentials(sb);
-        if (!creds) return json({ error: "Mux 키가 없습니다" }, 400);
-        try {
-          ingest = await muxCreateLiveStream(creds, name);
-        } catch (e) {
-          return json({ error: String((e as Error).message || e) }, 400);
-        }
-        cameraId = muxCameraId(ingest.live_stream_id || "");
-        playbackUrl = safePlaybackUrl(ingest.playback_url);
       }
       if (!cameraId) cameraId = `lte-${crypto.randomUUID().slice(0, 8)}`;
       const gw = await ensureLteGateway(sb, projectId);
@@ -968,7 +866,7 @@ Deno.serve(async (req) => {
         action: "vision.cloud_camera.upsert",
         entity_type: "camera",
         entity_id: cam.id,
-        detail: { camera_id: cam.camera_id, vps: Boolean(ingest && !ingest.live_stream_id), mux: Boolean(ingest?.live_stream_id) },
+        detail: { camera_id: cam.camera_id, vps: Boolean(ingest) },
       });
       return json({ data: cam, ingest });
     }
@@ -1004,16 +902,7 @@ Deno.serve(async (req) => {
           },
         });
       }
-      const liveId = muxLiveStreamId(existing.camera_id);
-      if (!liveId) return json({ error: "이 카메라는 클라우드 송출이 아닙니다" }, 400);
-      const creds = await muxCredentials(sb);
-      if (!creds) return json({ error: "Mux 키가 없습니다" }, 400);
-      try {
-        const ingest = await muxGetLiveStream(creds, liveId);
-        return json({ ingest });
-      } catch (e) {
-        return json({ error: String((e as Error).message || e) }, 400);
-      }
+      return json({ error: "이 카메라는 클라우드 송출이 아닙니다" }, 400);
     }
 
     if ((req.method === "PATCH" || req.method === "PUT") && path === "/v1/cloud-cameras") {
@@ -1096,11 +985,6 @@ Deno.serve(async (req) => {
         .eq("project_id", projectId)
         .maybeSingle();
       if (!existing) return json({ error: "camera not found" }, 404);
-      const liveId = muxLiveStreamId(existing.camera_id);
-      if (liveId) {
-        const creds = await muxCredentials(sb);
-        if (creds) await muxDeleteLiveStream(creds, liveId);
-      }
       const { error } = await sb.from("vision_cameras").delete().eq("id", cameraId).eq("project_id", projectId);
       if (error) return json({ error: error.message }, 400);
       await audit(sb, {

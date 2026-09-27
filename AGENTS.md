@@ -30,8 +30,11 @@ Use **Bun**, not npm. CI (`.github/workflows/mobile-release.yml`) uses `bun inst
 - Test: `bun run test` (Vitest, jsdom; `bun run test:watch` for watch mode)
 - Build: `bun run build` (production) / `bun run build:dev` (development mode)
 
+### Cloud Agent bootstrap
+The default image does not include Bun. Environment install puts `bun` on `PATH` when it is missing, then runs `bun install --frozen-lockfile`. Vite development mode does not load `.env.production`. If gitignored `.env` is absent, install copies the committed public client keys from `.env.production` into `.env`. Do not create signup users on the live Supabase project unless the task requires it.
+
 ### Non-obvious caveats
 - **Lint is expected to fail.** `bun run lint` reports a large number of pre-existing errors (mostly `@typescript-eslint/no-explicit-any`), many inside `supabase/functions/**` (Deno edge functions). The tooling works; the failures are pre-existing repo state, not an environment problem.
 - The dev server talks to the **live remote Supabase**. Signing up creates a real auth user. Email confirmation is required (`mailer_autoconfirm=false`). **Worker QR signup** (`complete_worker_roster_signup`) activates immediately — no admin approval. Manager/other signups still start as `pending` until an admin approves.
 - Signup ("회원가입") requires selecting a real project + company from a public directory (RPC `get_signup_company_directory`) or a valid invite code. The directory is populated from the remote DB.
-- Root routes require auth and redirect unauthenticated users to `/landing`. Public routes include `/landing`, `/auth`, `/manual`, `/privacy`, and worker/QR entry points.
+- Unauthenticated visits to `/` redirect to `/login`. Public routes include `/landing`, `/auth`, `/login`, `/manual`, `/privacy`, and worker/QR entry points.

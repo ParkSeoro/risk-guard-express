@@ -139,9 +139,10 @@ def write_playlist(directory: Path, sequence: int, entries: list[tuple[bool, flo
         f"#EXT-X-TARGETDURATION:{target}",
         f"#EXT-X-MEDIA-SEQUENCE:{sequence}",
     ]
-    for disc, dur, name in entries:
-        if disc:
-            lines.append("#EXT-X-DISCONTINUITY")
+    for _disc, dur, name in entries:
+        # Every fragment starts its own clock near 1.4s. Without this tag the
+        # browser treats the next fragment as time going backwards and stops.
+        lines.append("#EXT-X-DISCONTINUITY")
         lines.append(f"#EXTINF:{dur:.3f},")
         lines.append(name)
     text = "\n".join(lines) + "\n"

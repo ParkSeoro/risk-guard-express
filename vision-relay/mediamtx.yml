@@ -7,3 +7,8 @@ hlsAlwaysRemux: yes
 rtmpAddress: :1935
 pathDefaults:
   source: publisher
+# v1.21 does not open a path from pathDefaults alone.
+# Keys are 8 random bytes (16 hex chars) under live/.
+paths:
+  "~^live/[0-9a-f]{16}$":
+    source: publisher

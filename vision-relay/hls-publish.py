@@ -92,6 +92,39 @@ def duration_seconds(path: Path) -> float:
         return 0.0
 
 
+def packet_bounds(path: Path) -> tuple[float, float] | None:
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v",
+                "-show_entries",
+                "packet=pts_time",
+                "-of",
+                "csv",
+                str(path),
+            ],
+            timeout=4,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+    pts = []
+    for line in out.decode().splitlines():
+        if not line.startswith("packet,"):
+            continue
+        try:
+            pts.append(float(line.split(",")[1]))
+        except (ValueError, IndexError):
+            continue
+    if not pts:
+        return None
+    return pts[0], pts[-1]
+
+
 def remux(src: Path, dst: Path) -> bool:
     tmp = dst.with_suffix(".ts.part")
     try:
@@ -102,8 +135,13 @@ def remux(src: Path, dst: Path) -> bool:
                 "-hide_banner",
                 "-loglevel",
                 "error",
+                "-copyts",
                 "-i",
                 str(src),
+                "-muxdelay",
+                "0",
+                "-muxpreload",
+                "0",
                 "-map",
                 "0:v:0",
                 "-c:v",
@@ -139,10 +177,9 @@ def write_playlist(directory: Path, sequence: int, entries: list[tuple[bool, flo
         f"#EXT-X-TARGETDURATION:{target}",
         f"#EXT-X-MEDIA-SEQUENCE:{sequence}",
     ]
-    for _disc, dur, name in entries:
-        # Every fragment starts its own clock near 1.4s. Without this tag the
-        # browser treats the next fragment as time going backwards and stops.
-        lines.append("#EXT-X-DISCONTINUITY")
+    for disc, dur, name in entries:
+        if disc:
+            lines.append("#EXT-X-DISCONTINUITY")
         lines.append(f"#EXTINF:{dur:.3f},")
         lines.append(name)
     text = "\n".join(lines) + "\n"
@@ -167,6 +204,8 @@ def main() -> None:
     windows: dict[str, list[tuple[bool, float, str]]] = {}
     sequence: dict[str, int] = {}
     counter: dict[str, int] = {}
+    # End timestamp of the last published fragment. The next one must continue it.
+    timeline_end: dict[str, float] = {}
     note("publisher up")
     while True:
         if RAW.exists():
@@ -204,8 +243,27 @@ def main() -> None:
                         seen[key][name] = stat.st_mtime
                         note(f"skip {key} {name}")
                         continue
+                    bounds = packet_bounds(dest)
                     measured = duration_seconds(dest)
-                    if 0.4 <= measured <= 12:
+                    if bounds is not None:
+                        start, end = bounds
+                        previous_end = timeline_end.get(key)
+                        # A backwards clock, or a hole of several seconds, is a new shot.
+                        # Normal fragments sit a few milliseconds apart and stay one timeline.
+                        if previous_end is not None and (
+                            start < previous_end - 0.5 or start > previous_end + 5
+                        ):
+                            disc = True
+                        else:
+                            disc = False
+                        timeline_end[key] = end
+                        spanned = end - start
+                        # The last packet is the start of the last frame, so it is
+                        # slightly shorter than the fragment length nginx already measured.
+                        if not (0.2 <= dur <= 12 and abs(spanned - dur) < 0.5):
+                            if 0.2 <= spanned <= 12:
+                                dur = spanned
+                    elif 0.4 <= measured <= 12:
                         dur = measured
                     elif dur < 0.4 or dur > 12:
                         dur = 2.0

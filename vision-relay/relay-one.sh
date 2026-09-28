@@ -26,7 +26,7 @@ while true; do
     -map 0:v:0 -c:v copy -an \
     -muxdelay 0 -muxpreload 0 \
     -f hls -hls_time 2 -hls_list_size 6 \
-    -hls_flags delete_segments+omit_endlist+independent_segments+append_list+discont_start \
+    -hls_flags delete_segments+omit_endlist+append_list+discont_start \
     -hls_segment_filename "$OUT/s${stamp}-%d.ts" \
     "$OUT/index.m3u8" || true
   ended=$(date +%s)

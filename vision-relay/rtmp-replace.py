@@ -1,55 +1,83 @@
 #!/usr/bin/env python3
-"""Keep a browser HLS copy for every camera that publishes to this relay.
+"""Accept a camera's next RTMP session, and publish browser HLS.
 
-A VIGI camera opens a new RTMP session every few seconds. Dropping the previous
-publisher lets the new session in. The HLS reader stays up for as long as the
-camera has power.
+A VIGI camera opens a new RTMP session every few seconds. The previous
+publisher is dropped so the new session is accepted. nginx-rtmp records
+that session, including its keyframe. hls-publish.py copies the picture
+into the public playlist.
+
+A second publish in the same few seconds is refused. Accepting it would
+cut off the session that just started.
 
 The 10-minute idle notice is enforced in the player. It does not stop this relay.
 """
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import os
 import signal
 import subprocess
+import threading
+import time
 import urllib.parse
 import urllib.request
 import re
 
 ROOT = Path(__file__).resolve().parent
-KEYS = Path("/var/hls/stream-keys")
 CONTROL = "http://127.0.0.1:8088/control/drop/publisher"
+LOG = Path("/var/log/rtmp-replace.log")
+PUBLISH_PID = Path("/var/run/vision-hls-publish.pid")
 KEY_RE = re.compile(r"^[0-9a-f]{16}$")
-# Cameras already registered. A later camera is added on its first publish.
-SEED = (
-    "d3b63068716a4269",
-    "a67c1652889b974e",
-    "0edfed08baf964c1",
-    "23f744a86693fb55",
-    "e476e5c98aeb5b45",
-)
+LAST_SESSION: dict[str, float] = {}
+LOCK = threading.Lock()
 
 
-def remember(name: str) -> None:
-    KEYS.parent.mkdir(parents=True, exist_ok=True)
-    existing = set()
-    if KEYS.exists():
-        existing = {line.strip() for line in KEYS.read_text().splitlines() if line.strip()}
-    if name not in existing:
-        with KEYS.open("a") as handle:
-            handle.write(name + "\n")
+def note(message: str) -> None:
+    try:
+        with LOG.open("a") as handle:
+            handle.write(message + "\n")
+    except Exception:
+        pass
 
 
-def ensure(name: str) -> None:
-    if not KEY_RE.fullmatch(name):
+def claim(name: str) -> bool:
+    """False means a session for this camera was accepted in the last few seconds."""
+    with LOCK:
+        now = time.monotonic()
+        if now - LAST_SESSION.get(name, 0) < 4:
+            return False
+        LAST_SESSION[name] = now
+        return True
+
+
+def stop_pid(path: Path) -> None:
+    try:
+        pid = int(path.read_text().strip())
+    except Exception:
         return
-    remember(name)
-    subprocess.Popen(
-        [str(ROOT / "relay-one.sh"), name],
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        pass
+
+
+def start_publisher() -> None:
+    stop_pid(PUBLISH_PID)
+    time.sleep(0.4)
+    proc = subprocess.Popen(
+        ["python3", str(ROOT / "hls-publish.py")],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+    try:
+        PUBLISH_PID.parent.mkdir(parents=True, exist_ok=True)
+        PUBLISH_PID.write_text(str(proc.pid))
+    except Exception:
+        pass
+    note(f"publisher {proc.pid}")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -59,13 +87,18 @@ class Handler(BaseHTTPRequestHandler):
         fields = urllib.parse.parse_qs(body)
         name = (fields.get("name") or [""])[0].strip().lower()
         app = (fields.get("app") or ["live"])[0]
-        if name and app == "live":
+        if name and app == "live" and KEY_RE.fullmatch(name):
+            if not claim(name):
+                self.send_response(409)
+                self.end_headers()
+                self.wfile.write(b"busy")
+                return
             url = f"{CONTROL}?app=live&name={urllib.parse.quote(name)}"
             try:
                 urllib.request.urlopen(url, timeout=1).read()
             except Exception:
                 pass
-            ensure(name)
+            note(f"accept {name}")
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"ok")
@@ -75,11 +108,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    # Short-lived retries must not pile up as zombies.
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    for key in SEED:
-        ensure(key)
-    if KEYS.exists():
-        for line in KEYS.read_text().splitlines():
-            ensure(line.strip().lower())
+    start_publisher()
     ThreadingHTTPServer(("127.0.0.1", 8099), Handler).serve_forever()

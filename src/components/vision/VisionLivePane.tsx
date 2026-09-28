@@ -171,7 +171,7 @@ export default function VisionLivePane({
     }
 
     let cancelled = false;
-    let hls: { destroy: () => void } | null = null;
+    let hls: { destroy: () => void; startLoad: () => void; recoverMediaError: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
     const markOffline = () => {
@@ -212,15 +212,26 @@ export default function VisionLivePane({
         if (Hls.isSupported()) {
           const player = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
-            liveSyncDurationCount: 2,
-            liveMaxLatencyDurationCount: 6,
-            maxBufferLength: 4,
-            maxMaxBufferLength: 8,
+            lowLatencyMode: false,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 12,
+            maxBufferLength: 20,
+            maxMaxBufferLength: 30,
             backBufferLength: 8,
+            manifestLoadingMaxRetry: 8,
+            levelLoadingMaxRetry: 8,
+            fragLoadingMaxRetry: 8,
           });
-          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
-            if (data?.fatal) markOffline();
+          let recoveries = 0;
+          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string }) => {
+            if (!data?.fatal || cancelled) return;
+            if (recoveries >= 8) {
+              markOffline();
+              return;
+            }
+            recoveries += 1;
+            if (data.type === "mediaError") player.recoverMediaError();
+            else player.startLoad();
           });
           player.loadSource(safeUrl);
           player.attachMedia(video);

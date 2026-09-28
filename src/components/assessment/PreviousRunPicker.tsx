@@ -62,7 +62,7 @@ export default function PreviousRunPicker({
         </SelectContent>
       </Select>
       <p className="text-[10px] text-muted-foreground">
-        같은 업체·승인완료 회차를 자동으로 붙입니다. 업체가 비어 있거나 종류가 다르면 연결이 빠질 수 있으니 그때는 직접 고르세요.
+        같은 회사의 승인완료 회차를 자동으로 붙입니다. 다른 회사 회차는 목록에 나오지 않습니다.
       </p>
     </div>
   );

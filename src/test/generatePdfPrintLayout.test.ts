@@ -21,6 +21,8 @@ describe('generate-pdf RA table layout', () => {
   it('uses saved previous_run_id for 금주 이행 확인 when auto-link misses', () => {
     expect(src).toMatch(/run\.previous_run_id/);
     expect(src).toMatch(/overrideId/);
+    expect(src).toMatch(/stampEffectiveCompanies/);
+    expect(src).not.toMatch(/na\.length === 0 && nb\.length === 0\) return true/);
   });
 
   it('prints 결재 코멘트 under the signature table', () => {

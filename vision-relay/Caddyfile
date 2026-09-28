@@ -7,7 +7,7 @@
 	}
 	@options method OPTIONS
 	respond @options 204
-	handle /live/0edfed08baf964c1/* {
+	handle /live/* {
 		reverse_proxy 172.18.0.1:8088
 	}
 	reverse_proxy mediamtx:8888

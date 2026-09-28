@@ -515,7 +515,7 @@ export default function VisionLivePane({
             className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-1.5 py-1.5"
             data-testid={`vision-pane-controls-${index}`}
           >
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto">
               <IconButton label={held ? "재생" : "일시정지"} testId={`vision-pane-play-${index}`} onClick={togglePlay}>
                 {held ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
               </IconButton>
@@ -556,7 +556,7 @@ export default function VisionLivePane({
                 {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
               </IconButton>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto">
               <IconButton
                 label="화면 확대"
                 testId={`vision-pane-zoom-in-${index}`}
@@ -608,7 +608,7 @@ function IconButton({
   return (
     <button
       type="button"
-      className="h-7 w-7 rounded bg-black/60 text-white hover:bg-black/80"
+      className="h-7 w-7 shrink-0 rounded bg-black/60 text-white hover:bg-black/80"
       aria-label={label}
       aria-pressed={pressed}
       data-testid={testId}

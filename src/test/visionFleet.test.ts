@@ -94,6 +94,8 @@ describe("vision fleet client helpers", () => {
     const edge = readFileSync("supabase/functions/vision-fleet/index.ts", "utf8");
     expect(edge).not.toContain("mux.com");
     expect(edge).not.toContain("wantMux");
+    expect(edge).not.toContain('health_state: playbackUrl ? "online"');
+    expect(edge).not.toContain('patch.health_state = "online"');
   });
 
   it("never allows a siren for vision_safety_event", () => {

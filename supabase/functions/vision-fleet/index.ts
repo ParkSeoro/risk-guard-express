@@ -852,7 +852,7 @@ Deno.serve(async (req) => {
             camera_id: cameraId,
             name,
             company_id: company.value,
-            health_state: playbackUrl ? "online" : "pending",
+            health_state: "pending", // a playback URL is not proof the camera is publishing
             playback_url: playbackUrl,
           },
           { onConflict: "gateway_id,camera_id" },
@@ -938,7 +938,7 @@ Deno.serve(async (req) => {
           const playbackUrl = safePlaybackUrl(body.playback_url);
           if (!playbackUrl) return json({ error: "playback_url must be http(s)" }, 400);
           patch.playback_url = playbackUrl;
-          patch.health_state = "online";
+          patch.health_state = "pending";
         }
       }
       if (body.company_id !== undefined) {

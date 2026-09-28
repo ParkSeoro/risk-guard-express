@@ -108,12 +108,15 @@ import {
   executionFeedbackCount,
   isManagedResidualHigh,
   listManualPreviousCandidates,
+  effectiveCompanyIds,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
   resolvePreviousRun,
+  stampRunCompany,
   unresolvedFeedback,
   type WeeklyLinkRun,
 } from '@/lib/weeklyAssessmentLink';
+import { authorCompanyIdsForRuns } from '@/lib/companyDocScope';
 import {
   fetchAssessmentShareAcks,
   isSafeSignatureDataUrl,
@@ -606,9 +609,34 @@ const AssessmentRunDetail = () => {
           rows = [extra as WeeklyLinkRun, ...rows];
         }
       }
-      const auto = pickPreviousApprovedRun(run as WeeklyLinkRun, rows);
-      let previous = resolvePreviousRun(run as WeeklyLinkRun, rows, overrideId);
-      const pickerRows = listManualPreviousCandidates(run as WeeklyLinkRun, rows);
+      if (cancelled) return;
+      let authorCompanyByUser: Record<string, string> = {};
+      try {
+        authorCompanyByUser = await authorCompanyIdsForRuns(run.project_id, [run as WeeklyLinkRun, ...rows]);
+      } catch (err) {
+        console.warn('[weekly-link] author company lookup failed:', err);
+      }
+      if (cancelled) return;
+      const companyIds = new Set<string>();
+      for (const row of [run as WeeklyLinkRun, ...rows]) {
+        for (const id of effectiveCompanyIds(row, authorCompanyByUser)) companyIds.add(id);
+      }
+      const companyLabelById: Record<string, string> = {};
+      if (companyIds.size > 0) {
+        const { data: companyRows } = await supabase
+          .from('companies')
+          .select('id, name')
+          .in('id', [...companyIds]);
+        for (const company of companyRows || []) {
+          if (company?.id && company.name) companyLabelById[company.id] = company.name;
+        }
+      }
+      if (cancelled) return;
+      const stampedCurrent = stampRunCompany(run as WeeklyLinkRun, authorCompanyByUser, companyLabelById);
+      const stampedRows = rows.map((row) => stampRunCompany(row, authorCompanyByUser, companyLabelById));
+      const auto = pickPreviousApprovedRun(stampedCurrent, stampedRows);
+      let previous = resolvePreviousRun(stampedCurrent, stampedRows, overrideId);
+      const pickerRows = listManualPreviousCandidates(stampedCurrent, stampedRows);
       const currentFbReq = supabase
         .from('risk_item_feedback' as any)
         .select('id, status')

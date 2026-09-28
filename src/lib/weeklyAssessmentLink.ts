@@ -9,6 +9,10 @@ export type WeeklyLinkRun = {
   end_date?: string | null;
   created_at: string;
   target_company_ids?: string[] | null;
+  author_user_id?: string | null;
+  created_by?: string | null;
+  /** Display only. Stamped from the effective company before the picker renders. */
+  company_label?: string | null;
   period_label?: string | null;
   is_deleted?: boolean | null;
   feedback_status?: string | null;
@@ -28,8 +32,9 @@ export function normalizeCompanyIds(ids?: string[] | null): string[] {
 }
 
 /**
- * Empty vs non-empty must not match (Hi-Tech vs 진남 isolation).
- * Both empty = same unspecified bucket.
+ * Companies must actually intersect.
+ * A blank list is not every company, and two blank lists are not the same company.
+ * Callers stamp the author's company onto a blank run before comparing.
  */
 export function companyTargetsOverlap(
   a?: string[] | null,
@@ -37,10 +42,37 @@ export function companyTargetsOverlap(
 ): boolean {
   const na = normalizeCompanyIds(a);
   const nb = normalizeCompanyIds(b);
-  if (na.length === 0 && nb.length === 0) return true;
   if (na.length === 0 || nb.length === 0) return false;
   const other = new Set(nb);
   return na.some((id) => other.has(id));
+}
+
+/** target_company_ids when set, otherwise the author's company. Never "blank = shared". */
+export function effectiveCompanyIds(
+  run: WeeklyLinkRun,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+): string[] {
+  const targets = normalizeCompanyIds(run.target_company_ids);
+  if (targets.length > 0) return targets;
+  const map = authorCompanyByUser || {};
+  const authorId = String(run.author_user_id || '').trim();
+  const creatorId = String(run.created_by || '').trim();
+  const author = (authorId && map[authorId]) || (creatorId && map[creatorId]) || '';
+  const id = String(author || '').trim();
+  return id ? [id] : [];
+}
+
+export function stampRunCompany<T extends WeeklyLinkRun>(
+  run: T,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+  companyLabelById?: Record<string, string | null | undefined> | null,
+): T {
+  const ids = effectiveCompanyIds(run, authorCompanyByUser);
+  const label = ids
+    .map((id) => String(companyLabelById?.[id] || '').trim())
+    .filter(Boolean)
+    .join(', ');
+  return { ...run, target_company_ids: ids, company_label: label || null };
 }
 
 function periodKey(run: WeeklyLinkRun): string | null {
@@ -110,25 +142,21 @@ export function pickPreviousApprovedRun(
 
 const MANUAL_PREVIOUS_STATUSES = new Set(['승인완료', '결재진행']);
 
-/** Picker list: 승인완료·결재진행. Company overlap is preferred, not required. */
+/** Picker list: same company, 승인완료·결재진행. Other companies are not selectable. */
 export function listManualPreviousCandidates(
   current: WeeklyLinkRun,
   candidates: WeeklyLinkRun[],
 ): WeeklyLinkRun[] {
   const rows = (candidates || []).filter((c) => {
     if (!isSameProjectCandidate(current, c)) return false;
-    return MANUAL_PREVIOUS_STATUSES.has(c.status);
+    if (!MANUAL_PREVIOUS_STATUSES.has(c.status)) return false;
+    return companyTargetsOverlap(current.target_company_ids, c.target_company_ids);
   });
-  rows.sort((a, b) => {
-    const oa = companyTargetsOverlap(current.target_company_ids, a.target_company_ids) ? 1 : 0;
-    const ob = companyTargetsOverlap(current.target_company_ids, b.target_company_ids) ? 1 : 0;
-    if (oa !== ob) return ob - oa;
-    return compareNewestFirst(a, b);
-  });
+  rows.sort(compareNewestFirst);
   return rows;
 }
 
-/** Manual override wins when the id is still a selectable candidate. */
+/** Manual override wins only when that run is the same company. */
 export function resolvePreviousRun(
   current: WeeklyLinkRun,
   candidates: WeeklyLinkRun[],
@@ -136,8 +164,7 @@ export function resolvePreviousRun(
 ): WeeklyLinkRun | null {
   const id = String(overrideId || '').trim();
   if (id && id !== current.id) {
-    const hit = listManualPreviousCandidates(current, candidates).find((c) => c.id === id)
-      || (candidates || []).find((c) => c.id === id && isSameProjectCandidate(current, c));
+    const hit = listManualPreviousCandidates(current, candidates).find((c) => c.id === id);
     if (hit) return hit;
   }
   return pickPreviousApprovedRun(current, candidates);
@@ -150,7 +177,8 @@ export function formatPreviousRunOptionLabel(
   const period = String(run.period_label || '').trim() || '회차';
   const type = String(run.type || '').trim();
   const start = String(run.start_date || '').trim().slice(0, 10);
-  const bits = [period];
+  const company = String(run.company_label || '').trim();
+  const bits = company ? [company, period] : [period];
   if (type) bits.push(type);
   bits.push(run.status);
   if (start) bits.push(start);
@@ -226,7 +254,7 @@ export function isManagedResidualHigh(item: { improved_risk_grade?: string | nul
  * column list) still shows photos.
  */
 export const WEEKLY_LINK_CANDIDATE_SELECT =
-  'id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted';
+  'id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_user_id, created_by, period_label, is_deleted';
 
 export function unresolvedFeedback<T extends { status?: string | null }>(rows: T[]): T[] {
   return (rows || []).filter((f) => f.status === '미조치' || f.status === '진행중');

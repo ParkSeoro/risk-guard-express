@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   WEEKLY_LINK_CANDIDATE_SELECT,
   companyTargetsOverlap,
+  effectiveCompanyIds,
   executionFeedbackCount,
   formatPreviousRunOptionLabel,
   isManagedResidualHigh,
@@ -40,9 +41,9 @@ describe('companyTargetsOverlap', () => {
     expect(companyTargetsOverlap(null, ['jinnam'])).toBe(false);
   });
 
-  it('matches both-empty as the same unspecified bucket', () => {
-    expect(companyTargetsOverlap([], [])).toBe(true);
-    expect(companyTargetsOverlap(null, undefined)).toBe(true);
+  it('does not treat two blank company lists as the same company', () => {
+    expect(companyTargetsOverlap([], [])).toBe(false);
+    expect(companyTargetsOverlap(null, undefined)).toBe(false);
   });
 });
 
@@ -129,30 +130,65 @@ describe('pickPreviousApprovedRun', () => {
     expect(pickPreviousApprovedRun(self, [self])).toBeNull();
   });
 
-  it('links empty-company 수시 to the previous 수시, not a newer 상시 peer', () => {
+  it('links the same author company 수시 to the previous 수시, not a newer 상시 peer', () => {
     const week9 = run({
       id: 'week9-susi',
       type: '수시',
       status: '승인완료',
       start_date: '2026-08-31',
       created_at: '2026-08-26T06:21:01Z',
-      target_company_ids: [],
+      target_company_ids: ['co-author'],
     });
     const week8Susi = run({
       id: 'week8-susi',
       type: '수시',
       start_date: '2026-08-24',
       created_at: '2026-08-19T01:10:53Z',
-      target_company_ids: [],
+      target_company_ids: ['co-author'],
     });
     const week8Always = run({
       id: 'week8-always',
       type: '상시',
       start_date: '2026-08-24',
       created_at: '2026-08-24T08:54:03Z',
-      target_company_ids: [],
+      target_company_ids: ['co-author'],
     });
     expect(pickPreviousApprovedRun(week9, [week8Always, week8Susi])?.id).toBe('week8-susi');
+  });
+
+  it('does not chain blank runs, and uses the author company when it is stamped', () => {
+    const current = run({
+      id: 'blank-next',
+      status: '작성중',
+      start_date: '2026-09-21',
+      created_at: '2026-09-15T00:00:00Z',
+      target_company_ids: [],
+      author_user_id: 'user-daewoong',
+    });
+    const otherBlank = run({
+      id: 'blank-other',
+      start_date: '2026-09-14',
+      target_company_ids: [],
+      author_user_id: 'user-cheongwon',
+    });
+    expect(pickPreviousApprovedRun(current, [otherBlank])).toBeNull();
+    const stampedCurrent = {
+      ...current,
+      target_company_ids: effectiveCompanyIds(current, { 'user-daewoong': 'co-daewoong' }),
+    };
+    const stampedOther = {
+      ...otherBlank,
+      target_company_ids: effectiveCompanyIds(otherBlank, { 'user-cheongwon': 'co-cheongwon' }),
+    };
+    const stampedSame = run({
+      id: 'same-author',
+      start_date: '2026-09-14',
+      target_company_ids: effectiveCompanyIds(
+        run({ id: 'prev', target_company_ids: [], author_user_id: 'user-daewoong' }),
+        { 'user-daewoong': 'co-daewoong' },
+      ),
+    });
+    expect(pickPreviousApprovedRun(stampedCurrent, [stampedOther, stampedSame])?.id).toBe('same-author');
   });
 
   it('falls back to another type when same-type approved runs are not earlier', () => {
@@ -213,8 +249,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(pickPreviousApprovedRun(current, [emptyApproved])).toBeNull();
   });
 
-  it('lets a manual override pick a company-mismatch or 결재진행 회차', () => {
-    expect(resolvePreviousRun(current, [emptyApproved, matching], emptyApproved.id)?.id).toBe('empty-approved');
+  it('keeps a same-company 결재진행 override and ignores a company mismatch', () => {
+    expect(resolvePreviousRun(current, [emptyApproved, matching], emptyApproved.id)?.id).toBe('match');
     expect(resolvePreviousRun(current, [pending, matching], pending.id)?.id).toBe('pending');
   });
 
@@ -223,12 +259,13 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(resolvePreviousRun(current, [matching], current.id)?.id).toBe('match');
   });
 
-  it('lists 결재진행 in the picker and prefers overlapping companies', () => {
+  it('lists only the same company, including 결재진행', () => {
     const ids = listManualPreviousCandidates(current, [emptyApproved, pending, matching]).map((c) => c.id);
-    expect(ids).toEqual(['pending', 'match', 'empty-approved']);
+    expect(ids).toEqual(['pending', 'match']);
   });
 
-  it('labels include 관리대상 count', () => {
+  it('labels include the company and 관리대상 count', () => {
+    expect(formatPreviousRunOptionLabel({ ...matching, company_label: '청원산기(주)' }, 19)).toContain('청원산기(주)');
     expect(formatPreviousRunOptionLabel(matching, 19)).toContain('관리대상 19건');
     expect(formatPreviousRunOptionLabel(matching, 19)).toContain('8월 4주차');
   });
@@ -351,6 +388,7 @@ describe('WEEKLY_LINK_CANDIDATE_SELECT', () => {
   it('does not request schema-optional columns that would blank the 금주 tab', () => {
     expect(WEEKLY_LINK_CANDIDATE_SELECT).not.toMatch(/feedback_status/);
     expect(WEEKLY_LINK_CANDIDATE_SELECT).toMatch(/target_company_ids/);
+    expect(WEEKLY_LINK_CANDIDATE_SELECT).toMatch(/author_user_id/);
     expect(WEEKLY_LINK_CANDIDATE_SELECT).toMatch(/\btype\b/);
   });
 });

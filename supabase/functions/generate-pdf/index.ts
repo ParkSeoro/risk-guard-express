@@ -69,10 +69,64 @@ function normalizeCompanyIds(ids: unknown): string[] {
 function companyTargetsOverlap(a: unknown, b: unknown): boolean {
   const na = normalizeCompanyIds(a);
   const nb = normalizeCompanyIds(b);
-  if (na.length === 0 && nb.length === 0) return true;
   if (na.length === 0 || nb.length === 0) return false;
   const other = new Set(nb);
   return na.some((id) => other.has(id));
+}
+
+const MEMBER_ROLE_RANK: Record<string, number> = {
+  master: 100,
+  project_admin: 90,
+  safety_manager: 80,
+  site_manager: 70,
+  site_supervisor: 60,
+  supervisor: 50,
+  worker: 20,
+  contractor: 20,
+  viewer: 10,
+};
+
+/** Blank target_company_ids becomes the author's company. Two blanks do not match. */
+async function stampEffectiveCompanies(supabase: any, projectId: string, runs: any[]): Promise<any[]> {
+  const list = runs || [];
+  const userIds: string[] = [];
+  for (const run of list) {
+    if (normalizeCompanyIds(run?.target_company_ids).length > 0) continue;
+    if (run?.author_user_id) userIds.push(String(run.author_user_id));
+    if (run?.created_by) userIds.push(String(run.created_by));
+  }
+  const byUser: Record<string, string> = {};
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (projectId && unique.length > 0) {
+    const { data } = await supabase
+      .from("project_members")
+      .select("user_id, company_id, role_new")
+      .eq("project_id", projectId)
+      .in("user_id", unique);
+    const grouped = new Map<string, any[]>();
+    for (const row of data || []) {
+      const uid = String(row.user_id || "");
+      if (!uid) continue;
+      const arr = grouped.get(uid) || [];
+      arr.push(row);
+      grouped.set(uid, arr);
+    }
+    for (const [uid, arr] of grouped) {
+      const ranked = [...arr].sort((a, b) => {
+        const rb = MEMBER_ROLE_RANK[String(b.role_new || "").toLowerCase()] || 0;
+        const ra = MEMBER_ROLE_RANK[String(a.role_new || "").toLowerCase()] || 0;
+        return rb - ra;
+      });
+      const cid = String(ranked.find((row) => row.company_id)?.company_id || "");
+      if (cid) byUser[uid] = cid;
+    }
+  }
+  return list.map((run) => {
+    const targets = normalizeCompanyIds(run?.target_company_ids);
+    if (targets.length > 0) return { ...run, target_company_ids: targets };
+    const author = byUser[String(run?.author_user_id || "")] || byUser[String(run?.created_by || "")] || "";
+    return { ...run, target_company_ids: author ? [author] : [] };
+  });
 }
 
 function periodKey(run: any): string | null {
@@ -372,9 +426,10 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const linkSelect = "id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_user_id, created_by, period_label, is_deleted";
     const { data: prevCandidates } = await supabase
       .from("assessment_runs")
-      .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
+      .select(linkSelect)
       .eq("project_id", run.project_id)
       .eq("status", "승인완료")
       .eq("is_deleted", false)
@@ -382,28 +437,30 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(80);
 
-    let previousRun = pickPreviousApprovedRun(run, prevCandidates || []);
+    const [stampedRun] = await stampEffectiveCompanies(supabase, run.project_id, [run]);
+    const stampedCandidates = await stampEffectiveCompanies(supabase, run.project_id, prevCandidates || []);
+    let previousRun = pickPreviousApprovedRun(stampedRun, stampedCandidates);
     const overrideId = (previousRunId && previousRunId !== runId)
       ? previousRunId
       : (run.previous_run_id && run.previous_run_id !== runId ? run.previous_run_id : null);
     if (overrideId) {
-      const hinted = (prevCandidates || []).find((c: any) => c.id === overrideId)
-        || (previousRun?.id === overrideId ? previousRun : null);
-      if (hinted && hinted.project_id === run.project_id) {
-        previousRun = hinted;
-      } else {
+      let hinted = stampedCandidates.find((c: any) => c.id === overrideId) || null;
+      if (!hinted) {
         const { data: hintedRow } = await supabase
           .from("assessment_runs")
-          .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
+          .select(linkSelect)
           .eq("id", overrideId)
           .maybeSingle();
         if (hintedRow && hintedRow.project_id === run.project_id && !hintedRow.is_deleted) {
-          previousRun = hintedRow;
+          [hinted] = await stampEffectiveCompanies(supabase, run.project_id, [hintedRow]);
         }
+      }
+      if (hinted && companyTargetsOverlap(stampedRun.target_company_ids, hinted.target_company_ids)) {
+        previousRun = hinted;
       }
     }
     const previousOfPrevious = previousRun
-      ? pickPreviousApprovedRun(previousRun, (prevCandidates || []).filter((c: any) => c.id !== previousRun.id))
+      ? pickPreviousApprovedRun(previousRun, stampedCandidates.filter((c: any) => c.id !== previousRun.id))
       : null;
     const printMode = type === "assessment_feedback" || type === "feedback" ? "feedback" : "assessment";
     const printSections = resolvePrintFeedbackSections(run, previousRun, previousOfPrevious, printMode);

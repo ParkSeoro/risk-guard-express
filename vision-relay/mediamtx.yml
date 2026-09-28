@@ -1,9 +1,13 @@
 logLevel: info
+readTimeout: 60s
+writeTimeout: 60s
 rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
+hlsVariant: mpegts
+hlsSegmentDuration: 1s
 rtmpAddress: :1935
 pathDefaults:
   source: publisher

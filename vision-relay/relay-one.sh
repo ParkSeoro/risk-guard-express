@@ -17,16 +17,19 @@ exec >>"/var/log/vision-hls/$KEY.log" 2>&1
 while true; do
   stamp=$(date +%s)
   started=$(date +%s)
+  # The camera clock jumps backwards. Copying it makes ffmpeg crush a
+  # few seconds of pictures into a fraction of a millisecond, and the
+  # existing player then holds one frame. Stamp each frame when it arrives.
   ffmpeg -nostdin -hide_banner -loglevel warning \
     -rw_timeout 15000000 \
-    -fflags +genpts+discardcorrupt \
+    -fflags +genpts+discardcorrupt+igndts \
+    -use_wallclock_as_timestamps 1 \
     -probesize 65536 -analyzeduration 500000 \
-    -copyts \
     -i "rtmp://127.0.0.1:1935/live/$KEY" \
     -map 0:v:0 -c:v copy -an \
     -muxdelay 0 -muxpreload 0 \
     -f hls -hls_time 2 -hls_list_size 6 \
-    -hls_flags delete_segments+omit_endlist+append_list+discont_start \
+    -hls_flags delete_segments+omit_endlist+temp_file+discont_start \
     -hls_segment_filename "$OUT/s${stamp}-%d.ts" \
     "$OUT/index.m3u8" || true
   ended=$(date +%s)

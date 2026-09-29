@@ -234,8 +234,8 @@ export default function VisionLivePane({
           const player = new Hls({
             enableWorker: true,
             lowLatencyMode: false,
-            liveSyncDurationCount: 2,
-            liveMaxLatencyDurationCount: 6,
+            liveSyncDurationCount: 1,
+            liveMaxLatencyDurationCount: 5,
             maxBufferLength: 4,
             maxMaxBufferLength: 8,
             backBufferLength: 8,

@@ -3,7 +3,6 @@ import {
   visionVpsCameraId,
   visionVpsFromHost,
   visionVpsHlsBase,
-  visionRelayWhepUrl,
   visionVpsPlaybackUrl,
   visionVpsRtmpUrl,
   visionVpsStreamKey,
@@ -30,14 +29,6 @@ describe("vision VPS helpers", () => {
     });
     expect(visionVpsRtmpUrl("vision.example.com")).toBe("rtmp://vision.example.com:1935/live");
     expect(visionVpsHlsBase("vision.example.com")).toBe("https://vision.example.com");
-  });
-
-  it("reads a relay playlist as a WebRTC call and leaves other HLS alone", () => {
-    expect(visionRelayWhepUrl("https://49-247-192-161.sslip.io/live/0edfed08baf964c1/index.m3u8")).toBe(
-      "https://49-247-192-161.sslip.io/live/0edfed08baf964c1/whep",
-    );
-    expect(visionRelayWhepUrl("https://example.com/live/ab/index.m3u8")).toBeNull();
-    expect(visionRelayWhepUrl("https://stream.mux.com/abc.m3u8")).toBeNull();
   });
 
   it("round-trips the stream key on camera_id", () => {

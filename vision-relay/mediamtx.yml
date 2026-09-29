@@ -5,12 +5,14 @@ rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
+# Sydney relay: low-latency HLS (1s segments, 200ms parts), ready before a viewer joins.
+# G.711 is skipped. The browser receives H.264 only.
 hlsAlwaysRemux: yes
-hlsVariant: mpegts
-# One second is the target. The camera keyframe interval decides the real length.
-# G.711 audio is left out of HLS. The browser receives H.264 only.
+hlsVariant: lowLatency
 hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
 rtmpAddress: :1935
+# Kept so the site can still open a call until the low-latency player is deployed.
 webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
@@ -25,3 +27,6 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
+    # The camera opens a replacement upload on its own. Refusing it makes the
+    # camera drop the line that is already showing. Accept the replacement.
+    overridePublisher: true

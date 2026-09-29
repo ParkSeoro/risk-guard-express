@@ -171,6 +171,8 @@ export default function VisionLivePane({
     }
 
     let cancelled = false;
+    let generation = 0;
+    let reloadTimer = 0;
     let hls: { destroy: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
@@ -184,12 +186,30 @@ export default function VisionLivePane({
       setOffline(false);
       window.clearTimeout(deadline);
     };
+    const scheduleReload = () => {
+      if (cancelled || reloadTimer) return;
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = 0;
+        if (!cancelled) void attach();
+      }, 1000);
+    };
+    const onVideoError = () => {
+      if (!cancelled) scheduleReload();
+    };
 
     video.addEventListener("playing", onFrame);
     video.addEventListener("timeupdate", onFrame);
+    video.addEventListener("error", onVideoError);
     deadline = window.setTimeout(markOffline, connectMs);
+    // The camera connects only after this page asks. Keep asking until a frame arrives.
+    const beat = window.setInterval(() => {
+      if (!sawPicture) scheduleReload();
+    }, 2000);
 
     const attach = async () => {
+      const token = ++generation;
+      hls?.destroy();
+      hls = null;
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = safeUrl;
         await playVideo(video);
@@ -197,9 +217,8 @@ export default function VisionLivePane({
       }
       if (/\.m3u8(\?|$)/i.test(safeUrl) || safeUrl.includes("application/vnd.apple.mpegurl")) {
         const { default: Hls } = await import("hls.js");
-        if (cancelled) return;
+        if (cancelled || token !== generation) return;
         if (Hls.isSupported()) {
-          // Same buffer Lightsail used. hls.js handles its own retries.
           const player = new Hls({
             enableWorker: true,
             lowLatencyMode: true,
@@ -209,13 +228,19 @@ export default function VisionLivePane({
             maxMaxBufferLength: 8,
             backBufferLength: 8,
           });
+          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
+            if (!data?.fatal || cancelled || token !== generation) return;
+            scheduleReload();
+          });
           player.loadSource(safeUrl);
           player.attachMedia(video);
           hls = player;
+          if (cancelled || token !== generation) return;
           await playVideo(video);
           return;
         }
       }
+      if (cancelled || token !== generation) return;
       video.src = safeUrl;
       await playVideo(video);
     };
@@ -223,9 +248,13 @@ export default function VisionLivePane({
     void attach();
     return () => {
       cancelled = true;
+      generation += 1;
       window.clearTimeout(deadline);
+      window.clearTimeout(reloadTimer);
+      window.clearInterval(beat);
       video.removeEventListener("playing", onFrame);
       video.removeEventListener("timeupdate", onFrame);
+      video.removeEventListener("error", onVideoError);
       hls?.destroy();
       video.srcObject = null;
       const rec = recorderRef.current;

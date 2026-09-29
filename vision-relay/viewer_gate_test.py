@@ -23,8 +23,8 @@ class ViewerGateTest(unittest.TestCase):
         path = "live/0edfed08baf964c1"
         self.assertFalse(viewer_gate.publish_allowed(path, now=100))
         viewer_gate.note_read("/live/0edfed08baf964c1/index.m3u8", now=100)
-        self.assertTrue(viewer_gate.publish_allowed(path, now=119))
-        self.assertFalse(viewer_gate.publish_allowed(path, now=121))
+        self.assertTrue(viewer_gate.publish_allowed(path, now=100 + viewer_gate.HOLD_S - 1))
+        self.assertFalse(viewer_gate.publish_allowed(path, now=100 + viewer_gate.HOLD_S + 1))
 
     def test_read_is_always_allowed(self) -> None:
         self.assertTrue(viewer_gate.decide("read", "live/abc"))

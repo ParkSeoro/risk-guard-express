@@ -1,4 +1,6 @@
 logLevel: info
+readTimeout: 60s
+writeTimeout: 60s
 rtmp: yes
 hls: yes
 hlsAddress: :8888
@@ -25,5 +27,6 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
-    # A second RTMP connect must not kick the picture that is already on screen.
-    overridePublisher: false
+    # The camera opens a replacement upload on its own. Refusing it makes the
+    # camera drop the line that is already showing. Accept the replacement.
+    overridePublisher: true

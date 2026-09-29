@@ -18,6 +18,8 @@ fi
 # An older nginx publisher binds 1935 on the host and hides MediaMTX.
 docker rm -f vision-rtmp >/dev/null 2>&1 || true
 
+bash "$(dirname "$0")/rtmp-mss.sh"
+
 docker compose up -d
 
 cat <<EOF

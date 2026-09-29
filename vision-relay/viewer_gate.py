@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Keep a camera upload only while a browser is asking for that path.
 
-HLS reads always pass and refresh the hold. RTMP publish is not checked
-here (MediaMTX excludes it) because VIGI closes the line on a 403
-handshake. Idle RTMP is kicked after the hold.
+MediaMTX does not HTTP-auth RTMP: VIGI closes the line on a 403 handshake.
+HLS readers refresh the hold. Idle publishers are kicked after the hold.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOLD_S = 45
@@ -57,6 +57,45 @@ def decide(action: str, path: str) -> bool:
         note_read(path)
         return True
     return True
+
+
+def conn_age_s(created: str, now_ts: float | None = None) -> float | None:
+    raw = (created or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    if "." in raw:
+        head, rest = raw.split(".", 1)
+        digits = ""
+        tz = ""
+        for index, char in enumerate(rest):
+            if char.isdigit():
+                digits += char
+            else:
+                tz = rest[index:]
+                break
+        raw = f"{head}.{(digits + '000000')[:6]}{tz or '+00:00'}"
+    try:
+        created_at = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    moment = time.time() if now_ts is None else now_ts
+    return max(0.0, moment - created_at.timestamp())
+
+
+def should_kick_conn(item: dict, now: float | None = None, hold_s: float = HOLD_S) -> bool:
+    path = str(item.get("path") or "")
+    conn_id = str(item.get("id") or "")
+    state = str(item.get("state") or "")
+    if not path or not conn_id or state != "publish":
+        return False
+    if publish_allowed(path, now=now, hold_s=hold_s):
+        return False
+    age = conn_age_s(str(item.get("created") or ""))
+    return age is not None and age >= hold_s
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,12 +169,10 @@ def _kick_idle_once() -> None:
     while True:
         data = _get_json(f"{API}/v3/rtmpconns/list?page={page}&itemsPerPage=100")
         for item in data.get("items") or []:
-            if not isinstance(item, dict):
+            if not isinstance(item, dict) or not should_kick_conn(item):
                 continue
             path = str(item.get("path") or "")
             conn_id = str(item.get("id") or "")
-            if not path or not conn_id or publish_allowed(path):
-                continue
             kick = urllib.request.Request(
                 f"{API}/v3/rtmpconns/kick/{urllib.parse.quote(conn_id, safe='')}",
                 method="POST",

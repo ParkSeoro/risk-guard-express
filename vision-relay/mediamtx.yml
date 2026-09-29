@@ -1,17 +1,20 @@
 logLevel: info
 readTimeout: 60s
 writeTimeout: 60s
-# HLS reads refresh the viewer hold. RTMP publish is not HTTP-authed:
-# VIGI closes the line if publish is 403'd during handshake.
+# Do not HTTP-auth RTMP. VIGI never finishes publish if that handshake
+# is 403'd, and even an exclude still left the camera in RTMP idle.
+# HLS readers keep the hold; viewer-gate kicks idle publishers.
 api: yes
 apiAddress: :9997
-authMethod: http
-authHTTPAddress: http://viewer-gate:9197/auth
-authHTTPExclude:
-  - action: api
-  - action: metrics
-  - action: pprof
-  - action: publish
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
 rtmp: yes
 hls: yes
 hlsAddress: :8888

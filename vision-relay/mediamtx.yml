@@ -25,3 +25,5 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
+    # A second RTMP connect must not kick the picture that is already on screen.
+    overridePublisher: false

@@ -2,7 +2,7 @@
 """Allow a camera to publish only while a browser is reading that path.
 
 MediaMTX asks this process on every publish and every read. A read means
-the picture is open. A publish is refused 20 seconds after the last read,
+the picture is open. A publish is refused 45 seconds after the last read,
 and the open upload is kicked so the modem stops sending video.
 """
 
@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-HOLD_S = 20
+HOLD_S = 45
 API = os.environ.get("MTX_API", "http://mediamtx:9997").rstrip("/")
 LISTEN = ("0.0.0.0", 9197)
 

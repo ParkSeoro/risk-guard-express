@@ -58,9 +58,11 @@ def fix_playlist(key: str) -> None:
         "#EXT-X-VERSION:3",
         "#EXT-X-TARGETDURATION:2",
         "#EXT-X-MEDIA-SEQUENCE:0",
+        "#EXT-X-PLAYLIST-TYPE:EVENT",
     ]
     for name in names[-6:]:
         lines.extend(["#EXTINF:2.000,", name])
+    lines.append("#EXT-X-ENDLIST")
     with open(os.path.join(folder, "index.m3u8"), "w", encoding="ascii") as handle:
         handle.write("\n".join(lines) + "\n")
 
@@ -108,7 +110,7 @@ def start(key: str) -> subprocess.Popen:
             "delete_segments+omit_endlist+temp_file",
             "-hls_segment_filename",
             f"{out}/s%d.ts",
-            f"{out}/index.m3u8",
+            f"{out}/_src.m3u8",
         ]
     )
 

@@ -12,6 +12,12 @@ PUB="${PUB:-여기.공인.IP}"
 HLS_HOST="${HLS_HOST:-${PUB//./-}.sslip.io}"
 export HLS_HOST
 
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl disable --now vision-hls >/dev/null 2>&1 || true
+fi
+# An older nginx publisher binds 1935 on the host and hides MediaMTX.
+docker rm -f vision-rtmp >/dev/null 2>&1 || true
+
 docker compose up -d
 
 cat <<EOF

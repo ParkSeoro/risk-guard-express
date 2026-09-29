@@ -7,8 +7,9 @@
 	}
 	@options method OPTIONS
 	respond @options 204
-	handle /live/* {
-		reverse_proxy 172.18.0.1:8088
+	reverse_proxy mediamtx:8888 {
+		header_down -Access-Control-Allow-Origin
+		header_down -Access-Control-Allow-Methods
+		header_down -Access-Control-Allow-Headers
 	}
-	reverse_proxy mediamtx:8888
 }

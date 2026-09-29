@@ -3,7 +3,7 @@ services:
     image: bluenviron/mediamtx:1
     restart: unless-stopped
     ports:
-      - "127.0.0.1:1936:1935"
+      - "1935:1935"
       - "8888:8888"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro

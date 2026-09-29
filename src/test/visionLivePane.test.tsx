@@ -30,9 +30,10 @@ describe("VisionLivePane", () => {
     root = null;
     el = null;
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  function mount(idleMs?: number, connectMs?: number) {
+  function mount(idleMs?: number, connectMs?: number, playbackUrl = PLAYBACK) {
     el = document.createElement("div");
     document.body.appendChild(el);
     root = createRoot(el);
@@ -43,7 +44,7 @@ describe("VisionLivePane", () => {
           name="정문"
           cameraId="vps_ab"
           healthState="online"
-          playbackUrl={PLAYBACK}
+          playbackUrl={playbackUrl}
           idleMs={idleMs}
           connectMs={connectMs}
         />,
@@ -157,6 +158,46 @@ describe("VisionLivePane", () => {
     click("vision-pane-retry-0");
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
     expect(el!.textContent).toContain("연결 중");
+  });
+
+  it("keeps looking when a relay camera drops instead of saying it is offline", async () => {
+    class FakePC {
+      iceGatheringState = "complete";
+      connectionState = "new";
+      localDescription = { sdp: "v=0\r\n" };
+      addTransceiver() {}
+      addEventListener() {}
+      createOffer() {
+        return Promise.resolve({ type: "offer", sdp: "v=0\r\n" });
+      }
+      setLocalDescription() {
+        return Promise.resolve();
+      }
+      setRemoteDescription() {
+        return Promise.resolve();
+      }
+      close() {}
+    }
+    class FakeStream {
+      addTrack() {}
+    }
+    vi.stubGlobal("RTCPeerConnection", FakePC);
+    vi.stubGlobal("MediaStream", FakeStream);
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        return new Response("gone", { status: 404 });
+      }),
+    );
+    mount(undefined, 8_000, "https://49-247-192-161.sslip.io/live/0edfed08baf964c1/index.m3u8");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
+    expect(el!.textContent).toContain("연결 중");
+    expect(calls.filter((url) => url.endsWith("/whep")).length).toBeGreaterThan(1);
   });
 
   it("says the camera is not publishing when no picture arrives", () => {

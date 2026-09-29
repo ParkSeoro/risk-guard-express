@@ -21,9 +21,9 @@ function waitForIce(pc: RTCPeerConnection) {
 
 /** Open one recvonly video call. The browser already speaks WebRTC. */
 export async function attachVisionWhep(video: HTMLVideoElement, whepUrl: string): Promise<WhepSession> {
-  const pc = new RTCPeerConnection();
+  const pc = new globalThis.RTCPeerConnection();
   pc.addTransceiver("video", { direction: "recvonly" });
-  const stream = new MediaStream();
+  const stream = new globalThis.MediaStream();
   pc.ontrack = (event) => {
     stream.addTrack(event.track);
     video.srcObject = stream;
@@ -41,7 +41,7 @@ export async function attachVisionWhep(video: HTMLVideoElement, whepUrl: string)
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await waitForIce(pc);
-  const response = await fetch(whepUrl, {
+  const response = await globalThis.fetch(whepUrl, {
     method: "POST",
     headers: { "Content-Type": "application/sdp" },
     body: pc.localDescription?.sdp ?? "",
@@ -58,7 +58,6 @@ export async function attachVisionWhep(video: HTMLVideoElement, whepUrl: string)
       closed = true;
       pc.close();
       resolveClosed();
-      if (video.srcObject === stream) video.srcObject = null;
     },
   };
 }

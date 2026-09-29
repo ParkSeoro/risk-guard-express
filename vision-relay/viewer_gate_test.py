@@ -41,6 +41,36 @@ class ViewerGateTest(unittest.TestCase):
         viewer_gate.note_readers([{"name": path, "readers": [{"type": "hlsMuxer"}]}])
         self.assertTrue(viewer_gate.publish_allowed(path))
 
+    def test_kick_only_old_publishers_without_a_viewer(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        path = "live/0edfed08baf964c1"
+        now = 1_000_000.0
+        wall = datetime.now(timezone.utc)
+        idle = {
+            "id": "idle-1",
+            "path": "",
+            "state": "idle",
+            "created": wall.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        }
+        young = {
+            "id": "young-1",
+            "path": path,
+            "state": "publish",
+            "created": (wall - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        }
+        old = {
+            "id": "old-1",
+            "path": path,
+            "state": "publish",
+            "created": (wall - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        }
+        self.assertFalse(viewer_gate.should_kick_conn(idle, now=now))
+        self.assertFalse(viewer_gate.should_kick_conn(young, now=now, hold_s=45))
+        self.assertTrue(viewer_gate.should_kick_conn(old, now=now, hold_s=45))
+        viewer_gate.note_read(path, now=now)
+        self.assertFalse(viewer_gate.should_kick_conn(old, now=now, hold_s=45))
+
 
 if __name__ == "__main__":
     unittest.main()

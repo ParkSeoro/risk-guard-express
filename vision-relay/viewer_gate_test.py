@@ -33,6 +33,14 @@ class ViewerGateTest(unittest.TestCase):
     def test_empty_publish_is_refused(self) -> None:
         self.assertFalse(viewer_gate.decide("publish", ""))
 
+    def test_open_reader_keeps_the_upload(self) -> None:
+        path = "live/0edfed08baf964c1"
+        self.assertFalse(viewer_gate.publish_allowed(path))
+        viewer_gate.note_readers([{"name": path, "readers": []}])
+        self.assertFalse(viewer_gate.publish_allowed(path))
+        viewer_gate.note_readers([{"name": path, "readers": [{"type": "hlsMuxer"}]}])
+        self.assertTrue(viewer_gate.publish_allowed(path))
+
 
 if __name__ == "__main__":
     unittest.main()

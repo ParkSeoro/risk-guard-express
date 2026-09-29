@@ -13,6 +13,10 @@ hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
+# Low-latency parts change length whenever the picture moves, and iOS then stops.
+# One-second MPEG-TS segments keep playing through that.
+hlsVariant: mpegts
+hlsSegmentDuration: 1s
 rtmpAddress: :1935
 pathDefaults:
   source: publisher

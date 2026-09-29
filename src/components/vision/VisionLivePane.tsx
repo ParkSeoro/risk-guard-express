@@ -191,13 +191,15 @@ export default function VisionLivePane({
       setLive(true);
       disarm();
     };
+    const whepUrl = visionRelayWhepUrl(safeUrl);
+    const relay = Boolean(whepUrl && typeof globalThis.RTCPeerConnection !== "undefined");
     const onWaiting = () => {
-      if (!sawPicture) return;
+      if (relay || !sawPicture) return;
       arm(20_000);
     };
 
     const onVideoError = () => {
-      if (cancelled) return;
+      if (cancelled || relay) return;
       if (!sawPicture) {
         markOffline();
         return;
@@ -214,12 +216,10 @@ export default function VisionLivePane({
     video.addEventListener("timeupdate", onPlaying);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("stalled", onWaiting);
-    arm(connectMs);
+    if (!relay) arm(connectMs);
 
     const attach = async () => {
-      const whepUrl = visionRelayWhepUrl(safeUrl);
-      if (whepUrl && typeof RTCPeerConnection !== "undefined") {
-        let connectedOnce = false;
+      if (relay && whepUrl) {
         while (!cancelled) {
           try {
             const session = await attachVisionWhep(video, whepUrl);
@@ -228,20 +228,16 @@ export default function VisionLivePane({
               return;
             }
             whep = session;
-            connectedOnce = true;
             await playVideo(video);
             await session.closed;
+            if (!cancelled) setLive(false);
           } catch {
             if (cancelled) return;
-            if (!connectedOnce) {
-              markOffline();
-              return;
-            }
           }
           whep?.close();
           whep = null;
           if (cancelled) return;
-          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          await new Promise((resolve) => window.setTimeout(resolve, 400));
         }
         return;
       }
@@ -303,6 +299,7 @@ export default function VisionLivePane({
       video.removeEventListener("stalled", onWaiting);
       hls?.destroy();
       whep?.close();
+      video.srcObject = null;
       const rec = recorderRef.current;
       if (rec && rec.state === "recording") {
         rec.onstop = null;

@@ -147,17 +147,36 @@ describe("VisionLivePane", () => {
     expect(el!.querySelector('[data-testid="vision-pane-fullscreen-0"]')?.getAttribute("aria-label")).toBe("전체화면");
   });
 
-  it("says the camera is not publishing when playback fails", () => {
-    mount();
+  it("keeps pulling after playback fails and shows the picture when it arrives", async () => {
+    mount(undefined, 8_000);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
     const video = el!.querySelector("video") as HTMLVideoElement;
+    expect(video.getAttribute("src") || video.src).toContain("index.m3u8");
     act(() => {
       video.dispatchEvent(new Event("error"));
     });
-    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeTruthy();
-    expect(el!.textContent).toContain("송출이 없습니다");
-    click("vision-pane-retry-0");
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
-    expect(el!.textContent).toContain("연결 중");
+    expect(video.getAttribute("src") || video.src).toContain("index.m3u8");
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+    });
+    expect(el!.textContent).toContain("재생 중");
+  });
+
+  it("clears the offline notice when a picture arrives without a retry click", () => {
+    vi.useFakeTimers();
+    mount(undefined, 8_000);
+    act(() => {
+      vi.advanceTimersByTime(8_000);
+    });
+    expect(el!.textContent).toContain("송출이 없습니다");
+    act(() => {
+      (el!.querySelector("video") as HTMLVideoElement).dispatchEvent(new Event("playing"));
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
+    expect(el!.textContent).toContain("재생 중");
   });
 
   it("keeps a relay picture on a short drop instead of saying it is offline", async () => {

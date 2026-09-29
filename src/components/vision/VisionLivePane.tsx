@@ -35,7 +35,9 @@ type Props = {
 
 const ZOOMS = [1, 1.5, 2, 3] as const;
 const PAN_STEP = 0.35;
-const DEFAULT_CONNECT_MS = 8_000;
+/** Notice only. The pane keeps requesting until the 10-minute pause. */
+const DEFAULT_CONNECT_MS = 20_000;
+const RELOAD_MS = 400;
 
 type Pan = { x: number; y: number };
 
@@ -121,13 +123,13 @@ export default function VisionLivePane({
   }, [safeUrl]);
 
   useEffect(() => {
-    if (!safeUrl || paused || offline) return;
+    if (!safeUrl || paused) return;
     const timer = window.setTimeout(() => {
       setHeld(false);
       setPaused(true);
     }, idleMs);
     return () => window.clearTimeout(timer);
-  }, [safeUrl, paused, offline, idleMs, retry]);
+  }, [safeUrl, paused, idleMs, retry]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -160,7 +162,9 @@ export default function VisionLivePane({
     const video = videoRef.current;
     if (!video) return;
     setLive(false);
-    if (!safeUrl || paused || offline) {
+    // The offline notice does not stop the pull. Stopping here is what left
+    // "송출이 없습니다" on screen after the camera blinked.
+    if (!safeUrl || paused) {
       video.removeAttribute("src");
       try {
         video.load();
@@ -171,7 +175,9 @@ export default function VisionLivePane({
     }
 
     let cancelled = false;
-    let hls: { destroy: () => void; startLoad: () => void; recoverMediaError: () => void } | null = null;
+    let generation = 0;
+    let reloadTimer = 0;
+    let hls: { destroy: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
     const markOffline = () => {
@@ -182,32 +188,39 @@ export default function VisionLivePane({
       deadline = window.setTimeout(markOffline, ms);
     };
     const disarm = () => window.clearTimeout(deadline);
-    const onPlaying = () => {
+    const onFrame = () => {
       if (cancelled) return;
       sawPicture = true;
       setLive(true);
+      setOffline(false);
       disarm();
     };
-    const recover = () => {
-      const player = hls as { recoverMediaError?: () => void; startLoad?: () => void } | null;
-      if (player?.recoverMediaError) player.recoverMediaError();
-      else player?.startLoad?.();
+    const onLoaded = () => {
+      if (video.videoWidth <= 0) return;
+      onFrame();
+    };
+    const scheduleReload = () => {
+      if (cancelled || reloadTimer) return;
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = 0;
+        if (!cancelled) void attach();
+      }, RELOAD_MS);
     };
     const onVideoError = () => {
       if (cancelled) return;
-      if (sawPicture) {
-        recover();
-        return;
-      }
-      markOffline();
+      scheduleReload();
     };
 
     video.addEventListener("error", onVideoError);
-    video.addEventListener("playing", onPlaying);
-    video.addEventListener("timeupdate", onPlaying);
+    video.addEventListener("playing", onFrame);
+    video.addEventListener("timeupdate", onFrame);
+    video.addEventListener("loadeddata", onLoaded);
     arm(connectMs);
 
     const attach = async () => {
+      const token = ++generation;
+      hls?.destroy();
+      hls = null;
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = safeUrl;
         await playVideo(video);
@@ -215,7 +228,7 @@ export default function VisionLivePane({
       }
       if (/\.m3u8(\?|$)/i.test(safeUrl) || safeUrl.includes("application/vnd.apple.mpegurl")) {
         const { default: Hls } = await import("hls.js");
-        if (cancelled) return;
+        if (cancelled || token !== generation) return;
         if (Hls.isSupported()) {
           const player = new Hls({
             enableWorker: true,
@@ -225,25 +238,25 @@ export default function VisionLivePane({
             maxBufferLength: 4,
             maxMaxBufferLength: 8,
             backBufferLength: 8,
+            manifestLoadingMaxRetry: 1,
+            levelLoadingMaxRetry: 1,
+            fragLoadingMaxRetry: 2,
           });
-          let recoveries = 0;
-          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string }) => {
-            if (!data?.fatal || cancelled) return;
-            if (!sawPicture && recoveries >= 8) {
-              markOffline();
-              return;
-            }
-            if (!sawPicture) recoveries += 1;
-            if (data.type === "mediaError") player.recoverMediaError();
-            else player.startLoad();
+          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
+            if (!data?.fatal || cancelled || token !== generation) return;
+            // The relay drops the HLS session when the camera reconnects.
+            // recoverMediaError keeps that dead session. Open a new one.
+            scheduleReload();
           });
           player.loadSource(safeUrl);
           player.attachMedia(video);
           hls = player;
+          if (cancelled || token !== generation) return;
           await playVideo(video);
           return;
         }
       }
+      if (cancelled || token !== generation) return;
       video.src = safeUrl;
       await playVideo(video);
     };
@@ -251,10 +264,13 @@ export default function VisionLivePane({
     void attach();
     return () => {
       cancelled = true;
+      generation += 1;
       disarm();
+      window.clearTimeout(reloadTimer);
       video.removeEventListener("error", onVideoError);
-      video.removeEventListener("playing", onPlaying);
-      video.removeEventListener("timeupdate", onPlaying);
+      video.removeEventListener("playing", onFrame);
+      video.removeEventListener("timeupdate", onFrame);
+      video.removeEventListener("loadeddata", onLoaded);
       hls?.destroy();
       video.srcObject = null;
       const rec = recorderRef.current;
@@ -269,7 +285,7 @@ export default function VisionLivePane({
       }
       video.removeAttribute("src");
     };
-  }, [safeUrl, paused, offline, retry, connectMs]);
+  }, [safeUrl, paused, retry, connectMs]);
 
   const toggleFullscreen = async () => {
     const node = shellRef.current;

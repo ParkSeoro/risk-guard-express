@@ -1,4 +1,6 @@
 logLevel: info
+readTimeout: 60s
+writeTimeout: 60s
 rtmp: yes
 hls: yes
 hlsAddress: :8888
@@ -14,6 +16,7 @@ rtsp: no
 webrtc: no
 srt: no
 api: no
+moq: no
 pathDefaults:
   source: publisher
 # v1.21 does not open a path from pathDefaults alone.

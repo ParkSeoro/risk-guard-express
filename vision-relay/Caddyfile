@@ -2,12 +2,22 @@
 	encode gzip
 	header {
 		Access-Control-Allow-Origin *
-		Access-Control-Allow-Methods "GET, OPTIONS"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
 		Access-Control-Allow-Headers *
+		Access-Control-Expose-Headers Location
 	}
 	@options method OPTIONS
 	respond @options 204
-	# MediaMTX is on the host network. HLS is :8888.
+	# MediaMTX is on the host network. 8889 is the WebRTC handshake. 8888 is HLS.
+	@whep path_regexp whep ^/live/[0-9a-f]{16}/whep
+	handle @whep {
+		reverse_proxy 172.18.0.1:8889 {
+			header_up Host {http.request.host}
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+		}
+	}
 	reverse_proxy 172.18.0.1:8888 {
 		header_down -Access-Control-Allow-Origin
 		header_down -Access-Control-Allow-Methods

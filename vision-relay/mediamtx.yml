@@ -1,6 +1,15 @@
 logLevel: info
 readTimeout: 60s
 writeTimeout: 60s
+# The camera may upload only while a browser is reading that path.
+api: yes
+apiAddress: :9997
+authMethod: http
+authHTTPAddress: http://viewer-gate:9197/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
 rtmp: yes
 hls: yes
 hlsAddress: :8888
@@ -11,11 +20,9 @@ hlsAlwaysRemux: yes
 hlsVariant: mpegts
 hlsSegmentDuration: 1s
 rtmpAddress: :1935
-# Host network would otherwise open these on the public interface.
 rtsp: no
 webrtc: no
 srt: no
-api: no
 moq: no
 pathDefaults:
   source: publisher

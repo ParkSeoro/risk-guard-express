@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Let a camera publish only while a browser is reading that path.
+"""Allow a camera to publish only while a browser is reading that path.
 
 MediaMTX asks this process on every publish and every read. A read means
-someone has the picture open. A publish is refused 20 seconds after the last
-read, and the open upload is kicked so the LTE modem stops sending video.
+the picture is open. A publish is refused 20 seconds after the last read,
+and the open upload is kicked so the modem stops sending video.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.parse
@@ -16,8 +17,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOLD_S = 20
-API = "http://127.0.0.1:9997"
-LISTEN = ("127.0.0.1", 9197)
+API = os.environ.get("MTX_API", "http://mediamtx:9997").rstrip("/")
+LISTEN = ("0.0.0.0", 9197)
 
 _last_read: dict[str, float] = {}
 _lock = threading.Lock()

@@ -1,12 +1,9 @@
 logLevel: info
-readTimeout: 60s
-writeTimeout: 60s
-# Publish is allowed only while a browser is reading that camera.
-# viewer_gate.py records each read and refuses the upload 20s after the last one.
+# The camera may upload only while a browser is reading that path.
 api: yes
-apiAddress: 127.0.0.1:9997
+apiAddress: :9997
 authMethod: http
-authHTTPAddress: http://127.0.0.1:9197/auth
+authHTTPAddress: http://viewer-gate:9197/auth
 authHTTPExclude:
   - action: api
   - action: metrics
@@ -15,21 +12,8 @@ rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
-# Sydney relay: low-latency HLS (1s segments, 200ms parts), ready before a viewer joins.
-# G.711 is skipped. The browser receives H.264 only.
 hlsAlwaysRemux: yes
-hlsVariant: lowLatency
-hlsSegmentDuration: 1s
-hlsPartDuration: 200ms
 rtmpAddress: :1935
-# Kept so the site can still open a call until the low-latency player is deployed.
-webrtc: yes
-webrtcAddress: :8889
-webrtcEncryption: no
-webrtcAllowOrigins: ["*"]
-webrtcIPsFromInterfaces: no
-webrtcAdditionalHosts: ["49.247.192.161"]
-webrtcLocalUDPAddress: :8189
 pathDefaults:
   source: publisher
 # v1.21 does not open a path from pathDefaults alone.
@@ -37,6 +21,3 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
-    # The camera opens a replacement upload on its own. Refusing it makes the
-    # camera drop the line that is already showing. Accept the replacement.
-    overridePublisher: true

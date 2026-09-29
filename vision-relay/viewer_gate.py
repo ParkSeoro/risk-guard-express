@@ -2,8 +2,10 @@
 """Allow a camera to publish only while a browser is reading that path.
 
 MediaMTX asks this process on every publish and every read. A read means
-the picture is open. A publish is refused 45 seconds after the last read,
-and the open upload is kicked so the modem stops sending video.
+the picture is open. An HLS session that is still reading also counts, even
+when MediaMTX does not ask again for each segment. A publish is refused 45
+seconds after the last read, and the open upload is kicked so the modem
+stops sending video.
 """
 
 from __future__ import annotations
@@ -103,7 +105,29 @@ def _get_json(url: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def note_readers(items) -> None:
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("readers"):
+            note_read(str(item.get("name") or ""))
+
+
+def _note_open_viewers() -> None:
+    page = 0
+    while True:
+        data = _get_json(f"{API}/v3/paths/list?page={page}&itemsPerPage=100")
+        note_readers(data.get("items"))
+        page += 1
+        if page >= int(data.get("pageCount") or 1):
+            return
+
+
 def _kick_idle_once() -> None:
+    try:
+        _note_open_viewers()
+    except Exception as exc:
+        print(f"readers: {exc}", flush=True)
     page = 0
     while True:
         data = _get_json(f"{API}/v3/rtmpconns/list?page={page}&itemsPerPage=100")

@@ -179,12 +179,15 @@ export default function VisionLivePane({
     const markOffline = () => {
       if (!cancelled && !sawPicture) setOffline(true);
     };
+    let stallTimer = 0;
     const onFrame = () => {
       if (cancelled) return;
       sawPicture = true;
       setLive(true);
       setOffline(false);
       window.clearTimeout(deadline);
+      window.clearTimeout(stallTimer);
+      stallTimer = 0;
     };
     const scheduleReload = () => {
       if (cancelled || reloadTimer) return;
@@ -196,10 +199,19 @@ export default function VisionLivePane({
     const onVideoError = () => {
       if (!cancelled) scheduleReload();
     };
+    const onWaiting = () => {
+      if (cancelled || !sawPicture || stallTimer) return;
+      stallTimer = window.setTimeout(() => {
+        stallTimer = 0;
+        if (!cancelled) scheduleReload();
+      }, 1500);
+    };
 
     video.addEventListener("playing", onFrame);
     video.addEventListener("timeupdate", onFrame);
     video.addEventListener("error", onVideoError);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("stalled", onWaiting);
     deadline = window.setTimeout(markOffline, connectMs);
     // The camera connects only after this page asks. Keep asking until a frame arrives.
     const beat = window.setInterval(() => {
@@ -221,7 +233,7 @@ export default function VisionLivePane({
         if (Hls.isSupported()) {
           const player = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
+            lowLatencyMode: false,
             liveSyncDurationCount: 2,
             liveMaxLatencyDurationCount: 6,
             maxBufferLength: 4,
@@ -251,10 +263,13 @@ export default function VisionLivePane({
       generation += 1;
       window.clearTimeout(deadline);
       window.clearTimeout(reloadTimer);
+      window.clearTimeout(stallTimer);
       window.clearInterval(beat);
       video.removeEventListener("playing", onFrame);
       video.removeEventListener("timeupdate", onFrame);
       video.removeEventListener("error", onVideoError);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("stalled", onWaiting);
       hls?.destroy();
       video.srcObject = null;
       const rec = recorderRef.current;

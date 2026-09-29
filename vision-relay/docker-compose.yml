@@ -1,7 +1,17 @@
 services:
+  viewer-gate:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    command: ["python3", "-u", "/opt/viewer_gate.py"]
+    environment:
+      MTX_API: http://mediamtx:9997
+    volumes:
+      - ./viewer_gate.py:/opt/viewer_gate.py:ro
   mediamtx:
     image: bluenviron/mediamtx:1
     restart: unless-stopped
+    depends_on:
+      - viewer-gate
     ports:
       - "1935:1935"
       - "8888:8888"

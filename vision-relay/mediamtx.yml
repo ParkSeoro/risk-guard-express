@@ -10,7 +10,14 @@ hlsVariant: lowLatency
 hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
 rtmpAddress: :1935
-webrtc: no
+# Kept so the site can still open a call until the low-latency player is deployed.
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigins: ["*"]
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts: ["49.247.192.161"]
+webrtcLocalUDPAddress: :8189
 pathDefaults:
   source: publisher
 # v1.21 does not open a path from pathDefaults alone.

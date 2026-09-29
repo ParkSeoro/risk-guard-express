@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Allow a camera to publish only while a browser is reading that path.
+"""Keep a camera upload only while a browser is asking for that path.
 
-MediaMTX asks this process on every publish and every read. A read means
-the picture is open. An HLS session that is still reading also counts, even
-when MediaMTX does not ask again for each segment. A publish is refused 45
-seconds after the last read, and the open upload is kicked so the modem
-stops sending video.
+HLS reads always pass and refresh the hold. RTMP publish is not checked
+here (MediaMTX excludes it) because VIGI closes the line on a 403
+handshake. Idle RTMP is kicked after the hold.
 """
 
 from __future__ import annotations

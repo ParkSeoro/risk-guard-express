@@ -1,7 +1,8 @@
 logLevel: info
 readTimeout: 60s
 writeTimeout: 60s
-# The camera may upload only while a browser is reading that path.
+# HLS reads refresh the viewer hold. RTMP publish is not HTTP-authed:
+# VIGI closes the line if publish is 403'd during handshake.
 api: yes
 apiAddress: :9997
 authMethod: http
@@ -10,6 +11,7 @@ authHTTPExclude:
   - action: api
   - action: metrics
   - action: pprof
+  - action: publish
 rtmp: yes
 hls: yes
 hlsAddress: :8888

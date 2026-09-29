@@ -213,6 +213,10 @@ export default function VisionLivePane({
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("stalled", onWaiting);
     deadline = window.setTimeout(markOffline, connectMs);
+    // The camera connects only after this page asks. Keep asking until a frame arrives.
+    const beat = window.setInterval(() => {
+      if (!sawPicture) scheduleReload();
+    }, 2000);
 
     const attach = async () => {
       const token = ++generation;
@@ -260,6 +264,7 @@ export default function VisionLivePane({
       window.clearTimeout(deadline);
       window.clearTimeout(reloadTimer);
       window.clearTimeout(stallTimer);
+      window.clearInterval(beat);
       video.removeEventListener("playing", onFrame);
       video.removeEventListener("timeupdate", onFrame);
       video.removeEventListener("error", onVideoError);

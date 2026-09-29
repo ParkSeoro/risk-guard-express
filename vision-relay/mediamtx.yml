@@ -1,34 +1,14 @@
 logLevel: info
 readTimeout: 60s
 writeTimeout: 60s
-# Do not HTTP-auth RTMP. VIGI never finishes publish if that handshake
-# is 403'd, and even an exclude still left the camera in RTMP idle.
-# HLS readers keep the hold; viewer-gate kicks idle publishers.
-api: yes
-apiAddress: :9997
-authMethod: internal
-authInternalUsers:
-  - user: any
-    pass:
-    permissions:
-      - action: publish
-      - action: read
-      - action: playback
-      - action: api
 rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
-# Low-latency parts change length whenever the picture moves, and iOS then stops.
-# One-second MPEG-TS segments keep playing through that.
 hlsVariant: mpegts
 hlsSegmentDuration: 1s
 rtmpAddress: :1935
-rtsp: no
-webrtc: no
-srt: no
-moq: no
 pathDefaults:
   source: publisher
 # v1.21 does not open a path from pathDefaults alone.
@@ -36,5 +16,5 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
-    # A second RTMP connect must not kick the picture that is already on screen.
+    # A second RTMP line must not replace the one that is already on screen.
     overridePublisher: no

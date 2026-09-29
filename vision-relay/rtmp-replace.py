@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Accept a camera's next RTMP session, and publish browser HLS.
+"""Accept a camera's next RTMP session.
 
 A VIGI camera opens a new RTMP session every few seconds. The previous
-publisher is dropped so the new session is accepted. nginx-rtmp records
-that session, including its keyframe. hls-publish.py copies the picture
-into the public playlist.
+publisher is dropped so the new session is accepted. relay-one.sh copies
+that video, without audio, straight into the browser playlist.
 
 A second publish in the same few seconds is refused. Accepting it would
 cut off the session that just started.
@@ -27,6 +26,13 @@ CONTROL = "http://127.0.0.1:8088/control/drop/publisher"
 LOG = Path("/var/log/rtmp-replace.log")
 PUBLISH_PID = Path("/var/run/vision-hls-publish.pid")
 KEY_RE = re.compile(r"^[0-9a-f]{16}$")
+SEED = (
+    "d3b63068716a4269",
+    "a67c1652889b974e",
+    "0edfed08baf964c1",
+    "23f744a86693fb55",
+    "e476e5c98aeb5b45",
+)
 LAST_SESSION: dict[str, float] = {}
 LOCK = threading.Lock()
 
@@ -62,22 +68,28 @@ def stop_pid(path: Path) -> None:
         pass
 
 
-def start_publisher() -> None:
-    stop_pid(PUBLISH_PID)
-    time.sleep(0.4)
-    proc = subprocess.Popen(
-        ["python3", str(ROOT / "hls-publish.py")],
+def ensure(name: str) -> None:
+    if not KEY_RE.fullmatch(name):
+        return
+    subprocess.Popen(
+        [str(ROOT / "relay-one.sh"), name],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    try:
-        PUBLISH_PID.parent.mkdir(parents=True, exist_ok=True)
-        PUBLISH_PID.write_text(str(proc.pid))
-    except Exception:
-        pass
-    note(f"publisher {proc.pid}")
+
+
+def wipe_old_playlists() -> None:
+    root = Path("/var/hls")
+    if not root.exists():
+        return
+    for child in root.iterdir():
+        if not child.is_dir() or not KEY_RE.fullmatch(child.name):
+            continue
+        for path in child.glob("*"):
+            if path.is_file():
+                path.unlink(missing_ok=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -88,6 +100,7 @@ class Handler(BaseHTTPRequestHandler):
         name = (fields.get("name") or [""])[0].strip().lower()
         app = (fields.get("app") or ["live"])[0]
         if name and app == "live" and KEY_RE.fullmatch(name):
+            ensure(name)
             if not claim(name):
                 self.send_response(409)
                 self.end_headers()
@@ -108,5 +121,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    start_publisher()
+    stop_pid(PUBLISH_PID)
+    wipe_old_playlists()
+    for key in SEED:
+        ensure(key)
     ThreadingHTTPServer(("127.0.0.1", 8099), Handler).serve_forever()

@@ -7,8 +7,17 @@ hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
 hlsVariant: mpegts
+# One second is the target. The camera keyframe interval decides the real length.
+# G.711 audio is left out of HLS. The browser receives H.264 only.
 hlsSegmentDuration: 1s
 rtmpAddress: :1935
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigins: ["*"]
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts: ["49.247.192.161"]
+webrtcLocalUDPAddress: :8189
 pathDefaults:
   source: publisher
 # v1.21 does not open a path from pathDefaults alone.

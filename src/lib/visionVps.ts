@@ -62,3 +62,16 @@ export function visionVpsStreamKey(cameraId: string | null | undefined): string 
 export function visionVpsPlaybackUrl(hlsBase: string, streamKey: string): string {
   return `${hlsBase.replace(/\/+$/, "")}/live/${streamKey}/index.m3u8`;
 }
+
+/** Relay playlists are read as a continuous WebRTC call. Other HLS URLs stay on HLS. */
+export function visionRelayWhepUrl(playbackUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(playbackUrl);
+  } catch {
+    return null;
+  }
+  const match = url.pathname.match(/^\/live\/([0-9a-f]{16})\/index\.m3u8$/i);
+  if (!match) return null;
+  return `${url.origin}/live/${match[1].toLowerCase()}/whep`;
+}

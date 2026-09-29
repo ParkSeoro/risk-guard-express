@@ -171,6 +171,19 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("송출이 없습니다");
   });
 
+  it("keeps a live picture when the element errors after playback started", () => {
+    mount();
+    const video = el!.querySelector("video") as HTMLVideoElement;
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+    });
+    act(() => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
+    expect(el!.textContent).toContain("재생 중");
+  });
+
   it("keeps a live picture through a short buffer gap", () => {
     vi.useFakeTimers();
     mount(undefined, 8_000);

@@ -20,6 +20,8 @@ import {
 import { toast } from "sonner";
 import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
 import { captureVisionFrame } from "@/lib/visionFrame";
+import { visionRelayWhepUrl } from "@/lib/visionVps";
+import { attachVisionWhep } from "@/lib/visionWhep";
 
 type Props = {
   index: number;
@@ -172,6 +174,7 @@ export default function VisionLivePane({
 
     let cancelled = false;
     let hls: { destroy: () => void; startLoad: () => void; recoverMediaError: () => void } | null = null;
+    let whep: { close: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
     const markOffline = () => {
@@ -193,7 +196,20 @@ export default function VisionLivePane({
       arm(20_000);
     };
 
-    video.addEventListener("error", markOffline);
+    const onVideoError = () => {
+      if (cancelled) return;
+      if (!sawPicture) {
+        markOffline();
+        return;
+      }
+      // A live picture already started. A timestamp jump is not "no camera".
+      arm(20_000);
+      const player = hls as { recoverMediaError?: () => void; startLoad?: () => void } | null;
+      if (player?.recoverMediaError) player.recoverMediaError();
+      else player?.startLoad?.();
+    };
+
+    video.addEventListener("error", onVideoError);
     video.addEventListener("playing", onPlaying);
     video.addEventListener("timeupdate", onPlaying);
     video.addEventListener("waiting", onWaiting);
@@ -201,6 +217,34 @@ export default function VisionLivePane({
     arm(connectMs);
 
     const attach = async () => {
+      const whepUrl = visionRelayWhepUrl(safeUrl);
+      if (whepUrl && typeof RTCPeerConnection !== "undefined") {
+        let connectedOnce = false;
+        while (!cancelled) {
+          try {
+            const session = await attachVisionWhep(video, whepUrl);
+            if (cancelled) {
+              session.close();
+              return;
+            }
+            whep = session;
+            connectedOnce = true;
+            await playVideo(video);
+            await session.closed;
+          } catch {
+            if (cancelled) return;
+            if (!connectedOnce) {
+              markOffline();
+              return;
+            }
+          }
+          whep?.close();
+          whep = null;
+          if (cancelled) return;
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+        return;
+      }
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = safeUrl;
         await playVideo(video);
@@ -225,11 +269,15 @@ export default function VisionLivePane({
           let recoveries = 0;
           player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string }) => {
             if (!data?.fatal || cancelled) return;
-            if (recoveries >= 8) {
-              markOffline();
-              return;
+            if (!sawPicture) {
+              if (recoveries >= 8) {
+                markOffline();
+                return;
+              }
+              recoveries += 1;
+            } else {
+              arm(20_000);
             }
-            recoveries += 1;
             if (data.type === "mediaError") player.recoverMediaError();
             else player.startLoad();
           });
@@ -248,12 +296,13 @@ export default function VisionLivePane({
     return () => {
       cancelled = true;
       disarm();
-      video.removeEventListener("error", markOffline);
+      video.removeEventListener("error", onVideoError);
       video.removeEventListener("playing", onPlaying);
       video.removeEventListener("timeupdate", onPlaying);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("stalled", onWaiting);
       hls?.destroy();
+      whep?.close();
       const rec = recorderRef.current;
       if (rec && rec.state === "recording") {
         rec.onstop = null;

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, Eye, FileText, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import { fetchCreatorCompanyLabelMap, preferredCompanyIdsByRunAuthors, resolveAssessmentRunListCompanyLabel, buildProjectCompanyLabelMap } from "@/lib/companyDocScope";
+import { fetchCreatorCompanyLabelMap, resolveAssessmentRunListCompanyLabel, resolveAssessmentRunTargetCompanyLabel, buildProjectCompanyLabelMap } from "@/lib/companyDocScope";
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
 
 /**
@@ -53,11 +53,7 @@ export default function MobileRiskAssessment() {
       const creatorIds = scoped.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
       const [{ data: items, error: iErr }, creatorMap, companies] = await Promise.all([
         supabase.from("risk_items").select("run_id, risk_grade, is_deleted, is_excluded").in("run_id", ids).eq("is_deleted", false),
-        fetchCreatorCompanyLabelMap(
-          projectId,
-          creatorIds,
-          preferredCompanyIdsByRunAuthors(scoped),
-        ).catch(() => ({})),
+        fetchCreatorCompanyLabelMap(projectId, creatorIds).catch(() => ({})),
         fetchProjectCompanies(projectId).catch(() => []),
       ]);
       if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
@@ -86,14 +82,16 @@ export default function MobileRiskAssessment() {
     /* eslint-disable-next-line */
   }, [projectId, role, companyId]);
 
-  const runCompanyLabel = (r: any) => resolveAssessmentRunListCompanyLabel(r, {
+  const companyLabelOpts = {
     companyLabelById,
     userCompanyLabelById: creatorCompanyMap,
-  });
+  };
+  const runCompanyLabel = (r: any) => resolveAssessmentRunListCompanyLabel(r, companyLabelOpts);
+  const runTargetLabel = (r: any) => resolveAssessmentRunTargetCompanyLabel(r, companyLabelOpts);
 
   const filtered = rows.filter((r) => {
     if (!q) return true;
-    const company = runCompanyLabel(r);
+    const company = `${runCompanyLabel(r)} ${runTargetLabel(r)}`;
     return r.period_label?.includes(q) || r.notes?.includes(q) || company.includes(q);
   });
 
@@ -144,6 +142,7 @@ export default function MobileRiskAssessment() {
         {filtered.map((r) => {
           const c = counts[r.id] || { high: 0, medium: 0, low: 0, total: 0 };
           const creatorCompany = runCompanyLabel(r);
+          const targetCompany = runTargetLabel(r);
           return (
             <Card
               key={r.id}
@@ -162,6 +161,7 @@ export default function MobileRiskAssessment() {
                   <Building2 className="h-3 w-3 shrink-0" />
                   <span className="truncate" title="작성 회사">
                     {creatorCompany || "작성사 미확인"}
+                    {targetCompany ? ` · 대상 ${targetCompany}` : ""}
                   </span>
                 </div>
                 <div className="flex gap-3 text-xs">

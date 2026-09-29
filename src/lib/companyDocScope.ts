@@ -440,32 +440,12 @@ export function buildProjectCompanyLabelMap(
   return out;
 }
 
-export function preferredCompanyIdsByRunAuthors<T extends {
-  created_by?: string | null;
-  author_user_id?: string | null;
-  target_company_ids?: string[] | null;
-}>(runs: T[]): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const run of runs || []) {
-    const targets = (run.target_company_ids || []).map(String).map((s) => s.trim()).filter(Boolean);
-    if (!targets.length) continue;
-    for (const uid of [run.author_user_id, run.created_by]) {
-      if (!uid) continue;
-      const cur = out[uid] || [];
-      for (const id of targets) {
-        if (!cur.includes(id)) cur.push(id);
-      }
-      out[uid] = cur;
-    }
-  }
-  return out;
-}
-
 /**
- * 위평 리스트 카드 회사명.
- * 1) 회차 대상 업체(target_company_ids) — 하이테크 협력사 페르소나
- * 2) 작성 주체(author_user_id) 소속
- * 3) 입력자(created_by) 소속
+ * 위평 리스트 카드의 작성 회사.
+ * 전자결재 헤더와 같이 작성 주체 소속만 쓴다.
+ * target_company_ids 는 다른 회사(대상 협력사)이므로 작성 회사로 쓰지 않는다.
+ * 1) 작성 주체(author_user_id) 소속
+ * 2) 입력자(created_by) 소속
  */
 export function resolveAssessmentRunListCompanyLabel(
   run: {
@@ -479,8 +459,6 @@ export function resolveAssessmentRunListCompanyLabel(
     userCompanyLabelById?: Record<string, string> | null;
   },
 ): string {
-  const fromTargets = resolveAssessmentRunCompanyLabels(run, opts?.companyLabelById);
-  if (fromTargets.length > 0) return formatCompanyLabelsShort(fromTargets, 2);
   const users = opts?.userCompanyLabelById;
   const author = run.author_user_id ? users?.[run.author_user_id] : '';
   if (author) return author;
@@ -489,8 +467,34 @@ export function resolveAssessmentRunListCompanyLabel(
 }
 
 /**
+ * 목록에 따로 보여줄 대상 협력사.
+ * 작성 회사와 같은 문자열이면 빈 문자열 — 같은 업체를 두 줄로 반복하지 않는다.
+ */
+export function resolveAssessmentRunTargetCompanyLabel(
+  run: {
+    created_by?: string | null;
+    author_user_id?: string | null;
+    target_company_ids?: string[] | null;
+    target_contractors?: string[] | null;
+  },
+  opts?: {
+    companyLabelById?: Record<string, string> | null;
+    userCompanyLabelById?: Record<string, string> | null;
+  },
+): string {
+  const targets = formatCompanyLabelsShort(
+    resolveAssessmentRunCompanyLabels(run, opts?.companyLabelById),
+    2,
+  );
+  if (!targets) return '';
+  const author = resolveAssessmentRunListCompanyLabel(run, opts);
+  if (author && targets === author) return '';
+  return targets;
+}
+
+/**
  * assessment_runs.created_by / author_user_id → 프로젝트 멤버십 소속 업체 라벨.
- * 듀얼 페르소나면 회차 target_company_ids 와 맞는 멤버십을 우선.
+ * 위험성평가 목록은 preferredCompanyIdsByUser 를 넘기지 않는다. 대상 협력사는 작성 회사와 다른 회사다.
  * 구분은 companies.type 이 아니라 이 프로젝트 role_in_project.
  */
 export async function fetchCreatorCompanyLabelMap(

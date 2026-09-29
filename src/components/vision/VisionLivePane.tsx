@@ -20,6 +20,8 @@ import {
 import { toast } from "sonner";
 import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
 import { captureVisionFrame } from "@/lib/visionFrame";
+import { visionRelayWhepUrl } from "@/lib/visionVps";
+import { attachVisionWhep } from "@/lib/visionWhep";
 
 type Props = {
   index: number;
@@ -172,6 +174,7 @@ export default function VisionLivePane({
 
     let cancelled = false;
     let hls: { destroy: () => void; startLoad: () => void; recoverMediaError: () => void } | null = null;
+    let whep: { close: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
     const markOffline = () => {
@@ -214,6 +217,34 @@ export default function VisionLivePane({
     arm(connectMs);
 
     const attach = async () => {
+      const whepUrl = visionRelayWhepUrl(safeUrl);
+      if (whepUrl && typeof RTCPeerConnection !== "undefined") {
+        let connectedOnce = false;
+        while (!cancelled) {
+          try {
+            const session = await attachVisionWhep(video, whepUrl);
+            if (cancelled) {
+              session.close();
+              return;
+            }
+            whep = session;
+            connectedOnce = true;
+            await playVideo(video);
+            await session.closed;
+          } catch {
+            if (cancelled) return;
+            if (!connectedOnce) {
+              markOffline();
+              return;
+            }
+          }
+          whep?.close();
+          whep = null;
+          if (cancelled) return;
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+        return;
+      }
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = safeUrl;
         await playVideo(video);
@@ -271,6 +302,7 @@ export default function VisionLivePane({
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("stalled", onWaiting);
       hls?.destroy();
+      whep?.close();
       const rec = recorderRef.current;
       if (rec && rec.state === "recording") {
         rec.onstop = null;

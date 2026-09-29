@@ -1,34 +1,10 @@
 services:
-  srs:
-    image: ossrs/srs:5
+  mediamtx:
+    build: .
+    image: safenex-mediamtx:1.21.0
     restart: unless-stopped
     ports:
       - "1935:1935"
-    volumes:
-      - ./srs.conf:/usr/local/srs/conf/docker.conf:ro
-  hls-copy:
-    image: python:3.12-alpine
-    restart: unless-stopped
-    depends_on:
-      - srs
-    command: ["sh", "-c", "apk add -q --no-cache ffmpeg && python3 /opt/hls_copy.py"]
-    volumes:
-      - ./hls_copy.py:/opt/hls_copy.py:ro
-      - hls_data:/var/hls
-  viewer-gate:
-    image: python:3.12-alpine
-    restart: unless-stopped
-    command: ["python3", "-u", "/opt/viewer_gate.py"]
-    environment:
-      MTX_API: http://mediamtx:9997
-    volumes:
-      - ./viewer_gate.py:/opt/viewer_gate.py:ro
-  mediamtx:
-    image: bluenviron/mediamtx:1
-    restart: unless-stopped
-    depends_on:
-      - viewer-gate
-    ports:
       - "8888:8888"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
@@ -36,8 +12,7 @@ services:
     image: caddy:2
     restart: unless-stopped
     depends_on:
-      - srs
-      - hls-copy
+      - mediamtx
     ports:
       - "80:80"
       - "443:443"
@@ -47,9 +22,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-      - hls_data:/var/hls:ro
 
 volumes:
   caddy_data:
   caddy_config:
-  hls_data:

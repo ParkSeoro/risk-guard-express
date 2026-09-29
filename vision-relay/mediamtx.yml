@@ -7,7 +7,10 @@ hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
 hlsVariant: mpegts
-hlsSegmentDuration: 1s
+# The camera's timestamps move slowly. One second never closes a file.
+hlsSegmentDuration: 200ms
+# Caddy sends this so Windows does not get stuck on the cookie check.
+hlsCDNSecret: safenexhls
 rtmpAddress: :1935
 pathDefaults:
   source: publisher
@@ -16,5 +19,3 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
-    # A second RTMP line must not replace the one that is already on screen.
-    overridePublisher: no

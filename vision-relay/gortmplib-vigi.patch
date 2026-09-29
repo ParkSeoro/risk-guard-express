@@ -1,0 +1,39 @@
+--- a/reader.go
++++ b/reader.go
+@@ -508,11 +508,16 @@
+ 			}
+ 		}
+ 
+-		if (curTime - startTime) >= analyzePeriod {
++		// Publish as soon as the H264 config is known. Waiting for 2s of
++		// timestamps never finishes: the camera resets the clock first.
++		if videoTracks[0] != nil || (curTime-startTime) >= analyzePeriod {
+ 			break
+ 		}
+ 	}
+ 
++	// Leave sound out. The camera still sends G.711; Read() ignores it.
++	clear(audioTracks)
++
+ 	if len(videoTracks) == 0 && len(audioTracks) == 0 {
+ 		return nil, nil, fmt.Errorf("no tracks found")
+ 	}
+@@ -834,7 +839,8 @@
+ 
+ 	case *message.Audio, *message.AudioExCodedFrames:
+ 		if r.audioTracks[0] == nil {
+-			return fmt.Errorf("received a packet for audio track 0, but track is not set up")
++			// G.711 is left out of the picture. Do not drop the video line.
++			return nil
+ 		}
+ 
+ 		return r.onAudioData[0](msg)
+@@ -852,7 +858,7 @@
+ 	case *message.AudioExMultitrack:
+ 		if wmsg, ok := msg.Wrapped.(*message.AudioExCodedFrames); ok {
+ 			if r.audioTracks[msg.TrackID] == nil {
+-				return fmt.Errorf("received a packet for audio track %d, but track is not set up", msg.TrackID)
++				return nil
+ 			}
+ 
+ 			return r.onAudioData[msg.TrackID](wmsg)

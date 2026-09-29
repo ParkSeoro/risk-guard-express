@@ -1,6 +1,16 @@
 logLevel: info
 readTimeout: 60s
 writeTimeout: 60s
+# Publish is allowed only while a browser is reading that camera.
+# viewer_gate.py records each read and refuses the upload 20s after the last one.
+api: yes
+apiAddress: 127.0.0.1:9997
+authMethod: http
+authHTTPAddress: http://127.0.0.1:9197/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
 rtmp: yes
 hls: yes
 hlsAddress: :8888

@@ -20,6 +20,27 @@ docker rm -f vision-rtmp >/dev/null 2>&1 || true
 
 bash "$(dirname "$0")/rtmp-mss.sh"
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3가 없습니다. 화면을 볼 때만 업로드를 받으려면 python3가 필요합니다."
+  exit 1
+fi
+# The gate has to come back on reboot. MediaMTX refuses every upload when it is down.
+install -m 644 "$(dirname "$0")/viewer-gate.service" /etc/systemd/system/safenex-viewer-gate.service
+systemctl daemon-reload
+systemctl enable --now safenex-viewer-gate
+systemctl restart safenex-viewer-gate
+python3 - <<'PY'
+import socket, time
+for _ in range(25):
+    try:
+        socket.create_connection(("127.0.0.1", 9197), 0.2).close()
+        break
+    except OSError:
+        time.sleep(0.2)
+else:
+    raise SystemExit("viewer gate did not listen on 127.0.0.1:9197")
+PY
+
 docker compose up -d
 
 cat <<EOF

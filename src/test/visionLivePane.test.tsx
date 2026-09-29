@@ -147,7 +147,7 @@ describe("VisionLivePane", () => {
     expect(el!.querySelector('[data-testid="vision-pane-fullscreen-0"]')?.getAttribute("aria-label")).toBe("전체화면");
   });
 
-  it("keeps pulling after playback fails and shows the picture when it arrives", async () => {
+  it("keeps the address after a playback error and shows the picture when it arrives", async () => {
     mount(undefined, 8_000);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));

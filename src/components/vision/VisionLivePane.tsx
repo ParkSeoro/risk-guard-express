@@ -171,57 +171,25 @@ export default function VisionLivePane({
     }
 
     let cancelled = false;
-    let generation = 0;
-    let reloadTimer = 0;
     let hls: { destroy: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
     const markOffline = () => {
       if (!cancelled && !sawPicture) setOffline(true);
     };
-    let stallTimer = 0;
     const onFrame = () => {
       if (cancelled) return;
       sawPicture = true;
       setLive(true);
       setOffline(false);
       window.clearTimeout(deadline);
-      window.clearTimeout(stallTimer);
-      stallTimer = 0;
-    };
-    const scheduleReload = () => {
-      if (cancelled || reloadTimer) return;
-      reloadTimer = window.setTimeout(() => {
-        reloadTimer = 0;
-        if (!cancelled) void attach();
-      }, 1000);
-    };
-    const onVideoError = () => {
-      if (!cancelled) scheduleReload();
-    };
-    const onWaiting = () => {
-      if (cancelled || !sawPicture || stallTimer) return;
-      stallTimer = window.setTimeout(() => {
-        stallTimer = 0;
-        if (!cancelled) scheduleReload();
-      }, 1500);
     };
 
     video.addEventListener("playing", onFrame);
     video.addEventListener("timeupdate", onFrame);
-    video.addEventListener("error", onVideoError);
-    video.addEventListener("waiting", onWaiting);
-    video.addEventListener("stalled", onWaiting);
     deadline = window.setTimeout(markOffline, connectMs);
-    // The camera connects only after this page asks. Keep asking until a frame arrives.
-    const beat = window.setInterval(() => {
-      if (!sawPicture) scheduleReload();
-    }, 2000);
 
     const attach = async () => {
-      const token = ++generation;
-      hls?.destroy();
-      hls = null;
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = safeUrl;
         await playVideo(video);
@@ -229,30 +197,25 @@ export default function VisionLivePane({
       }
       if (/\.m3u8(\?|$)/i.test(safeUrl) || safeUrl.includes("application/vnd.apple.mpegurl")) {
         const { default: Hls } = await import("hls.js");
-        if (cancelled || token !== generation) return;
+        if (cancelled) return;
         if (Hls.isSupported()) {
+          // Same buffer Lightsail used. hls.js handles its own retries.
           const player = new Hls({
             enableWorker: true,
-            lowLatencyMode: false,
+            lowLatencyMode: true,
             liveSyncDurationCount: 2,
             liveMaxLatencyDurationCount: 6,
             maxBufferLength: 4,
             maxMaxBufferLength: 8,
             backBufferLength: 8,
           });
-          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
-            if (!data?.fatal || cancelled || token !== generation) return;
-            scheduleReload();
-          });
           player.loadSource(safeUrl);
           player.attachMedia(video);
           hls = player;
-          if (cancelled || token !== generation) return;
           await playVideo(video);
           return;
         }
       }
-      if (cancelled || token !== generation) return;
       video.src = safeUrl;
       await playVideo(video);
     };
@@ -260,16 +223,9 @@ export default function VisionLivePane({
     void attach();
     return () => {
       cancelled = true;
-      generation += 1;
       window.clearTimeout(deadline);
-      window.clearTimeout(reloadTimer);
-      window.clearTimeout(stallTimer);
-      window.clearInterval(beat);
       video.removeEventListener("playing", onFrame);
       video.removeEventListener("timeupdate", onFrame);
-      video.removeEventListener("error", onVideoError);
-      video.removeEventListener("waiting", onWaiting);
-      video.removeEventListener("stalled", onWaiting);
       hls?.destroy();
       video.srcObject = null;
       const rec = recorderRef.current;

@@ -1,22 +1,9 @@
 logLevel: info
-# The camera may upload only while a browser is reading that path.
-api: yes
-apiAddress: :9997
-authMethod: http
-authHTTPAddress: http://viewer-gate:9197/auth
-authHTTPExclude:
-  - action: api
-  - action: metrics
-  - action: pprof
 rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
-# Low-latency parts change length whenever the picture moves, and iOS then stops.
-# One-second MPEG-TS segments keep playing through that.
-hlsVariant: mpegts
-hlsSegmentDuration: 1s
 rtmpAddress: :1935
 pathDefaults:
   source: publisher

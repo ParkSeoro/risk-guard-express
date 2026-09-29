@@ -24,16 +24,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "python3가 없습니다. 화면을 볼 때만 업로드를 받으려면 python3가 필요합니다."
   exit 1
 fi
-GATE_PID_FILE=/var/run/safenex-viewer-gate.pid
-if [[ -f "$GATE_PID_FILE" ]]; then
-  old="$(cat "$GATE_PID_FILE" 2>/dev/null || true)"
-  if [[ -n "${old}" ]]; then
-    kill "$old" 2>/dev/null || true
-  fi
-fi
-mkdir -p /var/log
-python3 -u "$(dirname "$0")/viewer_gate.py" >>/var/log/safenex-viewer-gate.log 2>&1 &
-echo $! >"$GATE_PID_FILE"
+# The gate has to come back on reboot. MediaMTX refuses every upload when it is down.
+install -m 644 "$(dirname "$0")/viewer-gate.service" /etc/systemd/system/safenex-viewer-gate.service
+systemctl daemon-reload
+systemctl enable --now safenex-viewer-gate
+systemctl restart safenex-viewer-gate
 python3 - <<'PY'
 import socket, time
 for _ in range(25):

@@ -2,16 +2,14 @@ services:
   mediamtx:
     image: bluenviron/mediamtx:1
     restart: unless-stopped
-    ports:
-      - "1935:1935"
-      - "8888:8888"
+    network_mode: host
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
   caddy:
     image: caddy:2
     restart: unless-stopped
-    depends_on:
-      - mediamtx
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "80:80"
       - "443:443"

@@ -9,6 +9,11 @@ hlsAlwaysRemux: yes
 hlsVariant: mpegts
 hlsSegmentDuration: 1s
 rtmpAddress: :1935
+# Host network would otherwise open these on the public interface.
+rtsp: no
+webrtc: no
+srt: no
+api: no
 pathDefaults:
   source: publisher
 # v1.21 does not open a path from pathDefaults alone.
@@ -16,3 +21,5 @@ pathDefaults:
 paths:
   "~^live/[0-9a-f]{16}$":
     source: publisher
+    # A second RTMP connect must not kick the picture that is already on screen.
+    overridePublisher: no

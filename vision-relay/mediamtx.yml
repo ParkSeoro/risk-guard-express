@@ -1,20 +1,9 @@
 logLevel: info
-readTimeout: 60s
-writeTimeout: 60s
 rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
-hlsVariant: mpegts
-hlsSegmentDuration: 1s
 rtmpAddress: :1935
 pathDefaults:
   source: publisher
-# v1.21 does not open a path from pathDefaults alone.
-# Keys are 8 random bytes (16 hex chars) under live/.
-paths:
-  "~^live/[0-9a-f]{16}$":
-    source: publisher
-    # A second RTMP line must not replace the one that is already on screen.
-    overridePublisher: no

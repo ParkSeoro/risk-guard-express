@@ -1,7 +1,6 @@
 services:
   mediamtx:
-    build: .
-    image: safenex-mediamtx:1.21.0
+    image: bluenviron/mediamtx:1
     restart: unless-stopped
     ports:
       - "1935:1935"

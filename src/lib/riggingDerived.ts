@@ -4,6 +4,7 @@
  */
 import {
   calculateFullRigging,
+  positiveWireManufacturerSafeLoad,
   type RiggingInput,
   type RiggingResult,
   type SlingMaterialType,
@@ -27,6 +28,7 @@ export function buildRiggingInputFromRow(rigging: RiggingPlanRow): RiggingInput 
     slingAngleDeg: n(rigging.sling_angle_deg) || 60,
     wireTerminalMethod: String(rigging.wire_terminal_method || "탐블(24mm 이하)"),
     wireSafetyCoefficient: n(rigging.wire_safety_coefficient) || 5,
+    wireManufacturerSafeLoad: positiveWireManufacturerSafeLoad(rigging.wire_manufacturer_safe_load),
     slingBeltWidthMm: n(rigging.sling_belt_width_mm),
     slingBeltRatedLoad: n(rigging.sling_belt_rated_load),
     roundSlingColor: String(rigging.sling_belt_color || ""),

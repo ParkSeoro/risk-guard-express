@@ -5102,6 +5102,7 @@ export type Database = {
           wire_diameter_inch: number | null
           wire_diameter_mm: number | null
           wire_lift_count: number | null
+          wire_manufacturer_safe_load: number | null
           wire_safe_load: number | null
           wire_safety_coefficient: number | null
           wire_terminal_method: string | null
@@ -5178,6 +5179,7 @@ export type Database = {
           wire_diameter_inch?: number | null
           wire_diameter_mm?: number | null
           wire_lift_count?: number | null
+          wire_manufacturer_safe_load?: number | null
           wire_safe_load?: number | null
           wire_safety_coefficient?: number | null
           wire_terminal_method?: string | null
@@ -5254,6 +5256,7 @@ export type Database = {
           wire_diameter_inch?: number | null
           wire_diameter_mm?: number | null
           wire_lift_count?: number | null
+          wire_manufacturer_safe_load?: number | null
           wire_safe_load?: number | null
           wire_safety_coefficient?: number | null
           wire_terminal_method?: string | null

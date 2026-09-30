@@ -298,6 +298,14 @@ export function getWireBreakingLoad(diameterMm: number): number {
   return 0;
 }
 
+/** null·빈 값·0 이하는 제조사 하중이 없는 것으로 본다. */
+export function positiveWireManufacturerSafeLoad(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
 export function getShackleSafeLoad(diameterMm: number): number {
   return interpolate(SHACKLE_SAFE_LOAD, diameterMm);
 }
@@ -340,6 +348,8 @@ export interface RiggingInput {
   slingAngleDeg: number;
   wireTerminalMethod: string;
   wireSafetyCoefficient: number;
+  /** 제조사 안전하중(ton). 비어 있거나 0 이하면 지름 표(절단하중/안전계수)를 쓴다. */
+  wireManufacturerSafeLoad?: number | null;
 
   // 슬링벨트 (폭 기준)
   slingBeltWidthMm: number;
@@ -398,7 +408,10 @@ export interface RiggingResult {
   shackleOk: boolean;
 
   wireBreakingLoad: number;
+  /** 지름 표 안전하중. 제조사 값을 적어도 이 칸은 표 계산 그대로다. */
   wireSafeLoad: number;
+  /** 와이어로프일 때만. 줄걸이 판정에 쓴 안전하중의 출처. */
+  wireSafeLoadSource: "manufacturer" | "catalog" | null;
 
   overallOk: boolean;
   messages: string[];
@@ -468,13 +481,22 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
   let slingSafeLoad = 0;
   let wireBreakingLoad = 0;
   let wireSafeLoad = 0;
+  let wireSafeLoadSource: RiggingResult["wireSafeLoadSource"] = null;
 
   switch (input.slingMaterialType) {
     case 'wire_rope': {
       wireBreakingLoad = getWireBreakingLoad(input.wireDiameterMm);
       wireSafeLoad = wireBreakingLoad / (input.wireSafetyCoefficient || 5);
-      slingRatedLoad = wireSafeLoad;
-      slingSafeLoad = wireSafeLoad;
+      const manufacturer = positiveWireManufacturerSafeLoad(input.wireManufacturerSafeLoad);
+      if (manufacturer != null) {
+        slingRatedLoad = manufacturer;
+        slingSafeLoad = manufacturer;
+        wireSafeLoadSource = "manufacturer";
+      } else {
+        slingRatedLoad = wireSafeLoad;
+        slingSafeLoad = wireSafeLoad;
+        wireSafeLoadSource = "catalog";
+      }
       break;
     }
     case 'sling_belt': {
@@ -534,7 +556,7 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
     slingLoadTon,
     slingRatedLoad, slingSafeLoad, slingOk,
     shackleSafeLoad, shackleOk,
-    wireBreakingLoad, wireSafeLoad,
+    wireBreakingLoad, wireSafeLoad, wireSafeLoadSource,
     overallOk, messages, recommendations,
   };
 }

@@ -4,14 +4,37 @@
  */
 import {
   calculateFullRigging,
+  parseSlingSecondary,
   positiveWireManufacturerSafeLoad,
+  slingHitchOption,
   type RiggingInput,
   type RiggingResult,
+  type SlingCombination,
   type SlingMaterialType,
+  type SlingSecondaryInput,
 } from "@/lib/riggingCalculator";
 import type { RiggingPlanRow } from "@/lib/riggingPlanPersist";
 
 const n = (v: unknown, fallback = 0) => Number(v) || fallback;
+
+const EMPTY_SECONDARY: SlingSecondaryInput = {
+  slingMaterialType: "wire_rope",
+  slingHitch: null,
+  wireDiameterMm: 0,
+  wireSafetyCoefficient: 5,
+  wireManufacturerSafeLoad: null,
+  slingBeltWidthMm: 0,
+  slingBeltRatedLoad: 0,
+  roundSlingColor: "",
+  roundSlingRatedLoad: 0,
+  chainDiameterMm: 0,
+};
+
+function secondaryInput(rigging: RiggingPlanRow): SlingSecondaryInput | null {
+  const combination = rigging.sling_combination;
+  if (combination !== "series" && combination !== "parallel") return null;
+  return parseSlingSecondary(rigging.sling_secondary) ?? EMPTY_SECONDARY;
+}
 
 export function buildRiggingInputFromRow(rigging: RiggingPlanRow): RiggingInput {
   const materialType = (rigging.sling_material_type || "wire_rope") as SlingMaterialType;
@@ -35,6 +58,13 @@ export function buildRiggingInputFromRow(rigging: RiggingPlanRow): RiggingInput 
     roundSlingRatedLoad: n(rigging.round_sling_rated_load),
     chainDiameterMm: n(rigging.chain_diameter_mm),
     chainLegCount: n(rigging.chain_leg_count) || 4,
+    slingHitch: slingHitchOption(String(rigging.sling_hitch || ""))?.value ?? null,
+    slingCombination: (rigging.sling_combination === "series" || rigging.sling_combination === "parallel"
+      ? rigging.sling_combination
+      : null) as SlingCombination | null,
+    slingDeviceSafeLoad: positiveWireManufacturerSafeLoad(rigging.sling_device_safe_load),
+    slingAssemblySafeLoad: positiveWireManufacturerSafeLoad(rigging.sling_assembly_safe_load),
+    slingSecondary: secondaryInput(rigging),
     shackleInch: String(rigging.shackle_inch || ""),
     shackleQty: n(rigging.shackle_qty) || 2,
     loadWeight: n(rigging.load_weight),

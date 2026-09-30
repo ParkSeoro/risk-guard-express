@@ -29,6 +29,15 @@ export function buildRiggingPlanPayload(
     if (!Number.isFinite(x) || x <= 0) return null;
     return x;
   };
+  const hitchValue = (v: unknown): string | null => {
+    const hitches = ["straight", "choke", "basket", "2-leg", "3-leg", "4-leg"];
+    const text = String(v || "");
+    return hitches.includes(text) ? text : null;
+  };
+  const combinationValue = (v: unknown): "series" | "parallel" | null =>
+    v === "series" || v === "parallel" ? v : null;
+  const secondaryValue = (v: unknown): Record<string, unknown> | null =>
+    v && typeof v === "object" ? (v as Record<string, unknown>) : null;
 
   return {
     work_plan_id: planId,
@@ -93,6 +102,11 @@ export function buildRiggingPlanPayload(
     safety_factor_cargo: n(rigging.safety_factor_cargo, 5),
     input_method: s(rigging.input_method, "자동계산"),
     sling_material_type: s(rigging.sling_material_type, "wire_rope"),
+    sling_hitch: hitchValue(rigging.sling_hitch),
+    sling_combination: combinationValue(rigging.sling_combination),
+    sling_device_safe_load: nullablePositive(rigging.sling_device_safe_load),
+    sling_assembly_safe_load: nullablePositive(rigging.sling_assembly_safe_load),
+    sling_secondary: combinationValue(rigging.sling_combination) ? secondaryValue(rigging.sling_secondary) : null,
     sling_belt_color: s(rigging.sling_belt_color),
     sling_belt_width_mm: n(rigging.sling_belt_width_mm),
     sling_belt_rated_load: n(rigging.sling_belt_rated_load),

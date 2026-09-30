@@ -4,6 +4,7 @@ import {
   RIGGING_PRINT_LABELS,
   renderRiggingPrintHtml,
   wireSafeLoadPrintNote,
+  slingHitchPrintNote,
 } from "../../supabase/functions/_shared/riggingPrintHtml";
 import {
   classifyRiggingLoad,
@@ -96,6 +97,12 @@ describe("리깅 부하율 기준", () => {
       sling_material_type: "round_sling",
       wire_manufacturer_safe_load: 40,
     })).toBe("");
+    expect(slingHitchPrintNote({ sling_hitch: "choke" })).toBe("choke (올가미)");
+    expect(slingHitchPrintNote({
+      sling_hitch: "straight",
+      sling_combination: "parallel",
+      sling_assembly_safe_load: 12,
+    })).toBe("straight (수직 1줄) · 디바이스 나란히 · 조합 사용하중 12t");
 
     const html = renderRiggingPrintHtml(
       {

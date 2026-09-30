@@ -149,6 +149,90 @@ describe("와이어로프 절단하중", () => {
     expect(buildRiggingPlanPayload("plan-1", {}).wire_manufacturer_safe_load).toBeNull();
   });
 
+  it("straight는 줄 수와 상관없이 1줄로 장력을 나눈다", () => {
+    const counted = calculateFullRigging(wireInput({ slingCount: 2 }));
+    const straight = calculateFullRigging(wireInput({ slingCount: 4, slingHitch: "straight" }));
+    expect(straight.tensionPerLeg).toBeCloseTo(counted.tensionPerLeg * 2, 5);
+    expect(straight.slingHitchLabel).toBe("straight (수직 1줄)");
+    expect(straight.slingSafeLoad).toBeCloseTo(counted.slingSafeLoad, 5);
+  });
+
+  it("basket은 줄 수를 한 번 더 나누지 않고 두 가닥으로만 나눈다", () => {
+    const basket = calculateFullRigging(wireInput({ slingCount: 4, slingHitch: "basket" }));
+    const twoLeg = calculateFullRigging(wireInput({ slingCount: 4, slingHitch: "2-leg" }));
+    expect(basket.tensionPerLeg).toBeCloseTo(twoLeg.tensionPerLeg, 5);
+  });
+
+  it("series는 두 줄걸이와 체결구 중 작은 값이다", () => {
+    const result = calculateFullRigging(wireInput({
+      slingHitch: "straight",
+      loadWeight: 1,
+      hookWeight: 0.2,
+      slingCombination: "series",
+      slingDeviceSafeLoad: 8,
+      slingSecondary: {
+        slingMaterialType: "sling_belt",
+        slingHitch: "straight",
+        wireDiameterMm: 0,
+        wireSafetyCoefficient: 5,
+        slingBeltWidthMm: 50,
+        slingBeltRatedLoad: 2,
+        roundSlingColor: "",
+        roundSlingRatedLoad: 0,
+        chainDiameterMm: 0,
+      },
+    }));
+    expect(result.secondarySlingSafeLoad).toBe(2);
+    expect(result.slingSafeLoad).toBe(2);
+    expect(result.slingJudgment).toBe("series_min");
+    expect(result.slingOk).toBe(true);
+  });
+
+  it("이종 재료를 나란히 쓰면 조합 사용하중 없이 적합이 아니다", () => {
+    const blocked = calculateFullRigging(wireInput({
+      slingHitch: "straight",
+      slingCombination: "parallel",
+      slingDeviceSafeLoad: 30,
+      slingSecondary: {
+        slingMaterialType: "round_sling",
+        slingHitch: "straight",
+        wireDiameterMm: 0,
+        wireSafetyCoefficient: 5,
+        slingBeltWidthMm: 0,
+        slingBeltRatedLoad: 0,
+        roundSlingColor: "purple",
+        roundSlingRatedLoad: 1,
+        chainDiameterMm: 0,
+      },
+    }));
+    expect(blocked.slingOk).toBe(false);
+    expect(blocked.slingJudgment).toBe("mixed_blocked");
+    expect(blocked.messages.some((m) => m.includes("더하지 않습니다"))).toBe(true);
+
+    const rated = calculateFullRigging(wireInput({
+      slingHitch: "straight",
+      loadWeight: 1,
+      hookWeight: 0.2,
+      slingCombination: "parallel",
+      slingDeviceSafeLoad: 30,
+      slingAssemblySafeLoad: 20,
+      slingSecondary: {
+        slingMaterialType: "round_sling",
+        slingHitch: "straight",
+        wireDiameterMm: 0,
+        wireSafetyCoefficient: 5,
+        slingBeltWidthMm: 0,
+        slingBeltRatedLoad: 0,
+        roundSlingColor: "purple",
+        roundSlingRatedLoad: 1,
+        chainDiameterMm: 0,
+      },
+    }));
+    expect(rated.slingSafeLoad).toBe(20);
+    expect(rated.slingJudgment).toBe("assembly");
+    expect(rated.slingOk).toBe(true);
+  });
+
   it("0·음수 지름은 0이다", () => {
     expect(getWireBreakingLoad(0)).toBe(0);
     expect(getWireBreakingLoad(-12)).toBe(0);

@@ -38,6 +38,31 @@ export function wireSafeLoadPrintNote(rigging: Record<string, unknown> | null | 
   return "";
 }
 
+const SLING_HITCH_PRINT_LABELS: Record<string, string> = {
+  straight: "straight (수직 1줄)",
+  choke: "choke (올가미)",
+  basket: "basket (바구니)",
+  "2-leg": "2-leg (2줄)",
+  "3-leg": "3-leg (3줄)",
+  "4-leg": "4-leg (4줄)",
+};
+
+/** 인쇄에 적는 줄걸이 방법. 없으면 빈 문자열. */
+export function slingHitchPrintNote(rigging: Record<string, unknown> | null | undefined): string {
+  if (!rigging) return "";
+  const hitch = SLING_HITCH_PRINT_LABELS[String(rigging.sling_hitch || "")] || "";
+  const combination = String(rigging.sling_combination || "");
+  const parts: string[] = [];
+  if (hitch) parts.push(hitch);
+  if (combination === "series") parts.push("디바이스 한 줄 연결");
+  if (combination === "parallel") parts.push("디바이스 나란히");
+  const assembly = Number(rigging.sling_assembly_safe_load);
+  if (combination === "parallel" && Number.isFinite(assembly) && assembly > 0) {
+    parts.push(`조합 사용하중 ${assembly}t`);
+  }
+  return parts.join(" · ");
+}
+
 export function renderRiggingPrintHtml(
   rigging: Record<string, unknown> | null | undefined,
   escapeHtml: (s: string) => string,
@@ -53,6 +78,7 @@ export function renderRiggingPrintHtml(
   const raw = (key: string) => (rigging[key] == null ? "" : String(rigging[key]));
   const commander = String(rigging.lifting_method || "").trim();
   const wireNote = wireSafeLoadPrintNote(rigging);
+  const hitchNote = slingHitchPrintNote(rigging);
 
   return `
         <div class="section-header">리깅플랜 (양중계획)</div>
@@ -64,6 +90,7 @@ export function renderRiggingPrintHtml(
           <tr><td class="label">슬링 각도</td><td>${raw("sling_angle_deg")}°</td><td class="label">슬링 본수</td><td>${raw("sling_count")}</td></tr>
           <tr><td class="label">와이어 직경</td><td>${raw("wire_diameter_mm")}mm</td><td class="label">샤클</td><td>${escapeHtml(String(rigging.shackle_inch || rigging.shackle_diameter_mm || ""))}</td></tr>
           ${wireNote ? `<tr><td class="label">와이어 안전하중</td><td colspan="3">${escapeHtml(wireNote)}</td></tr>` : ""}
+          ${hitchNote ? `<tr><td class="label">줄걸이 방법</td><td colspan="3">${escapeHtml(hitchNote)}</td></tr>` : ""}
           <tr><td class="label">지반 지지력</td><td>${raw("ground_bearing_capacity")} t/㎡</td><td class="label">${RIGGING_PRINT_LABELS.outrigger_setup}</td><td>${text("outrigger_setup")}</td></tr>
           <tr><td class="label">풍속 등급</td><td>${text("wind_speed_grade")}</td><td class="label">풍속 계수</td><td>${raw("wind_speed_factor")}</td></tr>
         </tbody></table>

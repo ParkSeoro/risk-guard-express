@@ -233,8 +233,8 @@ export default function VisionLivePane({
         if (Hls.isSupported()) {
           const player = new Hls({
             enableWorker: true,
-            lowLatencyMode: false,
-            liveSyncDurationCount: 1,
+            lowLatencyMode: true,
+            liveSyncDurationCount: 2,
             liveMaxLatencyDurationCount: 5,
             maxBufferLength: 4,
             maxMaxBufferLength: 8,

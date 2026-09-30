@@ -206,39 +206,15 @@ const WorkPlans = () => {
 
   const handleClone = async (plan: any) => {
     if (!user) return;
-    const { data, error } = await supabase.from('work_plans').insert({
-      project_id: plan.project_id,
-      company_id: plan.company_id,
-      work_type: plan.work_type,
-      title: `${plan.title} (v${(plan.version || 1) + 1})`,
-      sections: plan.sections,
-      attachments: [],
-      created_by: user.id,
-      author_user_id: plan.author_user_id || null,
-      parent_id: plan.id,
-      version: (plan.version || 1) + 1,
-      status: '작성중',
-    }).select().single();
-
-    if (error) {
-      toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
-    } else if (data) {
-      try {
-        const { cloneAttachmentFiles } = await import('@/lib/workPlanAttachments');
-        await cloneAttachmentFiles({
-          fromPlanId: plan.id,
-          toPlanId: data.id,
-          projectId: plan.project_id,
-          companyId: plan.company_id,
-          workType: plan.work_type,
-        });
-      } catch (e) {
-        console.warn('clone attachments failed', e);
-      }
-      toast({ title: '새 회차가 생성되었습니다.' });
-      await auditLog('clone', 'work_plan', data.id, plan.project_id, { from_id: plan.id, version: data.version });
-      navigate(`/work-plan/${data.id}`);
+    const { cloneWorkPlanDocument } = await import('@/lib/cloneWorkPlan');
+    const result = await cloneWorkPlanDocument({ fromPlanId: plan.id, createdBy: user.id });
+    if (!result.ok) {
+      toast({ title: '복사 실패', description: result.error, variant: 'destructive' });
+      return;
     }
+    toast({ title: '새 회차가 생성되었습니다.' });
+    await auditLog('clone', 'work_plan', result.id, plan.project_id, { from_id: plan.id, version: result.version });
+    navigate(`/work-plan/${result.id}`);
   };
 
   const { softDelete } = useSoftDelete();

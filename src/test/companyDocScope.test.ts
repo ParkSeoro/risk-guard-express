@@ -12,6 +12,7 @@ import {
   resolveAssessmentDocumentCompanies,
   resolveAssessmentRunListCompanyLabel,
   resolveAssessmentRunTargetCompanyLabel,
+  contractorsDesignatedForAuthorCompany,
   seesProjectWideCompanies,
   buildProjectCompanyLabelMap,
 } from '@/lib/companyDocScope';
@@ -273,14 +274,44 @@ describe('formatCreatorCompanyLabel', () => {
   });
 });
 
-describe('resolveAssessmentRunListCompanyLabel', () => {
-  const companies = buildProjectCompanyLabelMap([
-    { id: 'gc-jinnam', name: '진남토건(주)', type: 'gc' },
-    { id: 'partner-jinnam', name: '진남토건(주)(협력사)', type: 'contractor' },
-    { id: '우리', name: '우리플랜트', type: 'contractor' },
-  ]);
+describe('contractorsDesignatedForAuthorCompany', () => {
+  const companies = [
+    { id: 'client', type: 'client', parent_company_id: null },
+    { id: 'gc-jinnam', type: 'gc', parent_company_id: 'client' },
+    { id: 'gc-hitech', type: 'gc', parent_company_id: 'client' },
+    { id: 'partner-jinnam', type: 'contractor', parent_company_id: 'gc-hitech' },
+    { id: '우리', type: 'contractor', parent_company_id: 'gc-hitech' },
+  ];
 
-  it('keeps the author GC when the target is a different contractor company', () => {
+  it('returns only contractors designated under the author GC', () => {
+    expect(contractorsDesignatedForAuthorCompany(companies, 'gc-jinnam').map((c) => c.id)).toEqual([]);
+    expect(contractorsDesignatedForAuthorCompany(companies, 'gc-hitech').map((c) => c.id)).toEqual([
+      'partner-jinnam',
+      '우리',
+    ]);
+  });
+
+  it('returns the author company itself when the author is a contractor', () => {
+    expect(contractorsDesignatedForAuthorCompany(companies, 'partner-jinnam').map((c) => c.id)).toEqual([
+      'partner-jinnam',
+    ]);
+  });
+
+  it('returns nothing when the author company is unknown', () => {
+    expect(contractorsDesignatedForAuthorCompany(companies, null)).toEqual([]);
+  });
+});
+
+describe('resolveAssessmentRunListCompanyLabel', () => {
+  const companyRows = [
+    { id: 'gc-jinnam', name: '진남토건(주)', type: 'gc', parent_company_id: 'client' },
+    { id: 'gc-hitech', name: '하이테크엔지니어링', type: 'gc', parent_company_id: 'client' },
+    { id: 'partner-jinnam', name: '진남토건(주)(협력사)', type: 'contractor', parent_company_id: 'gc-hitech' },
+    { id: '우리', name: '우리플랜트', type: 'contractor', parent_company_id: 'gc-hitech' },
+  ];
+  const companies = buildProjectCompanyLabelMap(companyRows);
+
+  it('keeps the author GC and hides a contractor designated under a different company', () => {
     const run = {
       created_by: 'u-gc',
       author_user_id: 'u-gc',
@@ -289,8 +320,26 @@ describe('resolveAssessmentRunListCompanyLabel', () => {
     const opts = {
       companyLabelById: companies,
       userCompanyLabelById: { 'u-gc': '진남토건(주)(시공사)' },
+      companies: companyRows,
+      authorCompanyIdByUser: { 'u-gc': 'gc-jinnam' },
     };
     expect(resolveAssessmentRunListCompanyLabel(run, opts)).toBe('진남토건(주)(시공사)');
+    expect(resolveAssessmentRunTargetCompanyLabel(run, opts)).toBe('');
+  });
+
+  it('shows a contractor designated under the author GC', () => {
+    const run = {
+      created_by: 'u-hitech',
+      author_user_id: 'u-hitech',
+      target_company_ids: ['partner-jinnam'],
+    };
+    const opts = {
+      companyLabelById: companies,
+      userCompanyLabelById: { 'u-hitech': '하이테크엔지니어링(시공사)' },
+      companies: companyRows,
+      authorCompanyIdByUser: { 'u-hitech': 'gc-hitech' },
+    };
+    expect(resolveAssessmentRunListCompanyLabel(run, opts)).toBe('하이테크엔지니어링(시공사)');
     expect(resolveAssessmentRunTargetCompanyLabel(run, opts)).toBe('진남토건(주)(협력사)');
   });
 
@@ -303,6 +352,8 @@ describe('resolveAssessmentRunListCompanyLabel', () => {
     const opts = {
       companyLabelById: companies,
       userCompanyLabelById: { 'u-partner': '진남토건(주)(협력사)' },
+      companies: companyRows,
+      authorCompanyIdByUser: { 'u-partner': 'partner-jinnam' },
     };
     expect(resolveAssessmentRunListCompanyLabel(run, opts)).toBe('진남토건(주)(협력사)');
     expect(resolveAssessmentRunTargetCompanyLabel(run, opts)).toBe('');

@@ -29,6 +29,7 @@ import {
   readPreferredCompanyId,
   resolveAssessmentRunListCompanyLabel,
   resolveAssessmentRunTargetCompanyLabel,
+  contractorsDesignatedForAuthorCompany,
   buildProjectCompanyLabelMap,
 } from '@/lib/companyDocScope';
 import {
@@ -97,8 +98,9 @@ const AssessmentRuns = () => {
   const [showDeleted, setShowDeleted] = useState(false);
 
   // Companies for contractor selection
-  const [contractors, setContractors] = useState<{ id: string; name: string; type: string }[]>([]);
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
+  /** user_id → 이 프로젝트 소속 회사. 대상 협력사는 이 회사 아래로 지정된 협력사만. */
+  const [memberCompanyByUser, setMemberCompanyByUser] = useState<Record<string, string>>({});
   /** created_by / author → 소속 업체 라벨 (대상 업체 없을 때 fallback) */
   const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
 
@@ -116,15 +118,39 @@ const AssessmentRuns = () => {
 
   const fetchSeqRef = useRef(0);
 
-  // Fetch contractors for selected project (contractor + vendor types)
-  const [allProjectCompanies, setAllProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
+  // 회사관리에서 협력사로 지정된 업체. 대상 목록은 작성 회사 아래만 쓴다.
+  const [allProjectCompanies, setAllProjectCompanies] = useState<{ id: string; name: string; type: string; parent_company_id: string | null }[]>([]);
   const fetchContractors = async () => {
-    if (!selectedProject) { setContractors([]); setAllProjectCompanies([]); return; }
+    if (!selectedProject) { setAllProjectCompanies([]); setMemberCompanyByUser({}); return; }
     const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
-    const allData = await fetchProjectCompanies(selectedProject);
-    setAllProjectCompanies(allData.map(c => ({ id: c.id, name: c.name, type: c.type || '' })));
-    const filtered = allData.filter(c => c.type === 'contractor' || c.type === 'vendor');
-    setContractors(filtered.map(c => ({ id: c.id, name: c.name, type: c.type || '' })));
+    const [allData, memberRes] = await Promise.all([
+      fetchProjectCompanies(selectedProject),
+      supabase
+        .from('project_members')
+        .select('user_id, company_id, role_new')
+        .eq('project_id', selectedProject),
+    ]);
+    setAllProjectCompanies(allData.map(c => ({
+      id: c.id,
+      name: c.name,
+      type: c.type || '',
+      parent_company_id: c.parent_company_id || null,
+    })));
+    const byUser = new Map<string, { user_id?: string; company_id?: string | null; role_new?: string | null }[]>();
+    for (const row of memberRes.data || []) {
+      const uid = String(row.user_id || '');
+      if (!uid) continue;
+      const list = byUser.get(uid) || [];
+      list.push(row);
+      byUser.set(uid, list);
+    }
+    const companyOf: Record<string, string> = {};
+    for (const [uid, rows] of byUser) {
+      const picked = pickProjectMemberRow(rows);
+      const cid = String(picked?.company_id || '').trim();
+      if (cid) companyOf[uid] = cid;
+    }
+    setMemberCompanyByUser(companyOf);
     const map: Record<string, string> = {};
     allData.forEach(c => { map[c.id] = c.name; });
     setCompanyNameMap(prev => ({ ...prev, ...map }));
@@ -325,7 +351,13 @@ const AssessmentRuns = () => {
   const companyLabelOpts = {
     companyLabelById,
     userCompanyLabelById: creatorCompanyMap,
+    companies: allProjectCompanies,
+    authorCompanyIdByUser: memberCompanyByUser,
   };
+  const selectableContractors = contractorsDesignatedForAuthorCompany(
+    allProjectCompanies,
+    memberCompanyByUser[form.author_user_id] || null,
+  );
   const runCompanyLabel = (run: any) => resolveAssessmentRunListCompanyLabel(run, companyLabelOpts);
   const runTargetLabel = (run: any) => resolveAssessmentRunTargetCompanyLabel(run, companyLabelOpts);
 
@@ -563,7 +595,19 @@ const AssessmentRuns = () => {
             <AssessmentAuthorPicker
               projectId={selectedProject}
               value={form.author_user_id}
-              onChange={(id) => setForm((p) => ({ ...p, author_user_id: id }))}
+              onChange={(id) => setForm((p) => {
+                const allowed = new Set(
+                  contractorsDesignatedForAuthorCompany(
+                    allProjectCompanies,
+                    memberCompanyByUser[id] || null,
+                  ).map((c) => c.id),
+                );
+                return {
+                  ...p,
+                  author_user_id: id,
+                  target_company_ids: p.target_company_ids.filter((cid) => allowed.has(cid)),
+                };
+              })}
               required
               error={fieldErrors.author_user_id}
             />
@@ -597,28 +641,28 @@ const AssessmentRuns = () => {
               </div>
             </details>
             <div className="space-y-1">
-              <Label className="text-xs">대상 협력사 (등록 업체에서 선택)</Label>
-              {contractors.length > 0 ? (
+              <Label className="text-xs">대상 협력사 (회사관리에서 지정된 협력사만)</Label>
+              {selectableContractors.length > 0 ? (
                 <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
-                  {contractors.map(c => (
+                  {selectableContractors.map(c => (
                     <label key={c.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 p-1 rounded">
                       <Checkbox
-                        checked={form.target_company_ids.includes(c.id)}
-                        onCheckedChange={() => toggleContractor(c.id)}
+                        checked={form.target_company_ids.includes(String(c.id))}
+                        onCheckedChange={() => toggleContractor(String(c.id))}
                       />
-                      {c.name}
-                      <Badge variant="outline" className="text-[9px] ml-auto">{c.type === 'vendor' ? '공급사' : '협력사'}</Badge>
+                      {companyNameMap[String(c.id)] || c.id}
+                      <Badge variant="outline" className="text-[9px] ml-auto">협력사</Badge>
                     </label>
                   ))}
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground py-2 space-y-1">
-                  {allProjectCompanies.length === 0 ? (
+                  {!form.author_user_id ? (
+                    <p>작성 주체를 먼저 선택하세요.</p>
+                  ) : allProjectCompanies.length === 0 ? (
                     <p>등록된 업체가 없습니다. 프로젝트 설정 &gt; 업체관리에서 먼저 등록하세요.</p>
-                  ) : allProjectCompanies.every(c => c.type === 'gc' || c.type === 'client') ? (
-                    <p>협력사(구분=협력사/공급사)로 등록된 업체가 없습니다. 업체관리에서 구분을 확인하세요.</p>
                   ) : (
-                    <p>조건에 맞는 협력사가 없습니다. 업체관리에서 업체 상태를 확인하세요.</p>
+                    <p>회사관리에서 이 작성 회사 아래로 지정된 협력사가 없습니다.</p>
                   )}
                 </div>
               )}

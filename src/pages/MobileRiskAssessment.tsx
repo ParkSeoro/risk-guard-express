@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, Eye, FileText, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import { fetchCreatorCompanyLabelMap, resolveAssessmentRunListCompanyLabel, resolveAssessmentRunTargetCompanyLabel, buildProjectCompanyLabelMap } from "@/lib/companyDocScope";
+import { fetchCreatorCompanyLabelMap, fetchAuthorCompanyIdByUser, resolveAssessmentRunListCompanyLabel, resolveAssessmentRunTargetCompanyLabel, buildProjectCompanyLabelMap } from "@/lib/companyDocScope";
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
 
 /**
@@ -24,6 +24,8 @@ export default function MobileRiskAssessment() {
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
   const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
   const [companyLabelById, setCompanyLabelById] = useState<Record<string, string>>({});
+  const [projectCompanies, setProjectCompanies] = useState<{ id: string; type: string | null; parent_company_id: string | null }[]>([]);
+  const [authorCompanyIdByUser, setAuthorCompanyIdByUser] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -51,14 +53,21 @@ export default function MobileRiskAssessment() {
     if (scoped.length) {
       const ids = scoped.map((r: any) => r.id);
       const creatorIds = scoped.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
-      const [{ data: items, error: iErr }, creatorMap, companies] = await Promise.all([
+      const [{ data: items, error: iErr }, creatorMap, companies, authorIds] = await Promise.all([
         supabase.from("risk_items").select("run_id, risk_grade, is_deleted, is_excluded").in("run_id", ids).eq("is_deleted", false),
         fetchCreatorCompanyLabelMap(projectId, creatorIds).catch(() => ({})),
         fetchProjectCompanies(projectId).catch(() => []),
+        fetchAuthorCompanyIdByUser(projectId, creatorIds).catch(() => ({})),
       ]);
       if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
       setCreatorCompanyMap(creatorMap);
       setCompanyLabelById(buildProjectCompanyLabelMap(companies));
+      setProjectCompanies(companies.map((c) => ({
+        id: c.id,
+        type: c.type,
+        parent_company_id: c.parent_company_id || null,
+      })));
+      setAuthorCompanyIdByUser(authorIds);
       const c: Record<string, any> = {};
       ids.forEach((id) => (c[id] = { high: 0, medium: 0, low: 0, total: 0 }));
       (items || []).forEach((it: any) => {
@@ -74,6 +83,8 @@ export default function MobileRiskAssessment() {
       setCounts({});
       setCreatorCompanyMap({});
       setCompanyLabelById({});
+      setProjectCompanies([]);
+      setAuthorCompanyIdByUser({});
     }
     setLoading(false);
   };
@@ -85,6 +96,8 @@ export default function MobileRiskAssessment() {
   const companyLabelOpts = {
     companyLabelById,
     userCompanyLabelById: creatorCompanyMap,
+    companies: projectCompanies,
+    authorCompanyIdByUser,
   };
   const runCompanyLabel = (r: any) => resolveAssessmentRunListCompanyLabel(r, companyLabelOpts);
   const runTargetLabel = (r: any) => resolveAssessmentRunTargetCompanyLabel(r, companyLabelOpts);

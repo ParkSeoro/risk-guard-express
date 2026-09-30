@@ -466,9 +466,47 @@ export function resolveAssessmentRunListCompanyLabel(
   return creator || '';
 }
 
+export type ProjectCompanyRoleRow = {
+  id?: string | null;
+  type?: string | null;
+  parent_company_id?: string | null;
+};
+
+/** 회사관리(project_companies.role_in_project)에서 협력사로 지정된 업체만. */
+export function designatedContractorCompanies<T extends ProjectCompanyRoleRow>(companies: T[]): T[] {
+  return (companies || []).filter(
+    (c) => normalizeCompanyType(c.type) === 'contractor' && String(c.id || '').trim(),
+  );
+}
+
+/**
+ * 작성 회사에 대해 회사관리에서 지정된 협력사.
+ * 시공사 → 그 시공사 아래 협력사만. 협력사 → 자기 회사만. 발주처 → 현장의 협력사 전체.
+ * 작성 회사를 모르면 빈 목록.
+ */
+export function contractorsDesignatedForAuthorCompany<T extends ProjectCompanyRoleRow>(
+  companies: T[],
+  authorCompanyId?: string | null,
+): T[] {
+  const contractors = designatedContractorCompanies(companies);
+  const authorId = String(authorCompanyId || '').trim();
+  if (!authorId) return [];
+  const author = (companies || []).find((c) => String(c.id || '') === authorId);
+  const authorType = normalizeCompanyType(author?.type);
+  if (authorType === 'gc') {
+    return contractors.filter((c) => String(c.parent_company_id || '') === authorId);
+  }
+  if (authorType === 'contractor') {
+    return contractors.filter((c) => String(c.id || '') === authorId);
+  }
+  if (authorType === 'client') return contractors;
+  return [];
+}
+
 /**
  * 목록에 따로 보여줄 대상 협력사.
- * 작성 회사와 같은 문자열이면 빈 문자열 — 같은 업체를 두 줄로 반복하지 않는다.
+ * 회사관리에서 작성 회사 아래로 지정된 협력사가 아니면 보여 주지 않는다.
+ * 작성 회사와 같은 문자열이면 빈 문자열.
  */
 export function resolveAssessmentRunTargetCompanyLabel(
   run: {
@@ -480,12 +518,29 @@ export function resolveAssessmentRunTargetCompanyLabel(
   opts?: {
     companyLabelById?: Record<string, string> | null;
     userCompanyLabelById?: Record<string, string> | null;
+    companies?: ProjectCompanyRoleRow[] | null;
+    authorCompanyIdByUser?: Record<string, string> | null;
   },
 ): string {
-  const targets = formatCompanyLabelsShort(
-    resolveAssessmentRunCompanyLabels(run, opts?.companyLabelById),
-    2,
-  );
+  let names: string[];
+  if (opts?.companies) {
+    const authorCompanyId =
+      (run.author_user_id && opts.authorCompanyIdByUser?.[run.author_user_id])
+      || (run.created_by && opts.authorCompanyIdByUser?.[run.created_by])
+      || null;
+    const allowed = new Set(
+      contractorsDesignatedForAuthorCompany(opts.companies, authorCompanyId).map((c) => String(c.id)),
+    );
+    const ids = (run.target_company_ids || [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => id && allowed.has(id));
+    names = ids
+      .map((id) => opts.companyLabelById?.[id])
+      .filter((name): name is string => !!name);
+  } else {
+    names = resolveAssessmentRunCompanyLabels(run, opts?.companyLabelById);
+  }
+  const targets = formatCompanyLabelsShort(names, 2);
   if (!targets) return '';
   const author = resolveAssessmentRunListCompanyLabel(run, opts);
   if (author && targets === author) return '';

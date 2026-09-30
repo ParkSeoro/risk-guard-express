@@ -57,7 +57,13 @@ class ViewerGateTest(unittest.TestCase):
             "id": "young-1",
             "path": path,
             "state": "publish",
-            "created": (wall - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "created": (wall - timedelta(seconds=2)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        }
+        reconnect = {
+            "id": "reconnect-1",
+            "path": path,
+            "state": "publish",
+            "created": (wall - timedelta(seconds=12)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         }
         old = {
             "id": "old-1",
@@ -66,10 +72,12 @@ class ViewerGateTest(unittest.TestCase):
             "created": (wall - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         }
         self.assertFalse(viewer_gate.should_kick_conn(idle, now=now))
-        self.assertFalse(viewer_gate.should_kick_conn(young, now=now, hold_s=45))
-        self.assertTrue(viewer_gate.should_kick_conn(old, now=now, hold_s=45))
+        self.assertFalse(viewer_gate.should_kick_conn(young, now=now))
+        self.assertTrue(viewer_gate.should_kick_conn(reconnect, now=now))
+        self.assertTrue(viewer_gate.should_kick_conn(old, now=now))
         viewer_gate.note_read(path, now=now)
-        self.assertFalse(viewer_gate.should_kick_conn(old, now=now, hold_s=45))
+        self.assertFalse(viewer_gate.should_kick_conn(old, now=now))
+        self.assertFalse(viewer_gate.should_kick_conn(reconnect, now=now))
 
 
 if __name__ == "__main__":

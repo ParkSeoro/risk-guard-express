@@ -52,6 +52,15 @@ describe("VisionLivePane", () => {
     });
   }
 
+  function showPicture() {
+    const video = el!.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "videoWidth", { configurable: true, get: () => 320 });
+    Object.defineProperty(video, "readyState", { configurable: true, get: () => 2 });
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+    });
+  }
+
   function click(id: string) {
     act(() => {
       (el!.querySelector(`[data-testid="${id}"]`) as HTMLButtonElement).click();
@@ -64,8 +73,15 @@ describe("VisionLivePane", () => {
     expect(overlay.className).toContain("pointer-events-none");
     expect((el!.querySelector("video") as HTMLVideoElement).controls).toBe(false);
     expect(el!.textContent).toContain("연결 중");
+    expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
+    expect(el!.textContent).toContain("사용 방법이 잘못된 것이 아닙니다");
+    expect(el!.querySelector('[data-testid="vision-pane-connecting-0"]')).toBeTruthy();
+    expect(el!.querySelector('[data-testid="vision-pane-controls-0"]')).toBeNull();
+    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
     expect(el!.textContent).not.toContain("online");
     expect(el!.textContent).not.toContain("재생 중");
+    showPicture();
+    expect(el!.querySelector('[data-testid="vision-pane-connecting-0"]')).toBeNull();
     for (const id of [
       "play",
       "mute",
@@ -90,12 +106,17 @@ describe("VisionLivePane", () => {
     act(() => {
       (el!.querySelector("video") as HTMLVideoElement).dispatchEvent(new Event("playing"));
     });
+    expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
+    expect(el!.textContent).not.toContain("재생 중");
+    showPicture();
     expect(el!.textContent).toContain("재생 중");
+    expect(el!.textContent).not.toContain("카메라를 연결하고 있습니다");
     expect(el!.querySelector("video")?.getAttribute("data-vision-frame")).toBe("ready");
   });
 
   it("pauses, unmutes, and changes volume", () => {
     mount();
+    showPicture();
     const video = el!.querySelector("video") as HTMLVideoElement;
     expect(video.muted).toBe(true);
     click("vision-pane-play-0");
@@ -119,6 +140,7 @@ describe("VisionLivePane", () => {
 
   it("zooms, pans the enlarged picture, and leaves fullscreen", () => {
     mount();
+    showPicture();
     click("vision-pane-zoom-in-0");
     expect(el!.querySelector('[data-testid="vision-pane-0"]')?.getAttribute("data-zoom")).toBe("1.5");
     click("vision-pane-zoom-out-0");
@@ -159,9 +181,7 @@ describe("VisionLivePane", () => {
     });
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
     expect(video.getAttribute("src") || video.src).toContain("index.m3u8");
-    act(() => {
-      video.dispatchEvent(new Event("playing"));
-    });
+    showPicture();
     expect(el!.textContent).toContain("재생 중");
   });
 
@@ -172,9 +192,7 @@ describe("VisionLivePane", () => {
       vi.advanceTimersByTime(8_000);
     });
     expect(el!.textContent).toContain("송출이 없습니다");
-    act(() => {
-      (el!.querySelector("video") as HTMLVideoElement).dispatchEvent(new Event("playing"));
-    });
+    showPicture();
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
     expect(el!.textContent).toContain("재생 중");
   });
@@ -186,8 +204,8 @@ describe("VisionLivePane", () => {
     });
     const video = el!.querySelector("video") as HTMLVideoElement;
     expect(video.getAttribute("src") || video.src).toContain("/live/0edfed08baf964c1/index.m3u8");
+    showPicture();
     act(() => {
-      video.dispatchEvent(new Event("playing"));
       video.dispatchEvent(new Event("error"));
       video.dispatchEvent(new Event("waiting"));
     });
@@ -210,9 +228,7 @@ describe("VisionLivePane", () => {
   it("keeps a live picture when the element errors after playback started", () => {
     mount();
     const video = el!.querySelector("video") as HTMLVideoElement;
-    act(() => {
-      video.dispatchEvent(new Event("playing"));
-    });
+    showPicture();
     act(() => {
       video.dispatchEvent(new Event("error"));
     });
@@ -224,9 +240,7 @@ describe("VisionLivePane", () => {
     vi.useFakeTimers();
     mount(undefined, 8_000);
     const video = el!.querySelector("video") as HTMLVideoElement;
-    act(() => {
-      video.dispatchEvent(new Event("playing"));
-    });
+    showPicture();
     act(() => {
       video.dispatchEvent(new Event("waiting"));
       vi.advanceTimersByTime(8_000);
@@ -238,9 +252,7 @@ describe("VisionLivePane", () => {
   it("stops HLS pull after the idle window and lets the viewer resume", () => {
     vi.useFakeTimers();
     mount();
-    act(() => {
-      (el!.querySelector("video") as HTMLVideoElement).dispatchEvent(new Event("playing"));
-    });
+    showPicture();
     expect(el!.querySelector('[data-testid="vision-pane-idle-0"]')).toBeNull();
     act(() => {
       vi.advanceTimersByTime(10 * 60_000);
@@ -249,11 +261,14 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("트래픽 절약을 위해 재생을 멈췄습니다");
     click("vision-pane-resume-0");
     expect(el!.querySelector('[data-testid="vision-pane-idle-0"]')).toBeNull();
+    expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
+    showPicture();
     expect(el!.querySelector('[data-testid="vision-pane-controls-0"]')).toBeTruthy();
   });
 
   it("tells the viewer when a snapshot or recording has no picture yet", async () => {
     mount();
+    showPicture();
     await act(async () => {
       (el!.querySelector('[data-testid="vision-pane-snapshot-0"]') as HTMLButtonElement).click();
     });

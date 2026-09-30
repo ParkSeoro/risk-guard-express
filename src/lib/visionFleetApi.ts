@@ -13,7 +13,7 @@ export type VisionGrantAction = "live_substream" | "live_mainstream" | "playback
 export const VISION_LIVE_ACTION: VisionGrantAction = "live_mainstream";
 export const VISION_LIVE_BITRATE_KBPS = 4096;
 export const VISION_LIVE_TTL_MS = 30 * 60_000;
-/** Stop HLS pull after this idle window. Camera RTMP ingest stays up. */
+/** Stop the browser HLS pull after this idle window. The relay then drops the camera upload. */
 export const VISION_LIVE_IDLE_MS = 10 * 60_000;
 
 export function visionGrantTtlMs(action: VisionGrantAction): number {

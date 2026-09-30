@@ -35,7 +35,7 @@ type Props = {
 
 const ZOOMS = [1, 1.5, 2, 3] as const;
 const PAN_STEP = 0.35;
-const DEFAULT_CONNECT_MS = 8_000;
+const DEFAULT_CONNECT_MS = 30_000;
 
 type Pan = { x: number; y: number };
 
@@ -173,7 +173,6 @@ export default function VisionLivePane({
     let cancelled = false;
     let generation = 0;
     let reloadTimer = 0;
-    let stallTimer = 0;
     let hls: { destroy: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
@@ -182,41 +181,29 @@ export default function VisionLivePane({
     };
     const onFrame = () => {
       if (cancelled) return;
+      if (video.videoWidth <= 0 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
       sawPicture = true;
       setLive(true);
       setOffline(false);
       window.clearTimeout(deadline);
-      window.clearTimeout(stallTimer);
-      stallTimer = 0;
     };
     const scheduleReload = () => {
       if (cancelled || reloadTimer) return;
       reloadTimer = window.setTimeout(() => {
         reloadTimer = 0;
         if (!cancelled) void attach();
-      }, 1000);
+      }, 4000);
     };
     const onVideoError = () => {
       if (!cancelled) scheduleReload();
     };
-    const onWaiting = () => {
-      if (cancelled || !sawPicture || stallTimer) return;
-      stallTimer = window.setTimeout(() => {
-        stallTimer = 0;
-        if (!cancelled) scheduleReload();
-      }, 1500);
-    };
 
     video.addEventListener("playing", onFrame);
+    video.addEventListener("loadeddata", onFrame);
+    video.addEventListener("resize", onFrame);
     video.addEventListener("timeupdate", onFrame);
     video.addEventListener("error", onVideoError);
-    video.addEventListener("waiting", onWaiting);
-    video.addEventListener("stalled", onWaiting);
     deadline = window.setTimeout(markOffline, connectMs);
-    // The camera connects only after this page asks. Keep asking until a frame arrives.
-    const beat = window.setInterval(() => {
-      if (!sawPicture) scheduleReload();
-    }, 2000);
 
     const attach = async () => {
       const token = ++generation;
@@ -233,15 +220,23 @@ export default function VisionLivePane({
         if (Hls.isSupported()) {
           const player = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
-            liveSyncDurationCount: 2,
-            liveMaxLatencyDurationCount: 5,
-            maxBufferLength: 4,
-            maxMaxBufferLength: 8,
+            lowLatencyMode: false,
+            liveSyncDurationCount: 4,
+            liveMaxLatencyDurationCount: 10,
+            maxBufferLength: 12,
+            maxMaxBufferLength: 20,
             backBufferLength: 8,
           });
-          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
+          player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string }) => {
             if (!data?.fatal || cancelled || token !== generation) return;
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              player.startLoad();
+              return;
+            }
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              player.recoverMediaError();
+              return;
+            }
             scheduleReload();
           });
           player.loadSource(safeUrl);
@@ -263,13 +258,11 @@ export default function VisionLivePane({
       generation += 1;
       window.clearTimeout(deadline);
       window.clearTimeout(reloadTimer);
-      window.clearTimeout(stallTimer);
-      window.clearInterval(beat);
       video.removeEventListener("playing", onFrame);
+      video.removeEventListener("loadeddata", onFrame);
+      video.removeEventListener("resize", onFrame);
       video.removeEventListener("timeupdate", onFrame);
       video.removeEventListener("error", onVideoError);
-      video.removeEventListener("waiting", onWaiting);
-      video.removeEventListener("stalled", onWaiting);
       hls?.destroy();
       video.srcObject = null;
       const rec = recorderRef.current;
@@ -451,7 +444,8 @@ export default function VisionLivePane({
 
   const label = name || `카메라 ${index + 1}`;
   const waiting = !safeUrl;
-  const showControls = Boolean(safeUrl) && !paused && !offline;
+  const connecting = Boolean(safeUrl) && !live && !offline && !paused;
+  const showChrome = Boolean(safeUrl) && !paused && !offline;
   const status = held ? "일시정지" : live ? "재생 중" : "연결 중";
 
   return (
@@ -488,6 +482,22 @@ export default function VisionLivePane({
           <WifiOff className="h-5 w-5" />
           <p className="text-sm font-medium">{label}</p>
           <p className="text-[11px] text-white/60">{waitingHint}</p>
+        </div>
+      )}
+      {connecting && (
+        <div
+          className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center text-white"
+          data-testid={`vision-pane-connecting-${index}`}
+        >
+          <span className="relative flex h-14 w-14 items-center justify-center" aria-hidden>
+            <span className="absolute inset-0 rounded-full border-2 border-white/25" />
+            <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-white" />
+            <Camera className="h-5 w-5" />
+          </span>
+          <p className="text-sm font-medium">카메라를 연결하고 있습니다</p>
+          <p className="max-w-[260px] text-[12px] leading-relaxed text-white/80">
+            사용 방법이 잘못된 것이 아닙니다. 카메라가 서버에 붙을 때까지 잠시 기다립니다.
+          </p>
         </div>
       )}
       {!waiting && offline && (
@@ -528,22 +538,23 @@ export default function VisionLivePane({
           </button>
         </div>
       )}
-      {showControls && (
-        <>
-          <div
-            className="pointer-events-none absolute left-0 right-0 top-0 bg-gradient-to-b from-black/80 to-transparent px-2 py-1.5"
-            data-testid={`vision-pane-overlay-${index}`}
-          >
+      {showChrome && (
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-0 z-30 bg-gradient-to-b from-black/80 to-transparent px-2 py-1.5"
+          data-testid={`vision-pane-overlay-${index}`}
+        >
             <p className="text-xs text-white font-medium truncate">{label}</p>
             <p className="text-[10px] text-white/70 truncate">
               {cameraId || ""} · {status}
               {recording ? " · 녹화 중" : ""}
             </p>
-          </div>
-          <div
-            className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-1.5 py-1.5"
-            data-testid={`vision-pane-controls-${index}`}
-          >
+        </div>
+      )}
+      {live && showChrome && (
+        <div
+          className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-1.5 py-1.5"
+          data-testid={`vision-pane-controls-${index}`}
+        >
             <div className="flex items-center gap-1 overflow-x-auto">
               <IconButton label={held ? "재생" : "일시정지"} testId={`vision-pane-play-${index}`} onClick={togglePlay}>
                 {held ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
@@ -614,8 +625,7 @@ export default function VisionLivePane({
                 <ChevronRight className="h-3.5 w-3.5" />
               </IconButton>
             </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

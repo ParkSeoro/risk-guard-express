@@ -2,7 +2,8 @@
 """Keep a camera upload only while a browser is asking for that path.
 
 MediaMTX does not HTTP-auth RTMP: VIGI closes the line on a 403 handshake.
-HLS readers refresh the hold. Idle publishers are kicked after the hold.
+HLS readers refresh the hold. After the last viewer the upload stays for HOLD_S.
+A reconnect with no viewer is kicked after GRACE_S. The RTMP handshake is not refused.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOLD_S = 45
+# A reconnect with nobody watching must not get another full hold of upload.
+GRACE_S = 5
 API = os.environ.get("MTX_API", "http://mediamtx:9997").rstrip("/")
 LISTEN = ("0.0.0.0", 9197)
 
@@ -86,16 +89,22 @@ def conn_age_s(created: str, now_ts: float | None = None) -> float | None:
     return max(0.0, moment - created_at.timestamp())
 
 
-def should_kick_conn(item: dict, now: float | None = None, hold_s: float = HOLD_S) -> bool:
+def should_kick_conn(
+    item: dict,
+    now: float | None = None,
+    hold_s: float = HOLD_S,
+    grace_s: float = GRACE_S,
+) -> bool:
     path = str(item.get("path") or "")
     conn_id = str(item.get("id") or "")
     state = str(item.get("state") or "")
     if not path or not conn_id or state != "publish":
         return False
+    # Recent HLS read: keep the upload through the hold, including a fresh reconnect.
     if publish_allowed(path, now=now, hold_s=hold_s):
         return False
     age = conn_age_s(str(item.get("created") or ""))
-    return age is not None and age >= hold_s
+    return age is not None and age >= grace_s
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -7,6 +7,16 @@ services:
       - "8888:8888"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+  viewer-gate:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    command: ["python", "-u", "/viewer_gate.py"]
+    depends_on:
+      - mediamtx
+    environment:
+      MTX_API: http://mediamtx:9997
+    volumes:
+      - ./viewer_gate.py:/viewer_gate.py:ro
   caddy:
     image: caddy:2
     restart: unless-stopped

@@ -271,6 +271,63 @@ export const SLING_MATERIAL_OPTIONS: { value: SlingMaterialType; label: string }
   { value: 'chain_sling', label: '체인슬링' },
 ];
 
+/** 현장 표기. 비어 있으면 기존 줄 수 계산을 유지한다. */
+export type SlingHitch = 'straight' | 'choke' | 'basket' | '2-leg' | '3-leg' | '4-leg';
+
+export const SLING_HITCH_OPTIONS: { value: SlingHitch; label: string; supportingLegs: number }[] = [
+  { value: 'straight', label: 'straight (수직 1줄)', supportingLegs: 1 },
+  { value: 'choke', label: 'choke (올가미)', supportingLegs: 1 },
+  { value: 'basket', label: 'basket (바구니)', supportingLegs: 2 },
+  { value: '2-leg', label: '2-leg (2줄)', supportingLegs: 2 },
+  { value: '3-leg', label: '3-leg (3줄)', supportingLegs: 3 },
+  { value: '4-leg', label: '4-leg (4줄)', supportingLegs: 4 },
+];
+
+export type SlingCombination = 'series' | 'parallel';
+
+export type SlingSecondaryInput = {
+  slingMaterialType: SlingMaterialType;
+  slingHitch?: SlingHitch | null;
+  wireDiameterMm: number;
+  wireSafetyCoefficient: number;
+  wireManufacturerSafeLoad?: number | null;
+  slingBeltWidthMm: number;
+  slingBeltRatedLoad: number;
+  roundSlingColor: string;
+  roundSlingRatedLoad: number;
+  chainDiameterMm: number;
+};
+
+export function slingHitchOption(hitch: string | null | undefined) {
+  return SLING_HITCH_OPTIONS.find((o) => o.value === hitch) ?? null;
+}
+
+/** 방법을 고르면 그 줄 수를 쓴다. basket은 한 줄의 두 가닥이라 2로만 나눈다. */
+export function hitchSupportingLegs(hitch: string | null | undefined): number | null {
+  return slingHitchOption(hitch)?.supportingLegs ?? null;
+}
+
+export function parseSlingSecondary(raw: unknown): SlingSecondaryInput | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const material = o.materialType;
+  if (material !== "wire_rope" && material !== "sling_belt" && material !== "round_sling" && material !== "chain_sling") {
+    return null;
+  }
+  return {
+    slingMaterialType: material,
+    slingHitch: slingHitchOption(String(o.hitch || ""))?.value ?? null,
+    wireDiameterMm: Number(o.wireDiameterMm) || 0,
+    wireSafetyCoefficient: Number(o.wireSafetyCoefficient) || 5,
+    wireManufacturerSafeLoad: positiveWireManufacturerSafeLoad(o.wireManufacturerSafeLoad),
+    slingBeltWidthMm: Number(o.beltWidthMm) || 0,
+    slingBeltRatedLoad: Number(o.beltRatedLoad) || 0,
+    roundSlingColor: String(o.roundColor || ""),
+    roundSlingRatedLoad: Number(o.roundRatedLoad) || 0,
+    chainDiameterMm: Number(o.chainDiameterMm) || 0,
+  };
+}
+
 // ============================================================
 // Lookup helpers
 // ============================================================
@@ -342,6 +399,15 @@ export interface RiggingInput {
   outriggerDistance: number;
 
   slingMaterialType: SlingMaterialType;
+  /** 비어 있으면 줄걸이 수(체인슬링은 체인 줄 수)로 장력을 나눈다. */
+  slingHitch?: SlingHitch | null;
+  /** 디바이스로 두 번째 줄걸이를 쓸 때. series=한 줄로 연결, parallel=나란히. */
+  slingCombination?: SlingCombination | null;
+  slingSecondary?: SlingSecondaryInput | null;
+  /** 체결구(샤클·마스터 링크·링) 표식 안전하중(ton). */
+  slingDeviceSafeLoad?: number | null;
+  /** 이종 재료를 나란히 쓸 때 제조사 조합 사용하중(ton). */
+  slingAssemblySafeLoad?: number | null;
 
   wireDiameterMm: number;
   slingCount: number;
@@ -403,6 +469,10 @@ export interface RiggingResult {
   slingRatedLoad: number;
   slingSafeLoad: number;
   slingOk: boolean;
+  slingHitchLabel: string | null;
+  secondarySlingSafeLoad: number | null;
+  /** single=한 가지, series_min=두 값과 체결구 중 작은 값, assembly=조합 사용하중, mixed_blocked=이종 병렬인데 조합 하중 없음 */
+  slingJudgment: "single" | "series_min" | "assembly" | "mixed_blocked";
 
   shackleSafeLoad: number;
   shackleOk: boolean;
@@ -418,6 +488,66 @@ export interface RiggingResult {
   recommendations: string[];
 }
 
+type MaterialSafeLoad = {
+  slingRatedLoad: number;
+  slingSafeLoad: number;
+  wireBreakingLoad: number;
+  wireSafeLoad: number;
+  wireSafeLoadSource: RiggingResult["wireSafeLoadSource"];
+};
+
+function resolveMaterialSafeLoad(spec: {
+  slingMaterialType: SlingMaterialType;
+  wireDiameterMm: number;
+  wireSafetyCoefficient: number;
+  wireManufacturerSafeLoad?: number | null;
+  slingBeltWidthMm: number;
+  slingBeltRatedLoad: number;
+  roundSlingColor: string;
+  roundSlingRatedLoad: number;
+  chainDiameterMm: number;
+}): MaterialSafeLoad {
+  let slingRatedLoad = 0;
+  let slingSafeLoad = 0;
+  let wireBreakingLoad = 0;
+  let wireSafeLoad = 0;
+  let wireSafeLoadSource: RiggingResult["wireSafeLoadSource"] = null;
+  switch (spec.slingMaterialType) {
+    case "wire_rope": {
+      wireBreakingLoad = getWireBreakingLoad(spec.wireDiameterMm);
+      wireSafeLoad = wireBreakingLoad / (spec.wireSafetyCoefficient || 5);
+      const manufacturer = positiveWireManufacturerSafeLoad(spec.wireManufacturerSafeLoad);
+      if (manufacturer != null) {
+        slingRatedLoad = manufacturer;
+        slingSafeLoad = manufacturer;
+        wireSafeLoadSource = "manufacturer";
+      } else {
+        slingRatedLoad = wireSafeLoad;
+        slingSafeLoad = wireSafeLoad;
+        wireSafeLoadSource = "catalog";
+      }
+      break;
+    }
+    case "sling_belt": {
+      slingRatedLoad = spec.slingBeltRatedLoad || getSlingBeltRatedLoadByWidth(spec.slingBeltWidthMm);
+      slingSafeLoad = slingRatedLoad;
+      break;
+    }
+    case "round_sling": {
+      slingRatedLoad = spec.roundSlingRatedLoad || getRoundSlingRatedLoadByColor(spec.roundSlingColor);
+      slingSafeLoad = slingRatedLoad;
+      break;
+    }
+    case "chain_sling": {
+      const chainLoadPerLeg = getChainSlingLoad(spec.chainDiameterMm);
+      slingRatedLoad = chainLoadPerLeg;
+      slingSafeLoad = chainLoadPerLeg;
+      break;
+    }
+  }
+  return { slingRatedLoad, slingSafeLoad, wireBreakingLoad, wireSafeLoad, wireSafeLoadSource };
+}
+
 // ============================================================
 // Main calculation
 // ============================================================
@@ -430,8 +560,13 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
   /** 훅 블록은 줄 위 — 줄·샤클은 순하중+아래 줄걸이만 (규칙 제146조 정격은 크레인 총중량). */
   const slingLoadTon = input.loadWeight + input.shackleWeightVal + input.slingRiggingWeight;
 
-  const legCount = input.slingMaterialType === 'chain_sling' ? input.chainLegCount : input.slingCount;
-  const effectiveLegCount = legCount > 0 ? legCount : 2;
+  const hitchLegs = hitchSupportingLegs(input.slingHitch);
+  const secondaryLegs = input.slingCombination === "parallel"
+    ? (hitchSupportingLegs(input.slingSecondary?.slingHitch) ?? 1)
+    : 0;
+  const fallbackLegs = input.slingMaterialType === "chain_sling" ? input.chainLegCount : input.slingCount;
+  const primaryLegs = hitchLegs ?? (fallbackLegs > 0 ? fallbackLegs : 2);
+  const effectiveLegCount = primaryLegs + secondaryLegs;
   const horizontalDeg = input.slingAngleDeg || SLING_HORIZONTAL_RECOMMENDED_DEG;
   const slingAngleFactor = slingHorizontalTensionFactor(horizontalDeg);
   const slingAngleWarn = horizontalDeg < SLING_HORIZONTAL_RECOMMENDED_DEG;
@@ -476,49 +611,65 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
     messages.push(`⚠️ 인양각도(수평) ${horizontalDeg}° < 60° — 줄이 벌어져 장력이 커집니다. 60° 이상 권고`);
   }
 
-  // Sling safety (per material)
-  let slingRatedLoad = 0;
-  let slingSafeLoad = 0;
-  let wireBreakingLoad = 0;
-  let wireSafeLoad = 0;
-  let wireSafeLoadSource: RiggingResult["wireSafeLoadSource"] = null;
+  const primaryMaterial = resolveMaterialSafeLoad(input);
+  let slingRatedLoad = primaryMaterial.slingRatedLoad;
+  let slingSafeLoad = primaryMaterial.slingSafeLoad;
+  const wireBreakingLoad = primaryMaterial.wireBreakingLoad;
+  const wireSafeLoad = primaryMaterial.wireSafeLoad;
+  const wireSafeLoadSource = primaryMaterial.wireSafeLoadSource;
+  let secondarySlingSafeLoad: number | null = null;
+  let slingJudgment: RiggingResult["slingJudgment"] = "single";
+  const hitchLabel = slingHitchOption(input.slingHitch)?.label ?? null;
+  const deviceLoad = positiveWireManufacturerSafeLoad(input.slingDeviceSafeLoad);
+  const assemblyLoad = positiveWireManufacturerSafeLoad(input.slingAssemblySafeLoad);
+  const secondary = input.slingCombination && input.slingSecondary
+    ? resolveMaterialSafeLoad(input.slingSecondary)
+    : null;
 
-  switch (input.slingMaterialType) {
-    case 'wire_rope': {
-      wireBreakingLoad = getWireBreakingLoad(input.wireDiameterMm);
-      wireSafeLoad = wireBreakingLoad / (input.wireSafetyCoefficient || 5);
-      const manufacturer = positiveWireManufacturerSafeLoad(input.wireManufacturerSafeLoad);
-      if (manufacturer != null) {
-        slingRatedLoad = manufacturer;
-        slingSafeLoad = manufacturer;
-        wireSafeLoadSource = "manufacturer";
+  if (input.slingCombination === "series" && secondary) {
+    secondarySlingSafeLoad = secondary.slingSafeLoad;
+    const parts = [primaryMaterial.slingSafeLoad, secondary.slingSafeLoad];
+    if (deviceLoad != null) parts.push(deviceLoad);
+    slingSafeLoad = Math.min(...parts);
+    slingRatedLoad = slingSafeLoad;
+    slingJudgment = "series_min";
+    if (deviceLoad == null) {
+      messages.push("⚠️ 체결구 안전하중을 적으세요. 디바이스 표식 하중 없이는 한 줄 연결을 적합으로 보지 않습니다.");
+    }
+  } else if (input.slingCombination === "parallel" && secondary) {
+    secondarySlingSafeLoad = secondary.slingSafeLoad;
+    const mixed = input.slingSecondary!.slingMaterialType !== input.slingMaterialType;
+    if (mixed) {
+      if (assemblyLoad != null) {
+        slingSafeLoad = assemblyLoad;
+        slingRatedLoad = assemblyLoad;
+        slingJudgment = "assembly";
       } else {
-        slingRatedLoad = wireSafeLoad;
-        slingSafeLoad = wireSafeLoad;
-        wireSafeLoadSource = "catalog";
+        slingJudgment = "mixed_blocked";
+        messages.push("⚠️ 이종 재료는 안전하중을 더하지 않습니다. 제조사 조합 사용하중을 적으세요.");
       }
-      break;
+    } else {
+      slingSafeLoad = Math.min(primaryMaterial.slingSafeLoad, secondary.slingSafeLoad);
+      slingRatedLoad = slingSafeLoad;
+      slingJudgment = "series_min";
     }
-    case 'sling_belt': {
-      slingRatedLoad = input.slingBeltRatedLoad || getSlingBeltRatedLoadByWidth(input.slingBeltWidthMm);
-      slingSafeLoad = slingRatedLoad;
-      break;
-    }
-    case 'round_sling': {
-      slingRatedLoad = input.roundSlingRatedLoad || getRoundSlingRatedLoadByColor(input.roundSlingColor);
-      slingSafeLoad = slingRatedLoad;
-      break;
-    }
-    case 'chain_sling': {
-      const chainLoadPerLeg = getChainSlingLoad(input.chainDiameterMm);
-      slingRatedLoad = chainLoadPerLeg;
-      slingSafeLoad = chainLoadPerLeg;
-      break;
+    if (deviceLoad == null) {
+      messages.push("⚠️ 체결구 안전하중을 적으세요. 디바이스 표식 하중 없이는 두 줄걸이 조합을 적합으로 보지 않습니다.");
+    } else if (deviceLoad < slingLoadTon) {
+      messages.push(`⚠️ 체결구 안전하중 ${deviceLoad.toFixed(1)}t < 줄하중 ${slingLoadTon.toFixed(1)}t`);
     }
   }
 
-  const slingOk = slingSafeLoad >= tensionPerLeg;
-  if (!slingOk) {
+  const judgmentLoad = input.slingCombination === "parallel" && slingJudgment === "assembly"
+    ? slingLoadTon
+    : tensionPerLeg;
+  const deviceOk = !input.slingCombination
+    || (deviceLoad != null && (input.slingCombination === "series" ? deviceLoad >= tensionPerLeg : deviceLoad >= slingLoadTon));
+  const capacityOk = slingJudgment !== "mixed_blocked" && slingSafeLoad >= judgmentLoad;
+  const slingOk = capacityOk && deviceOk;
+  if (!capacityOk && slingJudgment === "assembly") {
+    messages.push(`⚠️ 조합 사용하중 ${slingSafeLoad.toFixed(1)}t < 줄하중 ${slingLoadTon.toFixed(1)}t`);
+  } else if (!capacityOk && slingJudgment !== "mixed_blocked") {
     messages.push(`⚠️ 줄걸이 안전성 부적합: 1줄 안전하중 ${slingSafeLoad.toFixed(1)}t < 1줄 장력 ${tensionPerLeg.toFixed(1)}t`);
   }
 
@@ -555,6 +706,9 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
     slingAngleWarn,
     slingLoadTon,
     slingRatedLoad, slingSafeLoad, slingOk,
+    slingHitchLabel: hitchLabel,
+    secondarySlingSafeLoad,
+    slingJudgment,
     shackleSafeLoad, shackleOk,
     wireBreakingLoad, wireSafeLoad, wireSafeLoadSource,
     overallOk, messages, recommendations,

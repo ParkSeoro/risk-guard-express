@@ -24,6 +24,8 @@ import {
   WIND_SPEED_BANDS,
   TERMINAL_METHOD_EFFICIENCY,
   SLING_MATERIAL_OPTIONS,
+  SLING_HITCH_OPTIONS,
+  hitchSupportingLegs,
   SLING_BELT_BY_WIDTH,
   ROUND_SLING_BY_COLOR,
   CHAIN_SLING_LOAD,
@@ -51,6 +53,109 @@ interface RiggingPlanFormProps {
 }
 
 const numVal = (v: any) => Number(v) || 0;
+
+function SecondarySlingFields({
+  rigging,
+  onChange,
+  showAssembly,
+}: {
+  rigging: any;
+  onChange: (field: string, value: any) => void;
+  showAssembly: boolean;
+}) {
+  const secondary = rigging.sling_secondary || {};
+  const set = (key: string, value: any) => onChange('sling_secondary', { ...secondary, [key]: value });
+  const material = (secondary.materialType || 'wire_rope') as SlingMaterialType;
+  return (
+    <div className="space-y-2 rounded-md border p-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">두 번째 재료</Label>
+          <Select value={material} onValueChange={(v) => set('materialType', v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SLING_MATERIAL_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground">두 번째 방법</Label>
+          <Select value={String(secondary.hitch || '') || undefined} onValueChange={(v) => set('hitch', v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+            <SelectContent>
+              {SLING_HITCH_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {material === 'wire_rope' && (
+        <div className="grid grid-cols-3 gap-2">
+          <NumberField label="규격" unit="mm" value={secondary.wireDiameterMm} onValue={(v) => set('wireDiameterMm', v)} />
+          <NumberField label="안전계수" value={secondary.wireSafetyCoefficient} onValue={(v) => set('wireSafetyCoefficient', v)} />
+          <NumberField label="제조사 안전하중" unit="ton" value={secondary.wireManufacturerSafeLoad} onValue={(v) => set('wireManufacturerSafeLoad', v)} />
+        </div>
+      )}
+      {material === 'sling_belt' && (
+        <Select value={String(secondary.beltWidthMm || '')} onValueChange={(v) => {
+          const w = Number(v);
+          const rl = getSlingBeltRatedLoadByWidth(w);
+          onChange('sling_secondary', { ...secondary, beltWidthMm: w, beltRatedLoad: rl });
+        }}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="벨트 폭" /></SelectTrigger>
+          <SelectContent>
+            {SLING_BELT_BY_WIDTH.map((s) => (
+              <SelectItem key={s.widthMm} value={String(s.widthMm)} className="text-xs">{s.widthMm}mm ({s.ratedLoad}톤)</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {material === 'round_sling' && (
+        <Select value={secondary.roundColor || ''} onValueChange={(v) => {
+          onChange('sling_secondary', { ...secondary, roundColor: v, roundRatedLoad: getRoundSlingRatedLoadByColor(v) });
+        }}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="라운드슬링" /></SelectTrigger>
+          <SelectContent>
+            {ROUND_SLING_BY_COLOR.map((s) => (
+              <SelectItem key={s.id} value={s.id} className="text-xs">{s.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {material === 'chain_sling' && (
+        <Select value={String(secondary.chainDiameterMm || '')} onValueChange={(v) => set('chainDiameterMm', Number(v))}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="체인 규격" /></SelectTrigger>
+          <SelectContent>
+            {Object.entries(CHAIN_SLING_LOAD).map(([mm, load]) => (
+              <SelectItem key={mm} value={mm} className="text-xs">{mm}mm ({load}톤/줄)</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField label="체결구 안전하중" unit="ton" value={rigging.sling_device_safe_load} onValue={(v) => onChange('sling_device_safe_load', v)} />
+        {showAssembly && (
+          <NumberField label="조합 사용하중" unit="ton" value={rigging.sling_assembly_safe_load} onValue={(v) => onChange('sling_assembly_safe_load', v)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NumberField({ label, unit, value, onValue }: { label: string; unit?: string; value: any; onValue: (v: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] text-muted-foreground">{label}</Label>
+      <div className="flex items-center gap-1">
+        <Input type="number" value={value ?? ''} onChange={(e) => onValue(e.target.value)} className="h-8 text-xs" />
+        {unit && <span className="text-[10px] text-muted-foreground whitespace-nowrap">{unit}</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onSave, saving, readOnly }: RiggingPlanFormProps) {
   const [result, setResult] = useState<RiggingResult | null>(null);
@@ -92,7 +197,8 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
     rigging?.load_weight_min, rigging?.hook_weight_min, rigging?.shackle_weight_min, rigging?.sling_rigging_weight_min,
     rigging?.crane_capacity, rigging?.rated_capacity, rigging?.working_radius, rigging?.boom_length,
     rigging?.wire_diameter_mm, rigging?.sling_count, rigging?.sling_angle_deg, rigging?.wire_safety_coefficient,
-    rigging?.wire_manufacturer_safe_load,
+    rigging?.wire_manufacturer_safe_load, rigging?.sling_hitch, rigging?.sling_combination,
+    rigging?.sling_device_safe_load, rigging?.sling_assembly_safe_load, rigging?.sling_secondary,
     rigging?.wind_speed_factor, rigging?.wind_speed_grade, rigging?.boom_rotation_factor, rigging?.ground_inspection_factor,
     rigging?.load_protrusion_factor, rigging?.shackle_inch, rigging?.shackle_qty,
     rigging?.wire_terminal_method, rigging?.outrigger_distance,
@@ -320,8 +426,24 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
                 {field('인양각도(수평면)', 'sling_angle_deg', 'number', { unit: '°' })}
                 {field('줄걸이 수', 'sling_count', 'number')}
               </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">줄걸이 방법</Label>
+                <Select
+                  value={String(rigging.sling_hitch || '') || undefined}
+                  onValueChange={(v) => onChange('sling_hitch', v)}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+                  <SelectContent>
+                    {SLING_HITCH_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <p className="text-[9px] text-muted-foreground leading-relaxed">
-                줄과 수평면이 이루는 각. 60° 권고 · 장력계수 1/sinθ (수직 90°=1.00, 60°≈1.16)
+                줄과 수평면이 이루는 각. 60° 권고 · 장력계수 1/sinθ (수직 90°=1.00, 60°≈1.16).
+                방법을 고르면 장력의 줄 수는 그 방법을 따릅니다. basket은 두 가닥으로만 나눕니다. 각도는 한 번만 반영합니다.
+                choke의 사용하중 감소는 제조사 안전하중에 적습니다.
               </p>
             </div>
 
@@ -438,6 +560,34 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
 
           <Separator />
 
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold text-muted-foreground">디바이스로 두 가지 줄걸이</h4>
+            <Select
+              value={rigging.sling_combination === 'series' || rigging.sling_combination === 'parallel' ? rigging.sling_combination : 'none'}
+              onValueChange={(v) => onChange('sling_combination', v === 'none' ? null : v)}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-xs">한 가지</SelectItem>
+                <SelectItem value="series" className="text-xs">series (한 줄로 연결)</SelectItem>
+                <SelectItem value="parallel" className="text-xs">parallel (나란히)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[9px] text-muted-foreground leading-relaxed">
+              와이어와 벨트·라운드슬링을 디바이스로 같이 쓰면 두 가지를 각각 계산합니다. 안전하중은 더하지 않습니다.
+              series는 두 값과 체결구 중 작은 값, parallel에서 재료가 다르면 제조사 조합 사용하중만 적합입니다.
+            </p>
+            {(rigging.sling_combination === 'series' || rigging.sling_combination === 'parallel') && (
+              <SecondarySlingFields
+                rigging={rigging}
+                onChange={onChange}
+                showAssembly={rigging.sling_combination === 'parallel' && (rigging.sling_secondary?.materialType || 'wire_rope') !== materialType}
+              />
+            )}
+          </div>
+
+          <Separator />
+
           {/* 샤클 */}
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground mb-2">체결 장구 (샤클)</h4>
@@ -498,7 +648,10 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="mt-3 p-2 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
               <p className="text-xs font-semibold">1줄당 장력 (T): <span className="text-amber-700 dark:text-amber-400 text-sm">{result.tensionPerLeg.toFixed(2)} 톤</span></p>
               <p className="text-[10px] text-muted-foreground">
-                T = 줄하중({result.slingLoadTon.toFixed(2)}t, 훅 제외) × (1/sin{rigging.sling_angle_deg || 60}°) / 줄수({rigging.sling_count || 2})
+                T = 줄하중({result.slingLoadTon.toFixed(2)}t, 훅 제외) × (1/sin{rigging.sling_angle_deg || 60}°) / 줄수({
+                  (hitchSupportingLegs(rigging.sling_hitch) ?? (Number(rigging.sling_count) || 2))
+                  + (rigging.sling_combination === 'parallel' ? (hitchSupportingLegs(rigging.sling_secondary?.hitch) ?? 1) : 0)
+                })
               </p>
             </div>
           )}
@@ -664,13 +817,30 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">1줄 장력 (ton)</div>
             <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">판정</div>
 
-            <div className="bg-card p-2 text-center">{SLING_MATERIAL_OPTIONS.find(o => o.value === materialType)?.label}</div>
+            <div className="bg-card p-2 text-center">
+              {SLING_MATERIAL_OPTIONS.find(o => o.value === materialType)?.label}
+              {result?.slingHitchLabel && (
+                <div className="text-[9px] font-normal text-muted-foreground">{result.slingHitchLabel}</div>
+              )}
+            </div>
             <div className={`bg-card p-2 text-center font-bold ${result?.slingOk ? 'text-green-600' : 'text-red-600'}`}>
               {result?.slingSafeLoad?.toFixed(1) || '-'}
-              {materialType === 'wire_rope' && result?.wireSafeLoadSource && (
+              {materialType === 'wire_rope' && result?.wireSafeLoadSource && result?.slingJudgment === 'single' && (
                 <div className="text-[9px] font-normal text-muted-foreground">
                   {result.wireSafeLoadSource === 'manufacturer' ? '제조사 안전하중' : '지름 표 계산'}
                 </div>
+              )}
+              {result?.slingJudgment === 'series_min' && (
+                <div className="text-[9px] font-normal text-muted-foreground">두 값 중 작은 값</div>
+              )}
+              {result?.slingJudgment === 'assembly' && (
+                <div className="text-[9px] font-normal text-muted-foreground">제조사 조합 사용하중</div>
+              )}
+              {result?.slingJudgment === 'mixed_blocked' && (
+                <div className="text-[9px] font-normal text-muted-foreground">조합 사용하중 필요</div>
+              )}
+              {result?.secondarySlingSafeLoad != null && (
+                <div className="text-[9px] font-normal text-muted-foreground">둘째 {result.secondarySlingSafeLoad.toFixed(1)}t</div>
               )}
             </div>
             <div className="bg-card p-2 text-center">{rigging.sling_angle_deg || 60}°</div>
@@ -679,11 +849,15 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
           </div>
           <p className="text-[9px] text-muted-foreground mt-2">
             ※ 1줄 안전하중 ≥ 1줄 장력. T = 줄하중(훅 제외) × (1/sinθ) / 줄수. 각도 계수를 정격에 한 번 더 곱하지 않음.
-            {materialType === 'wire_rope' && (
+            {materialType === 'wire_rope' && result?.slingJudgment === 'single' && (
               result?.wireSafeLoadSource === 'manufacturer'
                 ? ' 이 칸은 제조사 안전하중입니다.'
                 : ' 이 칸은 지름 표 계산입니다.'
             )}
+            {result?.slingJudgment === 'series_min' && rigging.sling_combination === 'parallel' && ' 같은 재료를 나란히 쓴 값 중 작은 쪽입니다.'}
+            {result?.slingJudgment === 'series_min' && rigging.sling_combination !== 'parallel' && ' 한 줄로 이은 두 줄걸이와 체결구 중 작은 값입니다.'}
+            {result?.slingJudgment === 'assembly' && ' 이종 재료는 제조사 조합 사용하중으로 판정합니다.'}
+            {result?.slingJudgment === 'mixed_blocked' && ' 이종 재료의 안전하중은 더하지 않습니다.'}
           </p>
         </CardContent>
       </Card>

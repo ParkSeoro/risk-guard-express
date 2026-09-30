@@ -72,6 +72,9 @@ describe("와이어 제조사 안전하중 입력", () => {
     expect(catalog.disabled).toBe(true);
     expect(manufacturer.disabled).toBe(false);
     expect(manufacturer.value).toBe("");
+    expect(document.body.textContent).toContain("줄걸이 방법");
+    expect(document.body.textContent).toContain("디바이스로 두 가지 줄걸이");
+    expect(document.body.textContent).toContain("안전하중은 더하지 않습니다");
     expect(document.body.textContent).toContain("지름 표 계산");
     expect(document.body.textContent).toContain("61.3");
 

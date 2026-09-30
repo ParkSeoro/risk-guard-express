@@ -5084,6 +5084,11 @@ export type Database = {
           sling_count: number | null
           sling_material_type: string | null
           sling_method: string | null
+          sling_hitch: string | null
+          sling_combination: string | null
+          sling_device_safe_load: number | null
+          sling_assembly_safe_load: number | null
+          sling_secondary: Json | null
           sling_ok: string | null
           sling_rigging_weight: number | null
           sling_rigging_weight_min: number | null
@@ -5161,6 +5166,11 @@ export type Database = {
           sling_count?: number | null
           sling_material_type?: string | null
           sling_method?: string | null
+          sling_hitch?: string | null
+          sling_combination?: string | null
+          sling_device_safe_load?: number | null
+          sling_assembly_safe_load?: number | null
+          sling_secondary?: Json | null
           sling_ok?: string | null
           sling_rigging_weight?: number | null
           sling_rigging_weight_min?: number | null
@@ -5238,6 +5248,11 @@ export type Database = {
           sling_count?: number | null
           sling_material_type?: string | null
           sling_method?: string | null
+          sling_hitch?: string | null
+          sling_combination?: string | null
+          sling_device_safe_load?: number | null
+          sling_assembly_safe_load?: number | null
+          sling_secondary?: Json | null
           sling_ok?: string | null
           sling_rigging_weight?: number | null
           sling_rigging_weight_min?: number | null

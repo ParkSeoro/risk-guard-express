@@ -16,6 +16,28 @@ export const RIGGING_PRINT_LABELS = {
   notes: "작업 기간",
 } as const;
 
+function formatTon(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(2)));
+}
+
+/** 인쇄·검토에 적는 와이어 안전하중 출처. 와이어가 아니면 빈 문자열. */
+export function wireSafeLoadPrintNote(rigging: Record<string, unknown> | null | undefined): string {
+  if (!rigging) return "";
+  const material = String(rigging.sling_material_type || "wire_rope");
+  if (material !== "wire_rope") return "";
+  const manufacturer = Number(rigging.wire_manufacturer_safe_load);
+  if (Number.isFinite(manufacturer) && manufacturer > 0) {
+    return `제조사 안전하중 ${formatTon(manufacturer)}t`;
+  }
+  const catalog = Number(rigging.wire_safe_load);
+  const table = Number.isFinite(catalog) && catalog > 0 ? catalog : Number(rigging.sling_safe_load);
+  if (Number.isFinite(table) && table > 0) {
+    return `지름 표 계산 ${formatTon(table)}t`;
+  }
+  return "";
+}
+
 export function renderRiggingPrintHtml(
   rigging: Record<string, unknown> | null | undefined,
   escapeHtml: (s: string) => string,
@@ -30,6 +52,7 @@ export function renderRiggingPrintHtml(
   const text = (key: string) => escapeHtml(String(rigging[key] ?? ""));
   const raw = (key: string) => (rigging[key] == null ? "" : String(rigging[key]));
   const commander = String(rigging.lifting_method || "").trim();
+  const wireNote = wireSafeLoadPrintNote(rigging);
 
   return `
         <div class="section-header">리깅플랜 (양중계획)</div>
@@ -40,6 +63,7 @@ export function renderRiggingPrintHtml(
           <tr><td class="label">슬링 종류</td><td>${escapeHtml(String(rigging.sling_type || rigging.sling_material_type || ""))}</td><td class="label">${RIGGING_PRINT_LABELS.sling_method}</td><td>${text("sling_method")}</td></tr>
           <tr><td class="label">슬링 각도</td><td>${raw("sling_angle_deg")}°</td><td class="label">슬링 본수</td><td>${raw("sling_count")}</td></tr>
           <tr><td class="label">와이어 직경</td><td>${raw("wire_diameter_mm")}mm</td><td class="label">샤클</td><td>${escapeHtml(String(rigging.shackle_inch || rigging.shackle_diameter_mm || ""))}</td></tr>
+          ${wireNote ? `<tr><td class="label">와이어 안전하중</td><td colspan="3">${escapeHtml(wireNote)}</td></tr>` : ""}
           <tr><td class="label">지반 지지력</td><td>${raw("ground_bearing_capacity")} t/㎡</td><td class="label">${RIGGING_PRINT_LABELS.outrigger_setup}</td><td>${text("outrigger_setup")}</td></tr>
           <tr><td class="label">풍속 등급</td><td>${text("wind_speed_grade")}</td><td class="label">풍속 계수</td><td>${raw("wind_speed_factor")}</td></tr>
         </tbody></table>

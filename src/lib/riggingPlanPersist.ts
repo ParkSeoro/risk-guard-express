@@ -23,6 +23,12 @@ export function buildRiggingPlanPayload(
 ): Record<string, unknown> {
   const n = (v: unknown, fallback = 0) => Number(v) || fallback;
   const s = (v: unknown, fallback = "") => (v == null || v === "" ? fallback : String(v));
+  const nullablePositive = (v: unknown): number | null => {
+    if (v == null || v === "") return null;
+    const x = Number(v);
+    if (!Number.isFinite(x) || x <= 0) return null;
+    return x;
+  };
 
   return {
     work_plan_id: planId,
@@ -54,6 +60,7 @@ export function buildRiggingPlanPayload(
     wire_breaking_load: n(rigging.wire_breaking_load),
     wire_diameter_inch: n(rigging.wire_diameter_inch),
     wire_safe_load: n(rigging.wire_safe_load),
+    wire_manufacturer_safe_load: nullablePositive(rigging.wire_manufacturer_safe_load),
     shackle_diameter_mm: n(rigging.shackle_diameter_mm),
     shackle_safe_load: n(rigging.shackle_safe_load),
     shackle_angle_deg: n(rigging.shackle_angle_deg, 45),

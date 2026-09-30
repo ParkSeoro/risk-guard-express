@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   RIGGING_PRINT_LABELS,
   renderRiggingPrintHtml,
+  wireSafeLoadPrintNote,
 } from "../../supabase/functions/_shared/riggingPrintHtml";
 import {
   classifyRiggingLoad,
@@ -79,5 +80,34 @@ describe("리깅 부하율 기준", () => {
     expect(html).toContain("최대 85% 초과");
     expect(html).not.toContain("작업금지");
     expect(html).toContain("선회인양");
+  });
+
+  it("와이어 안전하중은 제조사 값인지 지름 표인지 적는다", () => {
+    expect(wireSafeLoadPrintNote({
+      sling_material_type: "wire_rope",
+      wire_manufacturer_safe_load: 40,
+      wire_safe_load: 61.25,
+    })).toBe("제조사 안전하중 40t");
+    expect(wireSafeLoadPrintNote({
+      sling_material_type: "wire_rope",
+      wire_safe_load: 61.25,
+    })).toBe("지름 표 계산 61.25t");
+    expect(wireSafeLoadPrintNote({
+      sling_material_type: "round_sling",
+      wire_manufacturer_safe_load: 40,
+    })).toBe("");
+
+    const html = renderRiggingPrintHtml(
+      {
+        sling_material_type: "wire_rope",
+        wire_diameter_mm: 75,
+        wire_manufacturer_safe_load: 40,
+        wire_safe_load: 61.25,
+        sling_method: "직인양",
+      },
+      escapeHtml,
+    );
+    expect(html).toContain("와이어 안전하중");
+    expect(html).toContain("제조사 안전하중 40t");
   });
 });

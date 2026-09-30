@@ -6,7 +6,8 @@ import {
   getWireBreakingLoad,
   type RiggingInput,
 } from "@/lib/riggingCalculator";
-import { buildRiggingInputFromRow, riggingResultToPatch } from "@/lib/riggingDerived";
+import { buildRiggingInputFromRow, refreshRiggingDerivedFields, riggingResultToPatch } from "@/lib/riggingDerived";
+import { buildRiggingPlanPayload } from "@/lib/riggingPlanPersist";
 
 function wireInput(over: Partial<RiggingInput> = {}): RiggingInput {
   return {
@@ -88,6 +89,64 @@ describe("와이어로프 절단하중", () => {
     const patch = riggingResultToPatch(r);
     expect(patch.wire_breaking_load).toBeGreaterThan(0);
     expect(patch.wire_safe_load).toBeGreaterThan(0);
+  });
+
+  it("제조사 안전하중이 있으면 줄걸이 판정만 그 값을 쓴다", () => {
+    const r = calculateFullRigging(wireInput({
+      wireDiameterMm: 75,
+      wireSafetyCoefficient: 5,
+      wireManufacturerSafeLoad: 40,
+    }));
+    expect(r.wireBreakingLoad).toBeCloseTo(306.25, 5);
+    expect(r.wireSafeLoad).toBeCloseTo(61.25, 5);
+    expect(r.slingRatedLoad).toBeCloseTo(40, 5);
+    expect(r.slingSafeLoad).toBeCloseTo(40, 5);
+    expect(r.wireSafeLoadSource).toBe("manufacturer");
+    const patch = riggingResultToPatch(r);
+    expect(patch.wire_safe_load).toBeCloseTo(61.25, 5);
+    expect(patch.sling_safe_load).toBeCloseTo(40, 5);
+    expect(patch).not.toHaveProperty("wire_manufacturer_safe_load");
+  });
+
+  it("제조사 칸이 비어 있거나 0 이하면 지름 표를 유지한다", () => {
+    for (const value of [undefined, null, 0, -3, Number.NaN]) {
+      const r = calculateFullRigging(wireInput({
+        wireDiameterMm: 75,
+        wireManufacturerSafeLoad: value,
+      }));
+      expect(r.wireSafeLoad).toBeCloseTo(61.25, 5);
+      expect(r.slingSafeLoad).toBeCloseTo(61.25, 5);
+      expect(r.wireSafeLoadSource).toBe("catalog");
+    }
+    expect(buildRiggingInputFromRow({ wire_manufacturer_safe_load: "" } as any).wireManufacturerSafeLoad).toBeNull();
+    expect(buildRiggingInputFromRow({ wire_manufacturer_safe_load: "40" } as any).wireManufacturerSafeLoad).toBe(40);
+  });
+
+  it("다른 줄걸이 재료는 제조사 칸을 판정에 쓰지 않는다", () => {
+    const r = calculateFullRigging(wireInput({
+      slingMaterialType: "round_sling",
+      roundSlingRatedLoad: 40,
+      wireManufacturerSafeLoad: 1,
+    }));
+    expect(r.slingSafeLoad).toBe(40);
+    expect(r.wireSafeLoadSource).toBeNull();
+  });
+
+  it("저장 패치는 제조사 입력을 남기고 빈 값은 null로 둔다", () => {
+    const refreshed = refreshRiggingDerivedFields({
+      wire_diameter_mm: 75,
+      wire_safety_coefficient: 5,
+      wire_manufacturer_safe_load: 40,
+      sling_material_type: "wire_rope",
+      sling_count: 2,
+      sling_angle_deg: 60,
+    } as any);
+    expect(refreshed.wire_manufacturer_safe_load).toBe(40);
+    expect(Number(refreshed.wire_safe_load)).toBeCloseTo(61.25, 5);
+    expect(Number(refreshed.sling_safe_load)).toBeCloseTo(40, 5);
+    expect(buildRiggingPlanPayload("plan-1", refreshed).wire_manufacturer_safe_load).toBe(40);
+    expect(buildRiggingPlanPayload("plan-1", { wire_manufacturer_safe_load: "" }).wire_manufacturer_safe_load).toBeNull();
+    expect(buildRiggingPlanPayload("plan-1", {}).wire_manufacturer_safe_load).toBeNull();
   });
 
   it("0·음수 지름은 0이다", () => {

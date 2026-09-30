@@ -92,6 +92,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
     rigging?.load_weight_min, rigging?.hook_weight_min, rigging?.shackle_weight_min, rigging?.sling_rigging_weight_min,
     rigging?.crane_capacity, rigging?.rated_capacity, rigging?.working_radius, rigging?.boom_length,
     rigging?.wire_diameter_mm, rigging?.sling_count, rigging?.sling_angle_deg, rigging?.wire_safety_coefficient,
+    rigging?.wire_manufacturer_safe_load,
     rigging?.wind_speed_factor, rigging?.wind_speed_grade, rigging?.boom_rotation_factor, rigging?.ground_inspection_factor,
     rigging?.load_protrusion_factor, rigging?.shackle_inch, rigging?.shackle_qty,
     rigging?.wire_terminal_method, rigging?.outrigger_distance,
@@ -348,8 +349,12 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
                       </Select>
                     </div>
                     {field('안전계수', 'wire_safety_coefficient', 'number')}
-                    {field('안전하중', 'wire_safe_load', 'number', { unit: 'ton', disabled: true })}
+                    {field('표 안전하중', 'wire_safe_load', 'number', { unit: 'ton', disabled: true })}
+                    {field('제조사 안전하중', 'wire_manufacturer_safe_load', 'number', { unit: 'ton' })}
                   </div>
+                  <p className="text-[9px] text-muted-foreground leading-relaxed">
+                    제조사 안전하중을 적으면 줄걸이 판정은 그 값을 씁니다. 비워 두면 지름 표(절단하중 ÷ 안전계수)입니다.
+                  </p>
                 </div>
               )}
 
@@ -662,6 +667,11 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="bg-card p-2 text-center">{SLING_MATERIAL_OPTIONS.find(o => o.value === materialType)?.label}</div>
             <div className={`bg-card p-2 text-center font-bold ${result?.slingOk ? 'text-green-600' : 'text-red-600'}`}>
               {result?.slingSafeLoad?.toFixed(1) || '-'}
+              {materialType === 'wire_rope' && result?.wireSafeLoadSource && (
+                <div className="text-[9px] font-normal text-muted-foreground">
+                  {result.wireSafeLoadSource === 'manufacturer' ? '제조사 안전하중' : '지름 표 계산'}
+                </div>
+              )}
             </div>
             <div className="bg-card p-2 text-center">{rigging.sling_angle_deg || 60}°</div>
             <div className="bg-card p-2 text-center font-bold">{result?.tensionPerLeg?.toFixed(2) || '-'}</div>
@@ -669,6 +679,11 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
           </div>
           <p className="text-[9px] text-muted-foreground mt-2">
             ※ 1줄 안전하중 ≥ 1줄 장력. T = 줄하중(훅 제외) × (1/sinθ) / 줄수. 각도 계수를 정격에 한 번 더 곱하지 않음.
+            {materialType === 'wire_rope' && (
+              result?.wireSafeLoadSource === 'manufacturer'
+                ? ' 이 칸은 제조사 안전하중입니다.'
+                : ' 이 칸은 지름 표 계산입니다.'
+            )}
           </p>
         </CardContent>
       </Card>

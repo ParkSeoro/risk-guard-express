@@ -7,3 +7,7 @@ hlsAlwaysRemux: yes
 rtmpAddress: :1935
 pathDefaults:
   source: publisher
+# v1.21 applies pathDefaults only to paths listed here.
+# all_others is the stock catch-all, so every camera key can publish.
+paths:
+  all_others:

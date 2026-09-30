@@ -24,7 +24,6 @@ import { normalizeRiskToLegalSlots, usesFixedLegalRisk } from '@/lib/workPlanLeg
 import {
   fetchLatestApprovedRun,
   syncRaToWp,
-  cloneAttachmentFiles,
   getApprovalBlockers,
   getAttachmentProgress,
   type LatestApprovedRun,
@@ -641,57 +640,14 @@ const WorkPlanDetail = () => {
         return;
       }
     }
-    const merged = mergeSectionsForSave();
-    const { data, error } = await supabase.from('work_plans').insert({
-      project_id: plan.project_id,
-      company_id: plan.company_id,
-      work_type: plan.work_type,
-      title: `${plan.title} (v${(plan.version || 1) + 1})`,
-      sections: merged,
-      attachments: [],
-      created_by: user.id,
-      author_user_id: plan.author_user_id || null,
-      parent_id: plan.id,
-      version: (plan.version || 1) + 1,
-      status: '작성중',
-      start_date: startDate || null,
-      end_date: endDate || null,
-    }).select().single();
-    if (error) {
-      toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
+    const { cloneWorkPlanDocument } = await import('@/lib/cloneWorkPlan');
+    const result = await cloneWorkPlanDocument({ fromPlanId: plan.id, createdBy: user.id });
+    if (!result.ok) {
+      toast({ title: '복사 실패', description: result.error, variant: 'destructive' });
       return;
     }
-    if (data) {
-      try {
-        await cloneAttachmentFiles({
-          fromPlanId: plan.id,
-          toPlanId: data.id,
-          projectId: plan.project_id,
-          companyId: plan.company_id,
-          workType: plan.work_type,
-        });
-      } catch (e: any) {
-        console.warn('clone attachments failed', e);
-      }
-      try {
-        const { data: srcRig } = await supabase
-          .from('rigging_plans')
-          .select('*')
-          .eq('work_plan_id', plan.id)
-          .maybeSingle();
-        if (srcRig) {
-          const { id: _id, created_at: _c, updated_at: _u, ...rest } = srcRig as any;
-          await supabase.from('rigging_plans').insert({
-            ...rest,
-            work_plan_id: data.id,
-          });
-        }
-      } catch (e: any) {
-        console.warn('clone rigging failed', e);
-      }
-      toast({ title: '새 회차가 생성되었습니다.' });
-      navigate(`/work-plan/${data.id}`);
-    }
+    toast({ title: '새 회차가 생성되었습니다.' });
+    navigate(`/work-plan/${result.id}`);
   };
 
   const handleFileUpload = async (attIdx: number, file: File) => {

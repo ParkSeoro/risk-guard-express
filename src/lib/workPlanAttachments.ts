@@ -190,15 +190,16 @@ export async function cloneAttachmentFiles(opts: {
     companyId: opts.companyId,
     workType: opts.workType,
   });
-  const { data: src } = await supabase
+  const { data: src, error: srcError } = await supabase
     .from('work_plan_attachments')
     .select('attachment_key, file_url, file_path, file_size, mime_type')
     .eq('work_plan_id', opts.fromPlanId)
     .eq('is_deleted', false)
     .not('file_url', 'is', null);
+  if (srcError) throw srcError;
   for (const row of (src ?? []) as any[]) {
     if (!row.attachment_key || !row.file_url) continue;
-    await supabase
+    const { error } = await supabase
       .from('work_plan_attachments')
       .update({
         file_url: row.file_url,
@@ -209,6 +210,7 @@ export async function cloneAttachmentFiles(opts: {
       .eq('work_plan_id', opts.toPlanId)
       .eq('attachment_key', row.attachment_key)
       .eq('is_deleted', false);
+    if (error) throw error;
   }
 }
 

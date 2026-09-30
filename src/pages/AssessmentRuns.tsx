@@ -26,9 +26,9 @@ import {
   fetchCreatorCompanyLabelMap,
   filterRunsByCompanyScope,
   pickProjectMemberRow,
-  preferredCompanyIdsByRunAuthors,
   readPreferredCompanyId,
   resolveAssessmentRunListCompanyLabel,
+  resolveAssessmentRunTargetCompanyLabel,
   buildProjectCompanyLabelMap,
 } from '@/lib/companyDocScope';
 import {
@@ -183,11 +183,7 @@ const AssessmentRuns = () => {
           .select('run_id, risk_grade, is_deleted, is_excluded')
           .in('run_id', runIds)
           .eq('is_deleted', false),
-        fetchCreatorCompanyLabelMap(
-          selectedProject,
-          creatorIds,
-          preferredCompanyIdsByRunAuthors(list),
-        ).catch(() => ({})),
+        fetchCreatorCompanyLabelMap(selectedProject, creatorIds).catch(() => ({})),
       ]);
       if (seq !== fetchSeqRef.current) return;
       setCreatorCompanyMap(creatorMap);
@@ -326,10 +322,12 @@ const AssessmentRuns = () => {
   };
 
   const companyLabelById = buildProjectCompanyLabelMap(allProjectCompanies);
-  const runCompanyLabel = (run: any) => resolveAssessmentRunListCompanyLabel(run, {
+  const companyLabelOpts = {
     companyLabelById,
     userCompanyLabelById: creatorCompanyMap,
-  });
+  };
+  const runCompanyLabel = (run: any) => resolveAssessmentRunListCompanyLabel(run, companyLabelOpts);
+  const runTargetLabel = (run: any) => resolveAssessmentRunTargetCompanyLabel(run, companyLabelOpts);
 
   const filtered = runs.filter(r => {
     if (showDeleted) { if (!r.is_deleted) return false; }
@@ -338,7 +336,7 @@ const AssessmentRuns = () => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search) {
       const term = search.toLowerCase();
-      const company = runCompanyLabel(r).toLowerCase();
+      const company = `${runCompanyLabel(r)} ${runTargetLabel(r)}`.toLowerCase();
       return (
         r.period_label?.toLowerCase().includes(term)
         || r.notes?.toLowerCase().includes(term)
@@ -439,6 +437,7 @@ const AssessmentRuns = () => {
             const stats = runStats[run.id] || { total: 0, high: 0, med: 0, low: 0 };
             const approval = getApprovalLabel(run);
             const creatorCompany = runCompanyLabel(run);
+            const targetCompany = runTargetLabel(run);
             return (
               <Card
                 key={run.id}
@@ -470,6 +469,11 @@ const AssessmentRuns = () => {
                         ) : (
                           <span className="text-muted-foreground">작성사 미확인</span>
                         )}
+                        {targetCompany ? (
+                          <span className="text-muted-foreground" title="대상 협력사">
+                            · 대상 {targetCompany}
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">

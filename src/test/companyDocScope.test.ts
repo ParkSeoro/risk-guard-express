@@ -9,9 +9,9 @@ import {
   formatCompanyLabelsShort,
   formatCreatorCompanyLabel,
   pickProjectMemberRow,
-  preferredCompanyIdsByRunAuthors,
   resolveAssessmentDocumentCompanies,
   resolveAssessmentRunListCompanyLabel,
+  resolveAssessmentRunTargetCompanyLabel,
   seesProjectWideCompanies,
   buildProjectCompanyLabelMap,
 } from '@/lib/companyDocScope';
@@ -280,20 +280,32 @@ describe('resolveAssessmentRunListCompanyLabel', () => {
     { id: '우리', name: '우리플랜트', type: 'contractor' },
   ]);
 
-  it('prefers target partner company over creator GC membership', () => {
-    expect(
-      resolveAssessmentRunListCompanyLabel(
-        {
-          created_by: 'u-gc',
-          author_user_id: 'u-gc',
-          target_company_ids: ['partner-jinnam'],
-        },
-        {
-          companyLabelById: companies,
-          userCompanyLabelById: { 'u-gc': '진남토건(주)(시공사)' },
-        },
-      ),
-    ).toBe('진남토건(주)(협력사)');
+  it('keeps the author GC when the target is a different contractor company', () => {
+    const run = {
+      created_by: 'u-gc',
+      author_user_id: 'u-gc',
+      target_company_ids: ['partner-jinnam'],
+    };
+    const opts = {
+      companyLabelById: companies,
+      userCompanyLabelById: { 'u-gc': '진남토건(주)(시공사)' },
+    };
+    expect(resolveAssessmentRunListCompanyLabel(run, opts)).toBe('진남토건(주)(시공사)');
+    expect(resolveAssessmentRunTargetCompanyLabel(run, opts)).toBe('진남토건(주)(협력사)');
+  });
+
+  it('omits the target line when the target company is the author company', () => {
+    const run = {
+      created_by: 'u-partner',
+      author_user_id: 'u-partner',
+      target_company_ids: ['partner-jinnam'],
+    };
+    const opts = {
+      companyLabelById: companies,
+      userCompanyLabelById: { 'u-partner': '진남토건(주)(협력사)' },
+    };
+    expect(resolveAssessmentRunListCompanyLabel(run, opts)).toBe('진남토건(주)(협력사)');
+    expect(resolveAssessmentRunTargetCompanyLabel(run, opts)).toBe('');
   });
 
   it('falls back to author then creator when no targets', () => {
@@ -309,19 +321,5 @@ describe('resolveAssessmentRunListCompanyLabel', () => {
         },
       ),
     ).toBe('우리플랜트(협력사)');
-  });
-});
-
-describe('preferredCompanyIdsByRunAuthors', () => {
-  it('indexes target companies by author and creator', () => {
-    expect(
-      preferredCompanyIdsByRunAuthors([
-        { created_by: 'a', author_user_id: 'b', target_company_ids: ['p1'] },
-        { created_by: 'a', author_user_id: null, target_company_ids: ['p1', 'p2'] },
-      ]),
-    ).toEqual({
-      a: ['p1', 'p2'],
-      b: ['p1'],
-    });
   });
 });

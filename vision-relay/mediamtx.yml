@@ -5,7 +5,11 @@ rtmp: yes
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
-hlsAlwaysRemux: yes
+# Remux only while a browser is reading. An always-on muxer looks like a viewer
+# and would keep 4G cameras uploading overnight.
+hlsAlwaysRemux: no
+api: yes
+apiAddress: :9997
 rtmpAddress: :1935
 pathDefaults:
   source: publisher

@@ -539,6 +539,10 @@ export default function WorkerDailyHome({
   };
 
   const handleCheckOut = async () => {
+    if (suspension) {
+      toast.error("출입 정지 상태에서는 퇴근할 수 없습니다");
+      return;
+    }
     if (!ackDone) {
       toast.error("작업·위험 확인 서명 후에만 퇴근할 수 있습니다");
       setAckOpen(true);
@@ -864,8 +868,12 @@ export default function WorkerDailyHome({
                 <Button
                   variant="destructive"
                   className="h-12 gap-2"
-                  disabled={busy || !ackDone}
+                  disabled={busy || !ackDone || !!suspension}
                   onClick={() => {
+                    if (suspension) {
+                      toast.error("출입 정지 상태에서는 퇴근할 수 없습니다");
+                      return;
+                    }
                     if (!ackDone) {
                       toast.error("작업·위험 확인 서명 후에만 퇴근할 수 있습니다");
                       setAckOpen(true);

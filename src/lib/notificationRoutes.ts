@@ -79,6 +79,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
 
 const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   danger_zone_entry: (n) => withProject(`${ADMIN}/zone-events`, n.project_id),
+  suspended_site_entry: () => `${ADMIN}/workers`,
   approval_request: () => `${WORKER}/approvals`,
   approval_result: (n) =>
     n.related_type === "assessment_run" && n.related_id
@@ -123,6 +124,7 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   danger_zone_entry: () => `${WORKER}/alerts`,
+  suspended_site_entry: () => `${WORKER}/workers`,
   approval_request: () => `${WORKER}/approvals`,
   approval_result: (n) =>
     n.related_type === "assessment_run" && n.related_id

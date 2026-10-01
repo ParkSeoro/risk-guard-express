@@ -36,6 +36,8 @@ import {
 } from "@/lib/approvalInboxPreview";
 import ApprovalDocPreviewDialog from "@/components/approval/ApprovalDocPreviewDialog";
 import ApprovalRejectReasonDialog from "@/components/approval/ApprovalRejectReasonDialog";
+import RejectionReasonBanner from "@/components/approval/RejectionReasonBanner";
+import { latestResubmitNotes, priorRejectionNotes } from "@/lib/priorRejectionReason";
 import {
   permitPostStepKind,
   permitPostStepBadge,
@@ -319,23 +321,12 @@ const Approvals = () => {
   }, [entityPending, entityTypeFilter, search]);
 
 
-  // Group by entity. Non-permit: latest version only.
-  // work_permit: keep all versions so issuance vs post-approval (closure/extend) can be split.
+  // Keep every round. The current line is the latest version; earlier 반려 comments stay visible.
   const grouped = (() => {
-    const maxVersionByKey: Record<string, number> = {};
-    for (const ap of approvals) {
-      const key = approvalTimelineGroupKey(ap);
-      const ver = ap.approval_version || 1;
-      if (!maxVersionByKey[key] || ver > maxVersionByKey[key]) maxVersionByKey[key] = ver;
-    }
     return approvals.reduce((acc, ap) => {
       const key = approvalTimelineGroupKey(ap);
-      const ver = ap.approval_version || 1;
-      const isPermit = (ap.entity_type || '').toString() === 'work_permit' || key.startsWith('work_permit:');
-      if (isPermit || ver === maxVersionByKey[key]) {
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(ap);
-      }
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(ap);
       return acc;
     }, {} as Record<string, any[]>);
   })();
@@ -659,18 +650,9 @@ const Approvals = () => {
               const allSteps = steps as any[];
               const isPermit = allSteps.some((s) => s.entity_type === 'work_permit')
                 || groupKey.startsWith('work_permit:');
-              const timeline = isPermit
-                ? splitApprovalTimeline(allSteps)
-                : {
-                    issuanceSteps: allSteps
-                      .filter((s) => s.status !== '취소')
-                      .slice()
-                      .sort((a, b) => (a.step_order ?? 99) - (b.step_order ?? 99)),
-                    postSteps: [] as any[],
-                    priorIssuanceSteps: [] as any[],
-                    maxIssuanceVersion: 0,
-                    maxPostVersion: 0,
-                  };
+              const timeline = splitApprovalTimeline(allSteps);
+              const priorRejects = priorRejectionNotes(allSteps);
+              const resubmitNotes = latestResubmitNotes(allSteps);
               const activeSteps = [...timeline.issuanceSteps, ...timeline.postSteps];
               const run = resolveLinkedRun(runs, groupKey, activeSteps.length ? activeSteps : allSteps);
               const cardTitle = documentCardTitle(run, activeSteps.length ? activeSteps : allSteps);
@@ -811,6 +793,12 @@ const Approvals = () => {
                           )}
                         </div>
                         {renderComments(timeline.issuanceSteps)}
+                        {priorRejects.length > 0 && (
+                          <RejectionReasonBanner title="이전 반려 사유" notes={priorRejects} />
+                        )}
+                        {resubmitNotes.length > 0 && (
+                          <RejectionReasonBanner title="재상신 사유" notes={resubmitNotes} />
+                        )}
                       </div>
                     )}
 

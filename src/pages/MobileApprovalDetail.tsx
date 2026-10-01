@@ -24,6 +24,8 @@ import {
 } from "@/lib/permitPostApproval";
 import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
 import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
+import RejectionReasonBanner from "@/components/approval/RejectionReasonBanner";
+import { latestResubmitNotes, priorRejectionNotes, type RejectionNote } from "@/lib/priorRejectionReason";
 
 /**
  * Mobile approval detail — decide on the same screen as the document.
@@ -45,6 +47,8 @@ export default function MobileApprovalDetail() {
   const [formData, setFormData] = useState<PermitFormData>({});
   const [signatures, setSignatures] = useState<PermitSignatures>({});
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [priorRejects, setPriorRejects] = useState<RejectionNote[]>([]);
+  const [resubmitNotes, setResubmitNotes] = useState<RejectionNote[]>([]);
 
   const stepKind = permitPostStepKind(row?.step_position);
   const badge = permitPostStepBadge(stepKind);
@@ -102,6 +106,19 @@ export default function MobileApprovalDetail() {
         setSignatures({});
       }
       setLoading(false);
+      if (found?.entity_type && found?.entity_id) {
+        const { data: history } = await supabase
+          .from("approvals")
+          .select("id, status, comment, approver_name, step, step_order, approval_version")
+          .eq("entity_type", found.entity_type)
+          .eq("entity_id", found.entity_id);
+        const rows = history || [];
+        setPriorRejects(priorRejectionNotes(rows));
+        setResubmitNotes(latestResubmitNotes(rows));
+      } else {
+        setPriorRejects([]);
+        setResubmitNotes([]);
+      }
     })();
   }, [user, approvalId, navigate]);
 
@@ -265,6 +282,12 @@ export default function MobileApprovalDetail() {
                   <Badge variant="outline">{row.step || "결재"}</Badge>
                 </div>
                 <div className="font-semibold text-base">{row.entity_title || summaryTitle}</div>
+                {priorRejects.length > 0 && (
+                  <RejectionReasonBanner title="이전 반려 사유" notes={priorRejects} />
+                )}
+                {resubmitNotes.length > 0 && (
+                  <RejectionReasonBanner title="재상신 사유" notes={resubmitNotes} />
+                )}
                 <div className="text-xs text-muted-foreground">
                   {formatPendingApprovalMeta(row) || (row.created_at ? `요청 ${new Date(row.created_at).toLocaleString("ko-KR")}` : "")}
                 </div>

@@ -57,6 +57,8 @@ import {
   CalendarDays, MapPin, User, Shield, ClipboardList, Ban
 } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import RejectionReasonBanner from '@/components/approval/RejectionReasonBanner';
+import { visibleDocumentRejection } from '@/lib/priorRejectionReason';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import {
   canAssistWorkPlanWrite,
@@ -109,6 +111,7 @@ const WorkPlanDetail = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [approvalRows, setApprovalRows] = useState<any[]>([]);
   const [voidOpen, setVoidOpen] = useState(false);
   const [authorName, setAuthorName] = useState('');
   // Basic info fields
@@ -146,6 +149,20 @@ const WorkPlanDetail = () => {
   useEffect(() => { endDateRef.current = endDate; }, [endDate]);
   useEffect(() => { planRef.current = plan; }, [plan]);
   useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+
+  useEffect(() => {
+    if (!planId) return;
+    let cancelled = false;
+    supabase
+      .from('approvals')
+      .select('id, status, comment, approver_name, step, step_order, approval_version')
+      .eq('entity_type', 'work_plan')
+      .eq('entity_id', planId)
+      .then(({ data }) => {
+        if (!cancelled) setApprovalRows(data || []);
+      });
+    return () => { cancelled = true; };
+  }, [planId, plan?.status]);
 
   const authorCompanyIds = useMemo(
     () => workPlanAuthorCompanyIds({
@@ -729,18 +746,23 @@ const WorkPlanDetail = () => {
       <WorkDocVoidBanner info={voidInfo} />
 
       {plan.status === '반려' && (
-        <Card className="border-red-500/40 bg-red-50/50 dark:bg-red-950/20">
+        <Card className="border-red-500/40 bg-red-50/50 dark:bg-red-950/20 print:hidden">
           <CardContent className="p-3 text-sm flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
             <div>
               <div className="font-semibold text-red-800 dark:text-red-300">결재 반려됨</div>
               <div className="text-xs text-muted-foreground">
-                내용을 수정한 뒤 <b>재상신</b>하세요. 전자결재에서 반려 사유(코멘트)를 확인할 수 있습니다.
+                아래 사유를 보고 내용을 수정한 뒤 <b>재상신</b>하세요.
               </div>
             </div>
           </CardContent>
         </Card>
       )}
+      {(() => {
+        const view = visibleDocumentRejection(approvalRows);
+        if (!view) return null;
+        return <RejectionReasonBanner title={view.title} notes={view.notes} />;
+      })()}
 
       {EDITABLE_PLAN_STATUSES.has(plan.status) && (
         <Card className={hasWorkPlanLegalAuthor(plan.author_user_id) ? '' : 'border-warning/40 bg-warning/10'}>

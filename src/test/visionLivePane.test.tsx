@@ -61,7 +61,22 @@ describe("VisionLivePane", () => {
     });
   }
 
-  function click(id: string) {
+  function mockPlaylist(status: number, body = "") {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (String(url).includes("viewer-status")) {
+        return new Response(JSON.stringify({ idle_kick: false }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(body, { status });
+    }),
+  );
+}
+
+function click(id: string) {
     act(() => {
       (el!.querySelector(`[data-testid="${id}"]`) as HTMLButtonElement).click();
     });
@@ -75,6 +90,8 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("연결 중");
     expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
     expect(el!.textContent).toContain("사용 방법이 잘못된 것이 아닙니다");
+    expect(el!.textContent).toContain("연결될 때까지");
+    expect(el!.textContent).not.toContain("붙");
     expect(el!.querySelector('[data-testid="vision-pane-connecting-0"]')).toBeTruthy();
     expect(el!.querySelector('[data-testid="vision-pane-controls-0"]')).toBeNull();
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
@@ -185,13 +202,14 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("재생 중");
   });
 
-  it("clears the offline notice when a picture arrives without a retry click", () => {
+  it("clears the offline notice when a picture arrives without a retry click", async () => {
     vi.useFakeTimers();
+    mockPlaylist(404);
     mount(undefined, 8_000);
-    act(() => {
-      vi.advanceTimersByTime(8_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
     });
-    expect(el!.textContent).toContain("송출이 없습니다");
+    expect(el!.textContent).toContain("카메라가 서버에 연결되어 있지 않습니다");
     showPicture();
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
     expect(el!.textContent).toContain("재생 중");
@@ -213,16 +231,49 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("재생 중");
   });
 
-  it("says the camera is not publishing when no picture arrives", () => {
+  it("says the camera is not connected when the playlist is missing", async () => {
     vi.useFakeTimers();
+    mockPlaylist(404);
     mount(undefined, 8_000);
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(4_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
       (el!.querySelector("video") as HTMLVideoElement).dispatchEvent(new Event("waiting"));
-      vi.advanceTimersByTime(4_000);
+      await vi.advanceTimersByTimeAsync(4_000);
     });
-    expect(el!.textContent).toContain("송출이 없습니다");
+    expect(el!.textContent).toContain("카메라가 서버에 연결되어 있지 않습니다");
+    expect(el!.textContent).toContain("전원, 배터리, 4G 중 하나일 수 있습니다");
+    expect(el!.textContent).not.toContain("붙");
+  });
+
+  it("names the relay when the playlist cannot be reached", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network");
+      }),
+    );
+    mount(undefined, 8_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(el!.textContent).toContain("중계 서버에 연결하지 못했습니다");
+  });
+
+  it("keeps connecting while a fresh playlist has no picture yet", async () => {
+    vi.useFakeTimers();
+    mockPlaylist(200, "#EXTM3U\n#EXTINF:1.0,\nseg.ts\n");
+    mount(undefined, 8_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
+    expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(el!.textContent).toContain("서버에는 연결되어 있는데 화면이 열리지 않습니다");
   });
 
   it("keeps a live picture when the element errors after playback started", () => {

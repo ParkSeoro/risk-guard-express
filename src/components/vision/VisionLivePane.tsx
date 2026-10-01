@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
+import { explainVisionPlayback, VISION_OFFLINE, type VisionOfflineCopy } from "@/lib/visionPlaybackFailure";
 import { captureVisionFrame } from "@/lib/visionFrame";
 
 type Props = {
@@ -98,6 +99,7 @@ export default function VisionLivePane({
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const [paused, setPaused] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [offlineCopy, setOfflineCopy] = useState<VisionOfflineCopy | null>(null);
   const [live, setLive] = useState(false);
   const [held, setHeld] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -114,6 +116,7 @@ export default function VisionLivePane({
   useEffect(() => {
     setPaused(false);
     setOffline(false);
+    setOfflineCopy(null);
     setHeld(false);
     setLive(false);
     setZoomIndex(0);
@@ -176,8 +179,19 @@ export default function VisionLivePane({
     let hls: { destroy: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
+    let extended = false;
     const markOffline = () => {
-      if (!cancelled && !sawPicture) setOffline(true);
+      if (cancelled || sawPicture) return;
+      void explainVisionPlayback(safeUrl).then((reason) => {
+        if (cancelled || sawPicture) return;
+        if (reason === "starting" && !extended) {
+          extended = true;
+          deadline = window.setTimeout(markOffline, connectMs);
+          return;
+        }
+        setOfflineCopy(reason === "starting" ? VISION_OFFLINE.picture : reason);
+        setOffline(true);
+      });
     };
     const onFrame = () => {
       if (cancelled) return;
@@ -496,7 +510,7 @@ export default function VisionLivePane({
           </span>
           <p className="text-sm font-medium">카메라를 연결하고 있습니다</p>
           <p className="max-w-[260px] text-[12px] leading-relaxed text-white/80">
-            사용 방법이 잘못된 것이 아닙니다. 카메라가 서버에 붙을 때까지 잠시 기다립니다.
+            사용 방법이 잘못된 것이 아닙니다. 카메라가 서버에 연결될 때까지 잠시 기다립니다.
           </p>
         </div>
       )}
@@ -506,14 +520,17 @@ export default function VisionLivePane({
           data-testid={`vision-pane-offline-${index}`}
         >
           <WifiOff className="h-5 w-5" />
-          <p className="text-sm font-medium">송출이 없습니다</p>
-          <p className="text-[11px] text-white/70">카메라가 서버로 영상을 보내지 않고 있습니다</p>
+          <p className="text-sm font-medium">{offlineCopy?.title ?? "송출이 없습니다"}</p>
+          <p className="text-[11px] text-white/70">
+            {offlineCopy?.detail ?? "카메라가 서버로 영상을 보내지 않고 있습니다"}
+          </p>
           <button
             type="button"
             className="mt-1 rounded bg-white/90 px-3 py-1.5 text-xs font-medium text-black hover:bg-white"
             data-testid={`vision-pane-retry-${index}`}
             onClick={() => {
               setOffline(false);
+              setOfflineCopy(null);
               setRetry((n) => n + 1);
             }}
           >

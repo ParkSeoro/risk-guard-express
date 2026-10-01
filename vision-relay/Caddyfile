@@ -7,5 +7,10 @@
 	}
 	@options method OPTIONS
 	respond @options 204
-	reverse_proxy mediamtx:8888
+	handle /live/*/viewer-status {
+		reverse_proxy viewer-gate:9197
+	}
+	handle {
+		reverse_proxy mediamtx:8888
+	}
 }

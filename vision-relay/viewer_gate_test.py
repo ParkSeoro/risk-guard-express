@@ -8,6 +8,7 @@ class ViewerGateTest(unittest.TestCase):
     def setUp(self) -> None:
         with viewer_gate._lock:
             viewer_gate._last_read.clear()
+            viewer_gate._last_kick.clear()
 
     def test_playlist_and_publish_share_one_path(self) -> None:
         self.assertEqual(
@@ -78,6 +79,15 @@ class ViewerGateTest(unittest.TestCase):
         viewer_gate.note_read(path, now=now)
         self.assertFalse(viewer_gate.should_kick_conn(old, now=now))
         self.assertFalse(viewer_gate.should_kick_conn(reconnect, now=now))
+
+    def test_recent_kick_explains_a_missing_picture(self) -> None:
+        path = "live/0edfed08baf964c1"
+        self.assertIsNone(viewer_gate.status_path("/health"))
+        self.assertEqual(viewer_gate.status_path(f"/{path}/viewer-status"), path)
+        self.assertFalse(viewer_gate.recent_idle_kick(path, now=200))
+        viewer_gate.note_kick(path, now=100)
+        self.assertTrue(viewer_gate.recent_idle_kick(path, now=100 + viewer_gate.RECENT_KICK_S - 1))
+        self.assertFalse(viewer_gate.recent_idle_kick(path, now=100 + viewer_gate.RECENT_KICK_S + 1))
 
 
 if __name__ == "__main__":

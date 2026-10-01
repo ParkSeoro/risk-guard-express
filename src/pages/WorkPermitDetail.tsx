@@ -34,6 +34,8 @@ import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { printPermitBundle } from '@/lib/printPermitBundle';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import RejectionReasonBanner from '@/components/approval/RejectionReasonBanner';
+import { visibleDocumentRejection } from '@/lib/priorRejectionReason';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
 import PermitAiBriefingCard from '@/components/permits/PermitAiBriefingCard';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -115,6 +117,7 @@ export default function WorkPermitDetail() {
   const listBackPath = approvalsBackOr('/work-permits', searchParams.get('from'));
 
   const [permit, setPermit] = useState<any>(null);
+  const [approvalRows, setApprovalRows] = useState<any[]>([]);
   const [projectName, setProjectName] = useState('');
   const [selectedKinds, setSelectedKinds] = useState<PermitKindId[]>(['general']);
   const [activeKind, setActiveKind] = useState<PermitKindId>('general');
@@ -337,12 +340,13 @@ export default function WorkPermitDetail() {
     // Latest approval version rows for this permit
     const { data: aps } = await supabase
       .from('approvals')
-      .select('position, approver_name, approver_id, status, approved_at, updated_at, step_order, approval_version')
+      .select('id, position, approver_name, approver_id, status, comment, approved_at, updated_at, step, step_order, approval_version')
       .eq('entity_type', 'work_permit')
       .eq('entity_id', id)
       .order('approval_version', { ascending: false })
       .order('step_order', { ascending: true });
 
+    setApprovalRows(aps || []);
     let versioned = aps || [];
     if (versioned.length > 0) {
       const latestVersion = versioned[0].approval_version;
@@ -831,6 +835,15 @@ export default function WorkPermitDetail() {
       </div>
 
       <WorkDocVoidBanner info={voidInfo} />
+
+      {(() => {
+        const view = visibleDocumentRejection(
+          approvalRows,
+          permit.status === '반려' ? permit.rejection_reason : null,
+        );
+        if (!view) return null;
+        return <RejectionReasonBanner title={view.title} notes={view.notes} />;
+      })()}
 
       {showBriefing && (
         <div className="print:hidden">

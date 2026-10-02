@@ -21,6 +21,10 @@ describe("VisionLivePane", () => {
   let root: Root | null = null;
   let el: HTMLDivElement | null = null;
 
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     act(() => {
@@ -234,6 +238,20 @@ describe("VisionLivePane", () => {
     });
     expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
     expect(el!.textContent).toContain("재생 중");
+  });
+
+  it("covers a frozen picture and connects again", () => {
+    vi.useFakeTimers();
+    mount(undefined, 30_000);
+    showPicture();
+    expect(el!.textContent).toContain("재생 중");
+    act(() => {
+      vi.advanceTimersByTime(12_000);
+      (el!.querySelector("video") as HTMLVideoElement).dispatchEvent(new Event("playing"));
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-connecting-0"]')).toBeTruthy();
+    expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
+    expect(el!.textContent).not.toContain("재생 중");
   });
 
   it("keeps a live picture through a short buffer gap", () => {

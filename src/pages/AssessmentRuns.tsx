@@ -42,7 +42,7 @@ import {
 } from '@/lib/assessmentRunType';
 import { canCreateAssessmentRun, defaultAuthorUserId } from '@/lib/assessmentAuthor';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
-import { pickPreviousApprovedRun, type WeeklyLinkRun } from '@/lib/weeklyAssessmentLink';
+import { pickPreviousApprovedRun, stampRunCompany, type WeeklyLinkRun } from '@/lib/weeklyAssessmentLink';
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
   '작성중': { bg: 'bg-muted', text: 'text-muted-foreground' },
@@ -270,12 +270,14 @@ const AssessmentRuns = () => {
     try {
       // Build contractor names for legacy field from selected company ids
       const contractorNames = form.target_company_ids.map(id => companyNameMap[id] || id);
+      const authorId = form.author_user_id || user.id;
 
       const payload = buildAssessmentRunCreatePayload({
         projectId: selectedProject,
         userId: user.id,
         form,
         contractorNames,
+        authorCompanyId: memberCompanyByUser[authorId] || memberCompanyByUser[user.id] || null,
       });
 
       const { data, error } = await supabase.from('assessment_runs').insert([payload]).select().single();
@@ -288,7 +290,10 @@ const AssessmentRuns = () => {
         return;
       }
 
-      const previous = pickPreviousApprovedRun(data as WeeklyLinkRun, (runs || []) as WeeklyLinkRun[]);
+      const previous = pickPreviousApprovedRun(
+        stampRunCompany(data as WeeklyLinkRun, memberCompanyByUser),
+        ((runs || []) as WeeklyLinkRun[]).map((row) => stampRunCompany(row, memberCompanyByUser)),
+      );
       toast({
         title: '회차가 생성되었습니다.',
         description: previous

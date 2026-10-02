@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const src = readFileSync(resolve(process.cwd(), 'supabase/functions/generate-pdf/index.ts'), 'utf8');
+const chainSql = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20261002120000_assessment_company_chain.sql'),
+  'utf8',
+);
 
 describe('generate-pdf RA table layout', () => {
   it('does not nowrap 공정 into the 세부작업 column', () => {
@@ -18,11 +22,18 @@ describe('generate-pdf RA table layout', () => {
     expect(src).toMatch(/!i\?\.is_excluded/);
   });
 
-  it('uses saved previous_run_id for 금주 이행 확인 when auto-link misses', () => {
-    expect(src).toMatch(/run\.previous_run_id/);
-    expect(src).toMatch(/overrideId/);
-    expect(src).toMatch(/stampEffectiveCompanies/);
+  it('loads 금주 and 전회차 from the shared company chain', () => {
+    expect(src).toMatch(/assessment_feedback_chain/);
+    expect(src).toMatch(/previousRunId/);
+    expect(src).toMatch(/_override_previous_id/);
+    expect(src).not.toMatch(/\.limit\(80\)/);
     expect(src).not.toMatch(/na\.length === 0 && nb\.length === 0\) return true/);
+    expect(src).not.toMatch(/stampEffectiveCompanies/);
+    expect(chainSql).toMatch(/project_member_role_rank/);
+    expect(chainSql).toMatch(/ORDER BY public\.project_member_role_rank/);
+    expect(chainSql).toMatch(/assessment_feedback_chain/);
+    expect(chainSql).toMatch(/skip_document_edit_lock/);
+    expect(chainSql).toMatch(/COALESCE\(array_length\(_a, 1\), 0\) > 0/);
   });
 
   it('prints 결재 코멘트 under the signature table', () => {

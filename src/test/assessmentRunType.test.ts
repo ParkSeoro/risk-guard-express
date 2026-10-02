@@ -50,6 +50,32 @@ describe('assessmentRunType', () => {
     expect(payload.target_contractors).toEqual(['정원']);
   });
 
+  it('stores the author company when the form company list is empty', () => {
+    const form = emptyAssessmentRunCreateForm('상시', 'author-1');
+    const payload = buildAssessmentRunCreatePayload({
+      projectId: 'proj-1',
+      userId: 'user-1',
+      form,
+      contractorNames: [],
+      authorCompanyId: 'co-daewoong',
+    });
+    expect(payload.target_company_ids).toEqual(['co-daewoong']);
+    expect(payload.target_contractors).toEqual([]);
+  });
+
+  it('keeps an explicit company selection ahead of the author company', () => {
+    const form = emptyAssessmentRunCreateForm('상시', 'author-1');
+    form.target_company_ids = ['co-other'];
+    const payload = buildAssessmentRunCreatePayload({
+      projectId: 'proj-1',
+      userId: 'user-1',
+      form,
+      contractorNames: ['다른회사'],
+      authorCompanyId: 'co-daewoong',
+    });
+    expect(payload.target_company_ids).toEqual(['co-other']);
+  });
+
   it('does not relabel 수시/상시 period placeholders as weekly 정기', () => {
     expect(periodLabelPlaceholder('수시')).toContain('수시');
     expect(periodLabelPlaceholder('상시')).toContain('상시');

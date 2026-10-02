@@ -109,6 +109,7 @@ import {
   isManagedResidualHigh,
   listManualPreviousCandidates,
   effectiveCompanyIds,
+  parseAssessmentFeedbackChain,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
   resolvePreviousRun,
@@ -584,26 +585,37 @@ const AssessmentRunDetail = () => {
     let cancelled = false;
     const loadWeeklyLink = async () => {
       if (!runId || !run?.project_id) return;
-      const { data: candidates, error: candErr } = await supabase
-        .from('assessment_runs')
-        .select(WEEKLY_LINK_CANDIDATE_SELECT)
-        .eq('project_id', run.project_id)
-        .in('status', ['승인완료', '결재진행'])
-        .eq('is_deleted', false)
-        .neq('id', runId)
-        .order('created_at', { ascending: false })
-        .limit(120);
+      const [candRes, chainRes] = await Promise.all([
+        supabase
+          .from('assessment_runs')
+          .select(WEEKLY_LINK_CANDIDATE_SELECT)
+          .eq('project_id', run.project_id)
+          .in('status', ['승인완료', '결재진행'])
+          .eq('is_deleted', false)
+          .neq('id', runId)
+          .order('created_at', { ascending: false }),
+        supabase.rpc('assessment_feedback_chain' as any, { _run_id: runId }),
+      ]);
       if (cancelled) return;
-      if (candErr) {
-        console.warn('[weekly-link] previous-run lookup failed:', candErr.message);
+      if (candRes.error) {
+        console.warn('[weekly-link] previous-run lookup failed:', candRes.error.message);
       }
-      let rows = (candidates || []) as WeeklyLinkRun[];
+      if (chainRes.error) {
+        console.warn('[weekly-link] company chain failed:', chainRes.error.message);
+      }
+      let rows = (candRes.data || []) as WeeklyLinkRun[];
+      const chain = chainRes.error ? null : parseAssessmentFeedbackChain(chainRes.data);
       const overrideId = String((run as any).previous_run_id || '').trim();
-      if (overrideId && overrideId !== runId && !rows.some((c) => c.id === overrideId)) {
+      const mustHave = new Set<string>();
+      if (overrideId && overrideId !== runId) mustHave.add(overrideId);
+      if (chain?.previousRunId) mustHave.add(chain.previousRunId);
+      if (chain?.autoPreviousRunId) mustHave.add(chain.autoPreviousRunId);
+      for (const id of mustHave) {
+        if (rows.some((c) => c.id === id)) continue;
         const { data: extra } = await supabase
           .from('assessment_runs')
           .select(WEEKLY_LINK_CANDIDATE_SELECT)
-          .eq('id', overrideId)
+          .eq('id', id)
           .maybeSingle();
         if (extra && extra.project_id === run.project_id && !extra.is_deleted) {
           rows = [extra as WeeklyLinkRun, ...rows];
@@ -634,8 +646,13 @@ const AssessmentRunDetail = () => {
       if (cancelled) return;
       const stampedCurrent = stampRunCompany(run as WeeklyLinkRun, authorCompanyByUser, companyLabelById);
       const stampedRows = rows.map((row) => stampRunCompany(row, authorCompanyByUser, companyLabelById));
-      const auto = pickPreviousApprovedRun(stampedCurrent, stampedRows);
+      const findStamped = (id: string | null) => (id ? stampedRows.find((c) => c.id === id) || null : null);
+      let auto = pickPreviousApprovedRun(stampedCurrent, stampedRows);
       let previous = resolvePreviousRun(stampedCurrent, stampedRows, overrideId);
+      if (chain) {
+        previous = findStamped(chain.previousRunId);
+        auto = findStamped(chain.autoPreviousRunId);
+      }
       const pickerRows = listManualPreviousCandidates(stampedCurrent, stampedRows);
       const currentFbReq = supabase
         .from('risk_item_feedback' as any)

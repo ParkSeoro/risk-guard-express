@@ -61,12 +61,29 @@ export function emptyAssessmentRunCreateForm(
   };
 }
 
+function companyIdList(ids?: string[] | null): string[] {
+  if (!Array.isArray(ids)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of ids) {
+    const id = String(raw || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 export function buildAssessmentRunCreatePayload(args: {
   projectId: string;
   userId: string;
   form: AssessmentRunCreateForm;
   contractorNames: string[];
+  /** Used only when the form did not select a company. Never stored as a shared empty list. */
+  authorCompanyId?: string | null;
 }) {
+  const selected = companyIdList(args.form.target_company_ids);
+  const authorCompanyId = String(args.authorCompanyId || '').trim();
   return {
     project_id: args.projectId,
     type: resolveAssessmentRunType(args.form.type),
@@ -75,7 +92,7 @@ export function buildAssessmentRunCreatePayload(args: {
     end_date: args.form.end_date || null,
     target_processes: args.form.target_processes.split(',').map((s) => s.trim()).filter(Boolean),
     target_contractors: args.contractorNames,
-    target_company_ids: args.form.target_company_ids,
+    target_company_ids: selected.length > 0 ? selected : (authorCompanyId ? [authorCompanyId] : []),
     notes: args.form.notes.trim(),
     status: '작성중',
     created_by: args.userId,

@@ -13,6 +13,7 @@ import {
   visionGrantTtlMs,
   visionRoleLabel,
   visionSafePlaybackUrl,
+  visionViewerHoldUrl,
 } from "@/lib/visionFleetApi";
 import { resolveNotificationRoute, toMobileShellPath } from "@/lib/notificationRoutes";
 
@@ -50,6 +51,10 @@ describe("vision fleet client helpers", () => {
     expect(visionSafePlaybackUrl("rtsp://cam/stream1")).toBeNull();
     expect(visionSafePlaybackUrl("https://user:pass@example.com/live.m3u8")).toBeNull();
     expect(visionSafePlaybackUrl("https://cdn.example.com/live.m3u8")).toBe("https://cdn.example.com/live.m3u8");
+    expect(visionViewerHoldUrl("https://cdn.example.com/live/abc/index.m3u8")).toBe(
+      "https://cdn.example.com/live/abc/viewer-status",
+    );
+    expect(visionViewerHoldUrl("https://cdn.example.com/live.m3u8")).toBeNull();
   });
 
   it("lets supervisors open the console but not provision", () => {

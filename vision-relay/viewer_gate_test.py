@@ -8,6 +8,7 @@ class ViewerGateTest(unittest.TestCase):
     def setUp(self) -> None:
         with viewer_gate._lock:
             viewer_gate._last_read.clear()
+            viewer_gate._last_kick.clear()
 
     def test_playlist_and_publish_share_one_path(self) -> None:
         self.assertEqual(
@@ -78,6 +79,13 @@ class ViewerGateTest(unittest.TestCase):
         viewer_gate.note_read(path, now=now)
         self.assertFalse(viewer_gate.should_kick_conn(old, now=now))
         self.assertFalse(viewer_gate.should_kick_conn(reconnect, now=now))
+
+    def test_open_console_ping_holds_the_upload(self) -> None:
+        key = viewer_gate.note_open_page("/live/0edfed08baf964c1/viewer-status", now=50)
+        self.assertEqual(key, "live/0edfed08baf964c1")
+        self.assertTrue(viewer_gate.publish_allowed("live/0edfed08baf964c1", now=50 + viewer_gate.HOLD_S - 1))
+        self.assertFalse(viewer_gate.publish_allowed("live/0edfed08baf964c1", now=50 + viewer_gate.HOLD_S + 1))
+        self.assertIsNone(viewer_gate.note_open_page("/live/0edfed08baf964c1/index.m3u8", now=50))
 
 
 if __name__ == "__main__":

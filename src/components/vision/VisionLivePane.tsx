@@ -18,7 +18,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
-import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
+import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl, visionViewerHoldUrl } from "@/lib/visionFleetApi";
 import { captureVisionFrame } from "@/lib/visionFrame";
 
 type Props = {
@@ -36,6 +36,10 @@ type Props = {
 const ZOOMS = [1, 1.5, 2, 3] as const;
 const PAN_STEP = 0.35;
 const DEFAULT_CONNECT_MS = 30_000;
+/** A picture that does not advance for this long is frozen. Cover it and reconnect. */
+const STALL_RECONNECT_MS = 12_000;
+/** Open console keeps the camera upload even when HLS itself has stalled. */
+const VIEWER_HOLD_MS = 15_000;
 
 type Pan = { x: number; y: number };
 
@@ -130,6 +134,23 @@ export default function VisionLivePane({
   }, [safeUrl, paused, idleMs, retry]);
 
   useEffect(() => {
+    if (!safeUrl || paused) return;
+    const hold = visionViewerHoldUrl(safeUrl);
+    if (!hold || typeof fetch !== "function") return;
+    let stop = false;
+    const ping = () => {
+      if (stop) return;
+      void fetch(hold, { cache: "no-store" }).catch(() => undefined);
+    };
+    ping();
+    const timer = window.setInterval(ping, VIEWER_HOLD_MS);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [safeUrl, paused]);
+
+  useEffect(() => {
     const video = videoRef.current;
     const sync = () => {
       const shell = shellRef.current;
@@ -176,16 +197,42 @@ export default function VisionLivePane({
     let hls: { destroy: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
+    let lastMediaTime = -1;
+    let lastAdvanceAt = 0;
+    let stallMark = -1;
     const markOffline = () => {
       if (!cancelled && !sawPicture) setOffline(true);
     };
     const onFrame = () => {
       if (cancelled) return;
       if (video.videoWidth <= 0 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-      sawPicture = true;
-      setLive(true);
+      const mediaTime = video.currentTime || 0;
+      if (stallMark >= 0) {
+        if (Math.abs(mediaTime - stallMark) <= 0.05) return;
+        stallMark = -1;
+      }
+      const advanced = lastMediaTime < 0 || mediaTime > lastMediaTime + 0.05;
+      if (advanced) {
+        lastMediaTime = mediaTime;
+        lastAdvanceAt = Date.now();
+      }
+      if (!sawPicture || advanced) {
+        sawPicture = true;
+        setLive(true);
+        setOffline(false);
+        window.clearTimeout(deadline);
+      }
+    };
+    const reconnectStalled = () => {
+      if (cancelled || !sawPicture) return;
+      if (!lastAdvanceAt || Date.now() - lastAdvanceAt < STALL_RECONNECT_MS) return;
+      stallMark = lastMediaTime < 0 ? 0 : lastMediaTime;
+      sawPicture = false;
+      lastAdvanceAt = Date.now();
+      setLive(false);
       setOffline(false);
       window.clearTimeout(deadline);
+      void attach();
     };
     const scheduleReload = () => {
       if (cancelled || reloadTimer) return;
@@ -204,6 +251,7 @@ export default function VisionLivePane({
     video.addEventListener("timeupdate", onFrame);
     video.addEventListener("error", onVideoError);
     deadline = window.setTimeout(markOffline, connectMs);
+    const stallTimer = window.setInterval(reconnectStalled, 1_000);
 
     const attach = async () => {
       const token = ++generation;
@@ -258,6 +306,7 @@ export default function VisionLivePane({
       generation += 1;
       window.clearTimeout(deadline);
       window.clearTimeout(reloadTimer);
+      window.clearInterval(stallTimer);
       video.removeEventListener("playing", onFrame);
       video.removeEventListener("loadeddata", onFrame);
       video.removeEventListener("resize", onFrame);
@@ -486,7 +535,7 @@ export default function VisionLivePane({
       )}
       {connecting && (
         <div
-          className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center text-white"
+          className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black px-6 text-center text-white"
           data-testid={`vision-pane-connecting-${index}`}
         >
           <span className="relative flex h-14 w-14 items-center justify-center" aria-hidden>
@@ -496,7 +545,7 @@ export default function VisionLivePane({
           </span>
           <p className="text-sm font-medium">카메라를 연결하고 있습니다</p>
           <p className="max-w-[260px] text-[12px] leading-relaxed text-white/80">
-            사용 방법이 잘못된 것이 아닙니다. 카메라가 서버에 붙을 때까지 잠시 기다립니다.
+            사용 방법이 잘못된 것이 아닙니다. 카메라가 서버에 연결될 때까지 잠시 기다립니다.
           </p>
         </div>
       )}

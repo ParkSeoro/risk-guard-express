@@ -20,10 +20,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HOLD_S = 45
 # A reconnect with nobody watching must not get another full hold of upload.
 GRACE_S = 5
+# How long a saving kick still explains a missing picture after the console opens.
+RECENT_KICK_S = 90
 API = os.environ.get("MTX_API", "http://mediamtx:9997").rstrip("/")
 LISTEN = ("0.0.0.0", 9197)
 
 _last_read: dict[str, float] = {}
+_last_kick: dict[str, float] = {}
 _lock = threading.Lock()
 
 
@@ -41,6 +44,40 @@ def note_read(path: str, now: float | None = None) -> None:
         return
     with _lock:
         _last_read[key] = time.monotonic() if now is None else now
+
+
+def note_kick(path: str, now: float | None = None) -> None:
+    key = canonical_path(path)
+    if not key:
+        return
+    with _lock:
+        _last_kick[key] = time.monotonic() if now is None else now
+
+
+def recent_idle_kick(path: str, now: float | None = None, recent_s: float = RECENT_KICK_S) -> bool:
+    key = canonical_path(path)
+    if not key:
+        return False
+    moment = time.monotonic() if now is None else now
+    with _lock:
+        seen = _last_kick.get(key)
+    return seen is not None and (moment - seen) <= recent_s
+
+
+def status_path(path: str) -> str | None:
+    parts = [part for part in (path or "").split("?")[0].split("/") if part]
+    if len(parts) == 3 and parts[0] == "live" and parts[2] == "viewer-status":
+        return f"live/{parts[1]}"
+    return None
+
+
+def note_open_page(path: str, now: float | None = None) -> str | None:
+    """An open console pings viewer-status. That counts as a viewer."""
+    key = status_path(path)
+    if not key:
+        return None
+    note_read(key, now=now)
+    return key
 
 
 def publish_allowed(path: str, now: float | None = None, hold_s: float = HOLD_S) -> bool:
@@ -128,8 +165,13 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(200 if allowed else 403, {"status": "ok" if allowed else "no viewer"})
 
     def do_GET(self) -> None:
-        if self.path.split("?", 1)[0] == "/health":
+        path = self.path.split("?", 1)[0]
+        if path == "/health":
             self._reply(200, {"status": "ok"})
+            return
+        key = note_open_page(path)
+        if key:
+            self._reply(200, {"idle_kick": recent_idle_kick(key)})
             return
         self._reply(404, {"error": "not found"})
 
@@ -188,6 +230,7 @@ def _kick_idle_once() -> None:
             )
             try:
                 urllib.request.urlopen(kick, timeout=2).read()
+                note_kick(path)
                 print(f"kick {canonical_path(path)}", flush=True)
             except Exception as exc:
                 print(f"kick failed {canonical_path(path)}: {exc}", flush=True)

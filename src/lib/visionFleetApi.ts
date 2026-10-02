@@ -13,7 +13,7 @@ export type VisionGrantAction = "live_substream" | "live_mainstream" | "playback
 export const VISION_LIVE_ACTION: VisionGrantAction = "live_mainstream";
 export const VISION_LIVE_BITRATE_KBPS = 4096;
 export const VISION_LIVE_TTL_MS = 30 * 60_000;
-/** Stop the browser HLS pull after this idle window. The relay then drops the camera upload. */
+/** Stop the browser HLS pull after this idle window. An open page holds the upload until then. */
 export const VISION_LIVE_IDLE_MS = 10 * 60_000;
 
 export function visionGrantTtlMs(action: VisionGrantAction): number {
@@ -96,6 +96,14 @@ export function visionSafePlaybackUrl(raw: string | null | undefined): string | 
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
   if (parsed.username || parsed.password) return null;
   return trimmed;
+}
+
+/** While this page is open, tell the relay someone is watching even if HLS stalls. */
+export function visionViewerHoldUrl(playbackUrl: string | null | undefined): string | null {
+  const safe = visionSafePlaybackUrl(playbackUrl);
+  if (!safe) return null;
+  const next = safe.replace(/\/index\.m3u8(\?.*)?$/i, "/viewer-status");
+  return next === safe ? null : next;
 }
 
 export function visionEventSirenAllowed(opts: {

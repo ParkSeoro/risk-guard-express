@@ -60,6 +60,7 @@ const MANDATORY_EVENTS_ALL = [
   { key: 'approval_request',   label: '결재 상신 요청',         desc: '결재선 지정 결재자에게 전달 (일반 알림 채널)', worker: false },
   { key: 'approval_result',    label: '결재 승인 / 반려',       desc: '기안자·이미 결재한 단계에 결과 전달 (미도달 윗단계는 제외)', worker: false },
   { key: 'danger_zone_entry',  label: '위험구역 진입',         desc: '지오펜스 경보 (사이렌 채널)', worker: true },
+  { key: 'suspended_site_entry', label: '출입 정지 근로자 진입', desc: '정지된 근로자가 현장에 들어왔을 때', worker: false },
   { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림', worker: true },
   { key: 'announcement',       label: '현장 공지',             desc: '관리자가 게시한 현장 공지 (끌 수 없음)', worker: true },
   { key: 'assessment_share',   label: '위험성평가 결과 공유',   desc: '회사별 평가 승인 시 소속 관리자·근로자 확인 서명 (끌 수 없음)', worker: true },

@@ -168,7 +168,7 @@ export default function PushNotificationBridge() {
           'pushNotificationReceived',
           (notification: any) => {
             const data = notification?.data || {};
-            if (data.type === 'danger_zone_entry') {
+            if (data.type === 'danger_zone_entry' || data.type === 'suspended_site_entry') {
               void import('@/lib/tts').then((m) => m.playDangerAlarm());
             }
             // 현장 공지: system tray already shows; foreground just surface a toast.

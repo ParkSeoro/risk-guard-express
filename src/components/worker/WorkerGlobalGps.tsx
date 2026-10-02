@@ -3,6 +3,7 @@
  *
  * Policy:
  * - Worker: full tracking only while checked in today (open entry log).
+ * - Suspended worker: cannot check in, so track from the site fence anyway.
  * - Manager: full tracking only when currently inside the site resume fence.
  * - Platform master: same fence by default. Opt-in "현장 외 알람 테스트"
  *   skips the probe/auto-stop and suppresses worker_last_positions.
@@ -22,6 +23,12 @@ import {
   resolveSiteTrackingFences,
   isInsideAnyResumeFence,
 } from "@/lib/tracking/siteTrackBounds";
+import {
+  fetchAttendanceOutlines,
+  isWithinAnySiteAttendance,
+} from "@/lib/tracking/siteBoundary";
+import { workerGpsStartMode } from "@/lib/tracking/suspendedWorkerGps";
+import { isWorkerCurrentlySuspended } from "@/lib/workerSuspension";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import {
   isPlatformMaster,
@@ -180,21 +187,59 @@ export default function WorkerGlobalGps() {
       return ((data as any[]) || []).length > 0;
     };
 
-    const probeInsideSite = async (projectId: string): Promise<boolean> => {
+    const rosterSuspended = async (workerId: string | null): Promise<boolean> => {
+      if (!workerId) return false;
+      const { data } = await supabase
+        .from("workers")
+        .select("site_entry_suspended_until")
+        .eq("id", workerId)
+        .maybeSingle();
+      return isWorkerCurrentlySuspended(
+        (data as { site_entry_suspended_until?: string | null } | null) || {},
+      );
+    };
+
+    const probeInsideSite = async (
+      projectId: string,
+      attendanceShape = false,
+    ): Promise<boolean> => {
       if (!("geolocation" in navigator)) return false;
-      const fences = await resolveSiteTrackingFences(projectId);
-      if (!fences.length) return false;
       return await new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            resolve(
-              isInsideAnyResumeFence(
-                fences,
-                pos.coords.latitude,
-                pos.coords.longitude,
-                pos.coords.accuracy,
-              ),
-            );
+            void (async () => {
+              try {
+                if (attendanceShape) {
+                  const outlines = await fetchAttendanceOutlines(projectId);
+                  if (outlines.length) {
+                    resolve(
+                      isWithinAnySiteAttendance(
+                        outlines,
+                        pos.coords.latitude,
+                        pos.coords.longitude,
+                        pos.coords.accuracy,
+                      ),
+                    );
+                    return;
+                  }
+                }
+                const fences = await resolveSiteTrackingFences(projectId);
+                if (!fences.length) {
+                  resolve(false);
+                  return;
+                }
+                resolve(
+                  isInsideAnyResumeFence(
+                    fences,
+                    pos.coords.latitude,
+                    pos.coords.longitude,
+                    pos.coords.accuracy,
+                  ),
+                );
+              } catch {
+                resolve(false);
+              }
+            })();
           },
           () => resolve(false),
           { enableHighAccuracy: true, maximumAge: 8_000, timeout: 15_000 },
@@ -232,10 +277,10 @@ export default function WorkerGlobalGps() {
       });
     };
 
-    const watchResumeNearSite = (projectId: string) => {
+    const watchResumeNearSite = (projectId: string, attendanceShape = false) => {
       clearResumePoll();
       const tick = () => {
-        void probeInsideSite(projectId).then((inside) => {
+        void probeInsideSite(projectId, attendanceShape).then((inside) => {
           if (!inside || cancelled) return;
           clearStickyDangerAlert();
           clearResumePoll();
@@ -302,13 +347,30 @@ export default function WorkerGlobalGps() {
         return;
       }
 
-      // Worker: tracking only while checked in
+      // Worker: tracking while checked in.
+      // Suspended workers cannot check in, so watch the site fence instead.
       const workerId = await resolveWorkerId(projectId);
       const checkedIn = await hasOpenCheckIn(projectId, workerId);
+      const suspended = await rosterSuspended(workerId);
       if (cancelled) return;
-      if (checkedIn) {
+      const mode = workerGpsStartMode({ checkedIn, siteEntrySuspended: suspended });
+      if (mode === "checked_in") {
         clearStickyDangerAlert();
         await startForProject(projectId);
+      } else if (mode === "site_fence") {
+        const inside = await probeInsideSite(projectId, true);
+        if (cancelled) return;
+        if (inside) {
+          clearStickyDangerAlert();
+          await startForProject(projectId);
+        } else {
+          setGpsBlockReason("fence_probe_failed");
+          clearStickyDangerAlert();
+          if (lastKeyRef.current) return;
+          stopGpsTracking();
+          lastKeyRef.current = null;
+          watchResumeNearSite(projectId, true);
+        }
       } else {
         setGpsBlockReason("no_checkin");
         stopGpsTracking();
@@ -344,9 +406,10 @@ export default function WorkerGlobalGps() {
     const onCheckedOut = () => {
       clearResumePoll();
       lastKeyRef.current = null;
-      setGpsBlockReason("no_checkin");
       stopGpsTracking();
       clearStickyDangerAlert();
+      // Normal workers stay stopped. A suspended worker keeps the site fence.
+      void boot();
     };
 
     const onVisResume = () => {

@@ -167,6 +167,15 @@ describe("notification + entity mobile routes", () => {
     ).toBe("/app/admin/announcements?id=n1");
   });
 
+  it("suspended site entry opens the worker roster", () => {
+    expect(
+      resolveNotificationRoute({ type: "suspended_site_entry" }, { mobileShell: true }),
+    ).toBe("/app/worker/workers");
+    expect(
+      resolveNotificationRoute({ type: "suspended_site_entry" }, { mobileShell: false }),
+    ).toBe("/app/admin/workers");
+  });
+
   it("danger_zone_entry notifications open worker alerts", () => {
     expect(
       resolveNotificationRoute({ type: "danger_zone_entry" }, { mobileShell: true }),

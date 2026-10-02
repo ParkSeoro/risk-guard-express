@@ -256,6 +256,28 @@ export function isManagedResidualHigh(item: { improved_risk_grade?: string | nul
 export const WEEKLY_LINK_CANDIDATE_SELECT =
   'id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_user_id, created_by, period_label, is_deleted';
 
+export type AssessmentFeedbackChain = {
+  previousRunId: string | null;
+  previousOfPreviousRunId: string | null;
+  autoPreviousRunId: string | null;
+};
+
+/** One row from assessment_feedback_chain. Empty or malformed input is a failed lookup. */
+export function parseAssessmentFeedbackChain(data: unknown): AssessmentFeedbackChain | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== 'object') return null;
+  const rec = row as Record<string, unknown>;
+  const id = (key: string) => {
+    const value = String(rec[key] ?? '').trim();
+    return value || null;
+  };
+  return {
+    previousRunId: id('previous_run_id'),
+    previousOfPreviousRunId: id('previous_of_previous_run_id'),
+    autoPreviousRunId: id('auto_previous_run_id'),
+  };
+}
+
 export function unresolvedFeedback<T extends { status?: string | null }>(rows: T[]): T[] {
   return (rows || []).filter((f) => f.status === '미조치' || f.status === '진행중');
 }

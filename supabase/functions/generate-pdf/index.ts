@@ -52,122 +52,19 @@ function formatKST(d: string | null | undefined): string {
   return `${y}-${m}-${day} ${h}:${min}`;
 }
 
-/** Keep in sync with src/lib/weeklyAssessmentLink.ts */
-function normalizeCompanyIds(ids: unknown): string[] {
-  if (!Array.isArray(ids)) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of ids) {
-    const id = String(raw || "").trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-  }
-  return out;
-}
-
-function companyTargetsOverlap(a: unknown, b: unknown): boolean {
-  const na = normalizeCompanyIds(a);
-  const nb = normalizeCompanyIds(b);
-  if (na.length === 0 || nb.length === 0) return false;
-  const other = new Set(nb);
-  return na.some((id) => other.has(id));
-}
-
-const MEMBER_ROLE_RANK: Record<string, number> = {
-  master: 100,
-  project_admin: 90,
-  safety_manager: 80,
-  site_manager: 70,
-  site_supervisor: 60,
-  supervisor: 50,
-  worker: 20,
-  contractor: 20,
-  viewer: 10,
-};
-
-/** Blank target_company_ids becomes the author's company. Two blanks do not match. */
-async function stampEffectiveCompanies(supabase: any, projectId: string, runs: any[]): Promise<any[]> {
-  const list = runs || [];
-  const userIds: string[] = [];
-  for (const run of list) {
-    if (normalizeCompanyIds(run?.target_company_ids).length > 0) continue;
-    if (run?.author_user_id) userIds.push(String(run.author_user_id));
-    if (run?.created_by) userIds.push(String(run.created_by));
-  }
-  const byUser: Record<string, string> = {};
-  const unique = [...new Set(userIds.filter(Boolean))];
-  if (projectId && unique.length > 0) {
-    const { data } = await supabase
-      .from("project_members")
-      .select("user_id, company_id, role_new")
-      .eq("project_id", projectId)
-      .in("user_id", unique);
-    const grouped = new Map<string, any[]>();
-    for (const row of data || []) {
-      const uid = String(row.user_id || "");
-      if (!uid) continue;
-      const arr = grouped.get(uid) || [];
-      arr.push(row);
-      grouped.set(uid, arr);
-    }
-    for (const [uid, arr] of grouped) {
-      const ranked = [...arr].sort((a, b) => {
-        const rb = MEMBER_ROLE_RANK[String(b.role_new || "").toLowerCase()] || 0;
-        const ra = MEMBER_ROLE_RANK[String(a.role_new || "").toLowerCase()] || 0;
-        return rb - ra;
-      });
-      const cid = String(ranked.find((row) => row.company_id)?.company_id || "");
-      if (cid) byUser[uid] = cid;
-    }
-  }
-  return list.map((run) => {
-    const targets = normalizeCompanyIds(run?.target_company_ids);
-    if (targets.length > 0) return { ...run, target_company_ids: targets };
-    const author = byUser[String(run?.author_user_id || "")] || byUser[String(run?.created_by || "")] || "";
-    return { ...run, target_company_ids: author ? [author] : [] };
-  });
-}
-
-function periodKey(run: any): string | null {
-  const start = String(run?.start_date || "").trim();
-  if (start) return start.slice(0, 10);
-  const created = String(run?.created_at || "").trim();
-  return created ? created.slice(0, 10) : null;
-}
-
-function pickPreviousApprovedRun(current: any, candidates: any[]): any | null {
-  const eligible = (candidates || []).filter((c) => {
-    if (!c?.id || c.id === current.id) return false;
-    if (c.project_id !== current.project_id) return false;
-    if (c.status !== "승인완료") return false;
-    if (c.is_deleted) return false;
-    return companyTargetsOverlap(current.target_company_ids, c.target_company_ids);
-  });
-  if (eligible.length === 0) return null;
-  const sameType = current.type ? eligible.filter((c) => c.type === current.type) : [];
-  const pool = sameType.length > 0 ? sameType : eligible;
-  const currentStart = String(current.start_date || "").trim().slice(0, 10);
-  const beforeByStart = currentStart
-    ? pool.filter((c) => {
-        const key = periodKey(c);
-        return !!key && key < currentStart;
-      })
-    : [];
-  const beforeByCreated = pool.filter((c) => c.created_at < current.created_at);
-  const ranked = (beforeByStart.length > 0
-    ? beforeByStart
-    : beforeByCreated.length > 0
-      ? beforeByCreated
-      : []).slice();
-  if (ranked.length === 0) return null;
-  ranked.sort((a: any, b: any) => {
-    const ak = periodKey(a) || a.created_at;
-    const bk = periodKey(b) || b.created_at;
-    if (ak !== bk) return ak < bk ? 1 : -1;
-    return a.created_at < b.created_at ? 1 : -1;
-  });
-  return ranked[0] || null;
+/** Previous-run ids come from assessment_feedback_chain. Two blank companies never match. */
+function parseFeedbackChain(data: unknown): { previousId: string | null; previousOfPreviousId: string | null } | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") return null;
+  const rec = row as Record<string, unknown>;
+  const id = (key: string) => {
+    const value = String(rec[key] ?? "").trim();
+    return value || null;
+  };
+  return {
+    previousId: id("previous_run_id"),
+    previousOfPreviousId: id("previous_of_previous_run_id"),
+  };
 }
 
 function resolvePrintFeedbackRun(current: any, previous: any | null): any | null {
@@ -427,41 +324,28 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const linkSelect = "id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_user_id, created_by, period_label, is_deleted";
-    const { data: prevCandidates } = await supabase
-      .from("assessment_runs")
-      .select(linkSelect)
-      .eq("project_id", run.project_id)
-      .eq("status", "승인완료")
-      .eq("is_deleted", false)
-      .neq("id", runId)
-      .order("created_at", { ascending: false })
-      .limit(80);
-
-    const [stampedRun] = await stampEffectiveCompanies(supabase, run.project_id, [run]);
-    const stampedCandidates = await stampEffectiveCompanies(supabase, run.project_id, prevCandidates || []);
-    let previousRun = pickPreviousApprovedRun(stampedRun, stampedCandidates);
-    const overrideId = (previousRunId && previousRunId !== runId)
-      ? previousRunId
-      : (run.previous_run_id && run.previous_run_id !== runId ? run.previous_run_id : null);
-    if (overrideId) {
-      let hinted = stampedCandidates.find((c: any) => c.id === overrideId) || null;
-      if (!hinted) {
-        const { data: hintedRow } = await supabase
-          .from("assessment_runs")
-          .select(linkSelect)
-          .eq("id", overrideId)
-          .maybeSingle();
-        if (hintedRow && hintedRow.project_id === run.project_id && !hintedRow.is_deleted) {
-          [hinted] = await stampEffectiveCompanies(supabase, run.project_id, [hintedRow]);
-        }
-      }
-      if (hinted && companyTargetsOverlap(stampedRun.target_company_ids, hinted.target_company_ids)) {
-        previousRun = hinted;
-      }
+    // Body previousRunId wins over the saved previous_run_id. The SQL function drops another company.
+    const overrideId = previousRunId && previousRunId !== runId ? previousRunId : null;
+    const { data: chainRows, error: chainErr } = await supabase.rpc("assessment_feedback_chain", {
+      _run_id: runId,
+      _override_previous_id: overrideId,
+    });
+    if (chainErr) {
+      console.error("assessment_feedback_chain failed", chainErr);
     }
-    const previousOfPrevious = previousRun
-      ? pickPreviousApprovedRun(previousRun, stampedCandidates.filter((c: any) => c.id !== previousRun.id))
-      : null;
+    const chain = chainErr ? null : parseFeedbackChain(chainRows);
+    const loadLinkedRun = async (id: string | null) => {
+      if (!id || id === runId) return null;
+      const { data } = await supabase
+        .from("assessment_runs")
+        .select(linkSelect)
+        .eq("id", id)
+        .maybeSingle();
+      if (!data || data.project_id !== run.project_id || data.is_deleted) return null;
+      return data;
+    };
+    const previousRun = chain ? await loadLinkedRun(chain.previousId) : null;
+    const previousOfPrevious = chain ? await loadLinkedRun(chain.previousOfPreviousId) : null;
     const printMode = type === "assessment_feedback" || type === "feedback" ? "feedback" : "assessment";
     const printSections = resolvePrintFeedbackSections(run, previousRun, previousOfPrevious, printMode);
     const geumjuRun = printSections.geumju;

@@ -3,6 +3,7 @@ import {
   WEEKLY_LINK_CANDIDATE_SELECT,
   companyTargetsOverlap,
   effectiveCompanyIds,
+  parseAssessmentFeedbackChain,
   executionFeedbackCount,
   formatPreviousRunOptionLabel,
   isManagedResidualHigh,
@@ -191,6 +192,58 @@ describe('pickPreviousApprovedRun', () => {
     expect(pickPreviousApprovedRun(stampedCurrent, [stampedOther, stampedSame])?.id).toBe('same-author');
   });
 
+  it('keeps 대웅, 청원, and 진남 on separate chains and ignores a cross-company previous', () => {
+    const daewoong02 = run({
+      id: 'daewoong-02',
+      type: '상시',
+      status: '반려',
+      start_date: '2026-10-12',
+      created_at: '2026-10-02T04:41:55Z',
+      target_company_ids: ['co-daewoong'],
+    });
+    const daewoong01 = run({
+      id: 'daewoong-01',
+      type: '상시',
+      start_date: '2026-10-05',
+      created_at: '2026-09-28T08:04:01Z',
+      target_company_ids: ['co-daewoong'],
+    });
+    const daewoong09 = run({
+      id: 'daewoong-09',
+      type: '상시',
+      start_date: '2026-09-21',
+      created_at: '2026-09-14T07:23:56Z',
+      target_company_ids: ['co-daewoong'],
+    });
+    const jinnam = run({
+      id: 'jinnam-02',
+      type: '상시',
+      start_date: '2026-10-05',
+      created_at: '2026-09-29T02:41:17Z',
+      target_company_ids: ['co-jinnam'],
+    });
+    const cheongwon = run({
+      id: 'cheongwon-01',
+      type: '상시',
+      start_date: '2026-10-05',
+      created_at: '2026-09-28T23:33:49Z',
+      target_company_ids: ['co-cheongwon'],
+    });
+    const pool = [jinnam, cheongwon, daewoong01, daewoong09];
+    expect(pickPreviousApprovedRun(daewoong02, pool)?.id).toBe('daewoong-01');
+    expect(pickPreviousApprovedRun(daewoong01, pool)?.id).toBe('daewoong-09');
+    expect(pickPreviousApprovedRun(daewoong02, [jinnam, cheongwon])).toBeNull();
+    expect(resolvePreviousRun(daewoong02, pool, 'cheongwon-01')?.id).toBe('daewoong-01');
+    const sections = resolvePrintFeedbackSections({
+      current: daewoong02,
+      previous: daewoong01,
+      previousOfPrevious: daewoong09,
+      mode: 'assessment',
+    });
+    expect(sections.geumju?.id).toBe('daewoong-01');
+    expect(sections.jeonhoe?.id).toBe('daewoong-09');
+  });
+
   it('falls back to another type when same-type approved runs are not earlier', () => {
     const currentRegular = run({
       id: '정기-next',
@@ -374,6 +427,24 @@ describe('resolvePrintFeedbackSections', () => {
     });
     expect(s.geumju?.id).toBe('prev');
     expect(s.jeonhoe?.id).toBe('older');
+  });
+});
+
+describe('parseAssessmentFeedbackChain', () => {
+  it('reads the shared chain row and treats an empty payload as a failed lookup', () => {
+    expect(parseAssessmentFeedbackChain([
+      {
+        previous_run_id: 'daewoong-01',
+        previous_of_previous_run_id: 'daewoong-09',
+        auto_previous_run_id: 'daewoong-01',
+      },
+    ])).toEqual({
+      previousRunId: 'daewoong-01',
+      previousOfPreviousRunId: 'daewoong-09',
+      autoPreviousRunId: 'daewoong-01',
+    });
+    expect(parseAssessmentFeedbackChain([])).toBeNull();
+    expect(parseAssessmentFeedbackChain(null)).toBeNull();
   });
 });
 

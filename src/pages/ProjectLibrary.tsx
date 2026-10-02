@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Upload, Download, Trash2, Pencil, Pin, FileText, Loader2, FolderOpen } from 'lucide-react';
+import { canUploadProjectLibrary } from '@/lib/projectLibraryUpload';
 
 interface LibFile {
   id: string;
@@ -48,8 +49,8 @@ const fmtSize = (b: number | null) => {
 };
 
 export default function ProjectLibrary() {
-  const { user, isAdmin, hasRole } = useAuth();
-  const { selectedProject, projects, setSelectedProject } = useGlobalProjectAccess();
+  const { user, hasRole } = useAuth();
+  const { selectedProject, projects, setSelectedProject, userRole } = useGlobalProjectAccess();
   const { toast } = useToast();
   const isMaster = hasRole('master');
 
@@ -65,7 +66,7 @@ export default function ProjectLibrary() {
   const [form, setForm] = useState({ title: '', description: '', category: 'etc', file: null as File | null });
 
   const projectId = selectedProject;
-  const canUpload = !!projectId && !!isAdmin;
+  const canUpload = !!projectId && canUploadProjectLibrary(userRole);
 
   const fetchFiles = useCallback(async () => {
     if (!projectId) {
@@ -104,6 +105,7 @@ export default function ProjectLibrary() {
 
   const handleSave = async () => {
     if (!projectId || !user) return;
+    if (!editing && !canUpload) return;
     if (!form.title.trim()) {
       toast({ title: '제목을 입력하세요.', variant: 'destructive' });
       return;
@@ -202,7 +204,7 @@ export default function ProjectLibrary() {
           <h1 className="text-2xl font-semibold flex items-center gap-2">
             <FolderOpen className="h-6 w-6 text-primary" /> 공개 자료실
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">프로젝트 멤버에게 공유되는 파일 자료실 (관리자만 업로드)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">프로젝트 멤버에게 공유되는 파일 자료실 (프로젝트 관리자·안전관리자만 업로드)</p>
         </div>
         {canUpload && (
           <Button onClick={openUpload} className="gap-1.5">

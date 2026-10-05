@@ -241,6 +241,19 @@ function htmlEsc(s: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Distinct process names from the rows that are actually printed, first-seen order. */
+function uniquePrintedProcessNames(rows: Array<{ process?: string | null }>): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const row of rows || []) {
+    const name = String(row?.process ?? "").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+}
+
 function safeSignatureSrc(raw: unknown): string {
   const s = String(raw ?? "").trim();
   return /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=\s]+$/.test(s)
@@ -782,6 +795,9 @@ Deno.serve(async (req) => {
         <tbody>${healthRows}</tbody>
       </table>` : "";
 
+    const targetProcessListHtml = uniquePrintedProcessNames(items)
+      .map((name) => htmlEsc(name))
+      .join("<br/>");
     const docTitle = `위험성평가표 [${run.type}] ${run.period_label}`;
     const periodRange = [run.start_date, run.end_date].filter(Boolean).join("~");
     const pdfFileName = periodRange
@@ -842,6 +858,11 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
   padding: 4pt 8pt;
   border: 1px solid #e2e8f0;
   color: #1e293b;
+}
+.process-list {
+  white-space: normal;
+  vertical-align: top;
+  line-height: 1.45;
 }
 
 .section-header {
@@ -940,6 +961,10 @@ td, th { page-break-inside: auto; }
         <div class="report-info-value">${items.length}건 (상 ${highCount} / 중 ${medCount} / 하 ${lowCount})</div>
         <div class="report-info-label">검증결과</div>
         <div class="report-info-value">${run.validation_verdict || "-"} ${run.validation_score != null ? `(${run.validation_score}점)` : ""}</div>
+      </div>
+      <div class="report-info-row">
+        <div class="report-info-label">대상 공정</div>
+        <div class="report-info-value process-list">${targetProcessListHtml}</div>
       </div>
     </div>
   </div>

@@ -36,6 +36,18 @@ describe('generate-pdf RA table layout', () => {
     expect(chainSql).toMatch(/COALESCE\(array_length\(_a, 1\), 0\) > 0/);
   });
 
+  it('lists each printed 공정 once above the signature block', () => {
+    const headerAt = src.indexOf('대상 공정');
+    const signAt = src.indexOf('>서명란<');
+    expect(headerAt).toBeGreaterThan(-1);
+    expect(signAt).toBeGreaterThan(headerAt);
+    expect(src).toMatch(/function uniquePrintedProcessNames/);
+    expect(src).toMatch(/uniquePrintedProcessNames\(items\)/);
+    expect(src).not.toMatch(/target_processes/);
+    expect(src).toMatch(/width:10%">공정/);
+    expect(src).toMatch(/<td>\$\{item\.process \|\| ""\}<\/td>/);
+  });
+
   it('prints 결재 코멘트 under the signature table', () => {
     expect(src).toMatch(/approvalCommentsPrintHtml/);
     expect(src).toMatch(/commentHtml/);

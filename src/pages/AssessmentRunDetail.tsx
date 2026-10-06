@@ -106,9 +106,9 @@ import {
   WEEKLY_LINK_CANDIDATE_SELECT,
   executionFeedbackCount,
   isManagedResidualHigh,
+  assessmentCompanyChainMatch,
   listManualPreviousCandidates,
   effectiveCompanyIds,
-  isOwnCompanyRun,
   mergeFeedbackChainPrevious,
   parseAssessmentFeedbackChain,
   pickPreviousApprovedRun,
@@ -646,18 +646,13 @@ const AssessmentRunDetail = () => {
       const stampedCurrent = stampRunCompany(run as WeeklyLinkRun, authorCompanyByUser, companyLabelById);
       const stampedRows = rows.map((row) => stampRunCompany(row, authorCompanyByUser, companyLabelById));
       const findStamped = (id: string | null) => (id ? stampedRows.find((c) => c.id === id) || null : null);
-      const scope = {
-        userId: user?.id,
-        accessibleCompanyIds,
-        authorCompanyByUser,
-      };
-      const acceptOwn = (row: WeeklyLinkRun) => isOwnCompanyRun(row, scope);
+      const acceptSameCompany = (row: WeeklyLinkRun) =>
+        assessmentCompanyChainMatch(stampedCurrent, row, authorCompanyByUser);
       const localAuto = pickPreviousApprovedRun(stampedCurrent, stampedRows, authorCompanyByUser);
       const localPrevious = resolvePreviousRun(
         stampedCurrent,
         stampedRows,
         overrideId,
-        scope,
         authorCompanyByUser,
       );
       const merged = mergeFeedbackChainPrevious({
@@ -666,11 +661,11 @@ const AssessmentRunDetail = () => {
         chainAuto: chain ? findStamped(chain.autoPreviousRunId) : null,
         localPrevious,
         localAuto,
-        accept: acceptOwn,
+        accept: acceptSameCompany,
       });
       const auto = merged.auto;
       const previous = merged.previous;
-      const pickerRows = listManualPreviousCandidates(stampedCurrent, stampedRows, scope);
+      const pickerRows = listManualPreviousCandidates(stampedCurrent, stampedRows, authorCompanyByUser);
       const currentFbReq = supabase
         .from('risk_item_feedback' as any)
         .select('id, status')
@@ -726,7 +721,7 @@ const AssessmentRunDetail = () => {
     };
     void loadWeeklyLink();
     return () => { cancelled = true; };
-  }, [runId, run, user?.id, accessibleCompanyIds]);
+  }, [runId, run]);
 
   // 결재 반려/승인 시 작성자 화면이 즉시 작성·재상신 상태로 돌아오도록
   useEffect(() => {
@@ -2952,12 +2947,12 @@ const AssessmentRunDetail = () => {
             {renderPreviousPicker()}
             {!isApproved && previousRunCandidates.length === 0 && (
               <p className="text-[11px] text-muted-foreground">
-                본인 회사의 이전 회차가 없습니다. 이 회차가 첫 금주 작업분이 됩니다.
+                이 회사의 이전 승인 회차가 없습니다. 다른 회사 문서는 여기에 나오지 않습니다.
               </p>
             )}
             {!isApproved && previousRunCandidates.length > 0 && (
               <p className="text-[11px] text-muted-foreground">
-                자동으로 붙일 전회차가 없으면 위 목록에서 본인 회사 회차를 고르세요. 다른 회사 회차는 나오지 않습니다.
+                자동으로 붙일 승인완료 회차가 없으면 위 목록에서 같은 회사 회차를 고르세요.
               </p>
             )}
           </CardContent>
@@ -3412,7 +3407,7 @@ const AssessmentRunDetail = () => {
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                전회차를 고르면 그 회차의 이행 확인이 여기 나옵니다. 본인 회사 회차만 목록에 있습니다.
+                이 회사의 이전 회차를 고르면 그 회차의 이행 확인이 여기 나옵니다. 다른 회사 문서는 목록에 없습니다.
               </CardContent>
             </Card>
           )}

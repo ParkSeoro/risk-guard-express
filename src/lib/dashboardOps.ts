@@ -22,12 +22,21 @@ export type SitePulse = {
   zoneAlerts: number;
 };
 
+export type StatusBucket = {
+  draft: number;
+  inApproval: number;
+  approved: number;
+  rejected: number;
+  total: number;
+};
+
 const PERMIT_DRAFT = new Set(['작성중', '임시저장']);
 const PERMIT_APPROVAL = new Set(['결재중', '결재진행', '검토대기', '검토완료', '대기']);
 const PERMIT_ACTIVE = new Set([
   '승인', '승인완료', '발행완료', 'approved', 'ISSUED', 'APPROVED', '작업중',
 ]);
 const PERMIT_CLOSURE = new Set(['종료대기', 'CLOSURE_PENDING']);
+const PLAN_APPROVED = new Set(['승인완료', '승인', '완료']);
 
 export function todayKstDate(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
@@ -48,6 +57,21 @@ export function summarizePermits(permits: Array<{ status?: string | null }>) {
     else if (s === '반려') rejected++;
   }
   return { draft, inApproval, active, closurePending, rejected, total: permits.length };
+}
+
+export function summarizeWorkPlans(plans: Array<{ status?: string | null }>): StatusBucket {
+  let draft = 0;
+  let inApproval = 0;
+  let approved = 0;
+  let rejected = 0;
+  for (const p of plans) {
+    const s = p.status || '';
+    if (s === '작성중') draft++;
+    else if (s === '결재중' || s === '결재진행') inApproval++;
+    else if (PLAN_APPROVED.has(s)) approved++;
+    else if (s === '반려') rejected++;
+  }
+  return { draft, inApproval, approved, rejected, total: plans.length };
 }
 
 export function buildAttentionItems(input: {
@@ -95,15 +119,6 @@ export function buildAttentionItems(input: {
       path: '/work-permits',
     });
   }
-  if (input.permitDraft > 0) {
-    items.push({
-      id: 'permit-draft',
-      label: '허가서 작성중',
-      count: input.permitDraft,
-      severity: 'info',
-      path: '/work-permits',
-    });
-  }
   if (input.permitRejected > 0) {
     items.push({
       id: 'permit-rejected',
@@ -147,15 +162,6 @@ export function buildAttentionItems(input: {
       label: '위험성평가 미조치 피드백',
       count: input.raFeedbackUnresolved,
       severity: 'warning',
-      path: '/risk-assessment',
-    });
-  }
-  if (input.residualHigh > 0) {
-    items.push({
-      id: 'ra-residual',
-      label: "개선 후에도 '상' 잔존",
-      count: input.residualHigh,
-      severity: 'info',
       path: '/risk-assessment',
     });
   }

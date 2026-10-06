@@ -31,83 +31,57 @@ type Group = { label: string; key: string; items: Item[] };
 
 const groups: Group[] = [
   {
-    label: "핵심", key: "priority",
+    label: "오늘", key: "today",
     items: [
-      { title: "알림", url: "/alerts", icon: Bell },
-      { title: "현장 공지", url: "/announcements", icon: Megaphone },
-      { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
+      { title: "대시보드", url: "/", icon: LayoutDashboard },
+      { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: "approvals" },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
       { title: "작업허가서", url: "/work-permits", icon: FileSignature },
-      { title: "대시보드", url: "/", icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: "현장", key: "field",
-    items: [
       { title: "작업계획서", url: "/work-plans", icon: FileText },
       { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
-      { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
-    ],
-  },
-  {
-    label: "위험/검증", key: "risk",
-    items: [
-      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
       { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
-      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
     ],
   },
   {
-    label: "점검/사고", key: "inspect_incident",
+    label: "현장", key: "site",
     items: [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
-      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
-      { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
-      { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
-      { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
-    ],
-  },
-  {
-    // 명부·입퇴장·(레거시)일일/게시판 QR은 /workers 안 탭 — 사이드바는 진입점 1개만
-    label: "사람", key: "people",
-    items: [
       { title: "근로자 관리", url: "/workers", icon: HardHat },
-      { title: "안전보건교육 이수", url: "/worker-education", icon: GraduationCap },
-      { title: "교육자료", url: "/education-materials", icon: FileText },
-      { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
-      { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
-    ],
-  },
-  {
-    label: "비전 관제", key: "vision",
-    items: [
+      { title: "통합 현장 관제맵", url: "/site-control-map", icon: Map },
       { title: "비전 관제", url: "/vision-fleet", icon: Video },
     ],
   },
   {
-    label: "위치", key: "location",
+    label: "서류", key: "docs",
     items: [
-      { title: "통합 현장 관제맵", url: "/site-control-map", icon: Map },
-      { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
-      { title: "근로자 분포", url: "/worker-distribution", icon: Users },
-      { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
+      { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
+      { title: "법적업무", url: "/legal-duties", icon: Scale },
+      { title: "안전보건교육 이수", url: "/worker-education", icon: GraduationCap },
+      { title: "교육자료", url: "/education-materials", icon: FileText },
+      { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
     ],
   },
   {
-    label: "운영", key: "ops",
+    label: "더보기", key: "more",
     items: [
+      { title: "알림", url: "/alerts", icon: Bell },
+      { title: "현장 공지", url: "/announcements", icon: Megaphone },
+      { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
+      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
+      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
+      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
+      { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
+      { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
+      { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
+      { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
+      { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
+      { title: "근로자 분포", url: "/worker-distribution", icon: Users },
+      { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
       { title: "할 일", url: "/todo", icon: ListTodo },
       { title: "프로젝트", url: "/projects", icon: FolderKanban },
       { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
       { title: "회사 관리", url: "/companies", icon: Building2 },
-      { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
-      { title: "법적업무", url: "/legal-duties", icon: Scale },
       { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "보건", key: "health",
-    items: [
       { title: "보건 대시보드", url: "/health", icon: HeartPulse },
       { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
       { title: "작업환경측정", url: "/health/measurements", icon: ClipboardList },
@@ -167,10 +141,7 @@ export function AppSidebar() {
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
-  const CONTRACTOR_GROUP_KEYS = new Set([
-    'priority', 'field', 'risk', 'inspect_incident', 'people',
-    ...(canViewVision ? ['vision'] : []),
-  ]);
+  const CONTRACTOR_GROUP_KEYS = new Set(["today", "site", "docs", "more"]);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
     '/', '/approvals',
     '/work-plans', '/work-permits', '/tbm-logs',
@@ -181,28 +152,32 @@ export function AppSidebar() {
     '/profile', '/settings/account', '/manual',
     ...(canViewVision ? ['/vision-fleet'] : []),
   ]);
+  const scopedGroups = groups.map((g) => {
+    if (g.key !== "site" || canViewVision) return g;
+    return { ...g, items: g.items.filter((i) => i.url !== "/vision-fleet") };
+  });
   const visibleGroups = restrictToContractorUI
-    ? groups
+    ? scopedGroups
         .filter((g) => CONTRACTOR_GROUP_KEYS.has(g.key))
         .map((g) => ({ ...g, items: g.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)) }))
         .filter((g) => g.items.length > 0)
-    : groups;
+    : scopedGroups;
 
   const DEFAULT_OPEN = {
-    priority: true,
-    field: true,
-    risk: true,
-    inspect_incident: true,
-    people: true,
-    location: true,
-    ops: true,
-    health: true,
-    vision: true,
+    today: true,
+    site: true,
+    docs: true,
+    more: false,
     admin: false,
   };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('sidebar:groups') || JSON.stringify(DEFAULT_OPEN)); }
-    catch { return DEFAULT_OPEN; }
+    try {
+      const stored = JSON.parse(localStorage.getItem("sidebar:groups") || "{}") as Record<string, boolean>;
+      if (!("today" in stored)) return DEFAULT_OPEN;
+      return { ...DEFAULT_OPEN, ...stored };
+    } catch {
+      return DEFAULT_OPEN;
+    }
   });
   useEffect(() => {
     localStorage.setItem('sidebar:groups', JSON.stringify(openGroups));
@@ -236,7 +211,11 @@ export function AppSidebar() {
           <NavLink
             to={href}
             end={item.url === "/"}
-            className={`hover:bg-sidebar-accent/80 rounded-md transition-colors ${active ? 'bg-sidebar-accent text-sidebar-primary font-semibold' : ''}`}
+            className={`hover:bg-sidebar-accent/80 rounded-md transition-colors border-l-[3px] ${
+              active
+                ? "bg-sidebar-accent font-semibold border-l-[hsl(var(--sidebar-primary))]"
+                : "border-l-transparent"
+            }`}
             onClick={() => {
               closeMobileNav();
               try {
@@ -265,7 +244,7 @@ export function AppSidebar() {
 
 
   return (
-    <Sidebar collapsible="offcanvas">
+    <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
         <Link
           to={ADMIN_APP_BASE}
@@ -288,7 +267,7 @@ export function AppSidebar() {
             {!collapsed ? (
               <Collapsible open={openGroups[g.key] ?? true} onOpenChange={() => toggleGroup(g.key)}>
                 <CollapsibleTrigger className="w-full">
-                  <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
+                  <SidebarGroupLabel className="text-sidebar-primary text-[11px] font-bold tracking-wide flex items-center justify-between cursor-pointer py-1.5 h-auto">
                     <span>{g.label}</span>
                     <ChevronDown className={`h-4 w-4 transition-transform ${openGroups[g.key] === false ? '-rotate-90' : ''}`} />
                   </SidebarGroupLabel>
@@ -312,7 +291,7 @@ export function AppSidebar() {
             {!collapsed ? (
               <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
                 <CollapsibleTrigger className="w-full">
-                  <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
+                  <SidebarGroupLabel className="text-sidebar-primary text-[11px] font-bold tracking-wide flex items-center justify-between cursor-pointer py-1.5 h-auto">
                     <span>시스템</span>
                     <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
                   </SidebarGroupLabel>

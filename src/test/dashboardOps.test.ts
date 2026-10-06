@@ -4,6 +4,7 @@ import {
   buildAttentionItems,
   countOnSite,
   summarizePermits,
+  summarizeWorkPlans,
 } from '@/lib/dashboardOps';
 import { formatSiteLabel } from '@/lib/legalForms/patrolLog';
 
@@ -48,6 +49,23 @@ describe('dashboardOps', () => {
     expect(items.map((i) => i.id)).toContain('ra-residual');
   });
 
+  it('summarizes work plan statuses', () => {
+    const s = summarizeWorkPlans([
+      { status: '작성중' },
+      { status: '결재중' },
+      { status: '승인완료' },
+      { status: '반려' },
+      { status: '만료' },
+    ]);
+    expect(s).toEqual({
+      draft: 1,
+      inApproval: 1,
+      approved: 1,
+      rejected: 1,
+      total: 5,
+    });
+  });
+
   it('counts on-site workers', () => {
     const c = countOnSite([
       { entry_at: '2026-08-07T08:00:00', exit_at: null },
@@ -65,5 +83,19 @@ describe('dashboard site label', () => {
     const src = readFileSync('src/pages/Dashboard.tsx', 'utf8');
     expect(src).toContain('formatSiteLabel(currentProject.name, currentProject.site_name)');
     expect(src).not.toContain('${currentProject.site_name} · ${currentProject.name}');
+    expect(src).toContain('오늘 확인할 일이 없습니다');
+    expect(src).toContain('AI 어시스턴트');
+    expect(src).toContain('허가서 발행 현황');
+    expect(src).toContain('filterRunsByCompanyScope');
+    expect(src).toContain('applyCompanyFilter(wq)');
+    expect(src).not.toContain('function QuickStartCards');
+    expect(src).not.toContain('법적업무 수행률');
+    const weatherAt = src.indexOf('<WeatherSummaryCard');
+    const attentionAt = src.indexOf('오늘 확인할 일');
+    const tbmAt = src.indexOf('금일 TBM');
+    const aiAt = src.lastIndexOf('AI 어시스턴트');
+    expect(weatherAt).toBeGreaterThan(-1);
+    expect(attentionAt).toBeGreaterThan(weatherAt);
+    expect(aiAt).toBeGreaterThan(tbmAt);
   });
 });

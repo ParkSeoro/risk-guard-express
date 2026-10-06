@@ -119,15 +119,6 @@ export function buildAttentionItems(input: {
       path: '/work-permits',
     });
   }
-  if (input.permitDraft > 0) {
-    items.push({
-      id: 'permit-draft',
-      label: '허가서 작성중',
-      count: input.permitDraft,
-      severity: 'info',
-      path: '/work-permits',
-    });
-  }
   if (input.permitRejected > 0) {
     items.push({
       id: 'permit-rejected',
@@ -171,15 +162,6 @@ export function buildAttentionItems(input: {
       label: '위험성평가 미조치 피드백',
       count: input.raFeedbackUnresolved,
       severity: 'warning',
-      path: '/risk-assessment',
-    });
-  }
-  if (input.residualHigh > 0) {
-    items.push({
-      id: 'ra-residual',
-      label: "개선 후에도 '상' 잔존",
-      count: input.residualHigh,
-      severity: 'info',
       path: '/risk-assessment',
     });
   }

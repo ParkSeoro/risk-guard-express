@@ -402,7 +402,7 @@ const Dashboard = () => {
 
       {/* Site pulse */}
       <section className="space-y-3">
-        <SectionLabel>현장 현황</SectionLabel>
+        <SectionLabel>현장 숫자</SectionLabel>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {pulseTiles.map((tile) => (
             <button

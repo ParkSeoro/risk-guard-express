@@ -46,7 +46,8 @@ describe('dashboardOps', () => {
     expect(items.map((i) => i.id).slice(0, 2)).toEqual(
       expect.arrayContaining(['approvals', 'permit-closure']),
     );
-    expect(items.map((i) => i.id)).toContain('ra-residual');
+    expect(items.map((i) => i.id)).not.toContain('permit-draft');
+    expect(items.map((i) => i.id)).not.toContain('ra-residual');
   });
 
   it('summarizes work plan statuses', () => {
@@ -84,6 +85,7 @@ describe('dashboard site label', () => {
     expect(src).toContain('formatSiteLabel(currentProject.name, currentProject.site_name)');
     expect(src).not.toContain('${currentProject.site_name} · ${currentProject.name}');
     expect(src).toContain('오늘 확인할 일이 없습니다');
+    expect(src).toContain('현장 숫자');
     expect(src).toContain('AI 어시스턴트');
     expect(src).toContain('허가서 발행 현황');
     expect(src).toContain('filterRunsByCompanyScope');

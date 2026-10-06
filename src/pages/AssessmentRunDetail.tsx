@@ -84,7 +84,6 @@ import {
 } from '@/lib/assessmentAuthor';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
-import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 import {
   buildAssessmentAssigneeOptions,
   formatAssigneeLabel,
@@ -151,8 +150,6 @@ const AssessmentRunDetail = () => {
   const isMobile = useIsMobile();
   const { log } = useAuditLog();
   const { toast } = useToast();
-  const listBackPath = approvalsBackOr('/risk-assessment', searchParams.get('from'));
-
   const [run, setRun] = useState<any>(null);
   const [project, setProject] = useState<any>(null);
   const [items, setItems] = useState<RiskItemRow[]>([]);
@@ -2488,7 +2485,6 @@ const AssessmentRunDetail = () => {
       <div className="flex items-center justify-between print:hidden">
         <div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate(listBackPath)}>← 목록</Button>
             {isMasterOrCreator && (
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowEditRun(true)}><Pencil className="h-3.5 w-3.5" /></Button>
             )}

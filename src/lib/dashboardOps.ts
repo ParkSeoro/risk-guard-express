@@ -106,7 +106,7 @@ export function buildAttentionItems(input: {
       label: '허가서 종료 확인 대기',
       count: input.permitClosurePending,
       severity: 'critical',
-      path: '/work-permits',
+      path: '/work-permits?status=closure_pending&period=all',
       detail: '작업 완료 확인이 필요합니다',
     });
   }
@@ -116,7 +116,7 @@ export function buildAttentionItems(input: {
       label: '허가서 결재 진행',
       count: input.permitInApproval,
       severity: 'warning',
-      path: '/work-permits',
+      path: '/work-permits?status=in_approval&period=all',
     });
   }
   if (input.permitRejected > 0) {
@@ -125,7 +125,7 @@ export function buildAttentionItems(input: {
       label: '허가서 반려',
       count: input.permitRejected,
       severity: 'warning',
-      path: '/work-permits',
+      path: '/work-permits?status=rejected&period=all',
       detail: '보완 후 재상신',
     });
   }
@@ -144,7 +144,7 @@ export function buildAttentionItems(input: {
       label: '구역 경보 미확인',
       count: input.zoneAlerts,
       severity: 'critical',
-      path: '/zone-events',
+      path: '/zone-events?ack=open',
     });
   }
   if (input.showSafetyCost && input.safetyCostViolations > 0) {
@@ -162,7 +162,7 @@ export function buildAttentionItems(input: {
       label: '위험성평가 미조치 피드백',
       count: input.raFeedbackUnresolved,
       severity: 'warning',
-      path: '/risk-assessment',
+      path: '/risk-assessment?focus=feedback',
     });
   }
 

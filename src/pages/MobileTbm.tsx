@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack, useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -58,6 +58,7 @@ type TbmSession = {
 export default function MobileTbm() {
   const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
+  const leavePage = useMobileSubpageBack("/app/worker/tasks");
   const { profile } = useAuth();
   const { projectId, companyId, applyCompanyFilter, role, isMaster } = useMobileAccess();
   const preview = usePreview();
@@ -230,7 +231,7 @@ export default function MobileTbm() {
       setParticipants([]);
       return;
     }
-    goMobileHome();
+    leavePage();
   };
 
   const activeToday = sessions.filter((s) => s.is_active !== false);

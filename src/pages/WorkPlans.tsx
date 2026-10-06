@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -51,7 +51,11 @@ const WorkPlans = () => {
   const [editTitle, setEditTitle] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const status = searchParams.get('status');
+    return status && ['작성중', '결재중', '승인완료', '반려'].includes(status) ? status : 'all';
+  });
   const [runs, setRuns] = useState<any[]>([]);
   const createAuthorCompanyIds = useMemo(
     () => workPlanAuthorCompanyIds({

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
  */
 export default function MobileWorkPlans() {
   const navigate = useNavigate();
-  const goMobileHome = useNavigateMobileHome();
+  const onBack = useMobileSubpageBack("/app/worker/docs");
   const { projectId, applyCompanyFilter } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [q, setQ] = useState("");
@@ -52,7 +52,7 @@ export default function MobileWorkPlans() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground"
-          onClick={() => goMobileHome()}
+          onClick={onBack}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

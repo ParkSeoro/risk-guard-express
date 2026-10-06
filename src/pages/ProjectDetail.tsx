@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search
+  Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search
 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
@@ -44,7 +44,6 @@ const companyTypeOrder: Record<string, number> = {
 
 const ProjectDetail = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const navigate = useNavigate();
   const { user, hasRole } = useAuth();
   const { toast } = useToast();
   const isMaster = hasRole('master');
@@ -714,9 +713,6 @@ const ProjectDetail = () => {
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/projects')}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div>
           <h1 className="text-xl font-bold">{project.name}</h1>
           <p className="text-xs text-muted-foreground">{project.site_name}</p>

@@ -177,9 +177,11 @@ const SettingsAccount = () => {
   return (
     <div className="space-y-4 animate-fade-in max-w-lg">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(backTo)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        {isWorkerAccount && (
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(backTo)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        )}
         <div>
           {!location.pathname.startsWith('/app/worker') && (
             <div className="flex items-center gap-2 text-muted-foreground text-xs">

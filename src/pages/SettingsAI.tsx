@@ -3,7 +3,7 @@
  * 키는 Supabase Edge Secrets. DB에 키를 저장하지 않음.
  */
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
-  ArrowLeft,
   Bot,
   Save,
   Loader2,
@@ -37,7 +36,6 @@ import {
 import { AI_COST_LANES } from '@/lib/aiCostRoute';
 
 const SettingsAI = () => {
-  const navigate = useNavigate();
   const { hasRole, user } = useAuth();
   const isMaster = hasRole('master');
 
@@ -175,9 +173,6 @@ const SettingsAI = () => {
     return (
       <div className="space-y-4 animate-fade-in max-w-3xl">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Bot className="h-5 w-5" /> AI 설정
           </h1>
@@ -196,9 +191,6 @@ const SettingsAI = () => {
   return (
     <div className="space-y-4 animate-fade-in max-w-3xl">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div>
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <span>설정</span>

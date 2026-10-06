@@ -47,6 +47,9 @@ describe('dashboardOps', () => {
       expect.arrayContaining(['approvals', 'permit-closure']),
     );
     expect(items.map((i) => i.id)).not.toContain('permit-draft');
+    expect(items.find((i) => i.id === 'permit-closure')?.path).toBe(
+      '/work-permits?status=closure_pending&period=all',
+    );
     expect(items.map((i) => i.id)).not.toContain('ra-residual');
   });
 

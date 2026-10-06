@@ -327,14 +327,16 @@ const SettingsNotifications = () => {
   return (
     <div className={`space-y-4 animate-fade-in ${isMobileShell ? 'max-w-md mx-auto p-4 pb-24' : 'max-w-2xl'}`}>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => navigate(isMobileShell ? '/app/worker/more' : '/settings')}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        {isMobileShell && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => navigate('/app/worker/more')}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        )}
         <div>
           {!isMobileShell && (
             <div className="flex items-center gap-2 text-muted-foreground text-xs">

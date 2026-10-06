@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import JobTypeSelect from "@/components/JobTypeSelect";
+import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
+import { toLegalEducationJobType } from "@/lib/jobCategories";
 import { foreignRosterTransferPrompt } from "@/lib/workerCompanyTransfer";
 import {
   formatWorkerPhoneInput,
@@ -186,6 +188,13 @@ export default function WorkerSingleRegisterDialog({
           <div className="space-y-1.5">
             <Label>직종 *</Label>
             <JobTypeSelect value={jobType} onValueChange={setJobType} disabled={busy} />
+            {jobType && (
+              <RequiredEducationPanel
+                mode="preview"
+                projectId={projectId}
+                jobType={toLegalEducationJobType(jobType)}
+              />
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

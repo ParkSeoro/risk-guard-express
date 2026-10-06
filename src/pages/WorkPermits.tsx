@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -158,8 +158,16 @@ export default function WorkPermits() {
   const [involvedPermitIds, setInvolvedPermitIds] = useState<Set<string>>(new Set());
   const [listTab, setListTab] = useState<'all' | 'involved'>('all');
   const [listSearch, setListSearch] = useState('');
-  const [listPeriod, setListPeriod] = useState<PermitListPeriod>('7d');
-  const [listStatus, setListStatus] = useState<PermitListStatusFilter>('all');
+  const [searchParams] = useSearchParams();
+  const [listPeriod, setListPeriod] = useState<PermitListPeriod>(() => {
+    const period = searchParams.get('period');
+    return period === '7d' || period === '14d' || period === 'month' || period === 'all' ? period : '7d';
+  });
+  const [listStatus, setListStatus] = useState<PermitListStatusFilter>(() => {
+    const status = searchParams.get('status');
+    const allowed: PermitListStatusFilter[] = ['all', 'draft', 'in_approval', 'issued', 'closure_pending', 'closed', 'rejected', 'voided'];
+    return allowed.includes(status as PermitListStatusFilter) ? (status as PermitListStatusFilter) : 'all';
+  });
   const [plans, setPlans] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
   const [tbms, setTbms] = useState<any[]>([]);

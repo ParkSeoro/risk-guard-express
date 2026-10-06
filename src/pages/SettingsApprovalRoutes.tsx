@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2, Copy, Search, User, Building2, Users } from 'lucide-react';
+import { GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2, Copy, Search, User, Building2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { ENTITY_LABELS, type ApprovalEntityType } from '@/components/approval/SubmitApprovalDialog';
@@ -18,7 +17,6 @@ interface Step { label: string; position: string; user_id: string; user_name: st
 type ScopeFilter = 'mine' | 'company' | 'shared' | 'all';
 
 export default function SettingsApprovalRoutes() {
-  const navigate = useNavigate();
   const { hasRole, user, profile } = useAuth();
   const canEdit = !!user; // 누구나 본인 전용 템플릿 관리 가능. 회사/프로젝트 공용은 isOwnerSide 만.
   const { selectedProject: projectId } = useGlobalProjectAccess();
@@ -188,9 +186,6 @@ export default function SettingsApprovalRoutes() {
     return (
       <div className="space-y-4 max-w-3xl">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
           <h1 className="text-xl font-bold flex items-center gap-2"><GitBranch className="h-5 w-5" /> 결재선 관리</h1>
         </div>
         <Card><CardContent className="py-12 text-center text-muted-foreground">마스터 또는 프로젝트 관리자 권한이 필요합니다.</CardContent></Card>
@@ -201,9 +196,6 @@ export default function SettingsApprovalRoutes() {
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div>
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <span>설정</span><span>/</span><span>결재선 관리</span>

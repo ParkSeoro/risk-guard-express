@@ -117,4 +117,47 @@ describe("리깅 부하율 기준", () => {
     expect(html).toContain("와이어 안전하중");
     expect(html).toContain("제조사 안전하중 40t");
   });
+
+  it("슬링벨트는 한국어로 적고 와이어 0mm·빈 지반은 숨긴다", () => {
+    const html = renderRiggingPrintHtml(
+      {
+        load_weight: 2.3,
+        load_description: "천정 폐기물 인양 및 철거 기성재 운반",
+        crane_model: "엑시언트",
+        crane_capacity: 4.5,
+        working_radius: 8,
+        boom_length: 18.03,
+        sling_material_type: "sling_belt",
+        sling_type: "sling_belt",
+        sling_angle_deg: 60,
+        sling_count: 4,
+        wire_diameter_mm: 0,
+        ground_bearing_capacity: 0,
+        sling_belt_width_mm: 100,
+        sling_belt_rated_load: 4,
+        sling_safe_load: 4,
+        tension_per_leg: 0.66,
+        equipment_working_load: 4.5,
+        total_weight_max: 2.3,
+        safety_factor: 1.03,
+        calculated_utilization: 97.2,
+        equipment_ok: "O.K",
+        sling_ok: "O.K",
+        shackle_ok: "O.K",
+        wind_speed_grade: "0~5",
+      },
+      escapeHtml,
+    );
+    expect(html).toContain("슬링벨트 (웹슬링)");
+    expect(html).toContain("벨트 폭");
+    expect(html).toContain("100mm");
+    expect(html).toContain("1줄 장력");
+    expect(html).toContain("0.66t");
+    expect(html).toContain("적용 정격 4.5t");
+    expect(html).toContain("총중량 2.3t");
+    expect(html).not.toContain("sling_belt");
+    expect(html).not.toContain("와이어 직경");
+    expect(html).not.toMatch(/>0mm</);
+    expect(html).not.toContain("지반 지지력");
+  });
 });

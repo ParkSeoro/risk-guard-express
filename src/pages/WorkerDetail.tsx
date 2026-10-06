@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, PenLine } from "lucide-react";
 import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
-import { WorkerEducationRegisterButton, WorkerPrePlacementRegisterButton } from "@/components/worker/WorkerCardRegisters";
+import { WorkerBasicSafetyCertificateButton, WorkerEducationRegisterButton, WorkerPrePlacementRegisterButton } from "@/components/worker/WorkerCardRegisters";
 import { toLegalEducationJobType } from "@/lib/jobCategories";
 import JobTypeSelect from "@/components/JobTypeSelect";
 import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
@@ -273,12 +273,20 @@ export default function WorkerDetail() {
               <CardTitle className="text-base">의무 일정(법정교육)</CardTitle>
               <div className="flex items-center gap-2">
                 {w.project_id && (
-                  <WorkerEducationRegisterButton
-                    workerId={w.id}
-                    projectId={w.project_id}
-                    companyId={w.company_id}
-                    onSaved={refreshWorker}
-                  />
+                  <>
+                    <WorkerBasicSafetyCertificateButton
+                      workerId={w.id}
+                      projectId={w.project_id}
+                      companyId={w.company_id}
+                      onSaved={refreshWorker}
+                    />
+                    <WorkerEducationRegisterButton
+                      workerId={w.id}
+                      projectId={w.project_id}
+                      companyId={w.company_id}
+                      onSaved={refreshWorker}
+                    />
+                  </>
                 )}
                 <Link to={`/health/education?worker=${w.id}`} className="text-xs text-muted-foreground underline">보건 세션 기록</Link>
               </div>

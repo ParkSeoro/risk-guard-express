@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import EducationSessionBoard from "@/components/education/EducationSessionBoard";
+import { REQ_TYPE_LABELS } from "@/hooks/useWorker";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +27,18 @@ type Row = {
 type Worker = { id: string; name: string; company_id: string | null };
 
 const TYPES = ['정기', '채용시', '작업변경시', '특별', '관리감독자', '기초안전보건'];
+const TYPE_ALIASES: Record<string, string[]> = {
+  정기: ["정기", "regular"],
+  채용시: ["채용시", "신규채용", "new_hire"],
+  작업변경시: ["작업변경시", "작업변경", "job_change"],
+  특별: ["특별", "special"],
+  관리감독자: ["관리감독자", "manager"],
+  기초안전보건: ["기초안전보건", "new_hire_construction"],
+};
+
+function typeLabel(value: string): string {
+  return REQ_TYPE_LABELS[value] || value;
+}
 
 export default function WorkerEducation() {
   const {
@@ -34,6 +49,7 @@ export default function WorkerEducation() {
     applyCompanyFilter,
     scopeStatus,
   } = useGlobalProjectAccess();
+  const [searchParams] = useSearchParams();
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Row[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -79,14 +95,14 @@ export default function WorkerEducation() {
 
   const typeCounts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length };
-    TYPES.forEach(t => { c[t] = rows.filter(r => r.education_type === t).length; });
+    TYPES.forEach(t => { c[t] = rows.filter(r => (TYPE_ALIASES[t] || [t]).includes(r.education_type)).length; });
     return c;
   }, [rows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
-      if (typeFilter !== "all" && r.education_type !== typeFilter) return false;
+      if (typeFilter !== "all" && !(TYPE_ALIASES[typeFilter] || [typeFilter]).includes(r.education_type)) return false;
       if (!q) return true;
       const w = workerMap[r.worker_id];
       return (
@@ -143,11 +159,13 @@ export default function WorkerEducation() {
     <div className="p-4 sm:p-6 space-y-4">
       <header className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><GraduationCap className="text-primary" /> 안전보건교육 이수관리</h1>
-          <p className="text-sm text-muted-foreground">산안법 §29 — 정기/채용시/작업변경시/특별/관리감독자 교육</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><GraduationCap className="text-primary" /> 안전보건교육</h1>
+          <p className="text-sm text-muted-foreground">같은 교육을 받은 사람은 한 회차로 남깁니다. 아래 장부는 그 결과입니다.</p>
         </div>
-        <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 이수 등록</Button>
+        <Button variant="outline" onClick={openCreate}><Plus className="size-4 mr-1" /> 예외 수정</Button>
       </header>
+
+      <EducationSessionBoard focusCertificate={searchParams.get("focus") === "certificate"} />
 
       <div className="grid grid-cols-3 gap-3">
         <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">전체</div><div className="text-2xl font-bold">{stats.total}</div></CardContent></Card>
@@ -200,7 +218,7 @@ export default function WorkerEducation() {
                     return (
                       <tr key={r.id} className="border-t hover:bg-muted/30">
                         <td className="p-2">{workerMap[r.worker_id]?.name || "-"}</td>
-                        <td className="p-2"><Badge variant="outline">{r.education_type}</Badge></td>
+                        <td className="p-2"><Badge variant="outline">{typeLabel(r.education_type)}</Badge></td>
                         <td className="p-2 font-medium">{r.course_name}</td>
                         <td className="p-2 text-center">{r.hours}h</td>
                         <td className="p-2 whitespace-nowrap">{r.completed_at}</td>
@@ -247,7 +265,7 @@ export default function WorkerEducation() {
             </div>
             <div><Label>증빙 URL</Label><Input value={form.evidence_url} onChange={e => setForm({ ...form, evidence_url: e.target.value })} placeholder="https://..." /></div>
             <div><Label>비고</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
-            <p className="text-xs text-muted-foreground">정기 3개월, 특별/관리감독자 12개월 주기로 차기 예정일이 자동 계산됩니다.</p>
+            <p className="text-xs text-muted-foreground">한 명이 빠진 기록만 여기서 고칩니다. 정기교육은 반기 시간을 채워야 의무가 끝납니다.</p>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>

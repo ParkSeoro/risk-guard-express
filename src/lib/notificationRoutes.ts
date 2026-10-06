@@ -115,6 +115,7 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   todo_due: () => `${ADMIN}/todo`,
   health_warning: () => `${ADMIN}/health`,
   health_checkup_due: () => `${ADMIN}/health/checkups`,
+  education_gap: () => `${ADMIN}/worker-education`,
   announcement: (n) =>
     n.related_id ? `${ADMIN}/announcements?id=${n.related_id}` : `${ADMIN}/announcements`,
   assessment_share: (n) =>
@@ -163,6 +164,7 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   todo_due: () => `${WORKER}/tasks`,
   health_warning: () => `${WORKER}/daily-health-log`,
   health_checkup_due: () => `${WORKER}/daily-health-log`,
+  education_gap: () => `${WORKER}/education-sign`,
   announcement: (n) =>
     n.related_id ? `${WORKER}/announcements?id=${n.related_id}` : `${WORKER}/announcements`,
   assessment_share: (n) =>
@@ -215,6 +217,8 @@ export function toMobileShellPath(path: string): string {
     return `${WORKER}/workers${q}`;
   }
   if (p.startsWith("/worker-distribution")) return `${WORKER}/distribution`;
+  if (p.startsWith("/worker-education")) return `${WORKER}/education-sign`;
+  if (p.startsWith("/health/checkups")) return `${WORKER}/daily-health-log`;
   if (p.startsWith("/announcements")) return `${WORKER}/announcements`;
   if (p.startsWith("/vision-fleet") || p.startsWith("/vision-events")) {
     const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";

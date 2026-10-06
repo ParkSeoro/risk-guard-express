@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -73,11 +74,11 @@ export function WorkerEducationRegisterButton({
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>교육 등록</Button>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>예외 수정</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>법정교육 이수 등록</DialogTitle>
+            <DialogTitle>이수 예외 수정</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -206,6 +207,87 @@ export function WorkerPrePlacementRegisterButton({
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>
             <Button onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+export function WorkerBasicSafetyCertificateButton({
+  workerId,
+  projectId,
+  companyId,
+  onSaved,
+}: {
+  workerId: string;
+  projectId: string;
+  companyId?: string | null;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [completedAt, setCompletedAt] = useState(todayInput);
+  const [file, setFile] = useState<File | null>(null);
+
+  const save = async () => {
+    if (!file) {
+      toast.error("이수증 사진을 지정하세요");
+      return;
+    }
+    setSaving(true);
+    try {
+      const up = await uploadAttachmentFile(
+        `education-certificates/${projectId}/${workerId}/${Date.now()}-${file.name}`,
+        file,
+      );
+      const { error } = await supabase.from("worker_education_records").insert({
+        project_id: projectId,
+        worker_id: workerId,
+        company_id: companyId || null,
+        education_type: "new_hire_construction",
+        course_name: "건설업 기초안전보건교육",
+        hours: 4,
+        completed_at: completedAt,
+        evidence_url: up.publicUrl,
+        notes: "certificate",
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("이수증을 확인했습니다");
+      setOpen(false);
+      onSaved();
+    } catch (e: any) {
+      toast.error(e?.message || "업로드에 실패했습니다");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>기초안전 이수증</Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>기초안전보건 이수증</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">지정 교육기관 이수증입니다. 현장 수업으로 등록하지 않습니다.</p>
+            <div>
+              <Label>이수일</Label>
+              <Input type="date" value={completedAt} onChange={(e) => setCompletedAt(e.target.value)} />
+            </div>
+            <div>
+              <Label>이수증 사진</Label>
+              <Input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>
+            <Button onClick={save} disabled={saving}>{saving ? "저장 중…" : "확인"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

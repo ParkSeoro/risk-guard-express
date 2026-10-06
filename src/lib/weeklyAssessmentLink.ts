@@ -89,10 +89,62 @@ function isSameProjectCandidate(current: WeeklyLinkRun, candidate: WeeklyLinkRun
   return true;
 }
 
-function isEligiblePrevious(current: WeeklyLinkRun, candidate: WeeklyLinkRun): boolean {
+export type PreviousRunScope = {
+  userId?: string | null;
+  /** null = this user may see every company on the project. */
+  accessibleCompanyIds: string[] | null;
+  authorCompanyByUser?: Record<string, string | null | undefined> | null;
+};
+
+export function authorCompanyId(
+  run: WeeklyLinkRun,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+): string {
+  const map = authorCompanyByUser || {};
+  const authorId = String(run.author_user_id || '').trim();
+  const creatorId = String(run.created_by || '').trim();
+  return String((authorId && map[authorId]) || (creatorId && map[creatorId]) || '').trim();
+}
+
+/**
+ * Same company chain: target ids intersect, or both documents were written
+ * by the same company. A different target tag must not drop that chain.
+ * Two different companies still do not match.
+ */
+export function assessmentCompanyChainMatch(
+  a: WeeklyLinkRun,
+  b: WeeklyLinkRun,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (companyTargetsOverlap(
+    effectiveCompanyIds(a, authorCompanyByUser),
+    effectiveCompanyIds(b, authorCompanyByUser),
+  )) return true;
+  const left = authorCompanyId(a, authorCompanyByUser);
+  const right = authorCompanyId(b, authorCompanyByUser);
+  return !!(left && right && left === right);
+}
+
+/** Viewer scope: own company, or the 시공사 tree already used for document lists. */
+export function isOwnCompanyRun(run: WeeklyLinkRun, scope: PreviousRunScope): boolean {
+  if (scope.accessibleCompanyIds === null) return true;
+  if (scope.userId && (run.created_by === scope.userId || run.author_user_id === scope.userId)) {
+    return true;
+  }
+  const allow = new Set(scope.accessibleCompanyIds);
+  const author = authorCompanyId(run, scope.authorCompanyByUser);
+  if (author && allow.has(author)) return true;
+  return normalizeCompanyIds(run.target_company_ids).some((id) => allow.has(id));
+}
+
+function isEligiblePrevious(
+  current: WeeklyLinkRun,
+  candidate: WeeklyLinkRun,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+): boolean {
   if (!isSameProjectCandidate(current, candidate)) return false;
   if (candidate.status !== '승인완료') return false;
-  return companyTargetsOverlap(current.target_company_ids, candidate.target_company_ids);
+  return assessmentCompanyChainMatch(current, candidate, authorCompanyByUser);
 }
 
 function compareNewestFirst(a: WeeklyLinkRun, b: WeeklyLinkRun): number {
@@ -122,12 +174,13 @@ function rankPreviousPool(current: WeeklyLinkRun, pool: WeeklyLinkRun[]): Weekly
   return ranked[0] || null;
 }
 
-/** Same project + overlapping companies + 승인완료. Prefer same type, then latest period before current start. */
+/** Same project + same company + 승인완료. Prefer same type, then latest period before current start. */
 export function pickPreviousApprovedRun(
   current: WeeklyLinkRun,
   candidates: WeeklyLinkRun[],
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
 ): WeeklyLinkRun | null {
-  const eligible = (candidates || []).filter((c) => isEligiblePrevious(current, c));
+  const eligible = (candidates || []).filter((c) => isEligiblePrevious(current, c, authorCompanyByUser));
   if (eligible.length === 0) return null;
 
   const sameType = current.type
@@ -142,32 +195,67 @@ export function pickPreviousApprovedRun(
 
 const MANUAL_PREVIOUS_STATUSES = new Set(['승인완료', '결재진행']);
 
-/** Picker list: same company, 승인완료·결재진행. Other companies are not selectable. */
+/**
+ * Picker list. With a viewer scope, every own-company 승인완료·결재진행 run is listed
+ * so a missing auto link can be chosen by hand. Without a scope, only the same
+ * company chain is listed. Other companies are not selectable.
+ */
 export function listManualPreviousCandidates(
   current: WeeklyLinkRun,
   candidates: WeeklyLinkRun[],
+  scope?: PreviousRunScope | null,
 ): WeeklyLinkRun[] {
   const rows = (candidates || []).filter((c) => {
     if (!isSameProjectCandidate(current, c)) return false;
     if (!MANUAL_PREVIOUS_STATUSES.has(c.status)) return false;
+    if (scope) return isOwnCompanyRun(c, scope);
     return companyTargetsOverlap(current.target_company_ids, c.target_company_ids);
   });
   rows.sort(compareNewestFirst);
   return rows;
 }
 
-/** Manual override wins only when that run is the same company. */
+/** Saved link wins when it is still an own-company run. Otherwise auto. */
 export function resolvePreviousRun(
   current: WeeklyLinkRun,
   candidates: WeeklyLinkRun[],
   overrideId?: string | null,
+  scope?: PreviousRunScope | null,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
 ): WeeklyLinkRun | null {
   const id = String(overrideId || '').trim();
   if (id && id !== current.id) {
-    const hit = listManualPreviousCandidates(current, candidates).find((c) => c.id === id);
+    const hit = listManualPreviousCandidates(current, candidates, scope).find((c) => c.id === id);
     if (hit) return hit;
   }
-  return pickPreviousApprovedRun(current, candidates);
+  return pickPreviousApprovedRun(
+    current,
+    candidates,
+    authorCompanyByUser || scope?.authorCompanyByUser,
+  );
+}
+
+/**
+ * A chain lookup that returns no previous must not erase one the screen already has.
+ * A loaded chain previous is used only when accept() allows it.
+ */
+export function mergeFeedbackChainPrevious(opts: {
+  chain: AssessmentFeedbackChain | null;
+  chainPrevious: WeeklyLinkRun | null;
+  chainAuto: WeeklyLinkRun | null;
+  localPrevious: WeeklyLinkRun | null;
+  localAuto: WeeklyLinkRun | null;
+  accept?: (run: WeeklyLinkRun) => boolean;
+}): { previous: WeeklyLinkRun | null; auto: WeeklyLinkRun | null } {
+  const keep = (run: WeeklyLinkRun | null) => {
+    if (!run) return null;
+    if (opts.accept && !opts.accept(run)) return null;
+    return run;
+  };
+  const auto = keep(opts.chainAuto) || keep(opts.localAuto);
+  const local = keep(opts.localPrevious);
+  if (!opts.chain) return { previous: local || auto, auto };
+  return { previous: keep(opts.chainPrevious) || local || auto, auto };
 }
 
 export function formatPreviousRunOptionLabel(

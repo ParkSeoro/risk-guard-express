@@ -7,7 +7,10 @@ import {
   executionFeedbackCount,
   formatPreviousRunOptionLabel,
   isManagedResidualHigh,
+  assessmentCompanyChainMatch,
+  isOwnCompanyRun,
   listManualPreviousCandidates,
+  mergeFeedbackChainPrevious,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
   resolvePreviousRun,
@@ -312,9 +315,99 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(resolvePreviousRun(current, [matching], current.id)?.id).toBe('match');
   });
 
+  it('auto-links the same author company when target tags differ', () => {
+    const authors = { 'user-gc': 'co-hitech' };
+    const current = run({
+      id: 'next',
+      status: '작성중',
+      start_date: '2026-08-25',
+      created_at: '2026-08-19T00:00:00Z',
+      target_company_ids: ['co-hitech'],
+      author_user_id: 'user-gc',
+    });
+    const taggedPartner = run({
+      id: 'tagged-partner',
+      start_date: '2026-08-18',
+      created_at: '2026-08-10T00:00:00Z',
+      target_company_ids: ['co-partner'],
+      author_user_id: 'user-gc',
+    });
+    const otherAuthor = run({
+      id: 'other-author',
+      start_date: '2026-08-20',
+      created_at: '2026-08-17T00:00:00Z',
+      target_company_ids: ['co-jinnam'],
+      author_user_id: 'user-jinnam',
+    });
+    expect(assessmentCompanyChainMatch(current, taggedPartner, authors)).toBe(true);
+    expect(assessmentCompanyChainMatch(current, otherAuthor, { ...authors, 'user-jinnam': 'co-jinnam' })).toBe(false);
+    expect(pickPreviousApprovedRun(current, [otherAuthor, taggedPartner], authors)?.id).toBe('tagged-partner');
+  });
+
   it('lists only the same company, including 결재진행', () => {
     const ids = listManualPreviousCandidates(current, [emptyApproved, pending, matching]).map((c) => c.id);
     expect(ids).toEqual(['pending', 'match']);
+  });
+
+  it('lets the user pick an own-company run when auto has no target overlap', () => {
+    const scope = {
+      userId: 'user-gc',
+      accessibleCompanyIds: ['co-hitech'],
+      authorCompanyByUser: { 'user-gc': 'co-hitech', 'user-jinnam': 'co-jinnam' },
+    };
+    const current = run({
+      id: 'next',
+      status: '작성중',
+      start_date: '2026-08-25',
+      created_at: '2026-08-19T00:00:00Z',
+      target_company_ids: ['co-hitech'],
+      author_user_id: 'user-gc',
+    });
+    const ownTaggedElsewhere = run({
+      id: 'own-elsewhere',
+      status: '승인완료',
+      start_date: '2026-08-18',
+      created_at: '2026-08-10T00:00:00Z',
+      target_company_ids: ['co-site-tag'],
+      author_user_id: 'user-gc',
+    });
+    const peer = run({
+      id: 'peer',
+      status: '승인완료',
+      start_date: '2026-08-18',
+      created_at: '2026-08-11T00:00:00Z',
+      target_company_ids: ['co-jinnam'],
+      author_user_id: 'user-jinnam',
+    });
+    expect(isOwnCompanyRun(ownTaggedElsewhere, scope)).toBe(true);
+    expect(isOwnCompanyRun(peer, scope)).toBe(false);
+    const ids = listManualPreviousCandidates(current, [peer, ownTaggedElsewhere], scope).map((c) => c.id);
+    expect(ids).toEqual(['own-elsewhere']);
+    expect(resolvePreviousRun(current, [peer, ownTaggedElsewhere], 'own-elsewhere', scope, scope.authorCompanyByUser)?.id)
+      .toBe('own-elsewhere');
+  });
+
+  it('does not clear an own-company previous when the chain lookup is empty', () => {
+    const own = run({ id: 'own', target_company_ids: ['co-hitech'] });
+    const peer = run({ id: 'peer', target_company_ids: ['co-jinnam'] });
+    const accept = (row: { target_company_ids?: string[] | null }) =>
+      (row.target_company_ids || []).includes('co-hitech');
+    expect(mergeFeedbackChainPrevious({
+      chain: { previousRunId: null, previousOfPreviousRunId: null, autoPreviousRunId: null },
+      chainPrevious: null,
+      chainAuto: null,
+      localPrevious: own,
+      localAuto: own,
+      accept,
+    }).previous?.id).toBe('own');
+    expect(mergeFeedbackChainPrevious({
+      chain: { previousRunId: 'peer', previousOfPreviousRunId: null, autoPreviousRunId: null },
+      chainPrevious: peer,
+      chainAuto: null,
+      localPrevious: own,
+      localAuto: own,
+      accept,
+    }).previous?.id).toBe('own');
   });
 
   it('labels include the company and 관리대상 count', () => {

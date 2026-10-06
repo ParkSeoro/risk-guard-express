@@ -156,9 +156,10 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
+-- Once an hour. The notice only needs to arrive after the end time, not within minutes.
 SELECT cron.schedule(
   'scan-permit-expiries',
-  '*/10 * * * *',
+  '0 * * * *',
   $$SELECT public.scan_permit_expiries();$$
 );
 

@@ -8,7 +8,6 @@ import {
   formatPreviousRunOptionLabel,
   isManagedResidualHigh,
   assessmentCompanyChainMatch,
-  isOwnCompanyRun,
   listManualPreviousCandidates,
   mergeFeedbackChainPrevious,
   pickPreviousApprovedRun,
@@ -315,8 +314,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(resolvePreviousRun(current, [matching], current.id)?.id).toBe('match');
   });
 
-  it('auto-links the same author company when target tags differ', () => {
-    const authors = { 'user-gc': 'co-hitech' };
+  it('does not link a different target company even when the author company matches', () => {
+    const authors = { 'user-gc': 'co-hitech', 'user-jinnam': 'co-jinnam' };
     const current = run({
       id: 'next',
       status: '작성중',
@@ -339,9 +338,9 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       target_company_ids: ['co-jinnam'],
       author_user_id: 'user-jinnam',
     });
-    expect(assessmentCompanyChainMatch(current, taggedPartner, authors)).toBe(true);
-    expect(assessmentCompanyChainMatch(current, otherAuthor, { ...authors, 'user-jinnam': 'co-jinnam' })).toBe(false);
-    expect(pickPreviousApprovedRun(current, [otherAuthor, taggedPartner], authors)?.id).toBe('tagged-partner');
+    expect(assessmentCompanyChainMatch(current, taggedPartner, authors)).toBe(false);
+    expect(assessmentCompanyChainMatch(current, otherAuthor, authors)).toBe(false);
+    expect(pickPreviousApprovedRun(current, [otherAuthor, taggedPartner], authors)).toBeNull();
   });
 
   it('lists only the same company, including 결재진행', () => {
@@ -349,12 +348,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(ids).toEqual(['pending', 'match']);
   });
 
-  it('lets the user pick an own-company run when auto has no target overlap', () => {
-    const scope = {
-      userId: 'user-gc',
-      accessibleCompanyIds: ['co-hitech'],
-      authorCompanyByUser: { 'user-gc': 'co-hitech', 'user-jinnam': 'co-jinnam' },
-    };
+  it('does not list a differently tagged run even when the author company matches', () => {
+    const authors = { 'user-gc': 'co-hitech', 'user-jinnam': 'co-jinnam' };
     const current = run({
       id: 'next',
       status: '작성중',
@@ -379,12 +374,17 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       target_company_ids: ['co-jinnam'],
       author_user_id: 'user-jinnam',
     });
-    expect(isOwnCompanyRun(ownTaggedElsewhere, scope)).toBe(true);
-    expect(isOwnCompanyRun(peer, scope)).toBe(false);
-    const ids = listManualPreviousCandidates(current, [peer, ownTaggedElsewhere], scope).map((c) => c.id);
-    expect(ids).toEqual(['own-elsewhere']);
-    expect(resolvePreviousRun(current, [peer, ownTaggedElsewhere], 'own-elsewhere', scope, scope.authorCompanyByUser)?.id)
-      .toBe('own-elsewhere');
+    const sameCompany = run({
+      id: 'same-company',
+      status: '결재진행',
+      start_date: '2026-08-18',
+      created_at: '2026-08-12T00:00:00Z',
+      target_company_ids: ['co-hitech'],
+      author_user_id: 'user-other',
+    });
+    const ids = listManualPreviousCandidates(current, [peer, ownTaggedElsewhere, sameCompany], authors).map((c) => c.id);
+    expect(ids).toEqual(['same-company']);
+    expect(resolvePreviousRun(current, [peer, ownTaggedElsewhere], 'own-elsewhere', authors)).toBeNull();
   });
 
   it('does not clear an own-company previous when the chain lookup is empty', () => {

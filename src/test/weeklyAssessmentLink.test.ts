@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   WEEKLY_LINK_CANDIDATE_SELECT,
   companyTargetsOverlap,
-  effectiveCompanyIds,
   parseAssessmentFeedbackChain,
   executionFeedbackCount,
   formatPreviousRunOptionLabel,
@@ -20,7 +19,7 @@ import {
 } from '@/lib/weeklyAssessmentLink';
 
 function run(partial: Partial<WeeklyLinkRun> & { id: string }): WeeklyLinkRun {
-  return {
+  const row: WeeklyLinkRun = {
     project_id: 'proj-1',
     type: '정기',
     status: '승인완료',
@@ -30,6 +29,11 @@ function run(partial: Partial<WeeklyLinkRun> & { id: string }): WeeklyLinkRun {
     is_deleted: false,
     ...partial,
   };
+  if (partial.writing_company_id === undefined) {
+    const first = (row.target_company_ids || []).map((id) => String(id || '').trim()).find(Boolean) || '';
+    row.writing_company_id = first || null;
+  }
+  return row;
 }
 
 describe('companyTargetsOverlap', () => {
@@ -159,39 +163,37 @@ describe('pickPreviousApprovedRun', () => {
     expect(pickPreviousApprovedRun(week9, [week8Always, week8Susi])?.id).toBe('week8-susi');
   });
 
-  it('does not chain blank runs, and uses the author company when it is stamped', () => {
+  it('links blank-target runs by the writing company, not by the person', () => {
+    const authors = {
+      'user-daewoong': 'co-daewoong',
+      'user-daewoong-2': 'co-daewoong',
+      'user-cheongwon': 'co-cheongwon',
+    };
     const current = run({
       id: 'blank-next',
       status: '작성중',
       start_date: '2026-09-21',
       created_at: '2026-09-15T00:00:00Z',
       target_company_ids: [],
+      writing_company_id: null,
       author_user_id: 'user-daewoong',
     });
-    const otherBlank = run({
+    const otherCompany = run({
       id: 'blank-other',
       start_date: '2026-09-14',
       target_company_ids: [],
+      writing_company_id: null,
       author_user_id: 'user-cheongwon',
     });
-    expect(pickPreviousApprovedRun(current, [otherBlank])).toBeNull();
-    const stampedCurrent = {
-      ...current,
-      target_company_ids: effectiveCompanyIds(current, { 'user-daewoong': 'co-daewoong' }),
-    };
-    const stampedOther = {
-      ...otherBlank,
-      target_company_ids: effectiveCompanyIds(otherBlank, { 'user-cheongwon': 'co-cheongwon' }),
-    };
-    const stampedSame = run({
-      id: 'same-author',
+    const coworker = run({
+      id: 'same-company',
       start_date: '2026-09-14',
-      target_company_ids: effectiveCompanyIds(
-        run({ id: 'prev', target_company_ids: [], author_user_id: 'user-daewoong' }),
-        { 'user-daewoong': 'co-daewoong' },
-      ),
+      target_company_ids: [],
+      writing_company_id: null,
+      author_user_id: 'user-daewoong-2',
     });
-    expect(pickPreviousApprovedRun(stampedCurrent, [stampedOther, stampedSame])?.id).toBe('same-author');
+    expect(pickPreviousApprovedRun(current, [otherCompany], authors)).toBeNull();
+    expect(pickPreviousApprovedRun(current, [otherCompany, coworker], authors)?.id).toBe('same-company');
   });
 
   it('keeps 대웅, 청원, and 진남 on separate chains and ignores a cross-company previous', () => {
@@ -314,8 +316,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(resolvePreviousRun(current, [matching], current.id)?.id).toBe('match');
   });
 
-  it('does not link a different target company even when the author company matches', () => {
-    const authors = { 'user-gc': 'co-hitech', 'user-jinnam': 'co-jinnam' };
+  it('links coworkers even when target tags differ, and skips another company', () => {
+    const authors = { 'user-gc': 'co-hitech', 'user-coworker': 'co-hitech', 'user-jinnam': 'co-jinnam' };
     const current = run({
       id: 'next',
       status: '작성중',
@@ -324,23 +326,23 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       target_company_ids: ['co-hitech'],
       author_user_id: 'user-gc',
     });
-    const taggedPartner = run({
-      id: 'tagged-partner',
+    const coworker = run({
+      id: 'coworker',
       start_date: '2026-08-18',
       created_at: '2026-08-10T00:00:00Z',
       target_company_ids: ['co-partner'],
-      author_user_id: 'user-gc',
+      author_user_id: 'user-coworker',
     });
-    const otherAuthor = run({
+    const otherCompany = run({
       id: 'other-author',
       start_date: '2026-08-20',
       created_at: '2026-08-17T00:00:00Z',
-      target_company_ids: ['co-jinnam'],
+      target_company_ids: ['co-hitech'],
       author_user_id: 'user-jinnam',
     });
-    expect(assessmentCompanyChainMatch(current, taggedPartner, authors)).toBe(false);
-    expect(assessmentCompanyChainMatch(current, otherAuthor, authors)).toBe(false);
-    expect(pickPreviousApprovedRun(current, [otherAuthor, taggedPartner], authors)).toBeNull();
+    expect(assessmentCompanyChainMatch(current, coworker, authors)).toBe(true);
+    expect(assessmentCompanyChainMatch(current, otherCompany, authors)).toBe(false);
+    expect(pickPreviousApprovedRun(current, [otherCompany, coworker], authors)?.id).toBe('coworker');
   });
 
   it('lists only the same company, including 결재진행', () => {
@@ -348,43 +350,35 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(ids).toEqual(['pending', 'match']);
   });
 
-  it('does not list a differently tagged run even when the author company matches', () => {
-    const authors = { 'user-gc': 'co-hitech', 'user-jinnam': 'co-jinnam' };
+  it('lists the same company including another person and 결재진행', () => {
+    const authors = { 'user-gc': 'co-hitech', 'user-other': 'co-hitech', 'user-jinnam': 'co-jinnam' };
     const current = run({
       id: 'next',
       status: '작성중',
       start_date: '2026-08-25',
       created_at: '2026-08-19T00:00:00Z',
-      target_company_ids: ['co-hitech'],
+      target_company_ids: ['co-site-a'],
       author_user_id: 'user-gc',
     });
-    const ownTaggedElsewhere = run({
-      id: 'own-elsewhere',
-      status: '승인완료',
+    const coworkerPending = run({
+      id: 'coworker-pending',
+      status: '결재진행',
       start_date: '2026-08-18',
-      created_at: '2026-08-10T00:00:00Z',
-      target_company_ids: ['co-site-tag'],
-      author_user_id: 'user-gc',
+      created_at: '2026-08-12T00:00:00Z',
+      target_company_ids: ['co-site-b'],
+      author_user_id: 'user-other',
     });
     const peer = run({
       id: 'peer',
       status: '승인완료',
       start_date: '2026-08-18',
       created_at: '2026-08-11T00:00:00Z',
-      target_company_ids: ['co-jinnam'],
+      target_company_ids: ['co-site-a'],
       author_user_id: 'user-jinnam',
     });
-    const sameCompany = run({
-      id: 'same-company',
-      status: '결재진행',
-      start_date: '2026-08-18',
-      created_at: '2026-08-12T00:00:00Z',
-      target_company_ids: ['co-hitech'],
-      author_user_id: 'user-other',
-    });
-    const ids = listManualPreviousCandidates(current, [peer, ownTaggedElsewhere, sameCompany], authors).map((c) => c.id);
-    expect(ids).toEqual(['same-company']);
-    expect(resolvePreviousRun(current, [peer, ownTaggedElsewhere], 'own-elsewhere', authors)).toBeNull();
+    const ids = listManualPreviousCandidates(current, [peer, coworkerPending], authors).map((c) => c.id);
+    expect(ids).toEqual(['coworker-pending']);
+    expect(resolvePreviousRun(current, [peer, coworkerPending], 'peer', authors)?.id).not.toBe('peer');
   });
 
   it('does not clear an own-company previous when the chain lookup is empty', () => {

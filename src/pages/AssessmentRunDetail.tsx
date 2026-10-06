@@ -108,7 +108,7 @@ import {
   isManagedResidualHigh,
   assessmentCompanyChainMatch,
   listManualPreviousCandidates,
-  effectiveCompanyIds,
+  writingCompanyId,
   mergeFeedbackChainPrevious,
   parseAssessmentFeedbackChain,
   pickPreviousApprovedRun,
@@ -630,7 +630,8 @@ const AssessmentRunDetail = () => {
       if (cancelled) return;
       const companyIds = new Set<string>();
       for (const row of [run as WeeklyLinkRun, ...rows]) {
-        for (const id of effectiveCompanyIds(row, authorCompanyByUser)) companyIds.add(id);
+        const id = writingCompanyId(row, authorCompanyByUser);
+        if (id) companyIds.add(id);
       }
       const companyLabelById: Record<string, string> = {};
       if (companyIds.size > 0) {
@@ -2947,12 +2948,12 @@ const AssessmentRunDetail = () => {
             {renderPreviousPicker()}
             {!isApproved && previousRunCandidates.length === 0 && (
               <p className="text-[11px] text-muted-foreground">
-                이 회사의 이전 승인 회차가 없습니다. 다른 회사 문서는 여기에 나오지 않습니다.
+                이 소속회사의 결재중·승인완료 회차가 없습니다.
               </p>
             )}
             {!isApproved && previousRunCandidates.length > 0 && (
               <p className="text-[11px] text-muted-foreground">
-                자동으로 붙일 승인완료 회차가 없으면 위 목록에서 같은 회사 회차를 고르세요.
+                같은 소속회사 회차만 고를 수 있습니다. 그 회사의 다른 사람이 쓴 회차도 포함됩니다.
               </p>
             )}
           </CardContent>
@@ -3407,7 +3408,7 @@ const AssessmentRunDetail = () => {
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                이 회사의 이전 회차를 고르면 그 회차의 이행 확인이 여기 나옵니다. 다른 회사 문서는 목록에 없습니다.
+                이 소속회사의 이전 회차를 고르면 그 회차의 이행 확인이 여기 나옵니다.
               </CardContent>
             </Card>
           )}

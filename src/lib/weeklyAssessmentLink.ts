@@ -11,7 +11,9 @@ export type WeeklyLinkRun = {
   target_company_ids?: string[] | null;
   author_user_id?: string | null;
   created_by?: string | null;
-  /** Display only. Stamped from the effective company before the picker renders. */
+  /** 작성자 소속회사. 전회차 목록은 이 값이 같은 회차만 고른다. */
+  writing_company_id?: string | null;
+  /** Display only. Stamped from the writing company before the picker renders. */
   company_label?: string | null;
   period_label?: string | null;
   is_deleted?: boolean | null;
@@ -62,17 +64,27 @@ export function effectiveCompanyIds(
   return id ? [id] : [];
 }
 
+/** 작성자 소속회사. 대상 업체 태그는 쓰지 않는다. 사람 id가 아니라 회사 id다. */
+export function writingCompanyId(
+  run: WeeklyLinkRun,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+): string {
+  const map = authorCompanyByUser || {};
+  const authorId = String(run.author_user_id || '').trim();
+  const creatorId = String(run.created_by || '').trim();
+  const fromMap = String((authorId && map[authorId]) || (creatorId && map[creatorId]) || '').trim();
+  if (fromMap) return fromMap;
+  return String(run.writing_company_id || '').trim();
+}
+
 export function stampRunCompany<T extends WeeklyLinkRun>(
   run: T,
   authorCompanyByUser?: Record<string, string | null | undefined> | null,
   companyLabelById?: Record<string, string | null | undefined> | null,
 ): T {
-  const ids = effectiveCompanyIds(run, authorCompanyByUser);
-  const label = ids
-    .map((id) => String(companyLabelById?.[id] || '').trim())
-    .filter(Boolean)
-    .join(', ');
-  return { ...run, target_company_ids: ids, company_label: label || null };
+  const id = writingCompanyId(run, authorCompanyByUser);
+  const label = String((id && companyLabelById?.[id]) || '').trim();
+  return { ...run, writing_company_id: id || null, company_label: label || null };
 }
 
 function periodKey(run: WeeklyLinkRun): string | null {
@@ -90,19 +102,18 @@ function isSameProjectCandidate(current: WeeklyLinkRun, candidate: WeeklyLinkRun
 }
 
 /**
- * Same company chain only when effective target-company ids overlap.
- * The author's company fills a blank tag. It does not bridge two different tags.
- * A viewer who can see other companies still cannot attach those documents.
+ * Same chain when both documents were written by the same company.
+ * Several people in that company share one list. The viewer does not matter.
+ * A different target-company tag does not split or join the list.
  */
 export function assessmentCompanyChainMatch(
   a: WeeklyLinkRun,
   b: WeeklyLinkRun,
   authorCompanyByUser?: Record<string, string | null | undefined> | null,
 ): boolean {
-  return companyTargetsOverlap(
-    effectiveCompanyIds(a, authorCompanyByUser),
-    effectiveCompanyIds(b, authorCompanyByUser),
-  );
+  const left = writingCompanyId(a, authorCompanyByUser);
+  const right = writingCompanyId(b, authorCompanyByUser);
+  return !!(left && right && left === right);
 }
 
 function isEligiblePrevious(
@@ -164,9 +175,8 @@ export function pickPreviousApprovedRun(
 const MANUAL_PREVIOUS_STATUSES = new Set(['승인완료', '결재진행']);
 
 /**
- * Picker list: 승인완료·결재진행 of the same target companies only.
- * A different company is never listed, even when the same person wrote it
- * or the viewer can open that company's other documents.
+ * Picker list: 결재진행·승인완료 written by the same company.
+ * Another person at that company is included. Another company is not.
  */
 export function listManualPreviousCandidates(
   current: WeeklyLinkRun,

@@ -318,6 +318,7 @@ const AssessmentRuns = () => {
       const previous = pickPreviousApprovedRun(
         stampRunCompany(data as WeeklyLinkRun, memberCompanyByUser),
         ((runs || []) as WeeklyLinkRun[]).map((row) => stampRunCompany(row, memberCompanyByUser)),
+        memberCompanyByUser,
       );
       toast({
         title: '회차가 생성되었습니다.',

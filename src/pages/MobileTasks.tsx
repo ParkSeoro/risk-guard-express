@@ -47,6 +47,7 @@ export default function MobileTasks() {
     { label: t("taskIncident"), sub: t("taskIncidentSub"), to: "/app/worker/incident", icon: AlertOctagon },
     { label: t("taskWorkStop"), sub: t("taskWorkStopSub"), to: "/app/worker/work-stop", icon: AlertOctagon },
     { label: t("taskHealth"), sub: t("taskHealthSub"), to: "/app/worker/daily-health-log", icon: HeartPulse },
+    { label: t("taskEducation"), sub: t("taskEducationSub"), to: "/app/worker/education-sign", icon: Users },
     { label: t("taskPpe"), sub: t("taskPpeSub"), to: "/app/worker/ppe-receipt", icon: HardHat },
   ];
 

@@ -134,6 +134,7 @@ export default function HealthCheckups() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Stethoscope className="h-6 w-6" />건강진단 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">일반/특수/배치전/수시/임시 건강진단 기록 (산업안전보건법 제129~131조)</p>
+          <p className="text-sm text-muted-foreground">건강진단은 검진기관 결과지가 증거입니다. 같은 날 여러 명을 한 번에 적는 화면은 다음에 둡니다.</p>
         </div>
         <Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" />신규 등록</Button>
       </div>

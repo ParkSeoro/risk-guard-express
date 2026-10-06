@@ -34,6 +34,7 @@ export const LazyMobilePermits = L(() => import("@/pages/MobilePermits"));
 export const LazyMobileIncident = L(() => import("@/pages/MobileIncident"));
 export const LazyMobileScan = L(() => import("@/pages/MobileScan"));
 export const LazyMobileDailyHealthLog = L(() => import("@/pages/MobileDailyHealthLog"));
+export const LazyMobileEducationSign = L(() => import("@/pages/MobileEducationSign"));
 export const LazyMobileWorkStop = L(() => import("@/pages/MobileWorkStop"));
 export const LazyWorkerGpsLocation = L(() => import("@/pages/WorkerGpsLocation"));
 export const LazyMobileGeofenceDrop = L(() => import("@/pages/MobileGeofenceDrop"));

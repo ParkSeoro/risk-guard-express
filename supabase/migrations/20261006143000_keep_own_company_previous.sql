@@ -1,24 +1,7 @@
--- Keep a previous assessment when it is the same company, even if the
--- target-company tag differs. A chain lookup must not drop that link.
--- Another company's document still does not attach.
-
-CREATE OR REPLACE FUNCTION public.assessment_run_author_company_id(_run public.assessment_runs)
-RETURNS uuid
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $fn$
-  SELECT pm.company_id
-    FROM public.project_members pm
-   WHERE pm.project_id = _run.project_id
-     AND pm.user_id = COALESCE(_run.author_user_id, _run.created_by)
-     AND pm.company_id IS NOT NULL
-   ORDER BY public.project_member_role_rank(pm.role_new::text) DESC,
-            pm.created_at ASC,
-            pm.company_id
-   LIMIT 1;
-$fn$;
+-- Same company means overlapping effective target-company ids only.
+-- A blank tag is the author's company. Two different tags never match,
+-- even when the same person wrote both documents.
+-- Another company's document does not attach.
 
 CREATE OR REPLACE FUNCTION public.assessment_runs_same_company(
   _a public.assessment_runs,
@@ -33,11 +16,6 @@ AS $fn$
   SELECT public.assessment_company_ids_overlap(
            public.assessment_run_effective_company_ids(_a),
            public.assessment_run_effective_company_ids(_b)
-         )
-      OR (
-           public.assessment_run_author_company_id(_a) IS NOT NULL
-           AND public.assessment_run_author_company_id(_a)
-               = public.assessment_run_author_company_id(_b)
          );
 $fn$;
 
@@ -132,5 +110,4 @@ BEGIN
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.assessment_run_author_company_id(public.assessment_runs) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.assessment_runs_same_company(public.assessment_runs, public.assessment_runs) FROM PUBLIC, anon, authenticated;

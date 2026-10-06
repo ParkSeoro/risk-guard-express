@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,7 @@ function fmtTime(iso?: string | null) {
 /** Mobile workers — 명부 | 입퇴장 | (관리자) 서명·서약. */
 export default function MobileWorkers() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const goMobileHome = useNavigateMobileHome();
+  const onBack = useMobileSubpageBack("/app/worker/tasks");
   const { projectId, companyId, applyCompanyFilter, role, isMaster, accessibleCompanyIds, scopeStatus } = useMobileAccess();
   const preview = usePreview();
   const blockWrite = usePreviewWriteBlock();
@@ -199,7 +199,7 @@ export default function MobileWorkers() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground"
-          onClick={() => goMobileHome()}
+          onClick={onBack}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

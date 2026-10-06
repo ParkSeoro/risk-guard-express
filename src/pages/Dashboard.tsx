@@ -319,16 +319,16 @@ const Dashboard = () => {
 
   const pulseTiles = useMemo(() => {
     const tiles = [
-      { label: "현장 체류", value: data.pulse.onSiteWorkers, hint: `금일 출역 ${data.pulse.todayEntries}`, path: "/workers?tab=attendance", icon: HardHat },
+      { label: "현장 체류", value: data.pulse.onSiteWorkers, hint: `금일 출역 ${data.pulse.todayEntries}`, path: "/workers?tab=attendance&status=inside", icon: HardHat },
       { label: "금일 출역", value: data.pulse.todayEntries, hint: "오늘 입퇴장", path: "/workers?tab=attendance", icon: HardHat },
-      { label: "금일 TBM", value: data.pulse.todayTbm, hint: "오늘 작성된 TBM", path: "/tbm-logs", icon: ClipboardCheck },
+      { label: "금일 TBM", value: data.pulse.todayTbm, hint: "오늘 작성된 TBM", path: "/tbm-logs?date=today", icon: ClipboardCheck },
     ];
     if (showOpsWide) {
       tiles.push({
         label: "구역 경보",
         value: data.pulse.zoneAlerts,
         hint: "미확인",
-        path: "/zone-events",
+        path: "/zone-events?ack=open",
         icon: MapPin,
       });
     }
@@ -441,19 +441,21 @@ const Dashboard = () => {
 
       <section className="space-y-3">
         <SectionLabel>위험성평가</SectionLabel>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 cursor-pointer" onClick={() => navigate("/risk-assessment")}>
-          <KpiCard label="회차" value={data.totalRuns} icon={<ClipboardList className="h-4 w-4 text-primary" />} />
-          <KpiCard label="승인 회차" value={data.approvedRuns} icon={<ShieldCheck className="h-4 w-4 text-primary" />} />
-          <KpiCard label="평가항목" value={data.totalItems} icon={<ShieldAlert className="h-4 w-4 text-primary" />} />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <KpiCard label="회차" value={data.totalRuns} path="/risk-assessment" icon={<ClipboardList className="h-4 w-4 text-primary" />} />
+          <KpiCard label="승인 회차" value={data.approvedRuns} path="/risk-assessment?status=승인완료" icon={<ShieldCheck className="h-4 w-4 text-primary" />} />
+          <KpiCard label="평가항목" value={data.totalItems} path="/risk-assessment" icon={<ShieldAlert className="h-4 w-4 text-primary" />} />
           <KpiCard
             label="미조치 피드백"
             value={data.raFeedbackUnresolved}
+            path="/risk-assessment?focus=feedback"
             valueColor={data.raFeedbackUnresolved > 0 ? "text-destructive" : undefined}
             icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
           />
           <KpiCard
             label="개선후 상"
             value={data.residualHigh}
+            path="/risk-assessment?focus=residual"
             valueColor={data.residualHigh > 0 ? "text-destructive" : undefined}
             icon={<ShieldCheck className="h-4 w-4 text-warning" />}
           />
@@ -465,7 +467,7 @@ const Dashboard = () => {
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-destructive" /> 개선 후 상
                   </CardTitle>
-                  <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => navigate("/risk-assessment")}>
+                  <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => navigate("/risk-assessment?focus=residual")}>
                     전체 보기 <ArrowRight className="h-3 w-3" />
                   </Button>
                 </div>
@@ -513,21 +515,21 @@ const Dashboard = () => {
       <section className="space-y-3">
         <SectionLabel>작업계획서</SectionLabel>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatusTile label="작성중" value={data.planSum.draft} path="/work-plans" icon={FileText} />
-          <StatusTile label="결재중" value={data.planSum.inApproval} path="/work-plans" icon={FileText} />
-          <StatusTile label="승인완료" value={data.planSum.approved} path="/work-plans" icon={FileText} />
-          <StatusTile label="반려" value={data.planSum.rejected} path="/work-plans" icon={FileText} />
+          <StatusTile label="작성중" value={data.planSum.draft} path="/work-plans?status=작성중" icon={FileText} />
+          <StatusTile label="결재중" value={data.planSum.inApproval} path="/work-plans?status=결재중" icon={FileText} />
+          <StatusTile label="승인완료" value={data.planSum.approved} path="/work-plans?status=승인완료" icon={FileText} />
+          <StatusTile label="반려" value={data.planSum.rejected} path="/work-plans?status=반려" icon={FileText} />
         </div>
       </section>
 
       <section className="space-y-3">
         <SectionLabel>허가서 발행 현황</SectionLabel>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <StatusTile label="작성중" value={data.permitSum.draft} path="/work-permits" icon={FileSignature} />
-          <StatusTile label="결재중" value={data.permitSum.inApproval} path="/work-permits" icon={FileSignature} />
-          <StatusTile label="발행" value={data.permitSum.active} path="/work-permits" icon={FileSignature} />
-          <StatusTile label="종료 대기" value={data.permitSum.closurePending} path="/work-permits" icon={FileSignature} />
-          <StatusTile label="반려" value={data.permitSum.rejected} path="/work-permits" icon={FileSignature} />
+          <StatusTile label="작성중" value={data.permitSum.draft} path="/work-permits?status=draft&period=all" icon={FileSignature} />
+          <StatusTile label="결재중" value={data.permitSum.inApproval} path="/work-permits?status=in_approval&period=all" icon={FileSignature} />
+          <StatusTile label="발행" value={data.permitSum.active} path="/work-permits?status=issued&period=all" icon={FileSignature} />
+          <StatusTile label="종료 대기" value={data.permitSum.closurePending} path="/work-permits?status=closure_pending&period=all" icon={FileSignature} />
+          <StatusTile label="반려" value={data.permitSum.rejected} path="/work-permits?status=rejected&period=all" icon={FileSignature} />
         </div>
       </section>
     </div>
@@ -550,15 +552,20 @@ function severityBadgeVariant(s: AttentionItem["severity"]): "destructive" | "se
 }
 
 function KpiCard({
-  label, value, icon, valueColor,
+  label, value, icon, valueColor, path,
 }: {
   label: string;
   value: number | string;
   icon: React.ReactNode;
   valueColor?: string;
+  path?: string;
 }) {
+  const navigate = useNavigate();
   return (
-    <Card>
+    <Card
+      className={path ? "cursor-pointer hover:border-primary/40 transition-colors" : undefined}
+      onClick={path ? () => navigate(path) : undefined}
+    >
       <CardContent className="pt-4 pb-3">
         <div className="flex items-start justify-between gap-2">
           <div>

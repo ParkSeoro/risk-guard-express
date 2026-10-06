@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,8 @@ export default function ZoneEvents() {
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [residual, setResidual] = useState<Event[]>([]);
-  const [tab, setTab] = useState("alerts");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => (searchParams.get("ack") === "open" ? "alerts" : "alerts"));
 
   useEffect(() => {
     supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));

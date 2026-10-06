@@ -54,6 +54,33 @@ describe("approval reject notification routes", () => {
     ).toBe("/app/worker/approvals");
   });
 
+  it("opens the permit and work plan when a period alarm has no link", () => {
+    expect(
+      resolveNotificationRoute(
+        { type: "permit_expiry", related_id: "permit-1" },
+        { mobileShell: false },
+      ),
+    ).toBe("/app/admin/work-permits/permit-1");
+    expect(
+      resolveNotificationRoute(
+        { type: "permit_expiry", related_id: "permit-1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/permits?id=permit-1");
+    expect(
+      resolveNotificationRoute(
+        { type: "work_plan_due", related_id: "plan-1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/work-plans/plan-1");
+    expect(
+      resolveNotificationRoute(
+        { type: "permit_expiry", related_id: "other", link: "/work-permits/permit-9" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/permits?id=permit-9");
+  });
+
   it("opens the risk assessment document for feedback approval alerts", () => {
     expect(
       resolveNotificationRoute(

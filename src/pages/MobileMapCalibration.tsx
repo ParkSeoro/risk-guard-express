@@ -7,7 +7,7 @@
  * so capturing "B" could overwrite captured "A" when ids collided.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack, useNavigateMobileHome } from "@/lib/mobileNav";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -189,6 +189,7 @@ function buildSlots(
 
 export default function MobileMapCalibration() {
   const goHome = useNavigateMobileHome();
+  const onBack = useMobileSubpageBack("/app/worker/more");
   const { hasRole, user } = useAuth();
   const { projectId } = useMobileAccess();
   const isMaster = hasRole("master");
@@ -672,7 +673,7 @@ export default function MobileMapCalibration() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground hover:bg-primary/80"
-          onClick={() => goHome()}
+          onClick={onBack}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

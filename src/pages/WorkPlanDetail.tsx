@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -52,7 +52,7 @@ import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import {
-  ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle,
+  Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle,
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,
   CalendarDays, MapPin, User, Shield, ClipboardList, Ban
 } from 'lucide-react';
@@ -71,7 +71,6 @@ import { format, parseISO } from 'date-fns';
 import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
 import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
 import { appendTextToMethodSection } from '@/lib/workPlanMethodSection';
-import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 import { WorkDocVoidBanner } from '@/components/work-docs/WorkDocVoidStamp';
 import { WorkDocVoidDialog } from '@/components/work-docs/WorkDocVoidDialog';
 import { canClientVoidWorkDoc, isWorkDocVoided, workDocVoidInfo } from '@/lib/workDocVoid';
@@ -92,9 +91,7 @@ const getDefaultChecklist = () => [
 
 const WorkPlanDetail = () => {
   const { planId } = useParams<{ planId: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const listBackPath = approvalsBackOr('/work-plans', searchParams.get('from'));
   const { user } = useAuth();
   const access = useGlobalProjectAccess();
   const { userRole, isMaster } = access;
@@ -724,9 +721,6 @@ const WorkPlanDetail = () => {
     <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(listBackPath)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div className="flex-1">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <span>작업계획서</span><span>/</span><span>{wpType?.name}</span>

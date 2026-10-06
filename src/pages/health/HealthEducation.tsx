@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,9 @@ export default function HealthEducation() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ type: "정기" });
   const [loading, setLoading] = useState(true);
+  const [searchParams] = useSearchParams();
+  const presetWorker = searchParams.get("worker");
+  const openedPreset = useRef(false);
 
   const load = async () => {
     if (!projectId) return;
@@ -33,7 +37,13 @@ export default function HealthEducation() {
       let wsQ = supabase.from("workers").select("id,name,company_name,company_id").eq("project_id", projectId).eq("is_active", true).order("name");
       wsQ = applyCompanyFilter(wsQ);
       const [{ data: l }, { data: ws }] = await Promise.all([lQ, wsQ]);
-      setList(l || []); setWorkers(ws || []);
+      const nextWorkers = ws || [];
+      setList(l || []); setWorkers(nextWorkers);
+      if (!openedPreset.current && presetWorker && nextWorkers.some((w) => w.id === presetWorker)) {
+        openedPreset.current = true;
+        setForm((f) => ({ ...f, worker_id: presetWorker }));
+        setOpen(true);
+      }
     } catch (e) { handle(e, "보건교육 조회"); }
     finally { setLoading(false); }
   };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useWorker, calcAge, JOB_TYPE_LABELS, REQ_TYPE_LABELS } from "@/hooks/useWorker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ArrowLeft, HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, PenLine } from "lucide-react";
+import { HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, PenLine } from "lucide-react";
 import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
+import { WorkerEducationRegisterButton, WorkerPrePlacementRegisterButton } from "@/components/worker/WorkerCardRegisters";
+import { toLegalEducationJobType } from "@/lib/jobCategories";
 import JobTypeSelect from "@/components/JobTypeSelect";
 import WorkerSignatureLedgerPanel from "@/components/workers/WorkerSignatureLedgerPanel";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
@@ -31,8 +33,12 @@ const statusBadge = (status: string, due?: string) => {
 
 export default function WorkerDetail() {
   const { id } = useParams<{ id: string }>();
-  const nav = useNavigate();
   const qc = useQueryClient();
+  const [eduTick, setEduTick] = useState(0);
+  const refreshWorker = () => {
+    setEduTick((n) => n + 1);
+    void qc.invalidateQueries({ queryKey: ["worker-detail", id] });
+  };
   const { data, isLoading } = useWorker(id);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -111,7 +117,6 @@ export default function WorkerDetail() {
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => nav(-1)}><ArrowLeft className="h-4 w-4" /></Button>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <HardHat className="h-6 w-6" /> {w.name}
           {age !== null && <span className="text-base text-muted-foreground">({age}세)</span>}
@@ -162,6 +167,15 @@ export default function WorkerDetail() {
                 <Label>직종</Label>
                 <JobTypeSelect value={form.jobType} onValueChange={(v: StandardJobType) => setForm((f) => ({ ...f, jobType: v }))} />
               </div>
+              {w.project_id && form.jobType && (
+                <div className="col-span-2 md:col-span-3">
+                  <RequiredEducationPanel
+                    mode="preview"
+                    projectId={w.project_id}
+                    jobType={toLegalEducationJobType(form.jobType)}
+                  />
+                </div>
+              )}
               <div>
                 <Label>생년월일</Label>
                 <Input type="date" value={form.birthDate} onChange={(e) => setForm((f) => ({ ...f, birthDate: e.target.value }))} />
@@ -253,11 +267,21 @@ export default function WorkerDetail() {
         </TabsContent>
 
         <TabsContent value="education" className="mt-4 space-y-3">
-          <RequiredEducationPanel mode="worker" workerId={id!} />
+          <RequiredEducationPanel key={eduTick} mode="worker" workerId={id!} />
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">의무 일정(법정교육)</CardTitle>
-              <Link to="/health/education"><Button size="sm" variant="outline">교육 등록</Button></Link>
+              <div className="flex items-center gap-2">
+                {w.project_id && (
+                  <WorkerEducationRegisterButton
+                    workerId={w.id}
+                    projectId={w.project_id}
+                    companyId={w.company_id}
+                    onSaved={refreshWorker}
+                  />
+                )}
+                <Link to={`/health/education?worker=${w.id}`} className="text-xs text-muted-foreground underline">보건 세션 기록</Link>
+              </div>
             </CardHeader>
             <CardContent>
               <table className="w-full text-sm">
@@ -275,14 +299,14 @@ export default function WorkerDetail() {
                   ))}
                 </tbody>
               </table>
-              {data!.educations.length > 0 && (
+              {(data?.educationRecords || []).length > 0 && (
                 <div className="mt-4">
-                  <h4 className="font-medium text-sm mb-2">최근 이수 이력</h4>
+                  <h4 className="font-medium text-sm mb-2">이수 장부</h4>
                   <ul className="text-sm space-y-1">
-                    {data!.educations.slice(0, 5).map((e: any) => (
-                      <li key={e.id} className="border-b py-1 flex justify-between">
-                        <span>{e.title || e.material_title || "교육"}</span>
-                        <span className="text-muted-foreground">{e.conducted_at?.slice(0, 10)}</span>
+                    {data!.educationRecords.slice(0, 5).map((e: any) => (
+                      <li key={e.id} className="border-b py-1 flex justify-between gap-2">
+                        <span>{REQ_TYPE_LABELS[e.education_type] || e.education_type} · {e.course_name}</span>
+                        <span className="text-muted-foreground shrink-0">{String(e.completed_at || "").slice(0, 10)}</span>
                       </li>
                     ))}
                   </ul>
@@ -294,9 +318,18 @@ export default function WorkerDetail() {
 
         <TabsContent value="health" className="mt-4 space-y-3">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">건강진단 이력</CardTitle>
-              <Link to="/health/checkups"><Button size="sm" variant="outline">건진 등록</Button></Link>
+              {w.project_id && (
+                <WorkerPrePlacementRegisterButton
+                  workerId={w.id}
+                  projectId={w.project_id}
+                  companyId={w.company_id}
+                  workerName={w.name}
+                  workerPhone={w.phone}
+                  onSaved={refreshWorker}
+                />
+              )}
             </CardHeader>
             <CardContent>
               {data!.checkups.length === 0 ? (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack, useNavigateMobileHome } from "@/lib/mobileNav";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -67,6 +67,7 @@ type Fixing = {
 export default function MobileGeofenceDrop() {
   const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
+  const onBack = useMobileSubpageBack("/app/worker/more");
   const { projectId } = useMobileAccess();
   const [name, setName] = useState("현장 지정 위험구역");
   const [radiusM, setRadiusM] = useState("15");
@@ -190,7 +191,7 @@ export default function MobileGeofenceDrop() {
           size="icon"
           variant="ghost"
           className="text-destructive-foreground hover:bg-destructive/80"
-          onClick={() => goMobileHome()}
+          onClick={onBack}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

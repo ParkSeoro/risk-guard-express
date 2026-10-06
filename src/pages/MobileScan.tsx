@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { toast } from "sonner";
 // 모바일 QR 스캔 — 카메라로 근로자 QR 토큰 인식 → 출입 포털로 이동
 export default function MobileScan() {
   const navigate = useNavigate();
-  const goMobileHome = useNavigateMobileHome();
+  const onBack = useMobileSubpageBack("/app/worker/more");
   const containerId = "qr-reader";
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -162,7 +162,7 @@ export default function MobileScan() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
+        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={onBack}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <ScanLine className="h-5 w-5" />

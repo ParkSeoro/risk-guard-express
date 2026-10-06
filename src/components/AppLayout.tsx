@@ -1,8 +1,11 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { User, LogOut, Building2, Smartphone } from "lucide-react";
+import { ArrowLeft, User, LogOut, Building2, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { adminBackTarget } from "@/lib/adminBack";
+import { resolveAdminApprovalsReturnPath } from "@/lib/approvalInboxPreview";
 import { NotificationBell } from "@/components/NotificationBell";
 import { HelpButton } from "@/components/HelpButton";
 import { TutorialOverlay } from "@/components/TutorialOverlay";
@@ -30,6 +33,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, signOut, roles } = useAuth();
   const projectAccess = useProjectAccess();
   const showBackToMobile = isForceDesktop() && isLikelyPhoneDevice();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const structuralBack = adminBackTarget(location.pathname);
+  const backTarget = structuralBack
+    ? resolveAdminApprovalsReturnPath(new URLSearchParams(location.search).get("from")) || structuralBack
+    : null;
 
   const ROLE_LABEL: Record<string, string> = {
     master: '마스터', project_admin: '프로젝트관리자', safety_manager: '안전관리자',
@@ -55,6 +64,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <header className="h-14 flex items-center justify-between gap-2 border-b bg-card px-2 sm:px-4 shrink-0 print:hidden min-w-0">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <SidebarTrigger className="text-muted-foreground shrink-0" aria-label="메뉴 열기" />
+                {backTarget && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-muted-foreground"
+                    aria-label="뒤로"
+                    onClick={() => navigate(backTarget)}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                )}
                 {/* Global Project Selector — shrinks on narrow screens */}
                 {projectAccess.projects.length > 0 && (
                   <div className="flex items-center gap-1.5 min-w-0 flex-1 max-w-[11rem] sm:max-w-[14rem] md:max-w-none md:flex-none">

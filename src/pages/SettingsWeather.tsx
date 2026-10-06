@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, CloudSun, Eye, EyeOff, Loader2, Save } from 'lucide-react';
+import { CloudSun, Eye, EyeOff, Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 const SECRET_KEYS = [
@@ -32,7 +31,6 @@ function maskHint(value: string): string {
 }
 
 const SettingsWeather = () => {
-  const navigate = useNavigate();
   const { hasRole, user } = useAuth();
   const isMaster = hasRole('master');
 
@@ -125,9 +123,6 @@ const SettingsWeather = () => {
   if (!isMaster) {
     return (
       <div className="max-w-2xl space-y-4 animate-fade-in">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/settings')}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> 설정
-        </Button>
         <p className="text-sm text-muted-foreground">마스터 권한이 필요합니다.</p>
       </div>
     );
@@ -136,9 +131,6 @@ const SettingsWeather = () => {
   return (
     <div className="max-w-2xl space-y-6 animate-fade-in">
       <div>
-        <Button variant="ghost" size="sm" className="mb-2 -ml-2" onClick={() => navigate('/settings')}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> 설정
-        </Button>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <CloudSun className="h-6 w-6" /> 현장 날씨 API
         </h1>

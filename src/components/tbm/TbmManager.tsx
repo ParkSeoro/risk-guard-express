@@ -98,7 +98,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'closed'>('all');
   const [companyFilter, setCompanyFilter] = useState('all');
   /** '' = all dates; otherwise YYYY-MM-DD */
-  const [dateFilter, setDateFilter] = useState(() => todayKst());
+  const [dateFilter, setDateFilter] = useState(() => {
+    const raw = searchParams.get("date");
+    if (!raw || raw === "today") return todayKst();
+    return raw;
+  });
 
   const load = async () => {
     setLoading(true);

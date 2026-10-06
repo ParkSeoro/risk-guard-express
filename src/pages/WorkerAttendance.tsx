@@ -9,6 +9,7 @@
  * 4) profiles by phone digits — legal consent timestamps (agreed_to_* / consent_agreed_at)
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,15 +93,21 @@ function Mark({ ok }: { ok: boolean }) {
   );
 }
 
+const ATTENDANCE_STATUSES: StatusFilter[] = ["all", "inside", "exited", "incomplete", "pledge_warn", "no_exit"];
+
 export default function WorkerAttendance() {
+  const [searchParams] = useSearchParams();
   const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
-  const [date, setDate] = useState(() => todaySeoulDate());
+  const [date, setDate] = useState(() => searchParams.get("date") || todaySeoulDate());
   const [logs, setLogs] = useState<EntryLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(() => {
+    const raw = searchParams.get("status");
+    return ATTENDANCE_STATUSES.includes(raw as StatusFilter) ? (raw as StatusFilter) : "all";
+  });
   const [selected, setSelected] = useState<EntryLog | null>(null);
   const { accessibleCompanyIds, seesAllCompanies, applyCompanyFilter, scopeStatus } = useGlobalProjectAccess();
   const { log } = useAuditLog();

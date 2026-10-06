@@ -6,6 +6,7 @@ export type WorkerDetail = {
   requiredItems: any[];
   checkups: any[];
   educations: any[];
+  educationRecords: any[];
   dailyLogs: any[];
   recentEntries: any[];
   warnings: any[];
@@ -22,6 +23,7 @@ export function useWorker(workerId: string | undefined) {
         reqRes,
         checkupRes,
         eduRes,
+        ledgerRes,
         logRes,
         entryRes,
         warnRes,
@@ -46,6 +48,13 @@ export function useWorker(workerId: string | undefined) {
           .order("conducted_at", { ascending: false })
           .limit(20),
         supabase
+          .from("worker_education_records")
+          .select("*")
+          .eq("worker_id", workerId)
+          .eq("is_deleted", false)
+          .order("completed_at", { ascending: false })
+          .limit(20),
+        supabase
           .from("worker_daily_health_logs")
           .select("*")
           .eq("worker_id", workerId)
@@ -67,6 +76,7 @@ export function useWorker(workerId: string | undefined) {
         requiredItems: reqRes.data || [],
         checkups: checkupRes.data || [],
         educations: eduRes.data || [],
+        educationRecords: ledgerRes.data || [],
         dailyLogs: logRes.data || [],
         recentEntries: entryRes.data || [],
         warnings: warningsRaw.warnings || [],

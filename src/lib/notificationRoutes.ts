@@ -107,6 +107,10 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${ADMIN}/safety-inspections?id=${n.related_id}` : `${ADMIN}/safety-inspections`,
   work_permit: (n) =>
     n.related_id ? `${ADMIN}/work-permits/${n.related_id}` : `${ADMIN}/work-permits`,
+  permit_expiry: (n) =>
+    n.related_id ? `${ADMIN}/work-permits/${n.related_id}` : `${ADMIN}/work-permits`,
+  work_plan_due: (n) =>
+    n.related_id ? `${ADMIN}/work-plan/${n.related_id}` : `${ADMIN}/work-plans`,
   tbm: () => `${ADMIN}/tbm-logs`,
   todo_due: () => `${ADMIN}/todo`,
   health_warning: () => `${ADMIN}/health`,
@@ -151,6 +155,10 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   inspection_fail: (n) =>
     n.related_id ? `${WORKER}/inspect?id=${n.related_id}` : `${WORKER}/inspect`,
   work_permit: () => `${WORKER}/approvals`,
+  permit_expiry: (n) =>
+    n.related_id ? `${WORKER}/permits?id=${n.related_id}` : `${WORKER}/permits`,
+  work_plan_due: (n) =>
+    n.related_id ? `${WORKER}/work-plans/${n.related_id}` : `${WORKER}/work-plans`,
   tbm: () => `${WORKER}/tbm`,
   todo_due: () => `${WORKER}/tasks`,
   health_warning: () => `${WORKER}/daily-health-log`,

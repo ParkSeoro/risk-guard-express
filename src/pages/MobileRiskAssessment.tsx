@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { fetchProjectCompanies } from "@/lib/projectCompanies";
  */
 export default function MobileRiskAssessment() {
   const navigate = useNavigate();
-  const goMobileHome = useNavigateMobileHome();
+  const onBack = useMobileSubpageBack("/app/worker/docs");
   const { projectId, role, companyId } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
@@ -115,7 +115,7 @@ export default function MobileRiskAssessment() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground"
-          onClick={() => goMobileHome()}
+          onClick={onBack}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

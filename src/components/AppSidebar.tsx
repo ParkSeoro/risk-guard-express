@@ -27,12 +27,18 @@ import { VISION_VIEW_ROLES } from "@/lib/visionFleetApi";
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
 
 type Item = { title: string; url: string; icon: any; badgeKey?: 'approvals' };
-type Group = { label: string; key: string; items: Item[] };
+type SubGroup = { label: string; key: string; items: Item[] };
+type Group = { label: string; key: string; items: Item[]; subgroups?: SubGroup[] };
+
+function groupItems(group: Group): Item[] {
+  return [...group.items, ...(group.subgroups?.flatMap((sub) => sub.items) ?? [])];
+}
 
 const groups: Group[] = [
   {
     label: "오늘", key: "today",
     items: [
+      { title: "알림", url: "/alerts", icon: Bell },
       { title: "대시보드", url: "/", icon: LayoutDashboard },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: "approvals" },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
@@ -63,31 +69,55 @@ const groups: Group[] = [
   },
   {
     label: "더보기", key: "more",
-    items: [
-      { title: "알림", url: "/alerts", icon: Bell },
-      { title: "현장 공지", url: "/announcements", icon: Megaphone },
-      { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
-      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
-      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
-      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
-      { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
-      { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
-      { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
-      { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
-      { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
-      { title: "근로자 분포", url: "/worker-distribution", icon: Users },
-      { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
-      { title: "할 일", url: "/todo", icon: ListTodo },
-      { title: "프로젝트", url: "/projects", icon: FolderKanban },
-      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
-      { title: "회사 관리", url: "/companies", icon: Building2 },
-      { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
-      { title: "보건 대시보드", url: "/health", icon: HeartPulse },
-      { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
-      { title: "작업환경측정", url: "/health/measurements", icon: ClipboardList },
-      { title: "화학물질/MSDS", url: "/health/chemicals", icon: FlaskConical },
-      { title: "보건교육", url: "/health/education", icon: GraduationCap },
-      { title: "유해요인조사", url: "/health/hazard-surveys", icon: ClipboardList },
+    items: [],
+    subgroups: [
+      {
+        label: "사고·비상",
+        key: "more-incident",
+        items: [
+          { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
+          { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
+          { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
+          { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
+        ],
+      },
+      {
+        label: "위치",
+        key: "more-location",
+        items: [
+          { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
+          { title: "근로자 분포", url: "/worker-distribution", icon: Users },
+          { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
+        ],
+      },
+      {
+        label: "보건",
+        key: "more-health",
+        items: [
+          { title: "보건 대시보드", url: "/health", icon: HeartPulse },
+          { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
+          { title: "작업환경측정", url: "/health/measurements", icon: ClipboardList },
+          { title: "화학물질/MSDS", url: "/health/chemicals", icon: FlaskConical },
+          { title: "보건교육", url: "/health/education", icon: GraduationCap },
+          { title: "유해요인조사", url: "/health/hazard-surveys", icon: ClipboardList },
+        ],
+      },
+      {
+        label: "운영",
+        key: "more-ops",
+        items: [
+          { title: "현장 공지", url: "/announcements", icon: Megaphone },
+          { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
+          { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
+          { title: "검증센터", url: "/verification-center", icon: SearchCheck },
+          { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
+          { title: "할 일", url: "/todo", icon: ListTodo },
+          { title: "프로젝트", url: "/projects", icon: FolderKanban },
+          { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
+          { title: "회사 관리", url: "/companies", icon: Building2 },
+          { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
+        ],
+      },
     ],
   },
 ];
@@ -112,7 +142,7 @@ const masterOnlyItems: Item[] = [
 /** Sidebar labels for manual drift tests — keep in sync with the menus above. */
 export function sidebarMenuTitles(): string[] {
   return [
-    ...groups.flatMap((g) => g.items.map((i) => i.title)),
+    ...groups.flatMap((g) => groupItems(g).map((i) => i.title)),
     ...adminItems.map((i) => i.title),
     ...masterOnlyItems.map((i) => i.title),
   ];
@@ -159,8 +189,14 @@ export function AppSidebar() {
   const visibleGroups = restrictToContractorUI
     ? scopedGroups
         .filter((g) => CONTRACTOR_GROUP_KEYS.has(g.key))
-        .map((g) => ({ ...g, items: g.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)) }))
-        .filter((g) => g.items.length > 0)
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)),
+          subgroups: g.subgroups
+            ?.map((sub) => ({ ...sub, items: sub.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)) }))
+            .filter((sub) => sub.items.length > 0),
+        }))
+        .filter((g) => g.items.length > 0 || (g.subgroups?.length ?? 0) > 0)
     : scopedGroups;
 
   const DEFAULT_OPEN = {
@@ -168,6 +204,10 @@ export function AppSidebar() {
     site: true,
     docs: true,
     more: false,
+    "more-incident": false,
+    "more-location": false,
+    "more-health": false,
+    "more-ops": false,
     admin: false,
   };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -275,12 +315,25 @@ export function AppSidebar() {
                 <CollapsibleContent>
                   <SidebarGroupContent>
                     <SidebarMenu>{g.items.map(renderItem)}</SidebarMenu>
+                    {g.subgroups?.map(sub => (
+                      <Collapsible key={sub.key} open={openGroups[sub.key] ?? false} onOpenChange={() => toggleGroup(sub.key)}>
+                        <CollapsibleTrigger className="w-full">
+                          <SidebarGroupLabel className="text-sidebar-foreground/80 text-[10px] font-semibold tracking-wide flex items-center justify-between cursor-pointer py-1 h-auto pl-2">
+                            <span>{sub.label}</span>
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openGroups[sub.key] === false || openGroups[sub.key] === undefined ? '-rotate-90' : ''}`} />
+                          </SidebarGroupLabel>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <SidebarMenu>{sub.items.map(renderItem)}</SidebarMenu>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ))}
                   </SidebarGroupContent>
                 </CollapsibleContent>
               </Collapsible>
             ) : (
               <SidebarGroupContent>
-                <SidebarMenu>{g.items.map(renderItem)}</SidebarMenu>
+                <SidebarMenu>{groupItems(g).map(renderItem)}</SidebarMenu>
               </SidebarGroupContent>
             )}
           </SidebarGroup>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -93,7 +93,13 @@ const AssessmentRuns = () => {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [filterType, setFilterType] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchParams] = useSearchParams();
+  const focus = searchParams.get('focus');
+  const [filterStatus, setFilterStatus] = useState(() => {
+    const status = searchParams.get('status') || '';
+    return status in statusConfig ? status : 'all';
+  });
+  const [feedbackRunIds, setFeedbackRunIds] = useState<Set<string> | null>(null);
   const [search, setSearch] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
 
@@ -109,7 +115,7 @@ const AssessmentRuns = () => {
   const [createError, setCreateError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [runStats, setRunStats] = useState<Record<string, { total: number; high: number; med: number; low: number }>>({});
+  const [runStats, setRunStats] = useState<Record<string, { total: number; high: number; med: number; low: number; residual: number }>>({});
 
   const [editRun, setEditRun] = useState<any>(null);
   const [deleteRun, setDeleteRun] = useState<any>(null);
@@ -206,21 +212,22 @@ const AssessmentRuns = () => {
       const creatorIds = list.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
       const [{ data: items }, creatorMap] = await Promise.all([
         supabase.from('risk_items')
-          .select('run_id, risk_grade, is_deleted, is_excluded')
+          .select('run_id, risk_grade, improved_risk_grade, is_deleted, is_excluded')
           .in('run_id', runIds)
           .eq('is_deleted', false),
         fetchCreatorCompanyLabelMap(selectedProject, creatorIds).catch(() => ({})),
       ]);
       if (seq !== fetchSeqRef.current) return;
       setCreatorCompanyMap(creatorMap);
-      const stats: Record<string, { total: number; high: number; med: number; low: number }> = {};
+      const stats: Record<string, { total: number; high: number; med: number; low: number; residual: number }> = {};
       (items || []).forEach((item: any) => {
         if (!item.run_id || item.is_excluded) return;
-        if (!stats[item.run_id]) stats[item.run_id] = { total: 0, high: 0, med: 0, low: 0 };
+        if (!stats[item.run_id]) stats[item.run_id] = { total: 0, high: 0, med: 0, low: 0, residual: 0 };
         stats[item.run_id].total++;
         if (item.risk_grade === '상') stats[item.run_id].high++;
         else if (item.risk_grade === '중') stats[item.run_id].med++;
         else stats[item.run_id].low++;
+        if (item.improved_risk_grade === '상') stats[item.run_id].residual++;
       });
       setRunStats(stats);
     } else {
@@ -239,6 +246,24 @@ const AssessmentRuns = () => {
     fetchRuns();
     fetchContractors();
   }, [selectedProject, showDeleted, accessibleCompanyIds, scopeStatus]);
+
+  useEffect(() => {
+    if (focus !== 'feedback' || !selectedProject) {
+      setFeedbackRunIds(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('risk_item_feedback')
+      .select('assessment_run_id')
+      .eq('project_id', selectedProject)
+      .eq('status', '미조치')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setFeedbackRunIds(new Set((data || []).map((row: { assessment_run_id?: string | null }) => row.assessment_run_id).filter(Boolean) as string[]));
+      });
+    return () => { cancelled = true; };
+  }, [focus, selectedProject]);
 
   const toggleContractor = (id: string) => {
     setForm(prev => ({
@@ -371,6 +396,8 @@ const AssessmentRuns = () => {
     else { if (r.is_deleted) return false; }
     if (filterType !== 'all' && r.type !== filterType) return false;
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (focus === 'feedback' && feedbackRunIds && !feedbackRunIds.has(r.id)) return false;
+    if (focus === 'residual' && !(runStats[r.id]?.residual > 0)) return false;
     if (search) {
       const term = search.toLowerCase();
       const company = `${runCompanyLabel(r)} ${runTargetLabel(r)}`.toLowerCase();

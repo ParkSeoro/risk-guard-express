@@ -3,7 +3,7 @@
  */
 import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, Sparkles, CheckCircle2, Ban } from 'lucide-react';
+import { Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, Sparkles, CheckCircle2, Ban } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -54,7 +54,6 @@ import {
 } from '@/lib/permitKinds';
 import { presentPermitBriefing, type PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks, fetchPermitLinkedAssessments, discoverPermitDateValidRuns } from '@/lib/safetyWorkBundle';
-import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
 import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
 import {
@@ -109,12 +108,10 @@ function permitStatusLabel(status?: string | null) {
 
 export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, profile } = useAuth();
   const { userCompanyId, userRole, isMaster } = useGlobalProjectAccess();
-  const listBackPath = approvalsBackOr('/work-permits', searchParams.get('from'));
 
   const [permit, setPermit] = useState<any>(null);
   const [approvalRows, setApprovalRows] = useState<any[]>([]);
@@ -764,7 +761,6 @@ export default function WorkPermitDetail() {
     <div className="p-3 md:p-6 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate(listBackPath)}><ArrowLeft className="h-4 w-4 mr-1" />목록</Button>
           <h1 className="text-lg md:text-xl font-bold flex items-center gap-2"><FileSignature className="h-5 w-5" />안전작업허가서</h1>
           <Badge variant="outline">{permitStatusLabel(permit.status)}</Badge>
           {isVoided && (

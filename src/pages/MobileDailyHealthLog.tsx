@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -20,7 +21,7 @@ const SYMPTOMS = [
 
 export default function MobileDailyHealthLog() {
   const [params] = useSearchParams();
-  const nav = useNavigate();
+  const onBack = useMobileSubpageBack("/app/worker/more");
   const { profile } = useAuth();
   const { projectId } = useMobileAccess();
   const blockWrite = usePreviewWriteBlock();
@@ -119,7 +120,7 @@ export default function MobileDailyHealthLog() {
         if (import.meta.env.DEV) console.warn("health warning notify failed:", e?.message || e);
       }
     }
-    nav(-1);
+    onBack();
   };
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">로딩 중...</div>;
@@ -128,7 +129,7 @@ export default function MobileDailyHealthLog() {
   return (
     <div className="min-h-screen bg-background p-4 space-y-4 max-w-md mx-auto">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => nav(-1)}><ArrowLeft className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" onClick={onBack} aria-label="뒤로"><ArrowLeft className="h-4 w-4" /></Button>
         <h1 className="text-lg font-bold flex items-center gap-2">
           <Heart className="h-5 w-5 text-destructive" /> 일일 건강일지
         </h1>

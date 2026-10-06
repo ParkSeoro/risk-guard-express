@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack, useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -71,6 +71,7 @@ type TodayLog = {
 
 export default function MobileInspect() {
   const goMobileHome = useNavigateMobileHome();
+  const leavePage = useMobileSubpageBack("/app/worker/tasks");
   const [searchParams, setSearchParams] = useSearchParams();
   const deepId = searchParams.get("id");
   const { profile } = useAuth();
@@ -484,7 +485,7 @@ export default function MobileInspect() {
               return;
             }
             if (step === "checklist") setStep("setup");
-            else goMobileHome();
+            else leavePage();
           }}>
           <ArrowLeft className="h-5 w-5" />
         </Button>

@@ -1,6 +1,5 @@
-import { useNavigate } from "react-router-dom";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import SiteWeather from "@/pages/SiteWeather";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,16 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 /** Worker-shell 현장 일기예보 — same data as desktop, mobile layout + radar. */
 export default function MobileSiteWeather() {
   const { projectId } = useMobileAccess();
-  const navigate = useNavigate();
-  const goHome = useNavigateMobileHome();
-
-  const onBack = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    goHome();
-  };
+  const onBack = useMobileSubpageBack("/app/worker/more");
 
   return (
     <div className="max-w-lg mx-auto min-w-0" data-testid="mobile-site-weather">

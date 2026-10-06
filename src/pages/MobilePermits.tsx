@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { useMobileSubpageBack } from "@/lib/mobileNav";
 import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
 import { resolvePermitViewerBackPath } from "@/lib/permitViewerNav";
 import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
@@ -74,7 +74,7 @@ export default function MobilePermits() {
   const [searchParams, setSearchParams] = useSearchParams();
   const deepId = searchParams.get("id");
   const fromParam = searchParams.get("from");
-  const goMobileHome = useNavigateMobileHome();
+  const leaveList = useMobileSubpageBack("/app/worker/docs");
   const { profile, isAdmin, roles } = useAuth();
   const { projectId, applyCompanyFilter, isProjectAdmin } = useMobileAccess();
   const pureWorker = isPureWorkerUser(roles || []);
@@ -216,11 +216,7 @@ export default function MobilePermits() {
       closeDetail();
       return;
     }
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    goMobileHome();
+    leaveList();
   };
 
   return (

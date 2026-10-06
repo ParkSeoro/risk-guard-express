@@ -170,9 +170,9 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
--- 00:10 KST. The function itself uses Asia/Seoul, so a UTC calendar date is not the due date.
+-- 00:00 KST (15:00 UTC). The function compares end_date to the Seoul calendar date.
 SELECT cron.schedule(
   'scan-work-plan-end-warnings',
-  '10 15 * * *',
+  '0 15 * * *',
   $$SELECT public.scan_work_plan_end_warnings();$$
 );

@@ -113,16 +113,9 @@ Deno.serve(async (req) => {
       console.warn("promote_permits_to_closure_pending", e);
     }
 
-    // 6) 승인 작업계획서: 종료일 하루 전(KST) 작성자 알림. 날짜 계산은 SQL이 한다.
-    let planEndWarnings = 0;
-    try {
-      const { data: pCount } = await supabase.rpc("scan_work_plan_end_warnings");
-      planEndWarnings = (pCount as number) || 0;
-    } catch (e) {
-      console.warn("scan_work_plan_end_warnings", e);
-    }
+    // 작업계획서 종료 예고는 매일 00:00 KST 크론(scan_work_plan_end_warnings)이 날짜만 본다.
 
-    // 7) TBM: 작업일(tbm_date) 지난 세션 자동 종료
+    // 6) TBM: 작업일(tbm_date) 지난 세션 자동 종료
     let tbmClosed = 0;
     try {
       const { data: tCount } = await supabase.rpc("close_expired_tbm_sessions");
@@ -139,7 +132,6 @@ Deno.serve(async (req) => {
         notified,
         legalDutyTodos,
         closurePromoted,
-        planEndWarnings,
         tbmClosed,
         date: todayStr,
       }),

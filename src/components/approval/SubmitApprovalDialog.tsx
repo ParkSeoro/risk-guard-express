@@ -27,10 +27,13 @@ import {
   dedupeApprovalSteps,
   stepLabelForAuthor,
   isSubmitterApprovalStep,
+  resolveParentGcCompanyId,
   type ApprovalEntityType as SSOTApprovalEntityType,
+  type CompanyHierarchyNode,
 } from '@/lib/approvalRules';
 import { positionLabel } from '@/lib/projectPositions';
 import { normalizeCompanyType } from '@/lib/companyTypes';
+import { formatCreatorCompanyLabel } from '@/lib/companyDocScope';
 import { fetchEligibleApprovers, resolveSubmitterCompanyId } from '@/lib/eligibleApprovers';
 import { preferredSubmitterUserId, seedSubmitterStep } from '@/lib/approvalSubmitterSeed';
 import {
@@ -116,6 +119,8 @@ export default function SubmitApprovalDialog({
   const [reason, setReason] = useState('');
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [authorCompanyType, setAuthorCompanyType] = useState<string | null>(null);
+  const [companyNodes, setCompanyNodes] = useState<CompanyHierarchyNode[]>([]);
+  const [projectGcCompanyId, setProjectGcCompanyId] = useState<string | null>(null);
   /** Resolved SSOT company for pool/filter (prop or project_members). */
   const [resolvedSubmitterCompanyId, setResolvedSubmitterCompanyId] = useState<string | null>(
     submitterCompanyId,
@@ -149,6 +154,18 @@ export default function SubmitApprovalDialog({
           authorType = normalizeCompanyType(co?.type) || co?.type || null;
         }
         setAuthorCompanyType(authorType);
+
+        const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+        const [linkedCompanies, projGc] = await Promise.all([
+          fetchProjectCompanies(projectId),
+          supabase.from('projects').select('gc_company_id').eq('id', projectId).maybeSingle(),
+        ]);
+        setCompanyNodes(linkedCompanies.map((c) => ({
+          id: c.id,
+          type: c.type,
+          parent_company_id: c.parent_company_id,
+        })));
+        setProjectGcCompanyId((projGc.data as { gc_company_id?: string | null } | null)?.gc_company_id || null);
 
         const [{ data: ap, error: apErr }, { data: tpl }, { count: priorCount }] = await Promise.all([
           fetchEligibleApprovers(projectId, resolvedCompanyId),
@@ -270,17 +287,21 @@ export default function SubmitApprovalDialog({
       user_id: a.out_user_id,
       user_name: a.out_display_name,
       company_id: a.out_company_id,
-      company_name: a.out_company_name,
+      company_name: formatCreatorCompanyLabel(a.out_company_name, a.out_company_type) || a.out_company_name,
       // Keep SSOT step key — never overwrite with member position enum
     } : st));
   };
 
   const filterCtx = useMemo(
-    () => ({
-      authorCompanyId: resolvedSubmitterCompanyId || submitterCompanyId,
-      authorCompanyType,
-    }),
-    [resolvedSubmitterCompanyId, submitterCompanyId, authorCompanyType],
+    () => {
+      const authorCompanyId = resolvedSubmitterCompanyId || submitterCompanyId;
+      return {
+        authorCompanyId,
+        authorCompanyType,
+        parentGcCompanyId: resolveParentGcCompanyId(authorCompanyId, companyNodes, projectGcCompanyId),
+      };
+    },
+    [resolvedSubmitterCompanyId, submitterCompanyId, authorCompanyType, companyNodes, projectGcCompanyId],
   );
 
   const sortedApprovers = useMemo(() => {
@@ -572,7 +593,7 @@ export default function SubmitApprovalDialog({
                           )}
                           {options.map((a) => (
                             <SelectItem key={a.out_user_id} value={a.out_user_id}>
-                              {a.out_display_name || '(이름없음)'} · {a.out_company_name}{' '}
+                              {a.out_display_name || '(이름없음)'} · {formatCreatorCompanyLabel(a.out_company_name, a.out_company_type) || a.out_company_name}{' '}
                               <Badge variant="outline" className="ml-1 text-[10px] align-middle">
                                 {positionLabel(a.out_position) || a.out_position || a.out_role || '-'}
                               </Badge>

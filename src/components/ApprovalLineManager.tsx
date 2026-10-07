@@ -20,6 +20,7 @@ import {
   type EligibleApprover,
 } from '@/lib/approvalRules';
 import { normalizeCompanyType } from '@/lib/companyTypes';
+import { approverAffiliationLabel, formatCreatorCompanyLabel } from '@/lib/companyDocScope';
 import { fetchEligibleApprovers, resolveSubmitterCompanyId } from '@/lib/eligibleApprovers';
 import {
   fetchDocumentApprovalDraft,
@@ -402,7 +403,9 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
       company_id: p.approver?.out_company_id || null,
       user_id: p.approver?.out_user_id || null,
       user_name: p.approver?.out_display_name || '',
-      company_name: p.approver?.out_company_name || '',
+      company_name: p.approver
+        ? (formatCreatorCompanyLabel(p.approver.out_company_name, p.approver.out_company_type) || p.approver.out_company_name)
+        : '',
     }));
 
     setLines(newLines);
@@ -626,7 +629,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
         const a = eligible.find((m) => m.out_user_id === value);
         if (a) {
           updated[index].user_name = a.out_display_name;
-          updated[index].company_name = a.out_company_name || '';
+          updated[index].company_name = formatCreatorCompanyLabel(a.out_company_name, a.out_company_type) || a.out_company_name || '';
           updated[index].company_id = a.out_company_id || null;
         } else {
           const member = toMemberLike({
@@ -820,7 +823,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
                                   <SelectItem key={a.out_user_id} value={a.out_user_id}>
                                     {a.out_display_name}{' '}
                                     ({POSITION_LABELS[a.out_position] || a.out_position || a.out_role})
-                                    {a.out_company_name && ` · ${a.out_company_name}`}
+                                    {a.out_company_name && ` · ${formatCreatorCompanyLabel(a.out_company_name, a.out_company_type) || a.out_company_name}`}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -828,7 +831,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
                           )}
                         </td>
                         <td className="border px-2 py-1 text-muted-foreground">
-                          {line.company_name || '—'}
+                          {approverAffiliationLabel(line.company_id, companies, line.company_name) || '—'}
                         </td>
                         {!readOnly && (
                           <td className="border px-2 py-1">

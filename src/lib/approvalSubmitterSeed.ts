@@ -1,3 +1,5 @@
+import { formatCreatorCompanyLabel } from '@/lib/companyDocScope';
+
 export type SeedableStep = {
   position?: string;
   user_id?: string;
@@ -11,6 +13,7 @@ export type SeedableApprover = {
   out_display_name: string;
   out_company_id: string | null;
   out_company_name: string;
+  out_company_type?: string | null;
 };
 
 /** Prefer the legal author, then the logged-in user, for the empty 상신 step. */
@@ -46,7 +49,7 @@ export function seedSubmitterStep<T extends SeedableStep>(
     user_id: me.out_user_id,
     user_name: me.out_display_name,
     company_id: me.out_company_id,
-    company_name: me.out_company_name,
+    company_name: formatCreatorCompanyLabel(me.out_company_name, me.out_company_type) || me.out_company_name,
   };
   return next;
 }

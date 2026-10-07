@@ -11,6 +11,7 @@ import { GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2, Copy, Searc
 import { toast } from 'sonner';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { ENTITY_LABELS, type ApprovalEntityType } from '@/components/approval/SubmitApprovalDialog';
+import { formatCreatorCompanyLabel } from '@/lib/companyDocScope';
 
 interface Step { label: string; position: string; user_id: string; user_name: string; company_id: string | null; company_name: string }
 
@@ -361,14 +362,14 @@ export default function SettingsApprovalRoutes() {
                     <Select value={s.user_id} onValueChange={(v) => {
                       const a = approvers.find((x: any) => x.out_user_id === v);
                       if (!a) return;
-                      updateStep(i, { user_id: a.out_user_id, user_name: a.out_display_name, company_id: a.out_company_id, company_name: a.out_company_name, position: s.position || a.out_position });
+                      updateStep(i, { user_id: a.out_user_id, user_name: a.out_display_name, company_id: a.out_company_id, company_name: formatCreatorCompanyLabel(a.out_company_name, a.out_company_type) || a.out_company_name, position: s.position || a.out_position });
                     }}>
                       <SelectTrigger className="h-9"><SelectValue placeholder="결재자 선택 (회사를 먼저 지정)" /></SelectTrigger>
                       <SelectContent>
                         {approvers.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">후보가 없습니다. 회사를 지정하세요.</div>}
                         {approvers.map((a: any) => (
                           <SelectItem key={a.out_user_id} value={a.out_user_id}>
-                            {a.out_display_name || '(이름없음)'} · {a.out_company_name} · {a.out_position || a.out_role}
+                            {a.out_display_name || '(이름없음)'} · {formatCreatorCompanyLabel(a.out_company_name, a.out_company_type) || a.out_company_name} · {a.out_position || a.out_role}
                           </SelectItem>
                         ))}
                       </SelectContent>

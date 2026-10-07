@@ -494,12 +494,23 @@ export function filterApproversForStep(
   const inGc = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'gc';
   const inClient = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'client';
 
-  // 시공사 기안: 안전·소장도 자사만 (프로젝트에 GC가 여러 개여도 타 GC 제외)
-  // 협력사 기안: 안전·소장은 상위 GC만 (parentGcCompanyId). 없으면 프로젝트 GC 전체.
+  // 시공사 기안: 안전·소장도 자사 id만 (같은 이름 협력사·다른 시공사 제외)
+  // 협력사 기안: 안전·소장은 상위 시공사 id만.
+  // 상위 시공사를 모르면 후보 안 시공사가 하나일 때만 그 회사. 여러 시면 비운다.
+  const soleGcId = (() => {
+    const ids = new Set<string>();
+    for (const row of approvers) {
+      if (normalizeCompanyType(row.out_company_type) === 'gc' && row.out_company_id) {
+        ids.add(row.out_company_id);
+      }
+    }
+    return ids.size === 1 ? [...ids][0] : null;
+  })();
   const inGcScopedCompany = (a: EligibleApprover) => {
     if (authorType === 'gc' && authorCompanyId) return inAuthorCompany(a);
     if (parentGcCompanyId) return a.out_company_id === parentGcCompanyId;
-    return inGc(a);
+    if (soleGcId) return a.out_company_id === soleGcId;
+    return false;
   };
 
   const strict = approvers.filter((a) => {

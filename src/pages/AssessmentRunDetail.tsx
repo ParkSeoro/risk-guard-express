@@ -707,13 +707,13 @@ const AssessmentRunDetail = () => {
       const prevItems = ((itemsRes.data || []) as RiskItemRow[]).filter((i) => !(i as any).is_excluded);
       const prevFb = (fbRes.data || []) as any[];
       const prevStatus = (statusRes.data as { feedback_status?: string } | null)?.feedback_status;
-      if (prevStatus) previous = { ...previous, feedback_status: prevStatus };
+      const linkedPrevious = prevStatus ? { ...previous, feedback_status: prevStatus } : previous;
       const counts: Record<string, number> = {};
       for (const row of (managedRes as any).data || []) {
         if (row.improved_risk_grade === '상') counts[row.run_id] = (counts[row.run_id] || 0) + 1;
       }
-      counts[previous.id] = prevItems.filter((i) => isManagedResidualHigh(i)).length;
-      setPreviousRun(previous);
+      counts[linkedPrevious.id] = prevItems.filter((i) => isManagedResidualHigh(i)).length;
+      setPreviousRun(linkedPrevious);
       setPreviousRunAuto(auto);
       setPreviousRunCandidates(pickerRows);
       setPreviousManagedByRun(counts);

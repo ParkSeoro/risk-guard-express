@@ -29,7 +29,7 @@ export default function PreviousRunPicker({
   const value = selectedId || AUTO_PREVIOUS_VALUE;
   const autoLabel = autoRun
     ? `자동 · ${formatPreviousRunOptionLabel(autoRun, managedCounts[autoRun.id])}`
-    : '자동 · 이 소속회사의 이전 승인 회차 없음';
+    : '자동 · 이 소속회사의 이전 기간 없음';
   const missingSelected = !!(selectedId && !candidates.some((c) => c.id === selectedId));
 
   return (
@@ -62,7 +62,7 @@ export default function PreviousRunPicker({
         </SelectContent>
       </Select>
       <p className="text-[10px] text-muted-foreground">
-        작성자의 소속회사가 쓴 결재중·승인완료 회차만 나옵니다. 같은 회사의 다른 사람이 쓴 회차도 포함됩니다.
+        작업 기간이 앞선 승인완료를 자동으로 붙입니다. 제목은 보지 않습니다. 목록은 이 소속회사가 쓴 결재중·승인완료입니다.
       </p>
     </div>
   );

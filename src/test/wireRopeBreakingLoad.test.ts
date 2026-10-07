@@ -4,6 +4,7 @@ import {
   WIRE_ROPE_TABLE_MAX_MM,
   calculateFullRigging,
   getWireBreakingLoad,
+  parseSlingSecondary,
   type RiggingInput,
 } from "@/lib/riggingCalculator";
 import { buildRiggingInputFromRow, refreshRiggingDerivedFields, riggingResultToPatch } from "@/lib/riggingDerived";
@@ -237,5 +238,107 @@ describe("와이어로프 절단하중", () => {
     expect(getWireBreakingLoad(0)).toBe(0);
     expect(getWireBreakingLoad(-12)).toBe(0);
     expect(getWireBreakingLoad(Number.NaN)).toBe(0);
+  });
+
+  it("재료 종류가 저장되지 않은 두 번째 와이어도 제조사 안전하중으로 판정한다", () => {
+    const row = {
+      sling_material_type: "wire_rope",
+      wire_diameter_mm: 40,
+      wire_manufacturer_safe_load: 33.66,
+      wire_safety_coefficient: 5,
+      sling_count: 2,
+      sling_hitch: "2-leg",
+      sling_angle_deg: 60,
+      sling_combination: "series",
+      sling_device_safe_load: 12.38,
+      sling_secondary: {
+        hitch: "2-leg",
+        wireDiameterMm: "25",
+        wireSafetyCoefficient: "5",
+        wireManufacturerSafeLoad: "12.88",
+      },
+      load_weight: 12,
+      hook_weight: 1.4,
+      shackle_weight_val: 0.1,
+      sling_rigging_weight: 1,
+      crane_capacity: 19.2,
+      boom_rotation_factor: 0.8,
+      wind_speed_grade: "0~5",
+      ground_inspection_factor: 1,
+      load_protrusion_factor: 1,
+      shackle_inch: "1-1/2",
+    } as any;
+    const input = buildRiggingInputFromRow(row);
+    expect(input.slingSecondary?.slingMaterialType).toBe("wire_rope");
+    expect(input.slingSecondary?.wireDiameterMm).toBe(25);
+    expect(input.slingSecondary?.wireManufacturerSafeLoad).toBeCloseTo(12.88, 2);
+    const result = calculateFullRigging(input);
+    expect(result.secondarySlingSafeLoad).toBeCloseTo(12.88, 2);
+    expect(result.slingSafeLoad).toBeCloseTo(12.38, 2);
+    expect(result.tensionPerLeg).toBeCloseTo(7.563, 2);
+    expect(result.slingJudgment).toBe("series_min");
+    expect(result.slingOk).toBe(true);
+    expect(result.equipmentOk).toBe(true);
+    expect(result.loadUtilizationPct).toBeGreaterThan(85);
+    expect(result.messages.some((m) => m.includes("0.0t"))).toBe(false);
+    const refreshed = refreshRiggingDerivedFields(row);
+    expect(Number(refreshed.sling_safe_load)).toBeCloseTo(12.38, 2);
+    expect(refreshed.sling_ok).toBe("O.K");
+  });
+
+  it("조합만 있고 두 번째 줄이 비면 0톤과 비교하지 않는다", () => {
+    const row = {
+      sling_material_type: "wire_rope",
+      wire_diameter_mm: 40,
+      wire_manufacturer_safe_load: 33.66,
+      sling_hitch: "2-leg",
+      sling_angle_deg: 60,
+      sling_combination: "series",
+      sling_device_safe_load: 12.38,
+      sling_secondary: {},
+      load_weight: 12,
+      hook_weight: 1.4,
+      shackle_weight_val: 0.1,
+      sling_rigging_weight: 1,
+      crane_capacity: 19.2,
+      boom_rotation_factor: 0.8,
+      shackle_inch: "1-1/2",
+    } as any;
+    expect(parseSlingSecondary({})).toBeNull();
+    expect(parseSlingSecondary({ beltWidthMm: 50, beltRatedLoad: 2 })?.slingMaterialType).toBe("sling_belt");
+    const result = calculateFullRigging(buildRiggingInputFromRow(row));
+    expect(result.slingJudgment).toBe("secondary_missing");
+    expect(result.slingSafeLoad).toBeCloseTo(33.66, 2);
+    expect(result.slingOk).toBe(false);
+    expect(result.messages.some((m) => m.includes("두 번째 줄걸이의 굵기 또는 제조사 안전하중"))).toBe(true);
+    expect(result.messages.some((m) => m.includes("1줄 안전하중 0.0t"))).toBe(false);
+    const refreshed = refreshRiggingDerivedFields(row);
+    expect(Number(refreshed.sling_safe_load)).toBeCloseTo(33.66, 2);
+    expect(refreshed.sling_ok).toBe("N.G");
+  });
+
+  it("지름도 제조사 하중도 없는 두 번째 와이어는 0과 작은값을 내지 않는다", () => {
+    const result = calculateFullRigging(wireInput({
+      wireDiameterMm: 40,
+      wireManufacturerSafeLoad: 33.66,
+      slingHitch: "2-leg",
+      slingCombination: "series",
+      slingDeviceSafeLoad: 12,
+      slingSecondary: {
+        slingMaterialType: "wire_rope",
+        wireDiameterMm: 0,
+        wireSafetyCoefficient: 5,
+        wireManufacturerSafeLoad: null,
+        slingBeltWidthMm: 0,
+        slingBeltRatedLoad: 0,
+        roundSlingColor: "",
+        roundSlingRatedLoad: 0,
+        chainDiameterMm: 0,
+      },
+    }));
+    expect(result.slingJudgment).toBe("secondary_missing");
+    expect(result.slingSafeLoad).toBeCloseTo(33.66, 2);
+    expect(result.slingOk).toBe(false);
+    expect(result.messages.some((m) => m.includes("0.0t"))).toBe(false);
   });
 });

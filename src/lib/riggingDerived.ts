@@ -17,23 +17,10 @@ import type { RiggingPlanRow } from "@/lib/riggingPlanPersist";
 
 const n = (v: unknown, fallback = 0) => Number(v) || fallback;
 
-const EMPTY_SECONDARY: SlingSecondaryInput = {
-  slingMaterialType: "wire_rope",
-  slingHitch: null,
-  wireDiameterMm: 0,
-  wireSafetyCoefficient: 5,
-  wireManufacturerSafeLoad: null,
-  slingBeltWidthMm: 0,
-  slingBeltRatedLoad: 0,
-  roundSlingColor: "",
-  roundSlingRatedLoad: 0,
-  chainDiameterMm: 0,
-};
-
 function secondaryInput(rigging: RiggingPlanRow): SlingSecondaryInput | null {
   const combination = rigging.sling_combination;
   if (combination !== "series" && combination !== "parallel") return null;
-  return parseSlingSecondary(rigging.sling_secondary) ?? EMPTY_SECONDARY;
+  return parseSlingSecondary(rigging.sling_secondary);
 }
 
 export function buildRiggingInputFromRow(rigging: RiggingPlanRow): RiggingInput {

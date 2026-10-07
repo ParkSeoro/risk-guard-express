@@ -307,13 +307,30 @@ export function hitchSupportingLegs(hitch: string | null | undefined): number | 
   return slingHitchOption(hitch)?.supportingLegs ?? null;
 }
 
+function knownSlingMaterial(value: unknown): SlingMaterialType | null {
+  if (value === "wire_rope" || value === "sling_belt" || value === "round_sling" || value === "chain_sling") {
+    return value;
+  }
+  return null;
+}
+
+/** 화면에만 와이어로 보이고 저장 JSON에 materialType이 없는 줄을 버린다. 굵기·제조사 하중이 있으면 그 재료로 본다. */
+function inferSecondaryMaterial(o: Record<string, unknown>): SlingMaterialType | null {
+  const explicit = knownSlingMaterial(o.materialType);
+  if (explicit) return explicit;
+  const wireDia = Number(o.wireDiameterMm) || 0;
+  if (wireDia > 0 || positiveWireManufacturerSafeLoad(o.wireManufacturerSafeLoad) != null) return "wire_rope";
+  if ((Number(o.beltWidthMm) || 0) > 0 || (Number(o.beltRatedLoad) || 0) > 0) return "sling_belt";
+  if (String(o.roundColor || "").trim() || (Number(o.roundRatedLoad) || 0) > 0) return "round_sling";
+  if ((Number(o.chainDiameterMm) || 0) > 0) return "chain_sling";
+  return null;
+}
+
 export function parseSlingSecondary(raw: unknown): SlingSecondaryInput | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const material = o.materialType;
-  if (material !== "wire_rope" && material !== "sling_belt" && material !== "round_sling" && material !== "chain_sling") {
-    return null;
-  }
+  const material = inferSecondaryMaterial(o);
+  if (!material) return null;
   return {
     slingMaterialType: material,
     slingHitch: slingHitchOption(String(o.hitch || ""))?.value ?? null,
@@ -326,6 +343,21 @@ export function parseSlingSecondary(raw: unknown): SlingSecondaryInput | null {
     roundSlingRatedLoad: Number(o.roundRatedLoad) || 0,
     chainDiameterMm: Number(o.chainDiameterMm) || 0,
   };
+}
+
+/** 두 번째 줄에 판정할 굵기·정격이 있는지. 빈 객체는 0톤 로프로 쓰지 않는다. */
+export function secondarySpecFilled(spec: SlingSecondaryInput | null | undefined): boolean {
+  if (!spec) return false;
+  switch (spec.slingMaterialType) {
+    case "wire_rope":
+      return spec.wireDiameterMm > 0 || positiveWireManufacturerSafeLoad(spec.wireManufacturerSafeLoad) != null;
+    case "sling_belt":
+      return spec.slingBeltWidthMm > 0 || spec.slingBeltRatedLoad > 0;
+    case "round_sling":
+      return spec.roundSlingRatedLoad > 0 || String(spec.roundSlingColor || "").trim() !== "";
+    case "chain_sling":
+      return spec.chainDiameterMm > 0;
+  }
 }
 
 // ============================================================
@@ -471,8 +503,8 @@ export interface RiggingResult {
   slingOk: boolean;
   slingHitchLabel: string | null;
   secondarySlingSafeLoad: number | null;
-  /** single=한 가지, series_min=두 값과 체결구 중 작은 값, assembly=조합 사용하중, mixed_blocked=이종 병렬인데 조합 하중 없음 */
-  slingJudgment: "single" | "series_min" | "assembly" | "mixed_blocked";
+  /** single=한 가지, series_min=두 값과 체결구 중 작은 값, assembly=조합 사용하중, mixed_blocked=이종 병렬인데 조합 하중 없음, secondary_missing=두 번째 줄 미입력 */
+  slingJudgment: "single" | "series_min" | "assembly" | "mixed_blocked" | "secondary_missing";
 
   shackleSafeLoad: number;
   shackleOk: boolean;
@@ -561,7 +593,9 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
   const slingLoadTon = input.loadWeight + input.shackleWeightVal + input.slingRiggingWeight;
 
   const hitchLegs = hitchSupportingLegs(input.slingHitch);
-  const secondaryLegs = input.slingCombination === "parallel"
+  const secondaryFilled = (input.slingCombination === "series" || input.slingCombination === "parallel")
+    && secondarySpecFilled(input.slingSecondary);
+  const secondaryLegs = input.slingCombination === "parallel" && secondaryFilled
     ? (hitchSupportingLegs(input.slingSecondary?.slingHitch) ?? 1)
     : 0;
   const fallbackLegs = input.slingMaterialType === "chain_sling" ? input.chainLegCount : input.slingCount;
@@ -622,11 +656,15 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
   const hitchLabel = slingHitchOption(input.slingHitch)?.label ?? null;
   const deviceLoad = positiveWireManufacturerSafeLoad(input.slingDeviceSafeLoad);
   const assemblyLoad = positiveWireManufacturerSafeLoad(input.slingAssemblySafeLoad);
-  const secondary = input.slingCombination && input.slingSecondary
+  const secondary = secondaryFilled && input.slingSecondary
     ? resolveMaterialSafeLoad(input.slingSecondary)
     : null;
+  const secondaryIncomplete = (input.slingCombination === "series" || input.slingCombination === "parallel") && !secondaryFilled;
 
-  if (input.slingCombination === "series" && secondary) {
+  if (secondaryIncomplete) {
+    messages.push("⚠️ 두 번째 줄걸이의 굵기 또는 제조사 안전하중을 적으세요.");
+    slingJudgment = "secondary_missing";
+  } else if (input.slingCombination === "series" && secondary) {
     secondarySlingSafeLoad = secondary.slingSafeLoad;
     const parts = [primaryMaterial.slingSafeLoad, secondary.slingSafeLoad];
     if (deviceLoad != null) parts.push(deviceLoad);
@@ -665,11 +703,13 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
     : tensionPerLeg;
   const deviceOk = !input.slingCombination
     || (deviceLoad != null && (input.slingCombination === "series" ? deviceLoad >= tensionPerLeg : deviceLoad >= slingLoadTon));
-  const capacityOk = slingJudgment !== "mixed_blocked" && slingSafeLoad >= judgmentLoad;
+  const capacityOk = slingJudgment !== "mixed_blocked"
+    && slingJudgment !== "secondary_missing"
+    && slingSafeLoad >= judgmentLoad;
   const slingOk = capacityOk && deviceOk;
   if (!capacityOk && slingJudgment === "assembly") {
     messages.push(`⚠️ 조합 사용하중 ${slingSafeLoad.toFixed(1)}t < 줄하중 ${slingLoadTon.toFixed(1)}t`);
-  } else if (!capacityOk && slingJudgment !== "mixed_blocked") {
+  } else if (!capacityOk && slingJudgment !== "mixed_blocked" && slingJudgment !== "secondary_missing") {
     messages.push(`⚠️ 줄걸이 안전성 부적합: 1줄 안전하중 ${slingSafeLoad.toFixed(1)}t < 1줄 장력 ${tensionPerLeg.toFixed(1)}t`);
   }
 

@@ -564,7 +564,13 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <h4 className="text-xs font-semibold text-muted-foreground">디바이스로 두 가지 줄걸이</h4>
             <Select
               value={rigging.sling_combination === 'series' || rigging.sling_combination === 'parallel' ? rigging.sling_combination : 'none'}
-              onValueChange={(v) => onChange('sling_combination', v === 'none' ? null : v)}
+              onValueChange={(v) => {
+                const next = v === 'none' ? null : v;
+                onChange('sling_combination', next);
+                if ((next === 'series' || next === 'parallel') && !rigging.sling_secondary?.materialType) {
+                  onChange('sling_secondary', { ...(rigging.sling_secondary || {}), materialType: 'wire_rope' });
+                }
+              }}
             >
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -839,6 +845,9 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
               {result?.slingJudgment === 'mixed_blocked' && (
                 <div className="text-[9px] font-normal text-muted-foreground">조합 사용하중 필요</div>
               )}
+              {result?.slingJudgment === 'secondary_missing' && (
+                <div className="text-[9px] font-normal text-muted-foreground">두 번째 줄걸이 필요</div>
+              )}
               {result?.secondarySlingSafeLoad != null && (
                 <div className="text-[9px] font-normal text-muted-foreground">둘째 {result.secondarySlingSafeLoad.toFixed(1)}t</div>
               )}
@@ -858,6 +867,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             {result?.slingJudgment === 'series_min' && rigging.sling_combination !== 'parallel' && ' 한 줄로 이은 두 줄걸이와 체결구 중 작은 값입니다.'}
             {result?.slingJudgment === 'assembly' && ' 이종 재료는 제조사 조합 사용하중으로 판정합니다.'}
             {result?.slingJudgment === 'mixed_blocked' && ' 이종 재료의 안전하중은 더하지 않습니다.'}
+            {result?.slingJudgment === 'secondary_missing' && ' 두 번째 줄걸이의 굵기 또는 제조사 안전하중을 적으세요.'}
           </p>
         </CardContent>
       </Card>

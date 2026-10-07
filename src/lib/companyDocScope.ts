@@ -414,6 +414,21 @@ export function formatCompanyLabelsShort(names: string[], maxVisible = 2): strin
   return `${head} 외 ${names.length - maxVisible}`;
 }
 
+/** 결재자 소속. company id가 있으면 그 회사의 이름+역할. 이름만 같은 시공사/협력사는 붙이지 않는다. */
+export function approverAffiliationLabel(
+  companyId: string | null | undefined,
+  companies: Array<{ id?: string | null; name?: string | null; type?: string | null }>,
+  fallbackName?: string | null,
+): string {
+  const id = String(companyId || '').trim();
+  const hit = id ? (companies || []).find((c) => String(c.id || '') === id) : undefined;
+  if (hit) {
+    const labeled = formatCreatorCompanyLabel(hit.name, hit.type);
+    if (labeled) return labeled;
+  }
+  return String(fallbackName || '').trim();
+}
+
 /** 작성자 소속 표시: "진남토건(주)(협력사)" — 이름에 이미 구분이 있으면 중복 붙이지 않음. */
 export function formatCreatorCompanyLabel(
   name?: string | null,

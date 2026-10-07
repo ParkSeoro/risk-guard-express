@@ -101,6 +101,20 @@ describe("filterApproversForStep — 협력사 기안", () => {
     expect(r.map((x) => x.out_user_id)).toEqual(["gc-odd"]);
   });
 
+  it("담당자(안전): 상위 시공사를 모르고 시공사가 둘이면 비운다", () => {
+    const multi = [
+      ...pool,
+      mk({
+        out_user_id: "other-gc-hse",
+        out_company_id: "gc2",
+        out_company_type: "gc",
+        out_position: "HSE_MANAGER",
+        out_display_name: "타시공안전",
+      }),
+    ];
+    expect(filterApproversForStep(multi, "contractor_safety_manager", ctx)).toEqual([]);
+  });
+
   it("담당자(안전)/소장: parentGcCompanyId 있으면 그 GC만 — 타 시공사 제외", () => {
     const multi = [
       ...pool,
@@ -149,6 +163,33 @@ describe("filterApproversForStep — 시공사 기안", () => {
     expect(filterApproversForStep(pool, "contractor_site_director", ctx).map((x) => x.out_user_id)).toEqual([
       "gc-admin",
     ]);
+  });
+
+  it("같은 이름이라도 협력사 회사 id는 시공사 안전 후보가 아니다", () => {
+    const twins = [
+      ...pool,
+      mk({
+        out_user_id: "partner-lee",
+        out_display_name: "이민호",
+        out_company_id: "sub-jinnam",
+        out_company_name: "진남토건(주)(협력사)",
+        out_company_type: "contractor",
+        out_position: "HSE_MANAGER",
+        out_role: "safety_manager",
+      }),
+      mk({
+        out_user_id: "gc-lee",
+        out_display_name: "이민호",
+        out_company_id: "gc1",
+        out_company_name: "진남토건(주)",
+        out_company_type: "gc",
+        out_position: "HSE_MANAGER",
+        out_role: "safety_manager",
+      }),
+    ];
+    const r = filterApproversForStep(twins, "contractor_safety_manager", ctx);
+    expect(r.map((x) => x.out_user_id)).toEqual(["gc-hse", "gc-lee"]);
+    expect(r.some((x) => x.out_user_id === "partner-lee")).toBe(false);
   });
 
   it("시공사 기안: 타 GC 회사 안전/소장 제외", () => {

@@ -67,7 +67,7 @@ import { generateRemediationActions, applyRemediationActions, buildRemediationSu
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
-import { pickProjectMemberRow, resolveAssessmentDocumentCompanies } from '@/lib/companyDocScope';
+import { approverAffiliationLabel, pickProjectMemberRow, resolveAssessmentDocumentCompanies } from '@/lib/companyDocScope';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine, type ApprovalLineManagerHandle, type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
@@ -886,6 +886,8 @@ const AssessmentRunDetail = () => {
     return () => clearInterval(interval);
   }, [runId, run?.status, fetchAll]);
 
+  const affiliationOf = (row: { company_id?: string | null; company_name?: string | null }) =>
+    approverAffiliationLabel(row.company_id, projectCompanies, row.company_name);
   const isApproved = run?.status === '승인완료';
   const isArchived = run?.status === '폐기';
   const isMasterOrCreator = !!isAdmin || (user && run?.created_by === user.id);
@@ -1991,14 +1993,17 @@ const AssessmentRunDetail = () => {
     if (!project) return;
     try {
       const signatureRows = buildAssessmentSignatureRows({
-        approvals: latestApprovals,
+        approvals: latestApprovals.map((a) => ({
+          ...a,
+          company_name: approverAffiliationLabel(a.company_id, projectCompanies, a.company_name),
+        })),
         draftSteps: approvalLines.map((l) => ({
           label: l.step_label,
           position: l.position,
           user_id: l.user_id,
           user_name: l.user_name,
           company_id: l.company_id,
-          company_name: l.company_name,
+          company_name: approverAffiliationLabel(l.company_id, projectCompanies, l.company_name),
         })),
       }).map((a) => ({
         step: a.step,
@@ -2546,7 +2551,7 @@ const AssessmentRunDetail = () => {
                    displayStatus === '반려' ? <XCircle className="h-3 w-3" /> :
                    <Clock className="h-3 w-3" />}
                   {a.step}: {a.approver_name || '미지정'}
-                  {a.company_name ? ` (${a.company_name})` : ''}
+                  {affiliationOf(a) ? ` (${affiliationOf(a)})` : ''}
                   {displayStatus === '승인' && submitter ? ' [상신완료]'
                     : displayStatus === '진행중' ? ' [결재중]'
                     : displayStatus === '대기' ? ' [순번대기]'
@@ -2579,7 +2584,7 @@ const AssessmentRunDetail = () => {
                         <tr key={a.id} className={displayStatus === '진행중' ? 'bg-primary/5' : undefined}>
                           <td className="border px-2 py-1 font-medium">{a.step}</td>
                           <td className="border px-2 py-1">{localizePersonName(a.approver_name) || '—'}</td>
-                          <td className="border px-2 py-1">{a.company_name || '—'}</td>
+                          <td className="border px-2 py-1">{affiliationOf(a) || '—'}</td>
                           <td className="border px-2 py-1">{jobTitleLabel(a.position) || '—'}</td>
                           <td className="border px-2 py-1">
                             {displayStatus === '승인' && a.approved_at
@@ -2659,7 +2664,7 @@ const AssessmentRunDetail = () => {
                     user_id: l.user_id,
                     user_name: l.user_name,
                     company_id: l.company_id,
-                    company_name: l.company_name,
+                    company_name: approverAffiliationLabel(l.company_id, projectCompanies, l.company_name),
                   })),
                 }).map((row, i) => (
                   <tr key={`${row.position}-${i}`}>
@@ -3800,7 +3805,7 @@ const AssessmentRunDetail = () => {
                       <span className="text-muted-foreground w-4 shrink-0">{i + 1}.</span>
                       <span className="font-medium">{l.step_label || l.position}</span>
                       <span>{l.user_name || '—'}</span>
-                      <span className="text-muted-foreground">{l.company_name || ''}</span>
+                      <span className="text-muted-foreground">{approverAffiliationLabel(l.company_id, projectCompanies, l.company_name)}</span>
                     </li>
                   ))}
                 </ol>

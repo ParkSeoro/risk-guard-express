@@ -8,6 +8,7 @@ import {
   resolveAssessmentRunCompanyLabels,
   formatCompanyLabelsShort,
   formatCreatorCompanyLabel,
+  approverAffiliationLabel,
   pickProjectMemberRow,
   resolveAssessmentDocumentCompanies,
   resolveAssessmentRunListCompanyLabel,
@@ -271,6 +272,22 @@ describe('formatCreatorCompanyLabel', () => {
 
   it('returns empty when name missing', () => {
     expect(formatCreatorCompanyLabel('', 'contractor')).toBe('');
+  });
+});
+
+describe('approverAffiliationLabel', () => {
+  const companies = [
+    { id: 'gc-jinnam', name: '진남토건(주)', type: 'gc' },
+    { id: 'sub-jinnam', name: '진남토건(주)(협력사)', type: 'contractor' },
+  ];
+
+  it('labels the company id, so the same legal name stays two affiliations', () => {
+    expect(approverAffiliationLabel('gc-jinnam', companies, '진남토건(주)')).toBe('진남토건(주)(시공사)');
+    expect(approverAffiliationLabel('sub-jinnam', companies, '진남토건(주)')).toBe('진남토건(주)(협력사)');
+  });
+
+  it('uses the stored name when the company id is unknown', () => {
+    expect(approverAffiliationLabel(null, companies, '진남토건(주)')).toBe('진남토건(주)');
   });
 });
 

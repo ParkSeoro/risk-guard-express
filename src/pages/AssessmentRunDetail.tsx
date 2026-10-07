@@ -667,6 +667,9 @@ const AssessmentRunDetail = () => {
       const auto = merged.auto;
       const previous = merged.previous;
       const pickerRows = listManualPreviousCandidates(stampedCurrent, stampedRows, authorCompanyByUser);
+      if (cancelled) return;
+      setPreviousRunAuto(auto);
+      setPreviousRunCandidates(pickerRows);
       const currentFbReq = supabase
         .from('risk_item_feedback' as any)
         .select('id, status')
@@ -2948,12 +2951,12 @@ const AssessmentRunDetail = () => {
             {renderPreviousPicker()}
             {!isApproved && previousRunCandidates.length === 0 && (
               <p className="text-[11px] text-muted-foreground">
-                이 소속회사의 결재중·승인완료 회차가 없습니다.
+                이 소속회사의 이전 기간이 없습니다.
               </p>
             )}
             {!isApproved && previousRunCandidates.length > 0 && (
               <p className="text-[11px] text-muted-foreground">
-                같은 소속회사 회차만 고를 수 있습니다. 그 회사의 다른 사람이 쓴 회차도 포함됩니다.
+                자동으로 붙일 이전 기간이 없으면 목록에서 이 소속회사가 쓴 회차를 고르세요.
               </p>
             )}
           </CardContent>

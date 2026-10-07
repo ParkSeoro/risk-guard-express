@@ -345,6 +345,53 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(pickPreviousApprovedRun(current, [otherCompany, coworker], authors)?.id).toBe('coworker');
   });
 
+  it('links by work period, not by the typed title, and lists that company history', () => {
+    const current = run({
+      id: 'oct-2',
+      status: '작성중',
+      type: '상시',
+      start_date: '2026-10-12',
+      end_date: '2026-10-18',
+      created_at: '2026-10-02T00:00:00Z',
+      period_label: '사용자가 아무렇게나 적은 제목',
+      writing_company_id: 'co-cheongwon',
+      target_company_ids: ['somewhere-else'],
+    });
+    const earlier = run({
+      id: 'oct-1',
+      type: '상시',
+      start_date: '2026-10-05',
+      end_date: '2026-10-11',
+      created_at: '2026-09-28T00:00:00Z',
+      period_label: 'ZZZ 나중 제목',
+      writing_company_id: 'co-cheongwon',
+      target_company_ids: ['another-tag'],
+    });
+    const laterSameCompany = run({
+      id: 'later',
+      type: '정기',
+      status: '결재진행',
+      start_date: '2026-10-19',
+      end_date: '2026-10-25',
+      created_at: '2026-10-03T00:00:00Z',
+      period_label: 'AAA 먼저 정렬될 제목',
+      writing_company_id: 'co-cheongwon',
+    });
+    const otherCompany = run({
+      id: 'other-co',
+      type: '상시',
+      start_date: '2026-10-05',
+      end_date: '2026-10-11',
+      created_at: '2026-09-27T00:00:00Z',
+      period_label: '2026년 10월 01주차',
+      writing_company_id: 'co-other',
+    });
+    expect(pickPreviousApprovedRun(current, [laterSameCompany, otherCompany, earlier])?.id).toBe('oct-1');
+    expect(listManualPreviousCandidates(current, [laterSameCompany, otherCompany, earlier]).map((c) => c.id))
+      .toEqual(['later', 'oct-1']);
+    expect(formatPreviousRunOptionLabel(earlier)).toContain('2026-10-05 ~ 2026-10-11');
+  });
+
   it('lists only the same company, including 결재진행', () => {
     const ids = listManualPreviousCandidates(current, [emptyApproved, pending, matching]).map((c) => c.id);
     expect(ids).toEqual(['pending', 'match']);
@@ -407,7 +454,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
   it('labels include the company and 관리대상 count', () => {
     expect(formatPreviousRunOptionLabel({ ...matching, company_label: '청원산기(주)' }, 19)).toContain('청원산기(주)');
     expect(formatPreviousRunOptionLabel(matching, 19)).toContain('관리대상 19건');
-    expect(formatPreviousRunOptionLabel(matching, 19)).toContain('8월 4주차');
+    expect(formatPreviousRunOptionLabel(matching, 19)).toContain('2026-08-24');
+    expect(formatPreviousRunOptionLabel(matching, 19).startsWith('2026-08-24')).toBe(true);
   });
 });
 

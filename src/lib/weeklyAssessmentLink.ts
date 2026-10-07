@@ -230,18 +230,22 @@ export function mergeFeedbackChainPrevious(opts: {
   return { previous: keep(opts.chainPrevious) || local || auto, auto };
 }
 
+/** Label by work period. The typed title is extra text and is not the match key. */
 export function formatPreviousRunOptionLabel(
   run: WeeklyLinkRun,
   managedCount?: number,
 ): string {
-  const period = String(run.period_label || '').trim() || '회차';
-  const type = String(run.type || '').trim();
   const start = String(run.start_date || '').trim().slice(0, 10);
+  const end = String(run.end_date || '').trim().slice(0, 10);
+  const range = start && end ? `${start} ~ ${end}` : (start || '기간 없음');
+  const title = String(run.period_label || '').trim();
+  const type = String(run.type || '').trim();
   const company = String(run.company_label || '').trim();
-  const bits = company ? [company, period] : [period];
+  const bits = [range];
   if (type) bits.push(type);
   bits.push(run.status);
-  if (start) bits.push(start);
+  if (company) bits.push(company);
+  if (title && title !== range) bits.push(title);
   if (managedCount != null) bits.push(`관리대상 ${managedCount}건`);
   return bits.join(' · ');
 }

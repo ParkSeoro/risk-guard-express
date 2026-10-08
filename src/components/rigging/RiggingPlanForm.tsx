@@ -750,7 +750,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
           </div>
 
           <div className="mt-3 space-y-2 rounded border p-2">
-            <p className="text-[10px] font-medium">해당할 때만 정격 80% (규칙 제147조 사용설명서)</p>
+            <p className="text-[10px] font-medium">사용설명서가 하중표 밖에 80%를 더 요구할 때만</p>
             <div className="grid grid-cols-3 gap-2 text-[10px]">
               <label className="flex items-start gap-1.5 cursor-pointer">
                 <Checkbox
@@ -758,7 +758,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
                   onCheckedChange={(c) => toggleCond('boom_rotation_factor', c === true)}
                   className="mt-0.5"
                 />
-                <span>선회 인양 중<br /><span className="text-muted-foreground">×0.8</span></span>
+                <span>선회 추가 감률<br /><span className="text-muted-foreground">×0.8</span></span>
               </label>
               <label className="flex items-start gap-1.5 cursor-pointer">
                 <Checkbox
@@ -778,7 +778,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
               </label>
             </div>
             <p className="text-[9px] text-muted-foreground leading-relaxed">
-              미해당(기본)은 정격 100%. 세 조건을 한꺼번에 깎지 않습니다.
+              짐을 들어서 옆으로 옮기는 보통 선회는 여기 해당하지 않습니다. 하중표 정격에 360도 선회가 이미 들어 있습니다. 설명서가 선회 때 정격을 따로 80%로 깎으라고 한 경우에만 체크하세요. 기본은 정격 100%이고, 세 조건은 각각 체크합니다.
             </p>
           </div>
 

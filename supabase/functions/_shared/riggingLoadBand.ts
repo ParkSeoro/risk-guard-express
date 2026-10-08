@@ -4,10 +4,10 @@ export const RIGGING_UTIL_STANDARD_PCT = 75;
 export const RIGGING_UTIL_MAX_PCT = 85;
 
 export const LIFTING_METHOD_OPTIONS = [
-  { value: "직인양", label: "직인양" },
-  { value: "선회인양", label: "선회인양" },
-  { value: "수평이동", label: "수평이동" },
-  { value: "턴오버", label: "턴오버" },
+  { value: "직인양", label: "직인양 (제자리 인양)" },
+  { value: "선회인양", label: "선회인양 (들어서 옆으로 옮김)" },
+  { value: "수평이동", label: "수평이동 (높이를 유지한 채 이동)" },
+  { value: "턴오버", label: "턴오버 (뒤집기)" },
 ] as const;
 
 export type RiggingLoadBand = "ok" | "warn" | "over_capacity";

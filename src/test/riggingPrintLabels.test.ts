@@ -7,6 +7,7 @@ import {
   slingHitchPrintNote,
 } from "../../supabase/functions/_shared/riggingPrintHtml";
 import {
+  LIFTING_METHOD_OPTIONS,
   classifyRiggingLoad,
   riggingLoadBanner,
 } from "@/lib/riggingLoadBand";
@@ -81,6 +82,19 @@ describe("리깅 부하율 기준", () => {
     expect(html).toContain("최대 85% 초과");
     expect(html).not.toContain("작업금지");
     expect(html).toContain("선회인양");
+  });
+
+  it("선회 추가 감률은 인양 방식 이름과 다른 말로 인쇄한다", () => {
+    const html = renderRiggingPrintHtml(
+      { sling_method: "선회인양", boom_rotation_factor: 0.8 },
+      escapeHtml,
+    );
+    expect(html).toContain("선회인양");
+    expect(html).toContain("선회 추가 감률 ×0.8");
+    expect(html).not.toContain("선회 인양 중");
+    expect(LIFTING_METHOD_OPTIONS.find((o) => o.value === "선회인양")?.label).toBe(
+      "선회인양 (들어서 옆으로 옮김)",
+    );
   });
 
   it("와이어 안전하중은 제조사 값인지 지름 표인지 적는다", () => {

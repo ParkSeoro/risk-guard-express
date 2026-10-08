@@ -271,7 +271,7 @@ export function renderRiggingPrintHtml(
   ]);
 
   const derates: string[] = [];
-  if (isDerated(rigging.boom_rotation_factor)) derates.push("선회 인양 중 ×0.8");
+  if (isDerated(rigging.boom_rotation_factor)) derates.push("선회 추가 감률 ×0.8");
   if (isDerated(rigging.ground_inspection_factor)) derates.push("지반 경사 ×0.8");
   if (isDerated(rigging.load_protrusion_factor) || isDerated(rigging.travel_load_factor)) {
     derates.push("하중 주행 ×0.8");

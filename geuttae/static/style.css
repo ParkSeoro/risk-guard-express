@@ -1,0 +1,19 @@
+:root{--bg:#f7f7fb;--fg:#16161d;--mut:#666;--card:#fff;--bd:#e3e3ee;--acc:#3b2bd9;--up:#d6262b;--down:#1e5fd9}
+[hidden]{display:none!important}
+@media (prefers-color-scheme:dark){:root{--bg:#111116;--fg:#eee;--mut:#aaa;--card:#1b1b22;--bd:#2c2c38;--acc:#7b6dff;--up:#ff5a5f;--down:#5a8dff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif}
+header{background:var(--acc);padding:10px 16px}.logo{color:#fff;font-weight:800;text-decoration:none;font-size:1.1rem}
+main{max-width:760px;margin:auto;padding:16px}h1{font-size:1.35rem;margin:.4em 0}h2{font-size:1.1rem;margin-top:1.6em}h2 small{color:var(--mut);font-weight:400;font-size:.8rem}
+.sub,.sm{color:var(--mut)}.sm{font-size:.85rem}
+.calc{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;display:grid;gap:10px}
+.calc label{display:grid;gap:4px;font-size:.9rem;color:var(--mut)}
+input,select{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);width:100%}
+button{font:inherit;padding:10px 14px;border-radius:10px;border:0;background:var(--acc);color:#fff;font-weight:700;cursor:pointer}
+.big{font-size:1.05rem;padding:12px}.btnlink{display:inline-block;background:var(--acc);color:#fff;text-decoration:none;border-radius:10px;padding:12px 16px;font-weight:700}
+.tabs{display:flex;gap:6px}.tabs button{flex:1;background:var(--bg);color:var(--fg);border:1px solid var(--bd)}.tabs button.on{background:var(--acc);color:#fff}
+.btns{display:flex;gap:8px;flex-wrap:wrap}.res{font-size:2rem;margin:.2em 0}.warn{color:var(--up)}
+.up{color:var(--up)}.down{color:var(--down)}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;font-size:.92rem}
+th,td{padding:8px;border-bottom:1px solid var(--bd);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}
+td small{display:block;font-size:.75rem;opacity:.8}.na{color:var(--mut)}
+a{color:var(--acc)}footer{max-width:760px;margin:auto;padding:16px;font-size:.8rem;color:var(--mut)}

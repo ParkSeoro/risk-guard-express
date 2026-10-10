@@ -1,0 +1,21 @@
+{
+ "arms": {
+  "a": {
+   "views": 0,
+   "shows": 5
+  },
+  "b": {
+   "views": 0,
+   "shows": 6
+  },
+  "c": {
+   "views": 0,
+   "shows": 4
+  },
+  "d": {
+   "views": 0,
+   "shows": 7
+  }
+ },
+ "log": []
+}

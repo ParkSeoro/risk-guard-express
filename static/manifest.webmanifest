@@ -1,0 +1,3 @@
+{"name":"오늘의 TBM","short_name":"오늘TBM","start_url":"./index.html","scope":"./","display":"standalone",
+"background_color":"#fffdf7","theme_color":"#f5a400","lang":"ko",
+"icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}

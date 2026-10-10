@@ -1,0 +1,16 @@
+:root{--bg:#fffdf7;--fg:#1d1d1f;--mut:#666;--card:#fff;--bd:#e6e0d0;--acc:#f5a400}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--fg:#eee;--mut:#aaa;--card:#1e1e1e;--bd:#333}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif}
+header{background:var(--acc);padding:10px 16px}.logo{color:#111;font-weight:800;text-decoration:none}
+main{max-width:760px;margin:auto;padding:16px}h1{font-size:1.35rem;margin:.4em 0}.head{color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.card{display:block;padding:12px;border-radius:10px;background:var(--card);border:1px solid var(--bd);color:inherit;text-decoration:none}
+.card span{display:block;font-size:.85rem;color:var(--mut)}.s1{border-left:5px solid #f5c400}.s2{border-left:5px solid #f58a00}.s3,.s4{border-left:5px solid #e0242b}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}button{font:inherit;padding:10px 14px;border-radius:10px;border:0;background:var(--acc);color:#111;font-weight:700}
+.hz{padding:10px 12px;margin:8px 0;border-radius:10px;background:var(--card);border:1px solid var(--bd)}.hz span{color:var(--mut)}.hz small{color:var(--mut)}
+.l1{border-left:6px solid #f5c400}.l2{border-left:6px solid #f58a00}.l3{border-left:6px solid #e0242b}.l4{border-left:6px solid #8b0000;background:rgba(224,36,43,.07)}
+pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;font:inherit}
+.aff{padding:10px 12px;border:1px dashed var(--bd);border-radius:10px}.disc{font-size:.8rem;color:var(--mut)}
+.sign{display:none}.sign table{width:100%;border-collapse:collapse}.sign td,.sign th{border:1px solid #000;height:30px;padding:2px 6px}
+footer{max-width:760px;margin:auto;padding:16px;font-size:.8rem;color:var(--mut)}.old{background:#fff3cd;color:#111;padding:8px;border-radius:8px}
+@media print{header,footer,.btns,.aff,ins,.head,#install{display:none!important}.sign{display:block;page-break-before:always}body{background:#fff;color:#000}}

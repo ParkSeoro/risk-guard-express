@@ -48,6 +48,15 @@ describe("filterApprovalsKeepingFullDocumentTimeline", () => {
     expect(out.map((r) => r.entity_id)).toEqual(["wp1", "wp1"]);
   });
 
+  it("작성자 문서는 결재 단계 회사가 내 회사가 아니어도 전체를 보여 준다", () => {
+    const out = filterApprovalsKeepingFullDocumentTimeline(rows, {
+      userId: "author",
+      accessibleCompanyIds: ["daewoong"],
+      authoredDocumentKeys: ["work_plan:wp2"],
+    });
+    expect(out.map((r) => r.entity_id)).toEqual(["wp2"]);
+  });
+
   it("master/null scope returns all rows", () => {
     const out = filterApprovalsKeepingFullDocumentTimeline(rows, {
       userId: "u-gc",

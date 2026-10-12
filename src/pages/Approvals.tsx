@@ -27,7 +27,7 @@ import {
 } from "@/lib/approvalRules";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
 import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from "@/lib/companyDocScope";
-import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
+import { approvalDocumentKey, filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
   approvalAssessmentPrintType,
   approvalPreviewEntityType,
@@ -100,6 +100,7 @@ const Approvals = () => {
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [authoredDocKeys, setAuthoredDocKeys] = useState<Set<string>>(() => new Set());
   const [runs, setRuns] = useState<any[]>([]);
   const [rejectComment, setRejectComment] = useState('');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -254,12 +255,32 @@ const Approvals = () => {
       if (seq !== fetchSeqRef.current) return;
       let approvalsData = a.data || [];
       let runsData = r.data || [];
+      const authored = new Set<string>();
+      if (user?.id) {
+        const uid = user.id;
+        const [plansRes, permitsRes] = await Promise.all([
+          supabase.from("work_plans").select("id").eq("project_id", selectedProject).eq("is_deleted", false)
+            .or(`created_by.eq.${uid},author_user_id.eq.${uid}`),
+          supabase.from("work_permits").select("id").eq("project_id", selectedProject).eq("is_deleted", false)
+            .or(`created_by.eq.${uid},submitted_by.eq.${uid}`),
+        ]);
+        if (seq !== fetchSeqRef.current) return;
+        for (const row of (plansRes.data || []) as { id: string }[]) authored.add(`work_plan:${row.id}`);
+        for (const row of (permitsRes.data || []) as { id: string }[]) authored.add(`work_permit:${row.id}`);
+        for (const run of runsData as { id: string; created_by?: string | null; author_user_id?: string | null }[]) {
+          if (run.created_by === uid || run.author_user_id === uid) {
+            authored.add(`run:${run.id}`);
+            authored.add(`assessment_run:${run.id}`);
+          }
+        }
+      }
 
       // 시공사/협력사: 문서 단위로 스코프 — 보이는 문서의 결재 단계는 전부 유지(반려 사유 포함)
       if (accessibleCompanyIds !== null) {
         approvalsData = filterApprovalsKeepingFullDocumentTimeline(approvalsData, {
           userId: user?.id,
           accessibleCompanyIds,
+          authoredDocumentKeys: authored,
         });
         let authorCompanyIdByUser: Record<string, string> = {};
         try {
@@ -275,6 +296,7 @@ const Approvals = () => {
         });
       }
 
+      setAuthoredDocKeys(authored);
       setApprovals(approvalsData);
       setRuns(runsData);
     } finally {
@@ -374,9 +396,12 @@ const Approvals = () => {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
         const { issuanceSteps } = splitApprovalTimeline(steps as any[]);
-        const submitted = issuanceSteps.some(s =>
-          s.approver_id === user.id && isSubmitterApprovalStep(s)
-        );
+        const docKey = approvalDocumentKey((steps as any[])[0] || {});
+        const submitted = authoredDocKeys.has(runId)
+          || (!!docKey && authoredDocKeys.has(docKey))
+          || issuanceSteps.some(s =>
+            s.approver_id === user.id && isSubmitterApprovalStep(s)
+          );
         if (submitted && matchesEntityTypeFilter(runId, steps as any[])) filtered[runId] = steps as any[];
       }
       return applySearch(filtered);
@@ -742,6 +767,8 @@ const Approvals = () => {
                         {(() => {
                           const arr = timeline.issuanceSteps;
                           const first = arr[0];
+                          const docKey = first ? approvalDocumentKey(first) : null;
+                          const authoredHere = authoredDocKeys.has(groupKey) || (!!docKey && authoredDocKeys.has(docKey));
                           const canWithdraw = !!user && !isAllTab
                             && first?.entity_type && first?.entity_id
                             && timeline.postSteps.length === 0
@@ -750,6 +777,7 @@ const Approvals = () => {
                             && (!arr.some(s => s.status === '승인' && !isSubmitterApprovalStep(s) && (s.step_order ?? 0) > 1)
                                 || hasStuckSubmitterStep(arr, user.id))
                             && (isMaster || seesAllCompanies || isProjectAdmin
+                                || authoredHere
                                 || hasStuckSubmitterStep(arr, user.id)
                                 || arr.some(s => s.approver_id === user.id && (s.step_order === 1 || isSubmitterApprovalStep(s))));
                           return canWithdraw ? (

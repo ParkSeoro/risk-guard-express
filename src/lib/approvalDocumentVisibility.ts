@@ -28,15 +28,22 @@ export function filterApprovalsKeepingFullDocumentTimeline<
   opts: {
     userId?: string | null;
     accessibleCompanyIds: string[] | null; // null = master/owner sees all
+    /** Documents this user wrote. Step companies outside their tree must not hide the timeline. */
+    authoredDocumentKeys?: Iterable<string> | null;
   },
 ): T[] {
   if (opts.accessibleCompanyIds === null) return rows;
   const allow = new Set(opts.accessibleCompanyIds);
+  const authored = new Set(opts.authoredDocumentKeys || []);
   const visibleKeys = new Set<string>();
 
   for (const ap of rows) {
     const key = approvalDocumentKey(ap);
     if (!key) continue;
+    if (authored.has(key)) {
+      visibleKeys.add(key);
+      continue;
+    }
     if (opts.userId && ap.approver_id === opts.userId) {
       visibleKeys.add(key);
       continue;

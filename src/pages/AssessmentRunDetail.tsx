@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { bundleRiskItems, reviewBundleForStatus } from '@/lib/approvalReviewBundle';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
@@ -362,13 +363,29 @@ const AssessmentRunDetail = () => {
     if (!runId) return;
     // First load only — background refresh must not unmount the page/dialogs.
     if (!hasLoadedRef.current) setLoading(true);
-    const [runRes, itemsRes, partRes, profilesRes, shareRes] = await Promise.all([
+    const [runRes, snapRes, profilesRes, shareRes] = await Promise.all([
       supabase.from('assessment_runs').select('*').eq('id', runId).single(),
-      supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order'),
-      supabase.from('assessment_run_participants').select('*').eq('run_id', runId).order('created_at'),
+      supabase.from('document_content_snapshots' as any)
+        .select('payload')
+        .eq('entity_type', 'assessment_run')
+        .eq('entity_id', runId)
+        .order('approval_version', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
       supabase.from('profiles').select('user_id, display_name, company, position'),
       fetchAssessmentShareAcks(runId),
     ]);
+    const reviewBundle = reviewBundleForStatus(runRes.data?.status, snapRes.data?.payload);
+    let itemsData: any[] = (bundleRiskItems(reviewBundle) as any[]) || [];
+    let partData: any[] = (reviewBundle?.participants as any[]) || [];
+    if (!reviewBundle) {
+      const [itemsRes, partRes] = await Promise.all([
+        supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order'),
+        supabase.from('assessment_run_participants').select('*').eq('run_id', runId).order('created_at'),
+      ]);
+      itemsData = itemsRes.data || [];
+      partData = partRes.data || [];
+    }
     if (runRes.data) {
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
@@ -481,8 +498,8 @@ const AssessmentRunDetail = () => {
       });
 
       // Auto-populate participants from approval route template if none exist
-      const currentParticipants = partRes.data || [];
-      if (currentParticipants.length === 0 && runRes.data.project_id) {
+      const currentParticipants = partData;
+      if (!reviewBundle && currentParticipants.length === 0 && runRes.data.project_id) {
         const { data: templates } = await supabase
           .from('approval_route_templates' as any)
           .select('*')
@@ -508,7 +525,7 @@ const AssessmentRunDetail = () => {
               const { data: newParts } = await supabase.from('assessment_run_participants').insert(participantInserts).select();
               if (newParts) {
                 setParticipants(newParts);
-                setItems(itemsRes.data || []);
+                setItems(itemsData);
                 setUserDirectory((profilesRes.data || []) as any);
                 hasLoadedRef.current = true;
                 setLoading(false);
@@ -519,8 +536,8 @@ const AssessmentRunDetail = () => {
         }
       }
     }
-    setItems(itemsRes.data || []);
-    setParticipants(partRes.data || []);
+    setItems(itemsData);
+    setParticipants(partData);
     setShareAcks(shareRes || []);
     setUserDirectory((profilesRes.data || []) as any);
 

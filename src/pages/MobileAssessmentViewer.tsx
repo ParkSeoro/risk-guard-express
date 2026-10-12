@@ -12,6 +12,7 @@ import {
   A4_LANDSCAPE_PX,
   fetchAssessmentPrintHtml,
 } from "@/lib/approvalDocPreview";
+import { bundleRiskItems, reviewBundleForStatus } from "@/lib/approvalReviewBundle";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
 import { isNonKoreanLocale } from "@/lib/i18n/workerLocale";
@@ -107,14 +108,25 @@ export default function MobileAssessmentViewer({
         return;
       }
       setMeta({ period_label: run.period_label, type: run.type, status: run.status });
-      const { data: rows } = await supabase
-        .from("risk_items")
-        .select(
-          "id, process, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, risk_grade, ppe",
-        )
-        .eq("run_id", runId)
-        .eq("is_deleted", false)
-        .order("sort_order");
+      const { data: snap } = await supabase
+        .from("document_content_snapshots" as any)
+        .select("payload")
+        .eq("entity_type", "assessment_run")
+        .eq("entity_id", runId)
+        .order("approval_version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const bundled = bundleRiskItems(reviewBundleForStatus(run.status, snap?.payload));
+      const { data: rows } = bundled
+        ? { data: bundled }
+        : await supabase
+            .from("risk_items")
+            .select(
+              "id, process, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, risk_grade, ppe",
+            )
+            .eq("run_id", runId)
+            .eq("is_deleted", false)
+            .order("sort_order");
       if (cancelled) return;
       const sorted = [...(rows || [])].sort((a: any, b: any) => {
         const score = (g: string) => {

@@ -282,6 +282,30 @@ function buildShareSignatureRows(acks: any[]): string {
   return rows.join("");
 }
 
+const LIVE_BODY_STATUSES = new Set([
+  "",
+  "작성중",
+  "제출됨",
+  "검증중",
+  "검증대기",
+  "검토대기",
+  "보완요청",
+  "보완중",
+  "반려",
+  "검증완료",
+  "임시저장",
+]);
+
+/** Frozen submit body. Drafts and returns stay on live tables. */
+function reviewBundle(status: string | null | undefined, payload: unknown): Record<string, any> | null {
+  const statusText = String(status ?? "").trim();
+  if (LIVE_BODY_STATUSES.has(statusText)) return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const row = payload as Record<string, any>;
+  if (Number(row.bundle_version) !== 2 || !Array.isArray(row.risk_items)) return null;
+  return row;
+}
+
 function jwtSub(token: string): string | null {
   try {
     const seg = token.split(".")[1];
@@ -336,29 +360,47 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const { data: snapRow } = await supabase
+      .from("document_content_snapshots")
+      .select("payload")
+      .eq("entity_type", "assessment_run")
+      .eq("entity_id", runId)
+      .order("approval_version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const bundle = reviewBundle(run.status, snapRow?.payload);
+
     const linkSelect = "id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_user_id, created_by, period_label, is_deleted";
     // Body previousRunId wins over the saved previous_run_id. The SQL function drops another company.
+    // A frozen review reads the previous runs captured at 상신 instead.
     const overrideId = previousRunId && previousRunId !== runId ? previousRunId : null;
-    const { data: chainRows, error: chainErr } = await supabase.rpc("assessment_feedback_chain", {
-      _run_id: runId,
-      _override_previous_id: overrideId,
-    });
-    if (chainErr) {
-      console.error("assessment_feedback_chain failed", chainErr);
+    let previousRun: any = null;
+    let previousOfPrevious: any = null;
+    if (!bundle) {
+      const { data: chainRows, error: chainErr } = await supabase.rpc("assessment_feedback_chain", {
+        _run_id: runId,
+        _override_previous_id: overrideId,
+      });
+      if (chainErr) {
+        console.error("assessment_feedback_chain failed", chainErr);
+      }
+      const chain = chainErr ? null : parseFeedbackChain(chainRows);
+      const loadLinkedRun = async (id: string | null) => {
+        if (!id || id === runId) return null;
+        const { data } = await supabase
+          .from("assessment_runs")
+          .select(linkSelect)
+          .eq("id", id)
+          .maybeSingle();
+        if (!data || data.project_id !== run.project_id || data.is_deleted) return null;
+        return data;
+      };
+      previousRun = chain ? await loadLinkedRun(chain.previousId) : null;
+      previousOfPrevious = chain ? await loadLinkedRun(chain.previousOfPreviousId) : null;
+    } else {
+      previousRun = bundle.previous_run || null;
+      previousOfPrevious = bundle.previous_of_previous_run || null;
     }
-    const chain = chainErr ? null : parseFeedbackChain(chainRows);
-    const loadLinkedRun = async (id: string | null) => {
-      if (!id || id === runId) return null;
-      const { data } = await supabase
-        .from("assessment_runs")
-        .select(linkSelect)
-        .eq("id", id)
-        .maybeSingle();
-      if (!data || data.project_id !== run.project_id || data.is_deleted) return null;
-      return data;
-    };
-    const previousRun = chain ? await loadLinkedRun(chain.previousId) : null;
-    const previousOfPrevious = chain ? await loadLinkedRun(chain.previousOfPreviousId) : null;
     const printMode = type === "assessment_feedback" || type === "feedback" ? "feedback" : "assessment";
     const printSections = resolvePrintFeedbackSections(run, previousRun, previousOfPrevious, printMode);
     const geumjuRun = printSections.geumju;
@@ -366,55 +408,102 @@ Deno.serve(async (req) => {
     const geumjuId = geumjuRun?.id || null;
     const jeonhoeId = jeonhoeRun?.id || null;
 
-    const [projectRes, itemsRes, participantsRes, feedbackGeumjuRes, feedbackJeonhoeRes, validationRes, approvalsRes, companyLinksRes, geumjuItemsRes, jeonhoeItemsRes, opinionsRes, accidentsRes, healthRes, shareAcksRes] = await Promise.all([
-      supabase.from("projects").select("*").eq("id", run.project_id).single(),
-      supabase.from("risk_items").select("*").eq("run_id", runId).eq("is_deleted", false).order("sort_order"),
-      supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
-      geumjuId
-        ? supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", geumjuId)
-        : Promise.resolve({ data: [] }),
-      jeonhoeId
-        ? supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", jeonhoeId)
-        : Promise.resolve({ data: [] }),
-      type === "validation"
-        ? supabase.from("validation_results").select("*").eq("run_id", runId)
-        : Promise.resolve({ data: [] }),
-      supabase.from("approvals").select("*").eq("run_id", runId).order("approval_version", { ascending: false }),
-      supabase.from("project_companies")
-        .select("company_id, parent_company_id, role_in_project, companies:company_id(id, name, type, parent_company_id, is_deleted)")
-        .eq("project_id", run.project_id)
-        .eq("is_deleted", false),
-      geumjuId && geumjuId !== runId
-        ? supabase.from("risk_items").select("*").eq("run_id", geumjuId).eq("is_deleted", false)
-        : Promise.resolve({ data: null }),
-      jeonhoeId
-        ? supabase.from("risk_items").select("*").eq("run_id", jeonhoeId).eq("is_deleted", false)
-        : Promise.resolve({ data: null }),
-      supabase.from("worker_opinions").select("*").eq("run_id", runId).order("created_at"),
-      supabase.from("assessment_accidents").select("*").eq("run_id", runId).order("created_at"),
-      supabase.from("health_hazards").select("*").eq("run_id", runId).order("created_at"),
-      supabase.from("assessment_run_share_acks").select("worker_name, company_name, signature_data, signed_at").eq("run_id", runId).order("signed_at"),
-    ]);
+    const approvalsQuery = supabase.from("approvals").select("*").eq("run_id", runId).order("approval_version", { ascending: false });
+    const shareQuery = supabase.from("assessment_run_share_acks").select("worker_name, company_name, signature_data, signed_at").eq("run_id", runId).order("signed_at");
 
-    const project = projectRes.data;
-    const items = ((itemsRes.data || []) as any[]).filter(
-      (i: any) => !i?.is_deleted && !i?.is_excluded,
-    );
-    const participants = participantsRes.data || [];
-    const geumjuFeedbackItems = feedbackGeumjuRes.data || [];
-    const jeonhoeFeedbackItems = feedbackJeonhoeRes.data || [];
-    const geumjuLabelItems = geumjuId && geumjuId !== runId
-      ? (geumjuItemsRes.data || [])
-      : items;
-    const jeonhoeLabelItems = jeonhoeItemsRes.data || [];
-    const validationResults = (validationRes as any).data || [];
-    const approvals = approvalsRes.data || [];
-    const workerOpinions = (opinionsRes.data || []) as any[];
-    const assessmentAccidents = (accidentsRes.data || []) as any[];
-    const healthHazards = (healthRes.data || []) as any[];
-    const shareAcks = (shareAcksRes.data || []) as any[];
-    let projectCompanies = mapProjectCompanies(companyLinksRes.data || []);
-    if (projectCompanies.length === 0) {
+    let project: any = null;
+    let items: any[] = [];
+    let participants: any[] = [];
+    let geumjuFeedbackItems: any[] = [];
+    let jeonhoeFeedbackItems: any[] = [];
+    let geumjuLabelItems: any[] = [];
+    let jeonhoeLabelItems: any[] = [];
+    let validationResults: any[] = [];
+    let approvals: any[] = [];
+    let workerOpinions: any[] = [];
+    let assessmentAccidents: any[] = [];
+    let healthHazards: any[] = [];
+    let shareAcks: any[] = [];
+    let companyLinks: any[] = [];
+    let authorMembers: any[] | null = null;
+    let bundledAuthorName: string | null = null;
+
+    if (bundle) {
+      const itemsByRun = bundle.items_by_run || {};
+      const feedbackByRun = bundle.feedback_by_run || {};
+      project = bundle.project || null;
+      items = ((bundle.risk_items || []) as any[]).filter(
+        (i: any) => !i?.is_deleted && !i?.is_excluded,
+      );
+      participants = bundle.participants || [];
+      geumjuFeedbackItems = geumjuId ? (feedbackByRun[geumjuId] || []) : [];
+      jeonhoeFeedbackItems = jeonhoeId ? (feedbackByRun[jeonhoeId] || []) : [];
+      geumjuLabelItems = geumjuId && geumjuId !== runId
+        ? (itemsByRun[geumjuId] || [])
+        : items;
+      jeonhoeLabelItems = jeonhoeId ? (itemsByRun[jeonhoeId] || []) : [];
+      validationResults = type === "validation" ? (bundle.validation_results || []) : [];
+      workerOpinions = bundle.worker_opinions || [];
+      assessmentAccidents = bundle.assessment_accidents || [];
+      healthHazards = bundle.health_hazards || [];
+      companyLinks = bundle.company_links || [];
+      authorMembers = bundle.author_members || [];
+      bundledAuthorName = String(bundle.author_display_name || "");
+      const [approvalsRes, shareAcksRes] = await Promise.all([approvalsQuery, shareQuery]);
+      approvals = approvalsRes.data || [];
+      shareAcks = (shareAcksRes.data || []) as any[];
+    } else {
+      const [projectRes, itemsRes, participantsRes, feedbackGeumjuRes, feedbackJeonhoeRes, validationRes, approvalsRes, companyLinksRes, geumjuItemsRes, jeonhoeItemsRes, opinionsRes, accidentsRes, healthRes, shareAcksRes] = await Promise.all([
+        supabase.from("projects").select("*").eq("id", run.project_id).single(),
+        supabase.from("risk_items").select("*").eq("run_id", runId).eq("is_deleted", false).order("sort_order"),
+        supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
+        geumjuId
+          ? supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", geumjuId)
+          : Promise.resolve({ data: [] }),
+        jeonhoeId
+          ? supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", jeonhoeId)
+          : Promise.resolve({ data: [] }),
+        type === "validation"
+          ? supabase.from("validation_results").select("*").eq("run_id", runId)
+          : Promise.resolve({ data: [] }),
+        approvalsQuery,
+        supabase.from("project_companies")
+          .select("company_id, parent_company_id, role_in_project, companies:company_id(id, name, type, parent_company_id, is_deleted)")
+          .eq("project_id", run.project_id)
+          .eq("is_deleted", false),
+        geumjuId && geumjuId !== runId
+          ? supabase.from("risk_items").select("*").eq("run_id", geumjuId).eq("is_deleted", false)
+          : Promise.resolve({ data: null }),
+        jeonhoeId
+          ? supabase.from("risk_items").select("*").eq("run_id", jeonhoeId).eq("is_deleted", false)
+          : Promise.resolve({ data: null }),
+        supabase.from("worker_opinions").select("*").eq("run_id", runId).order("created_at"),
+        supabase.from("assessment_accidents").select("*").eq("run_id", runId).order("created_at"),
+        supabase.from("health_hazards").select("*").eq("run_id", runId).order("created_at"),
+        shareQuery,
+      ]);
+      project = projectRes.data;
+      items = ((itemsRes.data || []) as any[]).filter(
+        (i: any) => !i?.is_deleted && !i?.is_excluded,
+      );
+      participants = participantsRes.data || [];
+      geumjuFeedbackItems = feedbackGeumjuRes.data || [];
+      jeonhoeFeedbackItems = feedbackJeonhoeRes.data || [];
+      geumjuLabelItems = geumjuId && geumjuId !== runId
+        ? (geumjuItemsRes.data || [])
+        : items;
+      jeonhoeLabelItems = jeonhoeItemsRes.data || [];
+      validationResults = (validationRes as any).data || [];
+      approvals = approvalsRes.data || [];
+      workerOpinions = (opinionsRes.data || []) as any[];
+      assessmentAccidents = (accidentsRes.data || []) as any[];
+      healthHazards = (healthRes.data || []) as any[];
+      shareAcks = (shareAcksRes.data || []) as any[];
+      companyLinks = companyLinksRes.data || [];
+    }
+
+    let projectCompanies = mapProjectCompanies(companyLinks);
+    if (projectCompanies.length === 0 && !bundle) {
       const { data: legacyCos, error: legacyErr } = await supabase
         .from("companies")
         .select("id, name, type, parent_company_id")
@@ -436,11 +525,13 @@ Deno.serve(async (req) => {
     let legalAuthorName = "";
     const legalAuthorId = run.author_user_id || run.created_by;
     if (legalAuthorId) {
-      const { data: pmRows } = await supabase
-        .from("project_members")
-        .select("company_id, role_new, companies:company_id(name, type)")
-        .eq("user_id", legalAuthorId)
-        .eq("project_id", run.project_id);
+      const pmRows = authorMembers !== null
+        ? authorMembers
+        : (await supabase
+          .from("project_members")
+          .select("company_id, role_new, companies:company_id(name, type)")
+          .eq("user_id", legalAuthorId)
+          .eq("project_id", run.project_id)).data;
       const pm = pickMemberRow(pmRows || []);
       const co = (pm as any)?.companies;
       const authorCompanyId = (pm as any)?.company_id || null;
@@ -448,7 +539,9 @@ Deno.serve(async (req) => {
       const gcId = resolveParentGcId(authorCompanyId, projectCompanies);
       gcCompanyNames = String(projectCompanies.find((c) => c.id === gcId)?.name || "").trim() || "(미지정)";
     }
-    if (run.author_user_id) {
+    if (bundledAuthorName !== null) {
+      legalAuthorName = bundledAuthorName.trim();
+    } else if (run.author_user_id) {
       const { data: authorProf } = await supabase
         .from("profiles")
         .select("display_name")

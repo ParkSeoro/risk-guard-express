@@ -68,6 +68,17 @@ function parseJsonSafe(val: unknown): any {
   try { return JSON.parse(val); } catch { return null; }
 }
 
+const LIVE_PLAN_STATUSES = new Set(["", "작성중", "반려", "임시저장"]);
+
+function reviewPlanBundle(status: string | null | undefined, payload: unknown): Record<string, any> | null {
+  const statusText = String(status ?? "").trim();
+  if (LIVE_PLAN_STATUSES.has(statusText)) return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const row = payload as Record<string, any>;
+  if (Number(row.bundle_version) !== 2 || !row.plan) return null;
+  return row;
+}
+
 function jwtSub(token: string): string | null {
   try {
     const seg = token.split(".")[1];
@@ -125,26 +136,64 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, riggingRes, approvalsRes, companyRes, attachmentsRes, draftRes] = await Promise.all([
-      supabase.from("projects").select("name, site_name, client, contractor").eq("id", plan.project_id).single(),
-      supabase.from("rigging_plans").select("*").eq("work_plan_id", planId).maybeSingle(),
-      // SSOT: work_plan approvals live on entity_id. run_id is assessment-only (null here).
-      supabase.from("approvals").select("*")
-        .eq("entity_type", "work_plan")
-        .eq("entity_id", planId)
-        .order("approval_version", { ascending: false }),
-      plan.company_id ? supabase.from("companies").select("name").eq("id", plan.company_id).single() : Promise.resolve({ data: null }),
-      supabase.from("work_plan_attachments")
-        .select("id, name, category, attachment_key, file_url, mime_type, description, is_mandatory")
-        .eq("work_plan_id", planId)
-        .eq("is_deleted", false)
-        .order("is_mandatory", { ascending: false })
-        .order("created_at", { ascending: true }),
-      supabase.from("document_approval_drafts").select("steps, status")
-        .eq("entity_type", "work_plan")
-        .eq("entity_id", planId)
-        .maybeSingle(),
-    ]);
+    const { data: snapRow } = await supabase
+      .from("document_content_snapshots")
+      .select("payload")
+      .eq("entity_type", "work_plan")
+      .eq("entity_id", planId)
+      .order("approval_version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const bundle = reviewPlanBundle(plan.status, snapRow?.payload);
+    const bodyPlan = bundle?.plan
+      ? {
+          ...plan,
+          ...bundle.plan,
+          id: plan.id,
+          project_id: plan.project_id,
+          status: plan.status,
+          voided_at: plan.voided_at,
+          voided_reason: plan.voided_reason,
+          voided_by: plan.voided_by,
+          voided_by_name: plan.voided_by_name,
+        }
+      : plan;
+
+    const [projectRes, riggingRes, approvalsRes, companyRes, attachmentsRes, draftRes] = bundle
+      ? [
+          { data: bundle.project || null },
+          { data: bundle.rigging_plan || null },
+          await supabase.from("approvals").select("*")
+            .eq("entity_type", "work_plan")
+            .eq("entity_id", planId)
+            .order("approval_version", { ascending: false }),
+          { data: bundle.company_name ? { name: bundle.company_name } : null },
+          { data: bundle.attachments || [] },
+          await supabase.from("document_approval_drafts").select("steps, status")
+            .eq("entity_type", "work_plan")
+            .eq("entity_id", planId)
+            .maybeSingle(),
+        ]
+      : await Promise.all([
+          supabase.from("projects").select("name, site_name, client, contractor").eq("id", plan.project_id).single(),
+          supabase.from("rigging_plans").select("*").eq("work_plan_id", planId).maybeSingle(),
+          // SSOT: work_plan approvals live on entity_id. run_id is assessment-only (null here).
+          supabase.from("approvals").select("*")
+            .eq("entity_type", "work_plan")
+            .eq("entity_id", planId)
+            .order("approval_version", { ascending: false }),
+          plan.company_id ? supabase.from("companies").select("name").eq("id", plan.company_id).single() : Promise.resolve({ data: null }),
+          supabase.from("work_plan_attachments")
+            .select("id, name, category, attachment_key, file_url, mime_type, description, is_mandatory")
+            .eq("work_plan_id", planId)
+            .eq("is_deleted", false)
+            .order("is_mandatory", { ascending: false })
+            .order("created_at", { ascending: true }),
+          supabase.from("document_approval_drafts").select("steps, status")
+            .eq("entity_type", "work_plan")
+            .eq("entity_id", planId)
+            .maybeSingle(),
+        ]);
 
     const project = projectRes.data;
     const rigging = riggingRes.data;
@@ -159,14 +208,14 @@ Deno.serve(async (req) => {
     const dbAttachments = (attachmentsRes as any).data || [];
     const draftSteps = Array.isArray((draftRes as any)?.data?.steps) ? (draftRes as any).data.steps : [];
 
-    let creatorName = "";
-    const authorUserId = plan.author_user_id || plan.created_by;
-    if (authorUserId) {
+    let creatorName = bundle ? String(bundle.creator_name || "") : "";
+    const authorUserId = bodyPlan.author_user_id || bodyPlan.created_by;
+    if (!bundle && authorUserId) {
       const { data: prof } = await supabase.from("profiles").select("display_name").eq("user_id", authorUserId).single();
       creatorName = prof?.display_name || "";
     }
 
-    const sections: any[] = Array.isArray(plan.sections) ? plan.sections : [];
+    const sections: any[] = Array.isArray(bodyPlan.sections) ? bodyPlan.sections : [];
     // SSOT: work_plan_attachments only (legacy JSON ignored for print checklist)
     const attachments: any[] = dbAttachments.map((a: any) => ({
       name: a.name || a.attachment_key || "첨부파일",
@@ -397,9 +446,9 @@ Deno.serve(async (req) => {
       other_hazardous: "기타 위험 작업",
     };
 
-    const workTypeName = WORK_TYPE_NAMES[plan.work_type] || plan.work_type;
+    const workTypeName = WORK_TYPE_NAMES[bodyPlan.work_type] || bodyPlan.work_type;
 
-    const docTitle = `${plan.title || "작업계획서"}`;
+    const docTitle = `${bodyPlan.title || "작업계획서"}`;
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -531,7 +580,7 @@ ${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-h
 
 <div class="report-header">
   <div class="report-title">작 업 계 획 서</div>
-  <div class="report-subtitle">${escapeHtml(plan.title)}</div>
+  <div class="report-subtitle">${escapeHtml(bodyPlan.title)}</div>
   <div class="report-info">
     <div class="report-info-row">
       <div class="report-info-label">현장명</div>
@@ -543,7 +592,7 @@ ${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-h
       <div class="report-info-label">공종</div>
       <div class="report-info-value">${escapeHtml(workTypeName)}</div>
       <div class="report-info-label">작업기간</div>
-      <div class="report-info-value">${plan.start_date || ""} ~ ${plan.end_date || ""}</div>
+      <div class="report-info-value">${bodyPlan.start_date || ""} ~ ${bodyPlan.end_date || ""}</div>
     </div>
     <div class="report-info-row">
       <div class="report-info-label">소속업체</div>
@@ -553,7 +602,7 @@ ${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-h
     </div>
     <div class="report-info-row">
       <div class="report-info-label">회차</div>
-      <div class="report-info-value">v${plan.version || 1}</div>
+      <div class="report-info-value">v${bodyPlan.version || 1}</div>
       <div class="report-info-label">상태</div>
       <div class="report-info-value">${escapeHtml(plan.status)}</div>
     </div>

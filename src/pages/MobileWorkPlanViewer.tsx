@@ -14,6 +14,7 @@ import {
   fetchWorkPlanPrintHtml,
 } from "@/lib/approvalDocPreview";
 import { extractWorkPlanHazardCards, type WorkPlanHazardCard } from "@/lib/workPlanHazardCards";
+import { bundleRiskItems, reviewBundleForStatus } from "@/lib/approvalReviewBundle";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
 import { isNonKoreanLocale } from "@/lib/i18n/workerLocale";
@@ -93,11 +94,27 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
           runId = runs?.[0]?.id || null;
         }
         if (runId) {
-          const { data: items } = await supabase
-            .from("risk_items")
-            .select("id, process, sub_task, hazard, improvement_measure, existing_measure, risk_grade")
-            .eq("run_id", runId)
-            .eq("is_deleted", false);
+          const { data: runRow } = await supabase
+            .from("assessment_runs")
+            .select("status")
+            .eq("id", runId)
+            .maybeSingle();
+          const { data: snap } = await supabase
+            .from("document_content_snapshots" as any)
+            .select("payload")
+            .eq("entity_type", "assessment_run")
+            .eq("entity_id", runId)
+            .order("approval_version", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const bundled = bundleRiskItems(reviewBundleForStatus(runRow?.status, snap?.payload));
+          const { data: items } = bundled
+            ? { data: bundled }
+            : await supabase
+                .from("risk_items")
+                .select("id, process, sub_task, hazard, improvement_measure, existing_measure, risk_grade")
+                .eq("run_id", runId)
+                .eq("is_deleted", false);
           const high = (items || []).filter((x: any) =>
             ["상", "high", "H", "3"].includes(String(x.risk_grade || "").trim()),
           );

@@ -122,32 +122,51 @@ export function OfficialFooterFields({
     );
   }
   return (
-    <div className="mt-5 space-y-3">
+    <div className="mt-5 space-y-3 rounded-md border p-3">
       <div>
         <Label className="text-xs">점검 및 조치사항</Label>
-        <Textarea rows={3} disabled={disabled} value={payload.action_notes || ""} onChange={(e) => set({ action_notes: e.target.value })} />
+        <Textarea
+          rows={4}
+          className="mt-1 min-h-[96px]"
+          disabled={disabled}
+          placeholder="지적·조치 내용을 작성하세요"
+          value={payload.action_notes || ""}
+          onChange={(e) => set({ action_notes: e.target.value })}
+        />
       </div>
       <div>
-        <Label className="text-xs">ALK 서명 (최대 3)</Label>
+        <Label className="text-xs">ALK 서명</Label>
         <div className="grid grid-cols-3 gap-2 mt-1">
           {(payload.dig_signers || ["", "", ""]).map((v, i) => (
-            <Input key={i} disabled={disabled} value={v} onChange={(e) => {
-              const next = [...(payload.dig_signers || ["", "", ""])];
-              next[i] = e.target.value;
-              set({ dig_signers: next });
-            }} />
+            <Input
+              key={i}
+              disabled={disabled}
+              placeholder={`서명 ${i + 1}`}
+              value={v}
+              onChange={(e) => {
+                const next = [...(payload.dig_signers || ["", "", ""])];
+                next[i] = e.target.value;
+                set({ dig_signers: next });
+              }}
+            />
           ))}
         </div>
       </div>
       <div>
-        <Label className="text-xs">공사업체 서명 (최대 3)</Label>
+        <Label className="text-xs">공사업체 서명</Label>
         <div className="grid grid-cols-3 gap-2 mt-1">
           {(payload.contractor_signers || ["", "", ""]).map((v, i) => (
-            <Input key={i} disabled={disabled} value={v} onChange={(e) => {
-              const next = [...(payload.contractor_signers || ["", "", ""])];
-              next[i] = e.target.value;
-              set({ contractor_signers: next });
-            }} />
+            <Input
+              key={i}
+              disabled={disabled}
+              placeholder={`서명 ${i + 1}`}
+              value={v}
+              onChange={(e) => {
+                const next = [...(payload.contractor_signers || ["", "", ""])];
+                next[i] = e.target.value;
+                set({ contractor_signers: next });
+              }}
+            />
           ))}
         </div>
       </div>

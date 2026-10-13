@@ -375,6 +375,8 @@ export function buildOfficialInspectionHtml(opts: {
       </table>`
     : '';
 
+  const alkSigners = pad3(p.dig_signers);
+  const contractorSigners = pad3(p.contractor_signers);
   const footer = opts.type === 'daily_sf006'
     ? `<h2>순회 점검</h2>
        <p>지적 사항: ${esc(p.findings || '')}</p>
@@ -382,9 +384,18 @@ export function buildOfficialInspectionHtml(opts: {
        <h2>근로자 안전수칙 준수 우수자</h2>
        <table><thead><tr><th>소속 업체</th><th>성함</th><th>우수 내역</th></tr></thead>
        <tbody>${(p.excellence || []).map((e) => `<tr><td>${esc(e.company)}</td><td>${esc(e.name)}</td><td>${esc(e.note)}</td></tr>`).join('')}</tbody></table>`
-    : `<h2>점검 및 조치사항</h2><p>${esc(p.action_notes || '').replace(/\n/g, '<br>')}</p>
-       <p>ALK 서명: ${esc((p.dig_signers || []).filter(Boolean).join(', ') || '-')}</p>
-       <p>공사업체 서명: ${esc((p.contractor_signers || []).filter(Boolean).join(', ') || '-')}</p>`;
+    : `<h2>점검 및 조치사항</h2>
+       <div class="action-box">${esc(p.action_notes || '').replace(/\n/g, '<br>') || '&nbsp;'}</div>
+       <table class="signers">
+         <tr>
+           <th>ALK 서명</th>
+           ${alkSigners.map((s) => `<td class="sig">${esc(s) || '&nbsp;'}</td>`).join('')}
+         </tr>
+         <tr>
+           <th>공사업체 서명</th>
+           ${contractorSigners.map((s) => `<td class="sig">${esc(s) || '&nbsp;'}</td>`).join('')}
+         </tr>
+       </table>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>
 <style>
@@ -407,6 +418,10 @@ thead th{background:#f3f3f3;font-weight:600;text-align:center}
 .mark{width:48px;text-align:center}
 .hint{font-size:8.5pt;color:#444;margin-top:2px}
 .equip{border:1px solid #111;padding:6px 8px;margin-bottom:8px}
+.action-box{border:1px solid #111;border-top:none;min-height:72px;padding:8px 10px;margin:0 0 8px;white-space:pre-wrap}
+.signers{margin-top:0}
+.signers th{width:22%;background:#f3f3f3;text-align:center;font-weight:600;vertical-align:middle}
+.signers td.sig{height:36px;text-align:center;vertical-align:middle}
 @media print{body{padding:0}.sheet{max-width:none}}
 </style></head><body><div class="sheet">
 <table class="banner"><tr>

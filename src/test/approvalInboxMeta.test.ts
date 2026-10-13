@@ -14,6 +14,20 @@ describe("get_my_pending_entity_approvals company_name", () => {
     expect(src).toContain("WHEN a.entity_type='work_plan' THEN COALESCE(NULLIF(wpc.name,''), NULLIF(author_co.name,''), a.company_name, '')");
     expect(src).toContain("WHEN a.entity_type IN ('assessment_run', 'assessment_run_feedback') THEN COALESCE(NULLIF(author_co.name,''), a.company_name, '')");
   });
+
+  it("fills safety_inspection titles and author company", () => {
+    const src = readFileSync(
+      "supabase/migrations/20261013024812_pending_inbox_safety_inspection_title.sql",
+      "utf8",
+    );
+    expect(src).toContain("WHEN a.entity_type='safety_inspection' THEN");
+    expect(src).toContain("일일 안전점검표");
+    expect(src).toContain("건설장비작업 안전점검표");
+    expect(src).toContain("시설물 안전점검표");
+    expect(src).toContain("순회 안전점검일지");
+    expect(src).toContain("WHEN a.entity_type='safety_inspection' THEN COALESCE(NULLIF(sic.name,''), a.company_name, '')");
+    expect(src).toMatch(/LEFT JOIN public\.safety_inspections si/);
+  });
 });
 
 describe("formatPendingApprovalMeta", () => {

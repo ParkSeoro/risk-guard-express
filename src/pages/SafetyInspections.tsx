@@ -817,6 +817,7 @@ export default function SafetyInspections() {
       win.document.write(html);
       win.document.close();
       win.focus();
+      setTimeout(() => win.print(), 400);
       return;
     }
     if (isPatrolInspection(detail.inspection_type)) {

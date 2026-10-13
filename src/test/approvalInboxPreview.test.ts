@@ -19,6 +19,9 @@ describe("approval inbox preview paths", () => {
     expect(desktopApprovalEntityPath("assessment_run_feedback", "r1")).toBe(
       "/assessment-run/r1?tab=feedback",
     );
+    expect(desktopApprovalEntityPath("safety_inspection", "ins-1")).toBe(
+      "/safety-inspections?id=ins-1",
+    );
   });
 
   it("keeps feedback entity type when a run is linked", () => {
@@ -52,11 +55,12 @@ describe("approval inbox preview paths", () => {
     expect(src).not.toMatch(/previewType = run\s*\?\s*["']assessment_run["']/);
   });
 
-  it("marks RA / plan / permit as inline-previewable", () => {
+  it("marks RA / plan / permit / safety inspection as inline-previewable", () => {
     expect(canInlineApprovalPreview("work_permit")).toBe(true);
     expect(canInlineApprovalPreview("work_plan")).toBe(true);
     expect(canInlineApprovalPreview("assessment_run")).toBe(true);
     expect(canInlineApprovalPreview("assessment_run_feedback")).toBe(true);
+    expect(canInlineApprovalPreview("safety_inspection")).toBe(true);
     expect(canInlineApprovalPreview("tbm")).toBe(false);
   });
 });

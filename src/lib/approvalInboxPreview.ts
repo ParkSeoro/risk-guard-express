@@ -35,6 +35,8 @@ export function desktopApprovalEntityPath(
       return `/emergency-drills`;
     case "tbm":
       return `/app/admin/tbm-logs`;
+    case "safety_inspection":
+      return `/safety-inspections?id=${entityId}`;
     default:
       return null;
   }
@@ -72,7 +74,8 @@ export function canInlineApprovalPreview(entityType?: string | null): boolean {
     entityType === "assessment_run" ||
     entityType === "assessment_run_feedback" ||
     entityType === "work_plan" ||
-    entityType === "work_permit"
+    entityType === "work_permit" ||
+    entityType === "safety_inspection"
   );
 }
 

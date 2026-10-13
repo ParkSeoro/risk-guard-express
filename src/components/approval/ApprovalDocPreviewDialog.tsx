@@ -19,6 +19,7 @@ import {
   fetchWorkPlanPrintHtml,
 } from "@/lib/approvalDocPreview";
 import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
+import { fetchOfficialInspectionPrintHtml } from "@/lib/safetyInspectionPrint";
 import { supabase } from "@/integrations/supabase/client";
 import { entityTypeLabel } from "@/lib/approvalRules";
 import {
@@ -54,6 +55,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
   const isWorkPlan = entityType === "work_plan";
   const isAssessment =
     entityType === "assessment_run" || entityType === "assessment_run_feedback";
+  const isSafetyInspection = entityType === "safety_inspection";
   const inlineOk = canInlineApprovalPreview(entityType);
   const fullPath = desktopApprovalEntityPathFromInbox(entityType, entityId);
   const title =
@@ -109,6 +111,13 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           });
           if (cancelled) return;
           setHtml(doc);
+        } else if (entityType === "safety_inspection") {
+          setPageWidth(A4_PORTRAIT_PX);
+          setLoadHint("점검표를 불러오는 중…");
+          const res = await fetchOfficialInspectionPrintHtml(entityId);
+          if (cancelled) return;
+          if ("error" in res) throw new Error(res.error);
+          setHtml(res.html);
         }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || String(e) || "문서를 불러오지 못했습니다.");
@@ -208,6 +217,18 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           )}
 
           {inlineOk && !loading && !error && isAssessment && (
+            <ZoomableDocumentPreview
+              html={html}
+              loading={false}
+              error={null}
+              pageWidth={pageWidth}
+              active={open}
+              className="h-full min-h-[60vh]"
+              emptyHint="표시할 문서가 없습니다"
+            />
+          )}
+
+          {inlineOk && !loading && !error && isSafetyInspection && (
             <ZoomableDocumentPreview
               html={html}
               loading={false}

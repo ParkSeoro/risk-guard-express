@@ -388,27 +388,41 @@ export function buildOfficialInspectionHtml(opts: {
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>
 <style>
-body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;padding:16px;color:#1a202c;font-size:11pt}
-h1{font-size:18pt;margin:0 0 8px}
-h2{font-size:12pt;margin:16px 0 6px;border-left:4px solid #1e3a8a;padding-left:8px}
+@page{size:A4;margin:12mm}
+body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;padding:0;color:#111;font-size:10pt;line-height:1.35}
+.sheet{max-width:190mm;margin:0 auto}
+.banner{width:100%;border-collapse:collapse;margin-bottom:8px}
+.banner td{border:1px solid #111;padding:6px 8px}
+.banner .doc{width:28%;font-size:9pt}
+.banner .rev{width:12%;text-align:center;font-size:9pt}
+.banner .ttl{text-align:center;font-size:16pt;font-weight:700;letter-spacing:0.04em}
+.meta{width:100%;border-collapse:collapse;margin-bottom:10px}
+.meta th,.meta td{border:1px solid #111;padding:5px 7px;font-size:9.5pt}
+.meta th{width:18%;background:#f3f3f3;text-align:left;font-weight:600}
+h2{font-size:11pt;margin:14px 0 4px;padding:3px 6px;background:#e8e8e8;border:1px solid #111;border-bottom:none}
 table{width:100%;border-collapse:collapse;margin-bottom:8px}
-th,td{border:1px solid #94a3b8;padding:4px 6px;vertical-align:top}
-th{background:#f1f5f9}
+th,td{border:1px solid #111;padding:4px 6px;vertical-align:top}
+thead th{background:#f3f3f3;font-weight:600;text-align:center}
 .num{width:36px;text-align:center}
-.mark{width:42px;text-align:center}
-.hint{font-size:9pt;color:#64748b;margin-top:2px}
-.meta{font-size:10pt;color:#334155;margin-bottom:10px}
-@media print{body{padding:0}}
-</style></head><body>
-<h1>${esc(meta.title)}</h1>
-<div class="meta">
-  ${esc(meta.docNo)} Rev.${esc(meta.rev)}<br>
-  현장: ${esc(opts.projectLabel || '-')} · 위치/공사: ${esc(p.work_name || opts.location)}<br>
-  점검일: ${esc(p.inspected_date || opts.inspectedAt)} · 점검자: ${esc(p.inspector_name || opts.inspectorName)}
-</div>
-${equip}
+.mark{width:48px;text-align:center}
+.hint{font-size:8.5pt;color:#444;margin-top:2px}
+.equip{border:1px solid #111;padding:6px 8px;margin-bottom:8px}
+@media print{body{padding:0}.sheet{max-width:none}}
+</style></head><body><div class="sheet">
+<table class="banner"><tr>
+  <td class="doc">Doc. No. ${esc(meta.docNo)}</td>
+  <td class="rev">Rev. ${esc(meta.rev)}</td>
+  <td class="ttl">${esc(meta.title)}</td>
+</tr></table>
+<table class="meta">
+  <tr><th>현장</th><td colspan="3">${esc(opts.projectLabel || '-')}</td></tr>
+  <tr><th>위치/공사</th><td colspan="3">${esc(p.work_name || opts.location)}</td></tr>
+  <tr><th>점검일</th><td>${esc(p.inspected_date || opts.inspectedAt)}</td>
+      <th>점검자</th><td>${esc(p.inspector_name || opts.inspectorName)}</td></tr>
+</table>
+${equip ? `<div class="equip">${equip.replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
 ${body}
 ${extraBody}
 ${footer}
-</body></html>`;
+</div></body></html>`;
 }

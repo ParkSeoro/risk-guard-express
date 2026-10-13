@@ -79,5 +79,8 @@ describe('official inspection forms', () => {
     expect(html).toContain('추가 항목');
     expect(html).toContain('임시 개구부 덮개');
     expect(html).toContain('즉시 조치');
+    expect(html).toContain('Doc. No. LST-000000-SF009');
+    expect(html).toContain('Rev. A');
+    expect(html).toContain('시설물 안전점검표');
   });
 });

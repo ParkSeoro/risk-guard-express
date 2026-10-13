@@ -128,7 +128,7 @@ export function OfficialFooterFields({
         <Textarea rows={3} disabled={disabled} value={payload.action_notes || ""} onChange={(e) => set({ action_notes: e.target.value })} />
       </div>
       <div>
-        <Label className="text-xs">DIG 서명 (최대 3)</Label>
+        <Label className="text-xs">ALK 서명 (최대 3)</Label>
         <div className="grid grid-cols-3 gap-2 mt-1">
           {(payload.dig_signers || ["", "", ""]).map((v, i) => (
             <Input key={i} disabled={disabled} value={v} onChange={(e) => {

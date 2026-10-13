@@ -234,7 +234,7 @@ export const OFFICIAL_FORM_ITEMS: Record<OfficialInspectionType, OfficialFormIte
   ],
   height_sf008: [
     item('HGT-01', '공통사항', 1, '개인보호구 착용 및 휴대폰 사용 금지', SF008),
-    item('HGT-02', '공통사항', 2, 'DIG 고소작업수칙(안전대 상태, 사용여부 외) 준수 여부', SF008),
+    item('HGT-02', '공통사항', 2, 'ALK 고소작업수칙(안전대 상태, 사용여부 외) 준수 여부', SF008),
     item('HGT-03', '공통사항', 3, '작업장소 및 작업여건(가시설의 변형·부식 손상 외) 확인', SF008),
     item('HGT-04', '공통사항', 4, '상부작업시 낙하물주의, 출입금지 표시 등 하부통제 여부', SF008),
     item('HGT-05', '공통사항', 5, '불필요자재(볼트,너트,공구 등) 방치로 낙하물 발생 요인 여부', SF008),
@@ -383,7 +383,7 @@ export function buildOfficialInspectionHtml(opts: {
        <table><thead><tr><th>소속 업체</th><th>성함</th><th>우수 내역</th></tr></thead>
        <tbody>${(p.excellence || []).map((e) => `<tr><td>${esc(e.company)}</td><td>${esc(e.name)}</td><td>${esc(e.note)}</td></tr>`).join('')}</tbody></table>`
     : `<h2>점검 및 조치사항</h2><p>${esc(p.action_notes || '').replace(/\n/g, '<br>')}</p>
-       <p>DIG 서명: ${esc((p.dig_signers || []).filter(Boolean).join(', ') || '-')}</p>
+       <p>ALK 서명: ${esc((p.dig_signers || []).filter(Boolean).join(', ') || '-')}</p>
        <p>공사업체 서명: ${esc((p.contractor_signers || []).filter(Boolean).join(', ') || '-')}</p>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>

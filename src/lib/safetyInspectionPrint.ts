@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { A4_PORTRAIT_PX, preparePrintHtmlForPreview } from "@/lib/approvalDocPreview";
 import {
   buildOfficialInspectionHtml,
   isOfficialInspection,
@@ -47,19 +48,22 @@ export async function fetchOfficialInspectionPrintHtml(
     items = (its as any[]) || [];
   }
 
-  const html = buildOfficialInspectionHtml({
-    type: type as OfficialInspectionType,
-    location: String(src.location || ""),
-    inspectorName: String(src.inspector_name || ""),
-    inspectedAt: String(src.inspected_at || ""),
-    projectLabel,
-    payload: normalizeOfficialPayload(src.form_payload || {}),
-    rows: (items || []).map((it) => ({
-      code: String(it.checklist_code || ""),
-      label: String(it.label || ""),
-      grade: resultToGrade(it.result, it.grade) as OfficialGrade | null,
-      note: String(it.note || ""),
-    })),
-  });
+  const html = preparePrintHtmlForPreview(
+    buildOfficialInspectionHtml({
+      type: type as OfficialInspectionType,
+      location: String(src.location || ""),
+      inspectorName: String(src.inspector_name || ""),
+      inspectedAt: String(src.inspected_at || ""),
+      projectLabel,
+      payload: normalizeOfficialPayload(src.form_payload || {}),
+      rows: (items || []).map((it) => ({
+        code: String(it.checklist_code || ""),
+        label: String(it.label || ""),
+        grade: resultToGrade(it.result, it.grade) as OfficialGrade | null,
+        note: String(it.note || ""),
+      })),
+    }),
+    A4_PORTRAIT_PX,
+  );
   return { html };
 }

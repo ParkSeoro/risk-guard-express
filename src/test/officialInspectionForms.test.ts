@@ -83,4 +83,29 @@ describe('official inspection forms', () => {
     expect(html).toContain('Rev. A');
     expect(html).toContain('시설물 안전점검표');
   });
+
+  it('prints ALK signature table footer for SF007–009 (not DIG text lines)', () => {
+    const html = buildOfficialInspectionHtml({
+      type: 'height_sf008',
+      location: 'B동',
+      inspectorName: '김점검',
+      inspectedAt: '2026-10-13',
+      payload: {
+        action_notes: '비계 보강 완료',
+        dig_signers: ['홍ALK', '', ''],
+        contractor_signers: ['이업체', '박업체', ''],
+      },
+      rows: [],
+    });
+    expect(html).toContain('ALK 고소작업수칙');
+    expect(html).toContain('class="action-box"');
+    expect(html).toContain('비계 보강 완료');
+    expect(html).toContain('ALK 서명');
+    expect(html).toContain('공사업체 서명');
+    expect(html).toContain('홍ALK');
+    expect(html).toContain('이업체');
+    expect(html).not.toContain('DIG 서명');
+    expect(html).not.toMatch(/DIG 고소작업수칙/);
+    expect(html).toContain('class="signers"');
+  });
 });

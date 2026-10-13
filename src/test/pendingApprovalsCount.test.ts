@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { asPendingCount } from "@/hooks/usePendingApprovalsCount";
 
 const COUNT_SQL = "supabase/migrations/20260919120000_disk_io_approvals_indexes.sql";
-const INBOX_SQL = "supabase/migrations/20260916090000_void_work_documents.sql";
+const INBOX_SQL = "supabase/migrations/20260916065659_void_work_documents.sql";
 
 describe("count_my_pending_entity_approvals", () => {
   it("keeps the same pending filters as the inbox RPC", () => {

@@ -87,7 +87,7 @@ describe("approvalResultNotifyUserIds", () => {
 
 describe("trg_approval_notify reject recipients", () => {
   it("filters reject fan-out to already-approved steps in SQL", () => {
-    const sql = readFileSync("supabase/migrations/20260828050000_approval_reject_notify_reached.sql", "utf8");
+    const sql = readFileSync("supabase/migrations/20260828030605_approval_reject_notify_reached.sql", "utf8");
     expect(sql).toMatch(/NEW\.status = '반려' AND a\.status = '승인'/);
     expect(sql).toMatch(/safety_cost_monthly_reports/);
     expect(sql).not.toMatch(/AND COALESCE\(a\.status, ''\) <> '취소'\n\s+UNION/);

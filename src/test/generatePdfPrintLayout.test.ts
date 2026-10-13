@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const src = readFileSync(resolve(process.cwd(), 'supabase/functions/generate-pdf/index.ts'), 'utf8');
 const chainSql = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20261002120000_assessment_company_chain.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20261002082534_assessment_company_chain.sql'),
   'utf8',
 );
 

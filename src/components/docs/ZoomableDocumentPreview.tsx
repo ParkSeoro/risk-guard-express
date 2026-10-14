@@ -1,6 +1,7 @@
 /**
- * Print-HTML preview: native scroll + pinch / Ctrl+wheel / +/- zoom.
+ * Print-HTML preview: drag-to-pan + pinch / Ctrl+wheel / +/- zoom.
  * PC never enlarges past A4 CSS width; phone shrinks to the viewport.
+ * After zoom, one finger moves the page to every edge.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ZoomIn, ZoomOut, RotateCcw, Loader2 } from "lucide-react";
@@ -10,7 +11,9 @@ import {
   MAX_USER_SCALE,
   MIN_USER_SCALE,
   clamp,
+  panScroll,
   previewFitScale,
+  previewFrameMargins,
 } from "@/lib/approvalDocPreview";
 import { waitForDocumentImages } from "@/lib/printHtmlDocument";
 
@@ -66,7 +69,7 @@ export default function ZoomableDocumentPreview({
   live.current.pageWidth = pageWidth;
 
   const gesture = useRef<{
-    mode: "none" | "pinch";
+    mode: "none" | "pinch" | "pan";
     originScale: number;
     pinchDist: number;
   }>({
@@ -74,6 +77,7 @@ export default function ZoomableDocumentPreview({
     originScale: 1,
     pinchDist: 0,
   });
+  const pan = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
 
   const applyScaleAt = useCallback((nextUserScale: number, clientX: number, clientY: number) => {
     const el = viewportRef.current;
@@ -175,8 +179,9 @@ export default function ZoomableDocumentPreview({
 
     const onTouchStart = (e: TouchEvent) => {
       const g = gesture.current;
-      if (e.touches.length === 2) {
+      if (e.touches.length >= 2) {
         g.mode = "pinch";
+        pan.current = null;
         g.pinchDist = dist(
           { x: e.touches[0].clientX, y: e.touches[0].clientY },
           { x: e.touches[1].clientX, y: e.touches[1].clientY },
@@ -184,12 +189,19 @@ export default function ZoomableDocumentPreview({
         g.originScale = live.current.userScale;
         return;
       }
-      g.mode = "none";
+      const t = e.touches[0];
+      if (!t) {
+        g.mode = "none";
+        pan.current = null;
+        return;
+      }
+      g.mode = "pan";
+      pan.current = { x: t.clientX, y: t.clientY, sl: el.scrollLeft, st: el.scrollTop };
     };
 
     const onTouchMove = (e: TouchEvent) => {
       const g = gesture.current;
-      if (g.mode === "pinch" && e.touches.length === 2) {
+      if (g.mode === "pinch" && e.touches.length >= 2) {
         e.preventDefault();
         const d = dist(
           { x: e.touches[0].clientX, y: e.touches[0].clientY },
@@ -199,14 +211,36 @@ export default function ZoomableDocumentPreview({
         const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         applyScaleAt(next, cx, cy);
+        return;
       }
+      const start = pan.current;
+      const t = e.touches[0];
+      if (g.mode !== "pan" || !start || !t) return;
+      e.preventDefault();
+      const next = panScroll(
+        { left: start.sl, top: start.st },
+        { x: start.x, y: start.y },
+        { x: t.clientX, y: t.clientY },
+        {
+          left: el.scrollWidth - el.clientWidth,
+          top: el.scrollHeight - el.clientHeight,
+        },
+      );
+      el.scrollLeft = next.left;
+      el.scrollTop = next.top;
     };
 
     const onTouchEnd = (e: TouchEvent) => {
       const g = gesture.current;
-      if (g.mode === "pinch" && e.touches.length < 2) {
-        g.mode = "none";
+      if (e.touches.length >= 2) return;
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        g.mode = "pan";
+        pan.current = { x: t.clientX, y: t.clientY, sl: el.scrollLeft, st: el.scrollTop };
+        return;
       }
+      g.mode = "none";
+      pan.current = null;
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -227,6 +261,7 @@ export default function ZoomableDocumentPreview({
   const scale = fit * userScale;
   const layoutW = pageWidth * scale;
   const layoutH = contentH * scale;
+  const frameMargins = previewFrameMargins(layoutW, vp.w);
 
   const reset = () => {
     setUserScale(1);
@@ -249,11 +284,20 @@ export default function ZoomableDocumentPreview({
       <div
         ref={viewportRef}
         className="absolute inset-0 overflow-x-auto overflow-y-scroll bg-slate-800 select-none overscroll-contain"
-        style={{ WebkitOverflowScrolling: "touch", scrollbarGutter: "stable" }}
+        style={{ WebkitOverflowScrolling: "touch", scrollbarGutter: "stable", touchAction: "none" }}
       >
         {html && (
-          <div className="flex justify-center min-w-full" style={{ minHeight: "100%" }}>
-            <div style={{ width: layoutW, height: layoutH, position: "relative", flex: "0 0 auto" }}>
+          <div className="flex" style={{ width: "max-content", minWidth: "100%", minHeight: "100%" }}>
+            <div
+              style={{
+                width: layoutW,
+                height: layoutH,
+                position: "relative",
+                flex: "0 0 auto",
+                marginLeft: frameMargins.marginLeft,
+                marginRight: frameMargins.marginRight,
+              }}
+            >
               <iframe
                 ref={iframeRef}
                 title="문서 미리보기"
@@ -293,7 +337,7 @@ export default function ZoomableDocumentPreview({
       )}
 
       <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/65 px-2 py-1 text-[10px] text-white">
-        스크롤 · 핀치/Ctrl+휠 줌 · {userScale.toFixed(1)}×
+        드래그 이동 · 핀치/Ctrl+휠 줌 · {userScale.toFixed(1)}×
       </div>
       <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
         <Button

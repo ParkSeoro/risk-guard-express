@@ -25,6 +25,8 @@ export interface ScopeOptions {
   isMaster?: boolean;
   /** Precomputed own / own+descendants for GC tree mode */
   accessibleCompanyIds?: string[] | null;
+  /** 발주처 안전용역 열람자 */
+  clientSafetyService?: boolean;
   /** 휴지통 보기일 때만 true — 기본은 삭제된 행 제외 */
   includeDeleted?: boolean;
   /** 이 테이블에 is_deleted 컬럼이 없으면 false */
@@ -49,6 +51,7 @@ export function scopedSelect<T>(query: T, opts: ScopeOptions): T {
     companyId: opts.companyId,
     isMaster: opts.isMaster,
     accessibleCompanyIds: opts.accessibleCompanyIds,
+    clientSafetyService: opts.clientSafetyService,
   });
 
   if (opts.hasSoftDelete && !opts.includeDeleted) {

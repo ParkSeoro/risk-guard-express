@@ -11,6 +11,7 @@ import { previewModeToRole } from "@/contexts/PreviewContext";
 describe("mobile shell role buckets", () => {
   it("maps project roles to worker vs manager buckets", () => {
     expect(resolveMobileShellBucket("worker")).toBe("worker");
+    expect(resolveMobileShellBucket("viewer")).toBe("manager");
     expect(resolveMobileShellBucket("supervisor")).toBe("manager");
     expect(resolveMobileShellBucket("safety_manager")).toBe("manager");
     expect(resolveMobileShellBucket("master", true)).toBe("master");
@@ -21,7 +22,7 @@ describe("mobile shell role buckets", () => {
     expect(resolveMobileShellBucket(resolveGlobalMobileRole((r) => r === "site_manager"))).toBe(
       "manager",
     );
-    expect(resolveGlobalMobileRole(() => false)).toBe("viewer");
+    expect(resolveGlobalMobileRole(() => false)).toBe("worker");
   });
 
   it("gives managers approvals + alerts inbox; workers get alerts not approvals", () => {

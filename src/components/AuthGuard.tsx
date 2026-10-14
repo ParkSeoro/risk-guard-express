@@ -21,9 +21,10 @@ export const ADMIN_SHELL_ROLES = [
   "site_manager",
   "supervisor",
   "site_supervisor",
+  "viewer",
 ] as const;
 
-export const WORKER_SHELL_ROLES = ["worker", "viewer"] as const;
+export const WORKER_SHELL_ROLES = ["worker"] as const;
 
 export type ShellKind = "admin" | "worker";
 

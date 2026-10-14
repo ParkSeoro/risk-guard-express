@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search
 } from 'lucide-react';
@@ -63,7 +64,7 @@ const ProjectDetail = () => {
   const [memberRole, setMemberRole] = useState('viewer');
   const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '', client_safety_service: false });
   const [globalCompanies, setGlobalCompanies] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState('');
   const [savingProject, setSavingProject] = useState(false);
@@ -89,7 +90,7 @@ const ProjectDetail = () => {
 
   // Must be declared before effects that reference it (TDZ / "Cannot access before initialization")
   const [editingCompany, setEditingCompany] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', business_no: '', contact: '', type: 'gc', parent_company_id: '', scope: '', period: '' });
+  const [editForm, setEditForm] = useState({ name: '', business_no: '', contact: '', type: 'gc', parent_company_id: '', scope: '', period: '', client_safety_service: false });
 
   const canManage = isMaster || projectRole === 'project_admin';
 
@@ -121,7 +122,7 @@ const ProjectDetail = () => {
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
       (supabase as any).from('project_companies')
-        .select('company_id, role_in_project, parent_company_id, companies:company_id(*)')
+        .select('company_id, role_in_project, parent_company_id, client_safety_service, companies:company_id(*)')
         .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
@@ -144,6 +145,7 @@ const ProjectDetail = () => {
         type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
         // Project-scoped parent overrides global companies.parent_company_id
         parent_company_id: l.parent_company_id ?? null,
+        client_safety_service: l.client_safety_service === true,
       } : null)
       .filter((c: any) => c && c.is_deleted === false);
     setCompanies(projCompanies);
@@ -492,6 +494,7 @@ const ProjectDetail = () => {
         company_id: linkCompanyId,
         role_in_project: companyForm.type,
         parent_company_id: companyForm.parent_company_id || null,
+        client_safety_service: companyForm.client_safety_service === true,
         is_deleted: false,
       };
       const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
@@ -502,7 +505,7 @@ const ProjectDetail = () => {
     }
     toast({ title: '업체가 프로젝트에 등록되었습니다.' });
     setShowAddCompany(false);
-    setCompanyForm({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+    setCompanyForm({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '', client_safety_service: false });
     fetchAll();
   };
 
@@ -535,6 +538,7 @@ const ProjectDetail = () => {
       parent_company_id: c.parent_company_id || '',
       scope: c.scope || '',
       period: c.period || '',
+      client_safety_service: c.client_safety_service === true,
     });
   };
   const handleUpdateCompany = async () => {
@@ -549,6 +553,7 @@ const ProjectDetail = () => {
       .update({
         role_in_project: editForm.type,
         parent_company_id: editForm.parent_company_id || null,
+        client_safety_service: editForm.client_safety_service === true,
       })
       .eq('project_id', projectId)
       .eq('company_id', editingCompany.id);
@@ -964,6 +969,9 @@ const ProjectDetail = () => {
                               <Badge variant="outline" className={`text-[10px] ${c.type === 'client' ? 'border-primary/50 text-primary' : c.type === 'gc' ? 'border-accent/50 text-accent' : ''}`}>
                                 {companyTypes[c.type] || c.type}
                               </Badge>
+                              {c.client_safety_service && (
+                                <Badge variant="secondary" className="text-[10px]">발주처 안전용역</Badge>
+                              )}
                             </div>
                             {(c.scope || c.contact) && (
                               <p className="text-xs text-muted-foreground">
@@ -1313,6 +1321,16 @@ const ProjectDetail = () => {
             <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
             <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
             <Input placeholder="공사범위 (선택)" value={companyForm.scope} onChange={e => setCompanyForm({ ...companyForm, scope: e.target.value })} />
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                checked={companyForm.client_safety_service}
+                onCheckedChange={(v) => setCompanyForm({ ...companyForm, client_safety_service: v === true })}
+              />
+              <span>
+                발주처 안전용역
+                <span className="block text-[10px] text-muted-foreground">이 회사의 열람자는 현장 전체를 읽기만 합니다. 저장과 결재는 되지 않습니다.</span>
+              </span>
+            </label>
             <Button onClick={handleAddCompany} className="w-full">등록</Button>
           </div>
         </DialogContent>
@@ -1367,6 +1385,16 @@ const ProjectDetail = () => {
                 )}
               </div>
             )}
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                checked={editForm.client_safety_service}
+                onCheckedChange={(v) => setEditForm({ ...editForm, client_safety_service: v === true })}
+              />
+              <span>
+                발주처 안전용역
+                <span className="block text-[10px] text-muted-foreground">이 회사의 열람자는 현장 전체를 읽기만 합니다. 저장과 결재는 되지 않습니다.</span>
+              </span>
+            </label>
             <Button onClick={handleUpdateCompany} className="w-full">저장</Button>
           </div>
         </DialogContent>

@@ -5,6 +5,7 @@ import {
   applyOwnCompanyFilter,
   pickProjectMemberRow,
   readPreferredCompanyId,
+  fetchClientSafetyService,
   resolveAccessibleCompanyIds,
   seesProjectWideCompanies,
 } from '@/lib/companyDocScope';
@@ -221,6 +222,7 @@ export function useProjectAccess(): ProjectAccess {
   const [scopeStatus, setScopeStatus] = useState<'pending' | 'ready'>('pending');
   // [] until resolved — never flash "all" for non-master
   const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>([]);
+  const [clientSafetyService, setClientSafetyService] = useState(false);
 
   const setSelectedProject = (id: string) => {
     setSelectedProjectState(id);
@@ -251,6 +253,7 @@ export function useProjectAccess(): ProjectAccess {
       if (isMaster) {
         if (!cancelled) {
           setMemberInfo({ role: 'master', position: null, company_id: null, company_type: null });
+          setClientSafetyService(false);
           setAccessibleCompanyIds(null);
           setScopeStatus('ready');
         }
@@ -259,6 +262,7 @@ export function useProjectAccess(): ProjectAccess {
       if (!user) {
         if (!cancelled) {
           setMemberInfo(null);
+          setClientSafetyService(false);
           setAccessibleCompanyIds([]);
           setScopeStatus('ready');
         }
@@ -267,6 +271,7 @@ export function useProjectAccess(): ProjectAccess {
       if (!selectedProject) {
         if (!cancelled) {
           setMemberInfo(null);
+          setClientSafetyService(false);
           setAccessibleCompanyIds([]);
           setScopeStatus('pending');
         }
@@ -275,6 +280,7 @@ export function useProjectAccess(): ProjectAccess {
 
       if (!cancelled) {
         setScopeStatus('pending');
+        setClientSafetyService(false);
         setAccessibleCompanyIds([]);
       }
 
@@ -296,15 +302,18 @@ export function useProjectAccess(): ProjectAccess {
           }
         : null;
 
+      const safetyService = await fetchClientSafetyService(selectedProject, nextMember?.company_id);
       const ids = await resolveAccessibleCompanyIds({
         projectId: selectedProject,
         companyId: nextMember?.company_id,
         companyType: nextMember?.company_type,
         role: nextMember?.role || 'viewer',
         isMaster: false,
+        clientSafetyService: safetyService,
       });
       if (cancelled) return;
       setMemberInfo(nextMember);
+      setClientSafetyService(safetyService);
       setAccessibleCompanyIds(ids === null ? null : ids);
       setScopeStatus('ready');
     })();
@@ -398,9 +407,10 @@ export function useProjectAccess(): ProjectAccess {
         companyId: userCompanyId,
         isMaster,
         accessibleCompanyIds,
+        clientSafetyService,
         includeOrphans: opts?.includeOrphans,
       }),
-    [userRole, userCompanyType, userCompanyId, isMaster, accessibleCompanyIds],
+    [userRole, userCompanyType, userCompanyId, isMaster, accessibleCompanyIds, clientSafetyService],
   );
 
   const getPermissions = (feature: FeatureKey): Perm =>

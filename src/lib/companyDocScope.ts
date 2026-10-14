@@ -6,6 +6,7 @@
  * - 시공사(gc): own company + descendant companies only (never peer GCs)
  * - 협력사/공급사: own company only
  * - worker/viewer: own company only
+ * - 발주처 안전용역 회사의 열람자: project-wide read
  */
 import {
   companyTypeLabel,
@@ -163,10 +164,13 @@ export function companyDocScopeMode(opts: {
   role?: CompanyScopeRole | null;
   companyType?: string | null;
   isMaster?: boolean;
+  /** project_companies.client_safety_service — 열람자만 프로젝트 전체를 읽는다. */
+  clientSafetyService?: boolean;
 }): CompanyDocScopeMode {
   if (opts.isMaster || opts.role === 'master') return 'all';
 
   const role = (opts.role || '').toLowerCase();
+  if (opts.clientSafetyService && role === 'viewer') return 'all';
   const t = normalizeCompanyType(opts.companyType);
 
   // 협력사 / 공급사 — 자사만 (역할 무관)
@@ -211,12 +215,28 @@ export function mustScopeToOwnCompany(opts: {
  * - own → [companyId]
  * - tree → [companyId, ...descendants via project_companies.parent_company_id]
  */
+export async function fetchClientSafetyService(
+  projectId: string,
+  companyId?: string | null,
+): Promise<boolean> {
+  if (!projectId || !companyId) return false;
+  const { data } = await supabase
+    .from('project_companies')
+    .select('client_safety_service')
+    .eq('project_id', projectId)
+    .eq('company_id', companyId)
+    .eq('is_deleted', false)
+    .maybeSingle();
+  return data?.client_safety_service === true;
+}
+
 export async function resolveAccessibleCompanyIds(opts: {
   projectId: string;
   companyId?: string | null;
   companyType?: string | null;
   role?: CompanyScopeRole | null;
   isMaster?: boolean;
+  clientSafetyService?: boolean;
 }): Promise<string[] | null> {
   const mode = companyDocScopeMode(opts);
   if (mode === 'all') return null;
@@ -285,6 +305,7 @@ export function applyOwnCompanyFilter(
     isMaster?: boolean;
     /** Precomputed ids for tree mode; if missing, falls back to own-only for GC */
     accessibleCompanyIds?: string[] | null;
+    clientSafetyService?: boolean;
     /**
      * Also select company_id IS NULL rows (legacy orphans).
      * Caller must filter by normalizeCompanyLabel — do not use for unrelated modules.
@@ -292,6 +313,7 @@ export function applyOwnCompanyFilter(
     includeOrphans?: boolean;
   },
 ): any {
+  if (opts.accessibleCompanyIds === null) return query;
   const mode = companyDocScopeMode(opts);
   if (mode === 'all') return query;
 

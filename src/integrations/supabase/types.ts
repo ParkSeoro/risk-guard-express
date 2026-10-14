@@ -4445,6 +4445,7 @@ export type Database = {
           parent_company_id: string | null
           project_id: string
           role_in_project: string
+          client_safety_service: boolean
           updated_at: string
         }
         Insert: {
@@ -4456,6 +4457,7 @@ export type Database = {
           parent_company_id?: string | null
           project_id: string
           role_in_project?: string
+          client_safety_service?: boolean
           updated_at?: string
         }
         Update: {
@@ -4467,6 +4469,7 @@ export type Database = {
           parent_company_id?: string | null
           project_id?: string
           role_in_project?: string
+          client_safety_service?: boolean
           updated_at?: string
         }
         Relationships: [

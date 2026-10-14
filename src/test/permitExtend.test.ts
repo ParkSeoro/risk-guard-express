@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canCancelPermitExtension,
   isPermitExtendPostStep,
   mapPermitExtendRequestError,
   permitExtendReasonFromForm,
@@ -30,6 +31,26 @@ describe('mapPermitExtendRequestError', () => {
     expect(mapPermitExtendRequestError('NO_CM')).toBe('발주처 CM을 찾을 수 없습니다.');
     expect(mapPermitExtendRequestError('REASON_REQUIRED')).toBe('연장 사유를 입력하세요.');
     expect(mapPermitExtendRequestError('NO_SM')).toBe('발주처 SM을 찾을 수 없습니다.');
+  });
+
+  it('maps cancel codes', () => {
+    expect(mapPermitExtendRequestError('NO_PENDING_EXTENSION')).toBe('취소할 연장 신청이 없습니다.');
+    expect(mapPermitExtendRequestError('NOT_REQUESTER')).toBe('연장 신청자만 취소할 수 있습니다.');
+  });
+});
+
+describe('canCancelPermitExtension', () => {
+  it('allows only the requester while a request is pending', () => {
+    expect(canCancelPermitExtension({
+      work_extend_requested_until: '2026-10-14T20:00',
+      work_extend_requested_by: 'user-1',
+    }, 'user-1')).toBe(true);
+    expect(canCancelPermitExtension({
+      work_extend_requested_until: '2026-10-14T20:00',
+      work_extend_requested_by: 'user-1',
+    }, 'user-2')).toBe(false);
+    expect(canCancelPermitExtension({ work_extend_requested_by: 'user-1' }, 'user-1')).toBe(false);
+    expect(canCancelPermitExtension(null, 'user-1')).toBe(false);
   });
 });
 

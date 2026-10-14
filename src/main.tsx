@@ -7,14 +7,17 @@ import { runBootStoreGate } from "./lib/native/bootStoreGate";
 import { isNativeApp } from "./lib/native/platform";
 import { installStaleChunkAutoReload } from "./lib/staleChunkError";
 import { installIosShareableGuard } from "./lib/iosShareableGuard";
+import { installKoreanToasts } from "./lib/installKoreanToasts";
+import { toKoreanWarning } from "./lib/errors";
 
+installKoreanToasts();
 installIosShareableGuard();
 installStaleChunkAutoReload();
 
 const rootEl = document.getElementById("root");
 
 function showBootError(err: unknown) {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = toKoreanWarning(err);
   if (!rootEl) return;
   rootEl.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc">

@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toKoreanWarning } from "@/lib/errors";
 import { isStaleChunkError, STALE_CHUNK_PAGE_MESSAGE } from "@/lib/staleChunkError";
 import {
   IOS_SHAREABLE_PAGE_MESSAGE,
@@ -54,7 +55,7 @@ export class AppErrorBoundary extends React.Component<
             </p>
             {!isStaleChunkError(this.state.error) && !isShareableRuntimeError(this.state.error) && (
               <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
-                {this.state.error.message || String(this.state.error)}
+                {toKoreanWarning(this.state.error)}
               </pre>
             )}
             <div className="flex gap-2">

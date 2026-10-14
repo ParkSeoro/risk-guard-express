@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { REQ_TYPE_LABELS } from "@/hooks/useWorker";
 import { toast } from "sonner";
+import { toKoreanWarning } from "@/lib/errors";
 
 const EDUCATION_TYPES = [
   "new_hire",
@@ -62,7 +63,7 @@ export function WorkerEducationRegisterButton({
     });
     setSaving(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(toKoreanWarning(error));
       return;
     }
     toast.success("교육 이수를 등록했습니다");
@@ -162,7 +163,7 @@ export function WorkerPrePlacementRegisterButton({
     });
     setSaving(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(toKoreanWarning(error));
       return;
     }
     toast.success("배치전검사를 등록했습니다");

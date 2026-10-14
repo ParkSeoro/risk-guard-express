@@ -40,5 +40,19 @@ export function mapPermitExtendRequestError(code: string): string {
   if (code === 'REASON_REQUIRED') return '연장 사유를 입력하세요.';
   if (code === 'NOT_APPROVED') return '승인된 허가서만 연장할 수 있습니다.';
   if (code === 'FORBIDDEN') return '권한이 없습니다.';
+  if (code === 'NO_PENDING_EXTENSION') return '취소할 연장 신청이 없습니다.';
+  if (code === 'NOT_REQUESTER') return '연장 신청자만 취소할 수 있습니다.';
+  if (code === 'UNAUTHENTICATED') return '로그인이 필요합니다.';
   return code;
+}
+
+/** 연장 신청 대기 중이고 현재 사용자가 신청자일 때만 철회 가능. */
+export function canCancelPermitExtension(
+  formData?: Record<string, unknown> | null,
+  userId?: string | null,
+): boolean {
+  if (!userId) return false;
+  const d = formData || {};
+  if (!d.work_extend_requested_until) return false;
+  return String(d.work_extend_requested_by || '') === userId;
 }

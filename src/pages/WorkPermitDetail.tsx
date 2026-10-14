@@ -7,7 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { mapPermitExtendRequestError } from '@/lib/permitExtend';
+import { canCancelPermitExtension, mapPermitExtendRequestError } from '@/lib/permitExtend';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -126,6 +126,7 @@ export default function WorkPermitDetail() {
   const [extendUntil, setExtendUntil] = useState('');
   const [extendReason, setExtendReason] = useState('');
   const [extending, setExtending] = useState(false);
+  const [cancellingExtend, setCancellingExtend] = useState(false);
   const [requestingClosure, setRequestingClosure] = useState(false);
   const [saving, setSaving] = useState(false);
   const [standardStyle, setStandardStyle] = useState<Partial<StandardStyle> | null>(null);
@@ -715,6 +716,29 @@ export default function WorkPermitDetail() {
     }
   };
 
+  const canCancelExtend = canCancelPermitExtension(data as Record<string, unknown>, user?.id);
+
+  const cancelExtend = async () => {
+    if (!id || !canCancelExtend) return;
+    if (!confirm('연장 신청을 취소할까요? 결재 대기 중인 연장 요청이 철회됩니다.')) return;
+    setCancellingExtend(true);
+    try {
+      const { data: res, error } = await supabase.rpc('cancel_work_permit_extension' as any, {
+        _permit_id: id,
+      });
+      const r = res as any;
+      if (error || r?.error) {
+        const code = r?.error || error?.message || '';
+        toast({ title: '연장 신청 취소 실패', description: mapPermitExtendRequestError(String(code)), variant: 'destructive' });
+        return;
+      }
+      toast({ title: '연장 신청을 취소했습니다.' });
+      await load();
+    } finally {
+      setCancellingExtend(false);
+    }
+  };
+
   const print = async () => {
     if (!canPrint) {
       toast({
@@ -822,7 +846,20 @@ export default function WorkPermitDetail() {
             </Button>
           )}
           {!!data.work_extend_requested_until && (
-            <Badge variant="outline" className="border-amber-500/40 text-amber-700">연장 승인 대기</Badge>
+            <>
+              <Badge variant="outline" className="border-amber-500/40 text-amber-700">연장 승인 대기</Badge>
+              {canCancelExtend && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-500/40 text-amber-800"
+                  disabled={cancellingExtend}
+                  onClick={cancelExtend}
+                >
+                  {cancellingExtend ? '취소 중…' : '연장 신청 취소'}
+                </Button>
+              )}
+            </>
           )}
           {!!data.work_extend_until && !data.work_extend_requested_until && (
             <Badge variant="secondary">연장됨</Badge>

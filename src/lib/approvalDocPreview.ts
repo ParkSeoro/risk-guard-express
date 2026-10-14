@@ -38,6 +38,33 @@ export function previewFitScale(viewportWidth: number, pageWidth: number): numbe
   return Math.min(1, viewportWidth / pageWidth);
 }
 
+/**
+ * Center a fitted page. A zoomed page wider than the viewport starts at the
+ * left edge so both sides stay reachable (flex `justify-center` hides the left).
+ */
+export function previewFrameMargins(
+  layoutSize: number,
+  viewportSize: number,
+): { marginLeft: 0 | "auto"; marginRight: 0 | "auto" } {
+  if (viewportSize > 0 && layoutSize > viewportSize + 0.5) {
+    return { marginLeft: 0, marginRight: 0 };
+  }
+  return { marginLeft: "auto", marginRight: "auto" };
+}
+
+/** One-finger drag. Positive drag toward the start of the page; clamped to both edges. */
+export function panScroll(
+  startScroll: { left: number; top: number },
+  startPoint: { x: number; y: number },
+  point: { x: number; y: number },
+  maxScroll: { left: number; top: number },
+): { left: number; top: number } {
+  return {
+    left: clamp(startScroll.left - (point.x - startPoint.x), 0, Math.max(0, maxScroll.left)),
+    top: clamp(startScroll.top - (point.y - startPoint.y), 0, Math.max(0, maxScroll.top)),
+  };
+}
+
 /** Document pan: pin to top-left when smaller; clamp to edges when larger. */
 export function clampDocumentPan(
   tx: number,

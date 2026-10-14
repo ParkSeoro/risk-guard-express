@@ -65,7 +65,7 @@ describe("ZoomableDocumentPreview mobile-preview frames", () => {
     const scroller = preview?.querySelector(".overflow-y-scroll");
     expect(scroller).toBeTruthy();
     expect(scroller?.className).not.toMatch(/overflow-hidden/);
-    expect(scroller?.className).not.toMatch(/touch-none/);
-    expect(el.textContent).toContain("스크롤");
+    expect((scroller as HTMLElement | undefined)?.style.touchAction).toBe("none");
+    expect(el.textContent).toContain("드래그 이동");
   });
 });

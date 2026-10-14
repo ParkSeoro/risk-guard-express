@@ -9,7 +9,9 @@ import {
   clamp,
   clampDocumentPan,
   fitWidthScale,
+  panScroll,
   previewFitScale,
+  previewFrameMargins,
   invokeErrorMessage,
   isApprovedPublishStatus,
   isMobileDocReadable,
@@ -63,6 +65,20 @@ describe("approval document mobile preview helpers", () => {
     expect(out).toContain(`width: ${A4_LANDSCAPE_PX}px`);
     expect(out).toContain("safenex-preview-fit");
     expect(out).toContain("본문");
+  });
+
+  it("keeps a zoomed page pinned to the left edge so both sides scroll", () => {
+    expect(previewFrameMargins(1600, 390)).toEqual({ marginLeft: 0, marginRight: 0 });
+    expect(previewFrameMargins(390, 390)).toEqual({ marginLeft: "auto", marginRight: "auto" });
+    expect(previewFrameMargins(300, 390)).toEqual({ marginLeft: "auto", marginRight: "auto" });
+  });
+
+  it("drags a zoomed page to every edge", () => {
+    const start = { left: 200, top: 400 };
+    const origin = { x: 100, y: 100 };
+    const max = { left: 800, top: 2000 };
+    expect(panScroll(start, origin, { x: 400, y: 600 }, max)).toEqual({ left: 0, top: 0 });
+    expect(panScroll(start, origin, { x: -500, y: -2000 }, max)).toEqual({ left: 800, top: 2000 });
   });
 
   it("clamps user zoom range", () => {

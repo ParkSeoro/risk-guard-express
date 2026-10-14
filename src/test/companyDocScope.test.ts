@@ -35,6 +35,23 @@ describe('companyDocScopeMode', () => {
     expect(companyDocScopeMode({ role: 'project_admin', companyType: 'vendor' })).toBe('own');
   });
 
+  it('lets a client safety service viewer read the whole project', () => {
+    expect(companyDocScopeMode({
+      role: 'viewer',
+      companyType: 'gc',
+      clientSafetyService: true,
+    })).toBe('all');
+    expect(companyDocScopeMode({
+      role: 'project_admin',
+      companyType: 'gc',
+      clientSafetyService: true,
+    })).toBe('tree');
+    expect(companyDocScopeMode({
+      role: 'viewer',
+      companyType: 'gc',
+    })).toBe('own');
+  });
+
   it('treats safety_manager differently by company type (발주/시공/협력)', () => {
     expect(companyDocScopeMode({ role: 'safety_manager', companyType: 'client' })).toBe('all');
     expect(companyDocScopeMode({ role: 'safety_manager', companyType: 'gc' })).toBe('tree');

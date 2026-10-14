@@ -12,7 +12,8 @@ export function resolveMobileShellBucket(
     role === "safety_manager" ||
     role === "site_manager" ||
     role === "supervisor" ||
-    role === "site_supervisor"
+    role === "site_supervisor" ||
+    role === "viewer"
   ) {
     return "manager";
   }
@@ -72,7 +73,7 @@ export function resolveGlobalMobileRole(hasRole: (role: string) => boolean): str
   ) {
     return "worker";
   }
-  return "viewer";
+  return "worker";
 }
 
 export const MOBILE_TODAY = `${BASE}/today`;

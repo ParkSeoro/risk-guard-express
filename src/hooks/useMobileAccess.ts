@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   applyOwnCompanyFilter,
+  fetchClientSafetyService,
   pickProjectMemberRow,
   readPreferredCompanyId,
   resolveAccessibleCompanyIds,
@@ -40,6 +41,7 @@ export function useMobileAccess() {
   );
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyType, setCompanyType] = useState<CompanyTypeCode | null>(null);
+  const [clientSafetyService, setClientSafetyService] = useState(false);
   // [] until resolved — never flash "all" for non-master
   const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>([]);
   const [scopeStatus, setScopeStatus] = useState<'pending' | 'ready'>(preview.isPreview ? 'ready' : 'pending');
@@ -114,6 +116,7 @@ export function useMobileAccess() {
           setRole('master');
           setCompanyId(null);
           setCompanyType(null);
+          setClientSafetyService(false);
           setAccessibleCompanyIds(null);
           setScopeStatus('ready');
           setLoading(false);
@@ -126,6 +129,7 @@ export function useMobileAccess() {
           setRole(resolveGlobalMobileRole(hasRole) as MobileRole);
           setCompanyId(null);
           setCompanyType(null);
+          setClientSafetyService(false);
           setAccessibleCompanyIds([]); // restrictive until known
           setScopeStatus(user && !projectId ? 'pending' : 'ready');
           setLoading(false);
@@ -147,12 +151,15 @@ export function useMobileAccess() {
       setRole(nextRole);
       setCompanyId(nextCid);
       setCompanyType(nextType);
+      const safetyService = await fetchClientSafetyService(projectId, nextCid);
+      setClientSafetyService(safetyService);
       const ids = await resolveAccessibleCompanyIds({
         projectId,
         companyId: nextCid,
         companyType: nextType,
         role: nextRole,
         isMaster: false,
+        clientSafetyService: safetyService,
       });
       if (!cancelled) {
         setAccessibleCompanyIds(ids);
@@ -183,9 +190,10 @@ export function useMobileAccess() {
       companyId,
       isMaster,
       accessibleCompanyIds,
+      clientSafetyService,
       includeOrphans: opts?.includeOrphans,
     }) as T;
-  }, [isMaster, role, companyId, companyType, accessibleCompanyIds]);
+  }, [isMaster, role, companyId, companyType, accessibleCompanyIds, clientSafetyService]);
 
   return {
     projectId,

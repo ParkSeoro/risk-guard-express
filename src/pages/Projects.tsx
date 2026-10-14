@@ -338,7 +338,7 @@ const Projects = () => {
                   <div className="space-y-3 flex-1">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-bold cursor-pointer hover:text-accent" onClick={() => navigate(`/risk-assessment/${project.id}`)}>
+                        <h2 className="text-lg font-bold cursor-pointer hover:text-accent" onClick={() => navigate(`/project/${project.id}`)}>
                           {project.name}
                         </h2>
                         <Badge className={`text-[10px] ${project.status === '진행중' ? 'bg-success text-success-foreground' : project.status === '완료' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>

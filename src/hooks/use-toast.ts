@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
+import { toKoreanWarning } from "@/lib/errors";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
@@ -134,8 +135,22 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+function koreanNode(node: React.ReactNode): React.ReactNode {
+  return typeof node === "string" ? toKoreanWarning(node) : node;
+}
+
+export function localizeToastCopy<T extends { variant?: ToastProps["variant"]; title?: React.ReactNode; description?: React.ReactNode }>(props: T): T {
+  if (props.variant !== "destructive") return props;
+  return {
+    ...props,
+    title: koreanNode(props.title),
+    description: koreanNode(props.description),
+  };
+}
+
 function toast({ ...props }: Toast) {
   const id = genId();
+  const shown = localizeToastCopy(props);
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -147,7 +162,7 @@ function toast({ ...props }: Toast) {
   dispatch({
     type: "ADD_TOAST",
     toast: {
-      ...props,
+      ...shown,
       id,
       open: true,
       onOpenChange: (open) => {

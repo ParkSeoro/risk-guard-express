@@ -830,6 +830,7 @@ export default function SafetyInspections() {
           label: it.label,
           grade: resultToGrade(it.result, it.grade),
           note: it.note || '',
+          photos: it.photos || [],
         })),
       });
       win.document.write(html);

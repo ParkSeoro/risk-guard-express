@@ -257,4 +257,35 @@ describe('official inspection forms', () => {
     expect(split.alk[0]).toContain('박서로 · 에어리퀴드코리아 · 2026.10.14 15:30');
     expect(split.contractor).toEqual(['차강찬 · 진남토건 · 반려']);
   });
+
+  it('prints item photos two-up between the checklist and the signature table', () => {
+    const html = buildOfficialInspectionHtml({
+      type: 'facility_sf009',
+      location: '저장소',
+      inspectorName: '김점검',
+      inspectedAt: '2026-10-14',
+      payload: {},
+      rows: [
+        { code: 'FAC-01', label: '비계(시스템비계 외) 고정 등 설치상태', grade: 'good', note: '', photos: ['https://cdn.example/fac01.jpg'] },
+        { code: 'FAC-02', label: '안전망 등 추락방지망 설치 상태', grade: 'fair', note: '', photos: ['', 'https://cdn.example/fac02.jpg'] },
+        { code: 'FAC-03', label: '연결부 및 접속부, 클램프 조임 상태', grade: 'good', note: '', photos: [] },
+        { code: 'EXTRA-1', label: '임시 개구부', grade: 'poor', note: '', photos: ['https://cdn.example/extra.jpg'] },
+      ],
+    });
+    const photos = html.indexOf('점검 사진');
+    const signers = html.indexOf('ALK 서명');
+    expect(photos).toBeGreaterThan(html.indexOf('시건장치 설치 상태'));
+    expect(photos).toBeLessThan(signers);
+    expect(html).toContain('class="photo-grid"');
+    expect(html).toContain('width:82mm;height:58mm');
+    expect(html).toContain('object-fit:cover');
+    expect(html).toContain('https://cdn.example/fac01.jpg');
+    expect(html).toContain('https://cdn.example/fac02.jpg');
+    expect(html).toContain('https://cdn.example/extra.jpg');
+    expect(html).toContain('1. 비계(시스템비계 외) 고정 등 설치상태');
+    expect(html).toContain('2. 안전망 등 추락방지망 설치 상태');
+    expect(html).toContain('1. 임시 개구부');
+    expect(html.match(/class="photo-cell"/g)).toHaveLength(3);
+    expect(html).not.toContain('3. 연결부');
+  });
 });

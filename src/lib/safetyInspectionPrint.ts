@@ -63,7 +63,7 @@ export async function fetchOfficialInspectionPrintHtml(
   const locked = ["결재진행", "결재중", "승인완료", "완료"].includes(String((ins as any).status || ""));
   const snap = ((ins as any).submitted_payload || null) as {
     inspection?: Record<string, unknown>;
-    items?: Array<{ checklist_code?: string; label?: string; result?: string; grade?: string; note?: string }>;
+    items?: Array<{ checklist_code?: string; label?: string; result?: string; grade?: string; note?: string; photos?: string[] | null }>;
   } | null;
   const src = locked && snap?.inspection ? snap.inspection : (ins as any);
 
@@ -71,7 +71,7 @@ export async function fetchOfficialInspectionPrintHtml(
   if (!locked || !items) {
     const { data: its, error: ie } = await supabase
       .from("safety_inspection_items" as any)
-      .select("checklist_code, label, result, grade, note")
+      .select("checklist_code, label, result, grade, note, photos")
       .eq("inspection_id", inspectionId)
       .order("sort_order", { ascending: true });
     if (ie) return { error: ie.message };
@@ -93,6 +93,7 @@ export async function fetchOfficialInspectionPrintHtml(
         label: String(it.label || ""),
         grade: resultToGrade(it.result, it.grade) as OfficialGrade | null,
         note: String(it.note || ""),
+        photos: Array.isArray(it.photos) ? it.photos : [],
       })),
     }),
     A4_PORTRAIT_PX,

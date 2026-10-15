@@ -407,6 +407,40 @@ function esc(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+export type OfficialPrintRow = {
+  code: string;
+  label: string;
+  grade: OfficialGrade | null;
+  note: string;
+  photos?: string[] | null;
+};
+
+function photoUrls(raw?: string[] | null): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((u) => String(u || '').trim()).filter(Boolean);
+}
+
+/** 점검 사진. 한 줄 2장, 칸 82×58mm. 사진 없는 항목은 칸을 만들지 않는다. */
+export function buildOfficialPhotoSheet(type: OfficialInspectionType, rows: OfficialPrintRow[]): string {
+  const cells: Array<{ caption: string; url: string }> = [];
+  const byCode = new Map(rows.map((r) => [r.code, r]));
+  for (const def of OFFICIAL_FORM_ITEMS[type]) {
+    const row = byCode.get(def.code);
+    const caption = `${def.number}. ${row?.label || def.label}`;
+    for (const url of photoUrls(row?.photos)) cells.push({ caption, url });
+  }
+  extraOfficialRows(type, rows).forEach((row, i) => {
+    const caption = `${i + 1}. ${row.label}`;
+    for (const url of photoUrls(row.photos)) cells.push({ caption, url });
+  });
+  if (!cells.length) return '';
+  const cards = cells.map((c) => `<div class="photo-cell">
+      <div class="photo-frame"><img src="${esc(c.url)}" alt="${esc(c.caption)}" /></div>
+      <div class="photo-cap">${esc(c.caption)}</div>
+    </div>`).join('');
+  return `<h2 class="photo-title">점검 사진</h2><div class="photo-grid">${cards}</div>`;
+}
+
 export function buildOfficialInspectionHtml(opts: {
   type: OfficialInspectionType;
   location: string;
@@ -414,7 +448,7 @@ export function buildOfficialInspectionHtml(opts: {
   inspectedAt: string;
   projectLabel?: string;
   payload: OfficialFormPayload;
-  rows: Array<{ code: string; label: string; grade: OfficialGrade | null; note: string }>;
+  rows: OfficialPrintRow[];
   /** 상신 후 결재행. 있으면 ALK/공사업체 서명칸을 이름·소속·시각으로 채운다. */
   approvals?: OfficialApprovalSignerInput[] | null;
 }): string {
@@ -468,6 +502,7 @@ export function buildOfficialInspectionHtml(opts: {
       </table>`
     : '';
 
+  const photoSheet = buildOfficialPhotoSheet(opts.type, opts.rows);
   const split = splitOfficialApprovalSigners(opts.approvals);
   const alkSigners = mergeOfficialSignerRow(p.dig_signers, split.alk);
   const contractorSigners = mergeOfficialSignerRow(p.contractor_signers, split.contractor);
@@ -516,6 +551,12 @@ thead th{background:#f3f3f3;font-weight:600;text-align:center}
 .signers{margin-top:0}
 .signers th{width:22%;background:#f3f3f3;text-align:center;font-weight:600;vertical-align:middle}
 .signers td.sig{min-height:48px;height:auto;text-align:center;vertical-align:middle;font-size:8.5pt;line-height:1.35;word-break:keep-all}
+h2.photo-title{border-bottom:1px solid #111;margin-bottom:6px}
+.photo-grid{display:flex;flex-wrap:wrap;gap:4mm 6mm;margin:0 0 8px}
+.photo-cell{width:82mm;break-inside:avoid;page-break-inside:avoid}
+.photo-frame{width:82mm;height:58mm;border:1px solid #111;overflow:hidden;background:#f3f3f3}
+.photo-frame img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-cap{font-size:8pt;line-height:1.3;margin-top:1.5mm;text-align:center}
 @media print{body{padding:0}.sheet{max-width:none}}
 </style></head><body><div class="sheet">
 <table class="banner"><tr>
@@ -532,6 +573,7 @@ thead th{background:#f3f3f3;font-weight:600;text-align:center}
 ${equip ? `<div class="equip">${equip.replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
 ${body}
 ${extraBody}
+${photoSheet}
 ${footer}
 </div></body></html>`;
 }

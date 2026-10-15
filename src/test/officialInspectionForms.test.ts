@@ -5,12 +5,14 @@ import {
   OFFICIAL_APPROVAL_STEP_TEMPLATES,
   buildOfficialInspectionHtml,
   extraOfficialRows,
+  formatOfficialApprovalStamp,
   officialChecklist,
   officialItemCount,
   gradeToResult,
   isApprovalInspection,
   isOfficialInspection,
   officialGradeScale,
+  splitOfficialApprovalSigners,
 } from '@/lib/legalForms/officialInspectionForms';
 
 describe('official inspection forms', () => {
@@ -107,5 +109,152 @@ describe('official inspection forms', () => {
     expect(html).not.toContain('DIG 서명');
     expect(html).not.toMatch(/DIG 고소작업수칙/);
     expect(html).toContain('class="signers"');
+  });
+
+  it('fills ALK from 최종결재 and the contractor row from 작성자', () => {
+    const approvedAt = '2026-10-14T06:30:00.000Z';
+    expect(formatOfficialApprovalStamp(approvedAt, '승인')).toBe('2026.10.14 15:30');
+    const html = buildOfficialInspectionHtml({
+      type: 'facility_sf009',
+      location: '저장소',
+      inspectorName: '김점검',
+      inspectedAt: '2026-10-14',
+      payload: {
+        dig_signers: ['홍ALK', '', ''],
+        contractor_signers: ['직접입력', '', ''],
+      },
+      approvals: [
+        {
+          step: '작성자',
+          step_order: 1,
+          approver_name: '차강찬',
+          company_name: '진남토건',
+          status: '승인',
+          approved_at: '2026-10-14T05:00:00.000Z',
+          approval_version: 2,
+          company_type: 'contractor',
+        },
+        {
+          step: '최종결재(승인)',
+          step_order: 2,
+          approver_name: '박서로',
+          company_name: '에어리퀴드코리아',
+          status: '승인',
+          approved_at: approvedAt,
+          approval_version: 2,
+          company_type: 'gc',
+        },
+        {
+          step: '최종결재(승인)',
+          step_order: 2,
+          approver_name: '이전결재',
+          company_name: '옛회사',
+          status: '승인',
+          approved_at: approvedAt,
+          approval_version: 1,
+        },
+        {
+          step: '작성자',
+          step_order: 1,
+          approver_name: '취소됨',
+          company_name: '취소회사',
+          status: '취소',
+          approval_version: 2,
+        },
+      ],
+      rows: [],
+    });
+    const alk = html.slice(html.indexOf('ALK 서명'), html.indexOf('공사업체 서명'));
+    const contractor = html.slice(html.indexOf('공사업체 서명'));
+    expect(alk).toContain('박서로 · 에어리퀴드코리아 · 2026.10.14 15:30');
+    expect(alk).not.toContain('홍ALK');
+    expect(alk).not.toContain('이전결재');
+    expect(contractor).toContain('차강찬 · 진남토건 · 2026.10.14 14:00');
+    expect(contractor).not.toContain('직접입력');
+    expect(contractor).not.toContain('취소됨');
+  });
+
+  it('keeps typed names when that side has no approval line, and shows 대기 before approval', () => {
+    const split = splitOfficialApprovalSigners([
+      {
+        step: '작성자',
+        step_order: 0,
+        approver_name: '차강찬',
+        company_name: '진남토건',
+        status: '진행중',
+        approval_version: 1,
+      },
+    ]);
+    expect(split.contractor).toEqual(['차강찬 · 진남토건 · 대기']);
+    expect(split.alk).toEqual([]);
+    const html = buildOfficialInspectionHtml({
+      type: 'equipment_sf007',
+      location: '야적장',
+      inspectorName: '김점검',
+      inspectedAt: '2026-10-14',
+      payload: { dig_signers: ['홍ALK', '', ''], contractor_signers: ['직접입력', '', ''] },
+      approvals: [
+        {
+          step: '작성자',
+          step_order: 0,
+          approver_name: '차강찬',
+          company_name: '진남토건',
+          status: '진행중',
+          approval_version: 1,
+        },
+      ],
+      rows: [],
+    });
+    expect(html).toContain('홍ALK');
+    expect(html).toContain('차강찬 · 진남토건 · 대기');
+    expect(html).not.toContain('직접입력');
+  });
+
+  it('leaves the daily form footer unchanged when approvals exist', () => {
+    const html = buildOfficialInspectionHtml({
+      type: 'daily_sf006',
+      location: '현장',
+      inspectorName: '김점검',
+      inspectedAt: '2026-10-14',
+      payload: { findings: '정리정돈' },
+      approvals: [
+        {
+          step: '최종결재(승인)',
+          approver_name: '박서로',
+          company_name: '에어리퀴드코리아',
+          status: '승인',
+          approved_at: '2026-10-14T06:30:00.000Z',
+          approval_version: 1,
+        },
+      ],
+      rows: [],
+    });
+    expect(html).toContain('정리정돈');
+    expect(html).not.toContain('ALK 서명');
+    expect(html).not.toContain('박서로');
+  });
+
+  it('puts a client company on ALK when the step label is neither 작성 nor 최종결재', () => {
+    const split = splitOfficialApprovalSigners([
+      {
+        step: '결재',
+        approver_name: '박서로',
+        company_name: '에어리퀴드코리아',
+        company_type: 'client',
+        status: '승인',
+        approved_at: '2026-10-14T06:30:00.000Z',
+        approval_version: 1,
+      },
+      {
+        step: '검토',
+        approver_name: '차강찬',
+        company_name: '진남토건',
+        company_type: 'gc',
+        status: '반려',
+        approval_version: 1,
+      },
+    ]);
+    expect(split.alk[0]).toContain('박서로 · 에어리퀴드코리아 · 2026.10.14 15:30');
+    expect(split.contractor).toEqual(['차강찬 · 진남토건 · 반려']);
   });
 });

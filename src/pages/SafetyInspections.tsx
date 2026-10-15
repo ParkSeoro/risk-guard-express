@@ -55,10 +55,12 @@ import {
   normalizeOfficialPayload,
   officialChecklist,
   resultToGrade,
+  type OfficialApprovalSignerInput,
   type OfficialFormPayload,
   type OfficialGrade,
   type OfficialInspectionType,
 } from '@/lib/legalForms/officialInspectionForms';
+import { fetchSafetyInspectionApprovalSigners } from '@/lib/safetyInspectionPrint';
 import { OfficialFooterFields, OfficialGradeButtons, OfficialHeaderFields } from '@/components/inspections/OfficialInspectionFields';
 import ApprovalLineManager, { type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import ApprovalRejectReasonDialog from '@/components/approval/ApprovalRejectReasonDialog';
@@ -168,6 +170,17 @@ export default function SafetyInspections() {
   const [patrolPhotos, setPatrolPhotos] = useState<string[]>([]);
   const [directorItems, setDirectorItems] = useState<DirectorPatrolItem[]>(emptyDirectorPatrolItems());
   const [officialPayload, setOfficialPayload] = useState<OfficialFormPayload>(emptyOfficialPayload());
+  const [inspectionApprovals, setInspectionApprovals] = useState<OfficialApprovalSignerInput[]>([]);
+  const approvalLoadGen = useRef(0);
+  const loadInspectionApprovals = async (inspectionId: string, type?: string | null) => {
+    const gen = ++approvalLoadGen.current;
+    if (!isOfficialInspection(type)) {
+      setInspectionApprovals([]);
+      return;
+    }
+    const rows = await fetchSafetyInspectionApprovalSigners(inspectionId);
+    if (gen === approvalLoadGen.current) setInspectionApprovals(rows);
+  };
   const [approvalDraftInfo, setApprovalDraftInfo] = useState<DraftStatusInfo | null>(null);
   const [approverMembers, setApproverMembers] = useState<Array<{
     user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string;
@@ -283,6 +296,7 @@ export default function SafetyInspections() {
     setDirectorItems(normalizeDirectorPatrolItems(insp.director_items));
     setOfficialPayload(normalizeOfficialPayload(insp.form_payload));
     setMyPendingApprovalId(null);
+    await loadInspectionApprovals(insp.id, insp.inspection_type);
     if (insp.inspector_id && projectId) {
       const { data: mem } = await supabase
         .from('project_members')
@@ -675,6 +689,7 @@ export default function SafetyInspections() {
       }
       toast({ title: `결재 상신 완료 (${inserted ?? 2}단계)` });
       setDetail({ ...detail, status: '결재진행' });
+      await loadInspectionApprovals(detail.id, detail.inspection_type);
       load();
     } finally {
       setSubmitting(false);
@@ -714,6 +729,7 @@ export default function SafetyInspections() {
     toast({ title: '결재를 회수했습니다.', description: '이제 일지를 수정한 뒤 다시 상신할 수 있습니다.' });
     setDetail({ ...detail, status: 'in_progress' });
     setApprovalDraftInfo(null);
+    await loadInspectionApprovals(detail.id, detail.inspection_type);
     load();
   };
 
@@ -800,6 +816,7 @@ export default function SafetyInspections() {
       const locked = isPatrolLogLocked(detail.status);
       const src = locked && snap?.inspection ? snap.inspection : detail;
       const items = locked && snap?.items ? snap.items : detailItems;
+      const approvals = await fetchSafetyInspectionApprovalSigners(detail.id);
       const html = buildOfficialInspectionHtml({
         type: detail.inspection_type as OfficialInspectionType,
         location: src.location,
@@ -807,6 +824,7 @@ export default function SafetyInspections() {
         inspectedAt: src.inspected_at,
         projectLabel,
         payload: normalizeOfficialPayload(src.form_payload || officialPayload),
+        approvals,
         rows: items.map((it) => ({
           code: it.checklist_code,
           label: it.label,
@@ -1446,6 +1464,7 @@ export default function SafetyInspections() {
                   type={detail.inspection_type as OfficialInspectionType}
                   payload={officialPayload}
                   disabled={isPatrolLogLocked(detail.status)}
+                  approvals={inspectionApprovals}
                   onChange={(next) => void persistOfficialPayload(next)}
                 />
               )}

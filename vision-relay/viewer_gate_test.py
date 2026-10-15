@@ -60,6 +60,12 @@ class ViewerGateTest(unittest.TestCase):
             "state": "publish",
             "created": (wall - timedelta(seconds=2)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         }
+        handshake = {
+            "id": "handshake-1",
+            "path": path,
+            "state": "publish",
+            "created": (wall - timedelta(seconds=8)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        }
         reconnect = {
             "id": "reconnect-1",
             "path": path,
@@ -72,8 +78,11 @@ class ViewerGateTest(unittest.TestCase):
             "state": "publish",
             "created": (wall - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         }
+        self.assertEqual(viewer_gate.HOLD_S, 60)
+        self.assertEqual(viewer_gate.GRACE_S, 10)
         self.assertFalse(viewer_gate.should_kick_conn(idle, now=now))
         self.assertFalse(viewer_gate.should_kick_conn(young, now=now))
+        self.assertFalse(viewer_gate.should_kick_conn(handshake, now=now))
         self.assertTrue(viewer_gate.should_kick_conn(reconnect, now=now))
         self.assertTrue(viewer_gate.should_kick_conn(old, now=now))
         viewer_gate.note_read(path, now=now)

@@ -17,9 +17,10 @@ import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-HOLD_S = 45
+HOLD_S = 60
 # A reconnect with nobody watching must not get another full hold of upload.
-GRACE_S = 5
+# LTE handshakes can take longer than a few seconds before the first keyframe.
+GRACE_S = 10
 # How long a saving kick still explains a missing picture after the console opens.
 RECENT_KICK_S = 90
 API = os.environ.get("MTX_API", "http://mediamtx:9997").rstrip("/")
@@ -241,7 +242,7 @@ def _kick_idle_once() -> None:
 
 def _kick_loop() -> None:
     while True:
-        time.sleep(2)
+        time.sleep(1)
         try:
             _kick_idle_once()
         except Exception as exc:

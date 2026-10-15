@@ -254,6 +254,47 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).not.toContain("재생 중");
   });
 
+  it("keeps a live picture when decoded frames advance without currentTime", () => {
+    vi.useFakeTimers();
+    mount(undefined, 60_000);
+    const video = el!.querySelector("video") as HTMLVideoElement & {
+      getVideoPlaybackQuality?: () => { totalVideoFrames: number };
+    };
+    let frames = 10;
+    video.getVideoPlaybackQuality = () => ({ totalVideoFrames: frames });
+    Object.defineProperty(video, "videoWidth", { configurable: true, get: () => 320 });
+    Object.defineProperty(video, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(video, "currentTime", { configurable: true, get: () => 1.2 });
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+    });
+    expect(el!.textContent).toContain("재생 중");
+    act(() => {
+      for (let i = 0; i < 12; i += 1) {
+        frames += 3;
+        vi.advanceTimersByTime(1_000);
+        video.dispatchEvent(new Event("timeupdate"));
+      }
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-connecting-0"]')).toBeNull();
+    expect(el!.textContent).toContain("재생 중");
+  });
+
+  it("pings viewer-status about every 10 seconds while open", () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.com/live/ab/viewer-status",
+      { cache: "no-store" },
+    );
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("keeps a live picture through a short buffer gap", () => {
     vi.useFakeTimers();
     mount(undefined, 8_000);

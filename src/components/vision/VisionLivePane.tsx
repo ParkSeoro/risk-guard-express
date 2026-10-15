@@ -35,11 +35,25 @@ type Props = {
 
 const ZOOMS = [1, 1.5, 2, 3] as const;
 const PAN_STEP = 0.35;
-const DEFAULT_CONNECT_MS = 30_000;
+/** LTE cameras may need a full reconnect cycle after an idle kick. */
+const DEFAULT_CONNECT_MS = 60_000;
 /** A picture that does not advance for this long is frozen. Cover it and reconnect. */
 const STALL_RECONNECT_MS = 12_000;
 /** Open console keeps the camera upload even when HLS itself has stalled. */
-const VIEWER_HOLD_MS = 15_000;
+const VIEWER_HOLD_MS = 10_000;
+/** Soft retry while the camera is still waking up (404 / network blip). */
+const NETWORK_RETRY_MS = 2_500;
+
+type FrameCountVideo = HTMLVideoElement & {
+  webkitDecodedFrameCount?: number;
+};
+
+function decodedFrameCount(video: HTMLVideoElement): number {
+  const quality = video.getVideoPlaybackQuality?.();
+  if (quality && typeof quality.totalVideoFrames === "number") return quality.totalVideoFrames;
+  const webkit = (video as FrameCountVideo).webkitDecodedFrameCount;
+  return typeof webkit === "number" ? webkit : 0;
+}
 
 type Pan = { x: number; y: number };
 
@@ -194,10 +208,12 @@ export default function VisionLivePane({
     let cancelled = false;
     let generation = 0;
     let reloadTimer = 0;
-    let hls: { destroy: () => void } | null = null;
+    let networkTimer = 0;
+    let hls: { destroy: () => void; startLoad?: () => void } | null = null;
     let deadline = 0;
     let sawPicture = false;
     let lastMediaTime = -1;
+    let lastFrameCount = -1;
     let lastAdvanceAt = 0;
     let stallMark = -1;
     const markOffline = () => {
@@ -207,13 +223,19 @@ export default function VisionLivePane({
       if (cancelled) return;
       if (video.videoWidth <= 0 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
       const mediaTime = video.currentTime || 0;
+      const frames = decodedFrameCount(video);
       if (stallMark >= 0) {
-        if (Math.abs(mediaTime - stallMark) <= 0.05) return;
+        const timeMoved = Math.abs(mediaTime - stallMark) > 0.05;
+        const framesMoved = lastFrameCount >= 0 && frames > lastFrameCount;
+        if (!timeMoved && !framesMoved) return;
         stallMark = -1;
       }
-      const advanced = lastMediaTime < 0 || mediaTime > lastMediaTime + 0.05;
+      const timeAdvanced = lastMediaTime < 0 || mediaTime > lastMediaTime + 0.05;
+      const framesAdvanced = lastFrameCount < 0 || frames > lastFrameCount;
+      const advanced = timeAdvanced || framesAdvanced;
       if (advanced) {
         lastMediaTime = mediaTime;
+        lastFrameCount = frames;
         lastAdvanceAt = Date.now();
       }
       if (!sawPicture || advanced) {
@@ -240,6 +262,18 @@ export default function VisionLivePane({
         reloadTimer = 0;
         if (!cancelled) void attach();
       }, 4000);
+    };
+    const scheduleNetworkRetry = (player: { startLoad: () => void }) => {
+      if (cancelled || networkTimer) return;
+      networkTimer = window.setTimeout(() => {
+        networkTimer = 0;
+        if (cancelled) return;
+        try {
+          player.startLoad();
+        } catch {
+          void attach();
+        }
+      }, NETWORK_RETRY_MS);
     };
     const onVideoError = () => {
       if (!cancelled) scheduleReload();
@@ -278,7 +312,7 @@ export default function VisionLivePane({
           player.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string }) => {
             if (!data?.fatal || cancelled || token !== generation) return;
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              player.startLoad();
+              scheduleNetworkRetry(player);
               return;
             }
             if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -306,6 +340,7 @@ export default function VisionLivePane({
       generation += 1;
       window.clearTimeout(deadline);
       window.clearTimeout(reloadTimer);
+      window.clearTimeout(networkTimer);
       window.clearInterval(stallTimer);
       video.removeEventListener("playing", onFrame);
       video.removeEventListener("loadeddata", onFrame);

@@ -106,6 +106,13 @@ export function visionViewerHoldUrl(playbackUrl: string | null | undefined): str
   return next === safe ? null : next;
 }
 
+/** Open the relay hold before the camera's next RTMP reconnect (setup / reveal). */
+export function wakeVisionViewerHold(playbackUrl: string | null | undefined): void {
+  const hold = visionViewerHoldUrl(playbackUrl);
+  if (!hold || typeof fetch !== "function") return;
+  void fetch(hold, { cache: "no-store" }).catch(() => undefined);
+}
+
 export function visionEventSirenAllowed(opts: {
   type?: string | null;
   severity?: string | null;

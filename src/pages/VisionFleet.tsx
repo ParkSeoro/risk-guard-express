@@ -10,7 +10,13 @@ import MobileVisionPlayer from "@/components/vision/MobileVisionPlayer";
 import type { MobileVisionCamera } from "@/lib/mobileVisionPlayer";
 import VisionVpsSetup from "@/components/vision/VisionVpsSetup";
 import VisionCameraManageList, { type ManageCamera } from "@/components/vision/VisionCameraManageList";
-import { sortVisionCamerasByRegistered, visionCanManage, visionRoleLabel, visionSafePlaybackUrl } from "@/lib/visionFleetApi";
+import {
+  sortVisionCamerasByRegistered,
+  visionCanManage,
+  visionRoleLabel,
+  visionSafePlaybackUrl,
+  wakeVisionViewerHold,
+} from "@/lib/visionFleetApi";
 import { visionVpsFromHost, type VisionVpsIngest, type VisionVpsRelay } from "@/lib/visionVps";
 import { fetchProjectCompanies, type ProjectCompany } from "@/lib/projectCompanies";
 
@@ -20,7 +26,9 @@ async function persistCameraCompany(
   projectId: string,
   cameraId: string,
   companyId: string | null,
+  opts?: { required?: boolean },
 ) {
+  const required = opts?.required !== false;
   const { data, error } = await supabase
     .from("vision_cameras" as any)
     .update({ company_id: companyId })
@@ -28,10 +36,19 @@ async function persistCameraCompany(
     .eq("project_id", projectId)
     .select("id, company_id")
     .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("소속 회사를 저장할 권한이 없습니다");
+  if (error) {
+    if (!required) return;
+    throw new Error(error.message);
+  }
+  if (!data) {
+    if (!required) return;
+    throw new Error("소속 회사를 저장할 권한이 없습니다");
+  }
   const saved = (data as { company_id?: string | null }).company_id ?? null;
-  if (saved !== (companyId || null)) throw new Error("소속 회사가 저장되지 않았습니다");
+  if (saved !== (companyId || null)) {
+    if (!required) return;
+    throw new Error("소속 회사가 저장되지 않았습니다");
+  }
 }
 
 export default function VisionFleet() {
@@ -158,9 +175,13 @@ export default function VisionFleet() {
       const created = (j as { data?: { id?: string }; ingest?: VisionVpsIngest }).data;
       const next = (j as { ingest?: VisionVpsIngest }).ingest;
       if (created?.id) {
-        await persistCameraCompany(projectId, created.id, newCamCompanyId);
+        // Edge /v1/cloud-cameras already stores company_id when possible.
+        await persistCameraCompany(projectId, created.id, newCamCompanyId, { required: false });
       }
-      if (next?.stream_key) setIngest(next);
+      if (next?.stream_key) {
+        setIngest(next);
+        wakeVisionViewerHold(next.playback_url);
+      }
       toast.success("카메라를 만들었습니다. 아래 키를 VIGI RTMP에 넣으세요.");
       setNewCamName("");
       void load();
@@ -215,6 +236,7 @@ export default function VisionFleet() {
       const next = (j as { ingest?: VisionVpsIngest }).ingest;
       if (!next?.stream_key) throw new Error("송출 정보가 없습니다");
       setIngest(next);
+      wakeVisionViewerHold(next.playback_url || cam.playback_url);
       toast.success("송출 정보를 다시 불러왔습니다");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "송출 정보 실패");

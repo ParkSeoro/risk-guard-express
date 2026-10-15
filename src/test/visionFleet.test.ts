@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   VISION_LIVE_ACTION,
   VISION_LIVE_IDLE_MS,
@@ -14,6 +14,7 @@ import {
   visionRoleLabel,
   visionSafePlaybackUrl,
   visionViewerHoldUrl,
+  wakeVisionViewerHold,
 } from "@/lib/visionFleetApi";
 import { resolveNotificationRoute, toMobileShellPath } from "@/lib/notificationRoutes";
 
@@ -57,6 +58,19 @@ describe("vision fleet client helpers", () => {
     expect(visionViewerHoldUrl("https://cdn.example.com/live.m3u8")).toBeNull();
   });
 
+  it("wakes the relay hold from a playback URL", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    wakeVisionViewerHold("https://cdn.example.com/live/abc/index.m3u8");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.example.com/live/abc/viewer-status",
+      { cache: "no-store" },
+    );
+    wakeVisionViewerHold("https://cdn.example.com/live.m3u8");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it("lets supervisors open the console but not provision", () => {
     expect(visionCanViewConsole(["supervisor"])).toBe(true);
     expect(visionCanOperate(["supervisor"])).toBe(false);
@@ -78,6 +92,8 @@ describe("vision fleet client helpers", () => {
     expect(src).toContain("VisionVpsSetup");
     expect(src).toContain("MobileVisionPlayer");
     expect(src).toContain("created_at");
+    expect(src).toContain("wakeVisionViewerHold");
+    expect(src).toContain("required: false");
     expect(src).toContain("applyCompanyFilter");
     expect(src).toContain("includeOrphans");
     expect(src).toContain("company_id");

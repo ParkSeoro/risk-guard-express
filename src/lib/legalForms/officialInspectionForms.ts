@@ -3,6 +3,8 @@
  * 생성 시 safety_inspection_items 로 스냅샷한다.
  */
 
+import { normalizeCompanyType } from '@/lib/companyTypes';
+
 export const OFFICIAL_INSPECTION_TYPES = [
   'daily_sf006',
   'equipment_sf007',
@@ -157,6 +159,95 @@ function pad3(v?: string[]): string[] {
   const a = Array.isArray(v) ? v.slice(0, 3) : [];
   while (a.length < 3) a.push('');
   return a;
+}
+
+/** 공식 점검표 결재행. step 문구로 ALK/공사업체를 가른다. */
+export type OfficialApprovalSignerInput = {
+  step?: string | null;
+  approver_name?: string | null;
+  company_name?: string | null;
+  company_type?: string | null;
+  status?: string | null;
+  approved_at?: string | null;
+  approval_version?: number | null;
+  step_order?: number | null;
+};
+
+/** 최종결재·합의는 ALK, 작성은 공사업체. 그 외에는 발주처 회사만 ALK. */
+export function officialApprovalSignerSide(row: OfficialApprovalSignerInput): 'alk' | 'contractor' {
+  const step = String(row.step || '');
+  if (step.includes('최종결재') || step.includes('합의')) return 'alk';
+  if (step.includes('작성')) return 'contractor';
+  if (normalizeCompanyType(row.company_type) === 'client') return 'alk';
+  return 'contractor';
+}
+
+/** 승인 시각은 서울 시각 YYYY.MM.DD HH:mm. 아직 승인 전이면 대기. */
+export function formatOfficialApprovalStamp(iso?: string | null, status?: string | null): string {
+  const st = String(status || '');
+  if (st === '반려') return '반려';
+  if (st !== '승인') return '대기';
+  if (!iso) return '승인';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '승인';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value || '';
+  const hour = pick('hour') === '24' ? '00' : pick('hour');
+  return `${pick('year')}.${pick('month')}.${pick('day')} ${hour}:${pick('minute')}`;
+}
+
+function formatOfficialSignerCell(row: OfficialApprovalSignerInput): string {
+  const name = String(row.approver_name || '').trim();
+  const company = String(row.company_name || '').trim();
+  const stamp = formatOfficialApprovalStamp(row.approved_at, row.status);
+  return [name, company, stamp].filter(Boolean).join(' · ');
+}
+
+/**
+ * 최신 approval_version 만. 취소는 뺀다.
+ * 한쪽에 결재행이 없으면 빈 배열 — 호출부가 직접 입력한 서명을 유지한다.
+ */
+export function splitOfficialApprovalSigners(rows?: OfficialApprovalSignerInput[] | null): {
+  alk: string[];
+  contractor: string[];
+} {
+  const all = (rows || []).filter((r) => String(r.status || '') !== '취소');
+  if (!all.length) return { alk: [], contractor: [] };
+  const version = Math.max(...all.map((a) => Number(a.approval_version) || 1));
+  const orderOf = (n?: number | null) => {
+    if (n == null) return 99;
+    const v = Number(n);
+    return Number.isFinite(v) ? v : 99;
+  };
+  const latest = all
+    .filter((a) => (Number(a.approval_version) || 1) === version)
+    .sort((a, b) => orderOf(a.step_order) - orderOf(b.step_order));
+  const alk: string[] = [];
+  const contractor: string[] = [];
+  for (const row of latest) {
+    const name = String(row.approver_name || '').trim();
+    const company = String(row.company_name || '').trim();
+    if (!name && !company) continue;
+    const text = formatOfficialSignerCell(row);
+    const bucket = officialApprovalSignerSide(row) === 'alk' ? alk : contractor;
+    if (bucket.length < 3) bucket.push(text);
+  }
+  return { alk, contractor };
+}
+
+/** 결재행이 있는 쪽은 그 서명으로 채우고, 없으면 직접 입력값을 유지한다. */
+export function mergeOfficialSignerRow(typed: string[] | undefined, fromApproval: string[]): string[] {
+  const filled = fromApproval.map((s) => String(s || '').trim()).filter(Boolean);
+  if (!filled.length) return pad3(typed);
+  return pad3(filled);
 }
 
 function item(
@@ -324,6 +415,8 @@ export function buildOfficialInspectionHtml(opts: {
   projectLabel?: string;
   payload: OfficialFormPayload;
   rows: Array<{ code: string; label: string; grade: OfficialGrade | null; note: string }>;
+  /** 상신 후 결재행. 있으면 ALK/공사업체 서명칸을 이름·소속·시각으로 채운다. */
+  approvals?: OfficialApprovalSignerInput[] | null;
 }): string {
   const meta = OFFICIAL_DOC_META[opts.type];
   const defs = OFFICIAL_FORM_ITEMS[opts.type];
@@ -375,8 +468,9 @@ export function buildOfficialInspectionHtml(opts: {
       </table>`
     : '';
 
-  const alkSigners = pad3(p.dig_signers);
-  const contractorSigners = pad3(p.contractor_signers);
+  const split = splitOfficialApprovalSigners(opts.approvals);
+  const alkSigners = mergeOfficialSignerRow(p.dig_signers, split.alk);
+  const contractorSigners = mergeOfficialSignerRow(p.contractor_signers, split.contractor);
   const footer = opts.type === 'daily_sf006'
     ? `<h2>순회 점검</h2>
        <p>지적 사항: ${esc(p.findings || '')}</p>
@@ -421,7 +515,7 @@ thead th{background:#f3f3f3;font-weight:600;text-align:center}
 .action-box{border:1px solid #111;border-top:none;min-height:72px;padding:8px 10px;margin:0 0 8px;white-space:pre-wrap}
 .signers{margin-top:0}
 .signers th{width:22%;background:#f3f3f3;text-align:center;font-weight:600;vertical-align:middle}
-.signers td.sig{height:36px;text-align:center;vertical-align:middle}
+.signers td.sig{min-height:48px;height:auto;text-align:center;vertical-align:middle;font-size:8.5pt;line-height:1.35;word-break:keep-all}
 @media print{body{padding:0}.sheet{max-width:none}}
 </style></head><body><div class="sheet">
 <table class="banner"><tr>

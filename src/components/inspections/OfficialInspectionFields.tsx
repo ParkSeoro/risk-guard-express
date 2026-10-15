@@ -4,7 +4,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   EQUIPMENT_TYPE_OPTIONS,
+  mergeOfficialSignerRow,
   officialGradeScale,
+  splitOfficialApprovalSigners,
+  type OfficialApprovalSignerInput,
   type OfficialFormPayload,
   type OfficialGrade,
   type OfficialInspectionType,
@@ -68,16 +71,58 @@ export function OfficialHeaderFields({
   );
 }
 
+function SignerInputs({
+  values,
+  disabled,
+  onChange,
+}: {
+  values: string[];
+  disabled?: boolean;
+  onChange: (index: number, value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2 mt-1">
+      {values.map((v, i) => (
+        <Input
+          key={i}
+          disabled={disabled}
+          placeholder={`서명 ${i + 1}`}
+          value={v}
+          onChange={(e) => onChange(i, e.target.value)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SignerStamps({ values }: { values: string[] }) {
+  return (
+    <div className="grid grid-cols-3 gap-2 mt-1">
+      {values.map((v, i) => (
+        <div
+          key={i}
+          className="min-h-10 rounded-md border bg-muted/40 px-2 py-1.5 text-center text-xs leading-snug break-keep"
+        >
+          {v || "\u00a0"}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function OfficialFooterFields({
   type,
   payload,
   disabled,
   onChange,
+  approvals,
 }: {
   type: OfficialInspectionType;
   payload: OfficialFormPayload;
   disabled?: boolean;
   onChange: (next: OfficialFormPayload) => void;
+  /** 상신 후 결재행. 있는 쪽은 이름·소속·승인 시각을 읽기 전용으로 보여 준다. */
+  approvals?: OfficialApprovalSignerInput[] | null;
 }) {
   const set = (patch: Partial<OfficialFormPayload>) => onChange({ ...payload, ...patch });
   if (type === "daily_sf006") {
@@ -121,6 +166,9 @@ export function OfficialFooterFields({
       </div>
     );
   }
+  const split = splitOfficialApprovalSigners(approvals);
+  const alkFromApproval = split.alk;
+  const contractorFromApproval = split.contractor;
   return (
     <div className="mt-5 space-y-3 rounded-md border p-3">
       <div>
@@ -136,39 +184,35 @@ export function OfficialFooterFields({
       </div>
       <div>
         <Label className="text-xs">ALK 서명</Label>
-        <div className="grid grid-cols-3 gap-2 mt-1">
-          {(payload.dig_signers || ["", "", ""]).map((v, i) => (
-            <Input
-              key={i}
-              disabled={disabled}
-              placeholder={`서명 ${i + 1}`}
-              value={v}
-              onChange={(e) => {
-                const next = [...(payload.dig_signers || ["", "", ""])];
-                next[i] = e.target.value;
-                set({ dig_signers: next });
-              }}
-            />
-          ))}
-        </div>
+        {alkFromApproval.length > 0 ? (
+          <SignerStamps values={mergeOfficialSignerRow(payload.dig_signers, alkFromApproval)} />
+        ) : (
+          <SignerInputs
+            values={payload.dig_signers || ["", "", ""]}
+            disabled={disabled}
+            onChange={(i, value) => {
+              const next = [...(payload.dig_signers || ["", "", ""])];
+              next[i] = value;
+              set({ dig_signers: next });
+            }}
+          />
+        )}
       </div>
       <div>
         <Label className="text-xs">공사업체 서명</Label>
-        <div className="grid grid-cols-3 gap-2 mt-1">
-          {(payload.contractor_signers || ["", "", ""]).map((v, i) => (
-            <Input
-              key={i}
-              disabled={disabled}
-              placeholder={`서명 ${i + 1}`}
-              value={v}
-              onChange={(e) => {
-                const next = [...(payload.contractor_signers || ["", "", ""])];
-                next[i] = e.target.value;
-                set({ contractor_signers: next });
-              }}
-            />
-          ))}
-        </div>
+        {contractorFromApproval.length > 0 ? (
+          <SignerStamps values={mergeOfficialSignerRow(payload.contractor_signers, contractorFromApproval)} />
+        ) : (
+          <SignerInputs
+            values={payload.contractor_signers || ["", "", ""]}
+            disabled={disabled}
+            onChange={(i, value) => {
+              const next = [...(payload.contractor_signers || ["", "", ""])];
+              next[i] = value;
+              set({ contractor_signers: next });
+            }}
+          />
+        )}
       </div>
     </div>
   );

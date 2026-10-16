@@ -43,6 +43,7 @@ import {
 import { canCreateAssessmentRun, defaultAuthorUserId } from '@/lib/assessmentAuthor';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import { pickPreviousApprovedRun, stampRunCompany, type WeeklyLinkRun } from '@/lib/weeklyAssessmentLink';
+import { fetchAssessmentRunItemStats } from '@/lib/assessmentRunItemStats';
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
   '작성중': { bg: 'bg-muted', text: 'text-muted-foreground' },
@@ -210,28 +211,19 @@ const AssessmentRuns = () => {
     if (list.length > 0) {
       const runIds = list.map((r: any) => r.id);
       const creatorIds = list.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
-      const [{ data: items }, creatorMap] = await Promise.all([
-        supabase.from('risk_items')
-          .select('run_id, risk_grade, improved_risk_grade, is_deleted, is_excluded')
-          .in('run_id', runIds)
-          .eq('is_deleted', false),
+      const [stats, creatorMap] = await Promise.all([
+        fetchAssessmentRunItemStats(runIds).catch((err: Error) => {
+          toast({ title: '항목 수 집계 실패', description: err.message, variant: 'destructive' });
+          return {} as Record<string, { total: number; high: number; med: number; low: number; residual: number }>;
+        }),
         fetchCreatorCompanyLabelMap(selectedProject, creatorIds).catch(() => ({})),
       ]);
       if (seq !== fetchSeqRef.current) return;
       setCreatorCompanyMap(creatorMap);
-      const stats: Record<string, { total: number; high: number; med: number; low: number; residual: number }> = {};
-      (items || []).forEach((item: any) => {
-        if (!item.run_id || item.is_excluded) return;
-        if (!stats[item.run_id]) stats[item.run_id] = { total: 0, high: 0, med: 0, low: 0, residual: 0 };
-        stats[item.run_id].total++;
-        if (item.risk_grade === '상') stats[item.run_id].high++;
-        else if (item.risk_grade === '중') stats[item.run_id].med++;
-        else stats[item.run_id].low++;
-        if (item.improved_risk_grade === '상') stats[item.run_id].residual++;
-      });
       setRunStats(stats);
     } else {
       setCreatorCompanyMap({});
+      setRunStats({});
     }
     if (seq !== fetchSeqRef.current) return;
     setLoading(false);

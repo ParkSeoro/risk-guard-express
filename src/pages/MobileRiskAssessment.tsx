@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { fetchCreatorCompanyLabelMap, fetchAuthorCompanyIdByUser, resolveAssessmentRunListCompanyLabel, resolveAssessmentRunTargetCompanyLabel, buildProjectCompanyLabelMap } from "@/lib/companyDocScope";
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
+import { fetchAssessmentRunItemStats } from "@/lib/assessmentRunItemStats";
 
 /**
  * Mobile list: approved risk assessments only → Read-Only Viewer.
@@ -53,13 +54,15 @@ export default function MobileRiskAssessment() {
     if (scoped.length) {
       const ids = scoped.map((r: any) => r.id);
       const creatorIds = scoped.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
-      const [{ data: items, error: iErr }, creatorMap, companies, authorIds] = await Promise.all([
-        supabase.from("risk_items").select("run_id, risk_grade, is_deleted, is_excluded").in("run_id", ids).eq("is_deleted", false),
+      const [stats, creatorMap, companies, authorIds] = await Promise.all([
+        fetchAssessmentRunItemStats(ids).catch((err: Error) => {
+          toast.error("위험항목 집계 실패: " + err.message);
+          return {} as Awaited<ReturnType<typeof fetchAssessmentRunItemStats>>;
+        }),
         fetchCreatorCompanyLabelMap(projectId, creatorIds).catch(() => ({})),
         fetchProjectCompanies(projectId).catch(() => []),
         fetchAuthorCompanyIdByUser(projectId, creatorIds).catch(() => ({})),
       ]);
-      if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
       setCreatorCompanyMap(creatorMap);
       setCompanyLabelById(buildProjectCompanyLabelMap(companies));
       setProjectCompanies(companies.map((c) => ({
@@ -68,15 +71,15 @@ export default function MobileRiskAssessment() {
         parent_company_id: c.parent_company_id || null,
       })));
       setAuthorCompanyIdByUser(authorIds);
-      const c: Record<string, any> = {};
-      ids.forEach((id) => (c[id] = { high: 0, medium: 0, low: 0, total: 0 }));
-      (items || []).forEach((it: any) => {
-        if (!c[it.run_id] || it.is_excluded) return;
-        c[it.run_id].total++;
-        const g = (it.risk_grade || "").toLowerCase();
-        if (g.includes("high") || g.includes("상")) c[it.run_id].high++;
-        else if (g.includes("med") || g.includes("중")) c[it.run_id].medium++;
-        else c[it.run_id].low++;
+      const c: Record<string, { high: number; medium: number; low: number; total: number }> = {};
+      ids.forEach((id) => {
+        const s = stats[id];
+        c[id] = {
+          total: s?.total || 0,
+          high: s?.high || 0,
+          medium: s?.med || 0,
+          low: s?.low || 0,
+        };
       });
       setCounts(c);
     } else {

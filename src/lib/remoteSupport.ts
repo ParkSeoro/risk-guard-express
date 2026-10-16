@@ -24,10 +24,35 @@ export type RemoteSupportSession = {
   updated_at: string;
 };
 
+/** Normalized 0..1 coords over the shared SafeNex viewport (not OS desktop). */
 export type RemoteControlEvent =
   | { kind: "navigate"; path: string }
   | { kind: "setProject"; projectId: string }
+  /** Live agent cursor position (move). */
   | { kind: "pointer"; x: number; y: number; visible?: boolean }
+  /** Synthetic click / dblclick at normalized coords. */
+  | {
+      kind: "click";
+      x: number;
+      y: number;
+      button?: number;
+      detail?: number;
+      ctrlKey?: boolean;
+      shiftKey?: boolean;
+      altKey?: boolean;
+      metaKey?: boolean;
+    }
+  | { kind: "scroll"; x: number; y: number; deltaX: number; deltaY: number }
+  | {
+      kind: "key";
+      type: "keydown" | "keyup";
+      key: string;
+      code: string;
+      ctrlKey?: boolean;
+      shiftKey?: boolean;
+      altKey?: boolean;
+      metaKey?: boolean;
+    }
   | { kind: "end" };
 
 export type RemoteSignalPayload =

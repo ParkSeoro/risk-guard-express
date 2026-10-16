@@ -22,6 +22,13 @@ import {
   type RemoteSupportAgent,
   type RemoteSupportSession,
 } from "@/lib/remoteSupport";
+import {
+  applyRemoteClick,
+  applyRemoteKey,
+  applyRemoteScroll,
+  isSafeNexAppPath,
+  normalizedToViewport,
+} from "@/lib/remoteSupportControl";
 import { startRemoteSupportRtc, type RemoteSupportRtcHandles } from "@/lib/remoteSupportWebrtc";
 import { RemoteSupportRequestDialog } from "@/components/remote-support/RequestDialog";
 import { RemoteSupportAgentPrompt } from "@/components/remote-support/AgentPrompt";
@@ -82,11 +89,18 @@ export function RemoteSupportHost({ children }: { children: React.ReactNode }) {
   const [promptOpen, setPromptOpen] = useState(false);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [controlling, setControlling] = useState(false);
-  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const [pointer, setPointer] = useState<{ x: number; y: number; visible: boolean } | null>(null);
 
   const rtcRef = useRef<RemoteSupportRtcHandles | null>(null);
   const startedForRef = useRef<string | null>(null);
   const requesterNamesRef = useRef<Record<string, string>>({});
+  const controllingTimerRef = useRef<number | null>(null);
+
+  const markControlling = useCallback((ms = 2000) => {
+    setControlling(true);
+    if (controllingTimerRef.current) window.clearTimeout(controllingTimerRef.current);
+    controllingTimerRef.current = window.setTimeout(() => setControlling(false), ms);
+  }, []);
 
   const canRequest = canRequestRemoteSupport({
     userId: user?.id,
@@ -174,25 +188,35 @@ export function RemoteSupportHost({ children }: { children: React.ReactNode }) {
   const applyControl = useCallback(
     (event: RemoteControlEvent) => {
       if (event.kind === "navigate" && event.path) {
+        if (!isSafeNexAppPath(event.path)) return;
         navigate(event.path);
-        setControlling(true);
-        window.setTimeout(() => setControlling(false), 2500);
+        markControlling(2500);
       } else if (event.kind === "setProject" && event.projectId) {
         access?.setSelectedProject(event.projectId);
-        setControlling(true);
-        window.setTimeout(() => setControlling(false), 2500);
+        markControlling(2500);
       } else if (event.kind === "pointer") {
-        setPointer({ x: event.x, y: event.y });
-        setControlling(true);
-        window.setTimeout(() => {
-          setPointer(null);
-          setControlling(false);
-        }, 2000);
+        if (event.visible === false) {
+          setPointer((prev) => (prev ? { ...prev, visible: false } : null));
+          return;
+        }
+        setPointer({ x: event.x, y: event.y, visible: true });
+        markControlling(1200);
+      } else if (event.kind === "click") {
+        setPointer({ x: event.x, y: event.y, visible: true });
+        applyRemoteClick(event);
+        markControlling(2000);
+      } else if (event.kind === "scroll") {
+        setPointer({ x: event.x, y: event.y, visible: true });
+        applyRemoteScroll(event);
+        markControlling(1200);
+      } else if (event.kind === "key") {
+        applyRemoteKey(event);
+        markControlling(1200);
       } else if (event.kind === "end") {
         void stopRtc();
       }
     },
-    [access, navigate, stopRtc],
+    [access, markControlling, navigate, stopRtc],
   );
 
   // Requester: start screen share when session becomes active
@@ -215,7 +239,9 @@ export function RemoteSupportHost({ children }: { children: React.ReactNode }) {
           return;
         }
         rtcRef.current = handles;
-        toast.message("화면공유가 시작되었습니다. 상단에서 언제든 종료할 수 있습니다.");
+        toast.message("화면공유가 시작되었습니다.", {
+          description: "가능하면 ‘Chrome 탭’만 공유하세요. 상담자 커서·클릭이 SafeNex 안에서만 동작합니다.",
+        });
       } catch (err: unknown) {
         startedForRef.current = null;
         toast.error(
@@ -308,16 +334,26 @@ export function RemoteSupportHost({ children }: { children: React.ReactNode }) {
   return (
     <RemoteSupportContext.Provider value={ctx}>
       {children}
-      {pointer && (
+      {pointer?.visible && (
         <div
-          className="pointer-events-none fixed z-[90] print:hidden"
+          className="pointer-events-none fixed z-[90] print:hidden flex items-start"
           style={{
-            left: `${pointer.x * 100}vw`,
-            top: `${pointer.y * 100}vh`,
-            transform: "translate(-50%, -50%)",
+            left: normalizedToViewport({ x: pointer.x, y: pointer.y }).x,
+            top: normalizedToViewport({ x: pointer.x, y: pointer.y }).y,
           }}
+          aria-hidden
         >
-          <div className="h-6 w-6 rounded-full border-2 border-amber-500 bg-amber-400/40 shadow" />
+          <svg width="24" height="24" viewBox="0 0 24 24" className="drop-shadow shrink-0">
+            <path
+              d="M4 3l12 8.5-5.2 1.3L8.5 20 4 3z"
+              fill="#f59e0b"
+              stroke="#78350f"
+              strokeWidth="1"
+            />
+          </svg>
+          <span className="mt-3 -ml-0.5 rounded bg-amber-500/90 px-1 py-0.5 text-[10px] font-medium text-amber-950 whitespace-nowrap">
+            상담자
+          </span>
         </div>
       )}
       <RemoteSupportRequestDialog open={requestOpen} onOpenChange={setRequestOpen} onCreated={() => void refresh()} />

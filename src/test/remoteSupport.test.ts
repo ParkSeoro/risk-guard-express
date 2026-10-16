@@ -6,6 +6,12 @@ import {
   remoteSupportChannelName,
   remoteSupportDeepLink,
 } from "@/lib/remoteSupport";
+import {
+  clientPointToNormalized,
+  isSafeNexAppPath,
+  normalizedToViewport,
+  videoObjectContainBox,
+} from "@/lib/remoteSupportControl";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 
 describe("remoteSupport permissions", () => {
@@ -51,6 +57,46 @@ describe("remoteSupport helpers", () => {
   it("builds channel and deep link", () => {
     expect(remoteSupportChannelName("abc")).toBe("remote-support:abc");
     expect(remoteSupportDeepLink("abc")).toBe("/app/admin/remote-support?session=abc");
+  });
+});
+
+describe("remoteSupport control mapping", () => {
+  it("allows only SafeNex in-app paths", () => {
+    expect(isSafeNexAppPath("/app/admin/work-permits")).toBe(true);
+    expect(isSafeNexAppPath("/app/worker/today")).toBe(true);
+    expect(isSafeNexAppPath("/settings/account")).toBe(true);
+    expect(isSafeNexAppPath("https://evil.example")).toBe(false);
+    expect(isSafeNexAppPath("//evil.example")).toBe(false);
+    expect(isSafeNexAppPath("/landing")).toBe(false);
+  });
+
+  it("maps letterboxed video clicks to normalized coords", () => {
+    const video = {
+      clientWidth: 800,
+      clientHeight: 450,
+      videoWidth: 1600,
+      videoHeight: 900,
+      getBoundingClientRect: () => ({ left: 100, top: 50, width: 800, height: 450 }),
+    } as unknown as HTMLVideoElement;
+
+    const box = videoObjectContainBox(video);
+    expect(box).toEqual({ offsetX: 0, offsetY: 0, contentW: 800, contentH: 450 });
+
+    const center = clientPointToNormalized(video, 100 + 400, 50 + 225);
+    expect(center).toEqual({ x: 0.5, y: 0.5 });
+
+    const outside = clientPointToNormalized(video, 10, 10);
+    expect(outside).toBeNull();
+  });
+
+  it("converts normalized coords to viewport pixels", () => {
+    const prevW = window.innerWidth;
+    const prevH = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1000 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
+    expect(normalizedToViewport({ x: 0.5, y: 0.25 })).toEqual({ x: 500, y: 125 });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: prevW });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: prevH });
   });
 });
 

@@ -40,9 +40,11 @@ type Ctx = {
   canRequest: boolean;
   isAgent: boolean;
   openRequestDialog: () => void;
+  openAgentPrompt: () => void;
   openSessions: RemoteSupportSession[];
   agents: RemoteSupportAgent[];
   requesterSession: RemoteSupportSession | null;
+  agentPendingSession: RemoteSupportSession | null;
   controlling: boolean;
   endRequesterSession: () => void;
   agentLabel: string;
@@ -323,9 +325,13 @@ export function RemoteSupportHost({ children }: { children: React.ReactNode }) {
     canRequest,
     isAgent,
     openRequestDialog: () => setRequestOpen(true),
+    openAgentPrompt: () => {
+      if (myAgentPending) setPromptOpen(true);
+    },
     openSessions: sessions,
     agents,
     requesterSession: myRequesterSession || null,
+    agentPendingSession: myAgentPending || null,
     controlling,
     endRequesterSession: () => void endMine(myRequesterSession),
     agentLabel: bannerAgentLabel,
@@ -362,8 +368,11 @@ export function RemoteSupportHost({ children }: { children: React.ReactNode }) {
         requesterName={
           myAgentPending ? requesterNamesRef.current[myAgentPending.requester_id] : undefined
         }
-        open={promptOpen && !!myAgentPending}
-        onOpenChange={setPromptOpen}
+        open={!!myAgentPending}
+        onOpenChange={(next) => {
+          if (next) setPromptOpen(true);
+          // Ignore dismiss while a pending request exists — accept/reject only.
+        }}
         onAccepted={() => {
           void refresh();
           if (!location.pathname.includes("/remote-support")) {

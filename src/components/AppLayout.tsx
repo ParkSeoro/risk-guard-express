@@ -14,6 +14,7 @@ import { AICreditBanner } from "@/components/AICreditBanner";
 import ShellAssessmentShareAlert from "@/components/assessment/ShellAssessmentShareAlert";
 import { RemoteSupportHost, RemoteSupportBannerSlot } from "@/components/remote-support/RemoteSupportHost";
 import { RemoteSupportButton } from "@/components/remote-support/RemoteSupportButton";
+import { RemoteSupportAgentPendingBadge } from "@/components/remote-support/AgentPendingBadge";
 
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -127,6 +128,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <AICreditBanner />
                 </div>
                 <NotificationBell />
+                <RemoteSupportAgentPendingBadge />
                 <RemoteSupportButton />
                 <HelpButton className="text-muted-foreground hidden sm:inline-flex" />
                 <Button

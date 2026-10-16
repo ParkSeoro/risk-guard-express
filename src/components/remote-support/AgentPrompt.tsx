@@ -66,17 +66,32 @@ export function RemoteSupportAgentPrompt({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Pending support requests must be accepted or rejected — ignore overlay/Esc dismiss.
+        if (!next) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        hideClose
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>원격지원 요청</DialogTitle>
           <DialogDescription>
-            {(requesterName || "현장 사용자") + "님이 원격지원을 요청했습니다. 수락하면 화면을 보고 SafeNex 메뉴를 함께 조작할 수 있습니다."}
+            {(requesterName || "현장 사용자") +
+              "님이 원격지원을 요청했습니다. 수락하면 화면을 보고 SafeNex 메뉴를 함께 조작할 수 있습니다."}
           </DialogDescription>
         </DialogHeader>
         {session?.requester_path && (
           <p className="text-xs text-muted-foreground break-all">현재 화면: {session.requester_path}</p>
         )}
+        <p className="text-[11px] text-muted-foreground">수락 또는 거절을 선택해 주세요. 바깥을 눌러도 창이 닫히지 않습니다.</p>
         <DialogFooter>
           <Button type="button" variant="outline" disabled={busy} onClick={() => void reject()}>
             거절

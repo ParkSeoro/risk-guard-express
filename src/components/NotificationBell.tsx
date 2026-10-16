@@ -11,9 +11,14 @@ import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
 import { resolveNotificationRoute, notificationInboxPath } from '@/lib/notificationRoutes';
-import { notificationTitle } from '@/lib/notificationText';
+import { notificationTitle, notificationPreview } from '@/lib/notificationText';
 import { decorateWorkStopNotificationPreview, fetchRevealedWorkStopNames, workStopIdsFromNotifications } from '@/lib/workStopReveal';
 import { fetchProjectNames } from '@/lib/projectNames';
+import {
+  acceptRemoteSupportSession,
+  rejectRemoteSupportSession,
+} from '@/lib/remoteSupport';
+import { toast } from 'sonner';
 
 const resolveRoute = (n: any): string | null => resolveNotificationRoute(n);
 
@@ -92,6 +97,26 @@ export function NotificationBell() {
     }
   };
 
+  const handleRemoteSupport = async (n: any, action: 'accept' | 'reject') => {
+    const sessionId = String(n.related_id || '');
+    if (!sessionId) return;
+    try {
+      if (action === 'accept') {
+        await acceptRemoteSupportSession(sessionId);
+        toast.success('원격지원을 수락했습니다.');
+        navigate(`/app/admin/remote-support?session=${sessionId}`);
+      } else {
+        await rejectRemoteSupportSession(sessionId);
+        toast.message('원격지원 요청을 거절했습니다.');
+      }
+      await markRead(n.id);
+      setOpen(false);
+      void fetchNotifications();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : '처리에 실패했습니다.');
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -145,23 +170,62 @@ export function NotificationBell() {
           ) : (
             visible.map(n => {
               const hasLink = !!resolveRoute(n);
+              const isRemoteSupportRequest =
+                n.type === 'remote_support' &&
+                String(n.title || '').includes('요청') &&
+                !!n.related_id;
+              const preview =
+                decorateWorkStopNotificationPreview(n, nameById, projectById) ||
+                notificationPreview(n);
               return (
                 <div
                   key={n.id}
-                  className={`px-3 py-2 border-b last:border-0 ${hasLink ? 'cursor-pointer' : ''} hover:bg-accent/10 transition-colors ${!n.is_read ? 'bg-primary/5' : ''}`}
-                  onClick={() => handleClick(n)}
+                  className={`px-3 py-2 border-b last:border-0 ${hasLink && !isRemoteSupportRequest ? 'cursor-pointer' : ''} hover:bg-accent/10 transition-colors ${!n.is_read ? 'bg-primary/5' : ''}`}
+                  onClick={() => {
+                    if (!isRemoteSupportRequest) handleClick(n);
+                  }}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className={`text-xs ${!n.is_read ? 'font-semibold' : ''}`}>{notificationTitle(n)}</p>
-                      {decorateWorkStopNotificationPreview(n, nameById, projectById) && (
+                      {preview && (
                         <p className="text-[11px] text-muted-foreground line-clamp-2">
-                          {decorateWorkStopNotificationPreview(n, nameById, projectById)}
+                          {preview}
                         </p>
                       )}
                     </div>
                     {!n.is_read && <div className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1" />}
                   </div>
+                  {isRemoteSupportRequest && (
+                    <div className="flex gap-1.5 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-6 text-[11px] px-2"
+                        onClick={() => void handleRemoteSupport(n, 'accept')}
+                      >
+                        수락
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[11px] px-2"
+                        onClick={() => void handleRemoteSupport(n, 'reject')}
+                      >
+                        거절
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[11px] px-2"
+                        onClick={() => handleClick(n)}
+                      >
+                        상세
+                      </Button>
+                    </div>
+                  )}
                   <p className="text-[10px] text-muted-foreground mt-0.5">
                     {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ko })}
                   </p>

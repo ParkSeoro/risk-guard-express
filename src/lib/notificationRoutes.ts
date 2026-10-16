@@ -46,6 +46,8 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   zone_event: (_, pid) => withProject(`${ADMIN}/zone-events`, pid),
   vision_safety_event: (id) =>
     id ? `${ADMIN}/vision-fleet?event=${id}` : `${ADMIN}/vision-fleet`,
+  remote_support_session: (id) =>
+    id ? `${ADMIN}/remote-support?session=${id}` : `${ADMIN}/remote-support`,
 };
 
 /** Mobile shell equivalents — prefer list/viewer pages that exist under /app/worker. */
@@ -124,6 +126,10 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   work_stop: (n) => (n.related_id ? `${ADMIN}/work-stop?id=${n.related_id}` : `${ADMIN}/work-stop`),
   work_stop_request: (n) =>
     n.related_id ? `${ADMIN}/work-stop?id=${n.related_id}` : `${ADMIN}/work-stop`,
+  remote_support: (n) =>
+    n.related_id
+      ? `${ADMIN}/remote-support?session=${n.related_id}`
+      : `${ADMIN}/remote-support`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -173,6 +179,10 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${WORKER}/work-stop?id=${n.related_id}` : `${WORKER}/work-stop`,
   work_stop_request: (n) =>
     n.related_id ? `${WORKER}/work-stop?id=${n.related_id}` : `${WORKER}/work-stop`,
+  remote_support: (n) =>
+    n.related_id
+      ? `${ADMIN}/remote-support?session=${n.related_id}`
+      : `${ADMIN}/remote-support`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */

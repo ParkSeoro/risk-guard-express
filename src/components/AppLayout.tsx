@@ -12,6 +12,8 @@ import { TutorialOverlay } from "@/components/TutorialOverlay";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { AICreditBanner } from "@/components/AICreditBanner";
 import ShellAssessmentShareAlert from "@/components/assessment/ShellAssessmentShareAlert";
+import { RemoteSupportHost, RemoteSupportBannerSlot } from "@/components/remote-support/RemoteSupportHost";
+import { RemoteSupportButton } from "@/components/remote-support/RemoteSupportButton";
 
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -56,6 +58,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
   return (
     <ProjectAccessContext.Provider value={projectAccess}>
+      <RemoteSupportHost>
       <SidebarProvider>
         {/* min-w-0 + overflow-x-hidden: prevent desktop-width children from forcing phone pinch-zoom layout */}
         <div className="min-h-screen flex w-full max-w-[100vw] overflow-x-hidden print:block print:overflow-visible print:max-w-none print:h-auto">
@@ -124,6 +127,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <AICreditBanner />
                 </div>
                 <NotificationBell />
+                <RemoteSupportButton />
                 <HelpButton className="text-muted-foreground hidden sm:inline-flex" />
                 <Button
                   variant="ghost"
@@ -137,6 +141,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </Button>
               </div>
             </header>
+            <RemoteSupportBannerSlot />
             <TutorialOverlay />
             <ShellAssessmentShareAlert />
             <main className="flex-1 overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 print:h-auto print:max-h-none">
@@ -148,6 +153,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </SidebarProvider>
+      </RemoteSupportHost>
     </ProjectAccessContext.Provider>
   );
 }

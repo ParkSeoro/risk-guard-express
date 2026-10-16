@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye, ClipboardList } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye, ClipboardList, Headset } from 'lucide-react';
 import { E2ETestAccountsSetup } from '@/components/E2ETestAccountsSetup';
 
 const settingsCards = [
@@ -57,6 +57,15 @@ const settingsCards = [
     description: '기상청·OpenWeather API 키를 등록해 현장 주소 기반 날씨를 조회합니다.',
     icon: CloudSun,
     path: '/settings/weather',
+    requires: 'master' as const,
+    badge: '마스터 전용',
+  },
+  {
+    id: 'remote-support',
+    title: '원격지원 담당자',
+    description: '현장 원격지원 요청을 받을 시스템 담당자를 지정·해제합니다.',
+    icon: Headset,
+    path: '/settings/remote-support',
     requires: 'master' as const,
     badge: '마스터 전용',
   },

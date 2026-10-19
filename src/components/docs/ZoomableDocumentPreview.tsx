@@ -48,6 +48,7 @@ export default function ZoomableDocumentPreview({
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [contentH, setContentH] = useState(pageWidth * 1.414);
   const [userScale, setUserScale] = useState(1);
+  const [dragging, setDragging] = useState(false);
   const [imagesReady, setImagesReady] = useState(!html);
   const htmlKeyRef = useRef(html);
   const imageWaitGen = useRef(0);
@@ -243,17 +244,68 @@ export default function ZoomableDocumentPreview({
       pan.current = null;
     };
 
+    const applyMousePan = (clientX: number, clientY: number) => {
+      const start = pan.current;
+      if (gesture.current.mode !== "pan" || !start) return;
+      const next = panScroll(
+        { left: start.sl, top: start.st },
+        { x: start.x, y: start.y },
+        { x: clientX, y: clientY },
+        {
+          left: el.scrollWidth - el.clientWidth,
+          top: el.scrollHeight - el.clientHeight,
+        },
+      );
+      el.scrollLeft = next.left;
+      el.scrollTop = next.top;
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      // Let native scrollbar / controls receive clicks.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("button, a, input, textarea, select")) return;
+      const rect = el.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
+      // clientWidth/Height exclude the scrollbar gutter — don't steal those clicks.
+      if (localX > el.clientWidth || localY > el.clientHeight) return;
+      gesture.current.mode = "pan";
+      pan.current = { x: e.clientX, y: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+      setDragging(true);
+      e.preventDefault();
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (gesture.current.mode !== "pan" || !pan.current) return;
+      e.preventDefault();
+      applyMousePan(e.clientX, e.clientY);
+    };
+
+    const endMousePan = () => {
+      if (gesture.current.mode !== "pan" && !pan.current) return;
+      gesture.current.mode = "none";
+      pan.current = null;
+      setDragging(false);
+    };
+
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd);
     el.addEventListener("touchcancel", onTouchEnd);
+    el.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", endMousePan);
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
+      el.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", endMousePan);
     };
   }, [applyScaleAt]);
 
@@ -283,7 +335,10 @@ export default function ZoomableDocumentPreview({
     <div className={`relative min-h-0 h-full ${className || ""}`} data-testid="zoomable-doc-preview">
       <div
         ref={viewportRef}
-        className="absolute inset-0 overflow-x-auto overflow-y-scroll bg-slate-800 select-none overscroll-contain"
+        data-testid="doc-preview-scroll"
+        className={`doc-preview-scroll absolute inset-0 overflow-x-auto overflow-y-scroll bg-slate-800 select-none overscroll-contain ${
+          dragging ? "cursor-grabbing" : "cursor-grab"
+        }`}
         style={{ WebkitOverflowScrolling: "touch", scrollbarGutter: "stable", touchAction: "none" }}
       >
         {html && (
@@ -337,7 +392,7 @@ export default function ZoomableDocumentPreview({
       )}
 
       <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/65 px-2 py-1 text-[10px] text-white">
-        드래그 이동 · 핀치/Ctrl+휠 줌 · {userScale.toFixed(1)}×
+        드래그·스크롤바 이동 · 핀치/Ctrl+휠 줌 · {userScale.toFixed(1)}×
       </div>
       <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
         <Button

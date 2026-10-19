@@ -264,11 +264,24 @@ const Auth = () => {
       // 근로자: 전화번호 → 가상 이메일 랩핑 후 signIn
       if (loginAudience === 'worker') {
         writeLoginIntent('worker');
-        const { error } = await signInWorkerWithPhone(phone, pin);
-        if (error) {
+        const workerLogin = await Promise.race([
+          signInWorkerWithPhone(phone, pin),
+          new Promise<{ error: { message: string } }>((resolve) => {
+            window.setTimeout(
+              () =>
+                resolve({
+                  error: {
+                    message: '로그인 응답이 지연되고 있습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.',
+                  },
+                }),
+              20_000,
+            );
+          }),
+        ]);
+        if (workerLogin.error) {
           toast({
             title: '로그인 실패',
-            description: authBannedErrorMessage(error.message) || error.message,
+            description: authBannedErrorMessage(workerLogin.error.message) || workerLogin.error.message,
             variant: 'destructive',
           });
           return;
@@ -280,11 +293,23 @@ const Auth = () => {
 
       // 관리자: 표준 이메일/비밀번호
       writeLoginIntent('admin');
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
+      const loginResult = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        new Promise<{ data: { user: null; session: null }; error: { message: string } }>((resolve) => {
+          window.setTimeout(
+            () =>
+              resolve({
+                data: { user: null, session: null },
+                error: { message: '로그인 응답이 지연되고 있습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.' },
+              }),
+            20_000,
+          );
+        }),
+      ]);
+      if (loginResult.error) {
         toast({
           title: '로그인 실패',
-          description: authBannedErrorMessage(error.message) || error.message,
+          description: authBannedErrorMessage(loginResult.error.message) || loginResult.error.message,
           variant: 'destructive',
         });
       }

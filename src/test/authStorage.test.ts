@@ -1,15 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  isPreferencesPluginAvailable,
   isSupabaseAuthStorageKey,
   migrateLocalStorageAuthToPreferences,
 } from "@/lib/native/authStorage";
 
 describe("authStorage helpers", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("detects supabase auth token keys", () => {
     expect(isSupabaseAuthStorageKey("sb-qhntxmggacorqjjmjqgo-auth-token")).toBe(true);
     expect(isSupabaseAuthStorageKey("sb-abc-auth-token-code-verifier")).toBe(true);
     expect(isSupabaseAuthStorageKey("sidebar:groups")).toBe(false);
     expect(isSupabaseAuthStorageKey("app-update-channel")).toBe(false);
+  });
+
+  it("reports Preferences unavailable when Capacitor has no plugin", async () => {
+    const { Capacitor } = await import("@capacitor/core");
+    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
+    vi.spyOn(Capacitor, "isPluginAvailable").mockReturnValue(false);
+    expect(isPreferencesPluginAvailable()).toBe(false);
   });
 
   it("copies auth keys from localStorage into Preferences once", async () => {

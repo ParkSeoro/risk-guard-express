@@ -1,10 +1,10 @@
 /**
  * First-run OS permission onboarding for the native shell.
- * Legal consent (/consent) must already be complete — this screen only
- * requests Location → Notifications → Battery (Android) → Camera.
+ * Legal consent (/consent) must already be complete — this screen
+ * auto-prompts Location → Notifications(알림·사이렌) → Battery (Android) → Camera.
  * Location is a hard gate. Worker QR signup is already active (no admin wait).
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
@@ -92,7 +92,7 @@ export default function NativePermissionsOnboarding() {
   const [locationDenied, setLocationDenied] = useState(false);
   const [pushDenied, setPushDenied] = useState(false);
   const isAndroid = Capacitor.getPlatform() === "android";
-  const autoLocationPrompted = useRef(false);
+  const autoPrompted = useRef(new Set<Step>());
 
   useEffect(() => {
     if (!user || !isNativeApp()) return;
@@ -125,56 +125,7 @@ export default function NativePermissionsOnboarding() {
     };
   }, [step]);
 
-  // App launch / first paint: open the system location sheet without an extra tap.
-  useEffect(() => {
-    if (!user || !isNativeApp() || hasCompletedNativePermissions()) return;
-    if (step !== "location" || autoLocationPrompted.current) return;
-    autoLocationPrompted.current = true;
-    const t = window.setTimeout(() => {
-      void (async () => {
-        setBusy(true);
-        try {
-          const cur = await Geolocation.checkPermissions();
-          if (!isForegroundLocationGranted(cur)) {
-            await Geolocation.requestPermissions();
-          }
-          const after = await Geolocation.checkPermissions();
-          if (!isForegroundLocationGranted(after)) {
-            setLocationDenied(true);
-            return;
-          }
-          setLocationDenied(false);
-          await promptBackgroundLocation();
-          setStep("notifications");
-        } catch (e: any) {
-          setLocationDenied(true);
-          toast.error("위치 권한 요청 실패: " + (e?.message || "오류"));
-        } finally {
-          setBusy(false);
-        }
-      })();
-    }, 350);
-    return () => window.clearTimeout(t);
-  }, [user, step]);
-
-  if (isAuthLoading) {
-    return (
-      <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
-        세션 확인 중…
-      </div>
-    );
-  }
-  if (!user) return <Navigate to="/login" replace />;
-  if (!isNativeApp() || hasCompletedNativePermissions()) {
-    return (
-      <Navigate
-        to={afterConsentHomePath(roles, profile, { loginIntent: readLoginIntent() })}
-        replace
-      />
-    );
-  }
-
-  const finish = async () => {
+  const finish = useCallback(async () => {
     setBusy(true);
     try {
       const cur = await Geolocation.checkPermissions();
@@ -182,6 +133,7 @@ export default function NativePermissionsOnboarding() {
         toast.error("위치 권한이 있어야 출근·금지구역이 동작합니다.");
         setLocationDenied(true);
         setStep("location");
+        autoPrompted.current.delete("location");
         return;
       }
       markNativePermissionsDone();
@@ -191,9 +143,9 @@ export default function NativePermissionsOnboarding() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [navigate, roles, profile]);
 
-  const requestLocation = async () => {
+  const requestLocation = useCallback(async () => {
     setBusy(true);
     try {
       const cur = await Geolocation.checkPermissions();
@@ -215,24 +167,30 @@ export default function NativePermissionsOnboarding() {
     } finally {
       setBusy(false);
     }
-  };
+  }, []);
 
-  const requestNotifications = async () => {
+  const requestNotifications = useCallback(async () => {
     setBusy(true);
     try {
       if (Capacitor.isNativePlatform()) {
         const perm = await PushNotifications.checkPermissions();
-        if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") {
+        if (!isPushGranted(perm)) {
           await PushNotifications.requestPermissions();
         }
         const after = await PushNotifications.checkPermissions();
         if (!isPushGranted(after)) {
           setPushDenied(true);
-          toast.error("알림을 켜야 금지구역·결재 푸시를 받을 수 있습니다.");
+          toast.error("알림·사이렌을 켜야 금지구역·결재 푸시를 받을 수 있습니다.");
+          // Permanent deny → open settings so the worker can flip the switch.
+          await openNativeAppSettings();
           return;
         }
         setPushDenied(false);
-        await PushNotifications.register();
+        try {
+          await PushNotifications.register();
+        } catch (regErr) {
+          console.warn("[NativePermissions] push register", regErr);
+        }
       }
       setStep(nextAfterNotifications());
     } catch (e: any) {
@@ -241,9 +199,9 @@ export default function NativePermissionsOnboarding() {
     } finally {
       setBusy(false);
     }
-  };
+  }, []);
 
-  const requestCamera = async () => {
+  const requestCamera = useCallback(async () => {
     setBusy(true);
     try {
       const { BarcodeScanner } = await import("@capacitor-mlkit/barcode-scanning");
@@ -255,7 +213,49 @@ export default function NativePermissionsOnboarding() {
     } finally {
       setBusy(false);
     }
-  };
+  }, []);
+
+  const openBatterySettings = useCallback(async () => {
+    setBusy(true);
+    try {
+      await openNativeAppSettings();
+      toast.message("배터리 「제한 없음」으로 바꾼 뒤 「설정했습니다」를 눌러 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // Each step auto-opens the matching system sheet / settings (no extra first tap).
+  useEffect(() => {
+    if (!user || !isNativeApp() || hasCompletedNativePermissions()) return;
+    if (autoPrompted.current.has(step)) return;
+    autoPrompted.current.add(step);
+    const t = window.setTimeout(() => {
+      if (step === "location") void requestLocation();
+      else if (step === "notifications") void requestNotifications();
+      else if (step === "battery") void openBatterySettings();
+      else if (step === "camera") void requestCamera();
+      else if (step === "done") void finish();
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [user, step, requestLocation, requestNotifications, openBatterySettings, requestCamera, finish]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
+        세션 확인 중…
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isNativeApp() || hasCompletedNativePermissions()) {
+    return (
+      <Navigate
+        to={afterConsentHomePath(roles, profile, { loginIntent: readLoginIntent() })}
+        replace
+      />
+    );
+  }
 
   return (
     <div className="min-h-dvh bg-background flex flex-col native-safe-pad">
@@ -266,7 +266,7 @@ export default function NativePermissionsOnboarding() {
         </div>
         <h1 className="mt-3 text-xl font-bold tracking-tight">앱 권한 설정</h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          현장 안전(금지구역·출근·결재 알림)을 위해 권한이 필요합니다. 위치는 반드시 허용해 주세요.
+          위치·알림(사이렌)·배터리·카메라를 순서대로 요청합니다. 팝업이 뜨면 허용해 주세요.
         </p>
       </header>
 
@@ -282,8 +282,8 @@ export default function NativePermissionsOnboarding() {
           active={step === "notifications"}
           done={step === "battery" || step === "camera" || step === "done"}
           icon={Bell}
-          title="알림"
-          desc="결재 요청·금지구역 경보 푸시"
+          title="알림 · 사이렌"
+          desc="결재 푸시·금지구역 경보(사이렌). 알림 허용이 필요합니다."
         />
         {isAndroid && (
           <StepCard
@@ -291,7 +291,7 @@ export default function NativePermissionsOnboarding() {
             done={step === "camera" || step === "done"}
             icon={Battery}
             title="배터리 제한 없음"
-            desc="삼성·샤오미가 백그라운드 GPS를 끄지 않게 합니다."
+            desc="삼성·샤오미가 백그라운드 GPS·알람을 끄지 않게 합니다."
           />
         )}
         <StepCard
@@ -299,7 +299,7 @@ export default function NativePermissionsOnboarding() {
           done={step === "done"}
           icon={Camera}
           title="카메라"
-          desc="근로자 QR 스캔·점검 사진 (선택)"
+          desc="근로자 QR 스캔·점검 사진"
         />
       </main>
 
@@ -330,11 +330,11 @@ export default function NativePermissionsOnboarding() {
           <>
             {pushDenied && (
               <p className="text-xs text-destructive leading-relaxed">
-                알림을 끄면 앱을 닫았을 때 금지구역 푸시를 받지 못합니다.
+                알림을 끄면 앱을 닫았을 때 금지구역 사이렌·결재 푸시를 받지 못합니다.
               </p>
             )}
             <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestNotifications()}>
-              알림 허용
+              알림 · 사이렌 허용
             </Button>
             {pushDenied && (
               <>
@@ -363,7 +363,7 @@ export default function NativePermissionsOnboarding() {
                 <li key={line}>· {line}</li>
               ))}
             </ul>
-            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void openNativeAppSettings()}>
+            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void openBatterySettings()}>
               앱 설정 열기
             </Button>
             <Button

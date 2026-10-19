@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { isNativeApp } from "@/lib/native/isNativeApp";
 import {
   checkInBlockedByLocation,
+  isForegroundLocationGranted,
   locationPermissionTriState,
   locationTapStepsKo,
   shouldShowGpsConsentCoach,
 } from "@/lib/native/nativePermissionGate";
+import { promptBackgroundLocation } from "@/lib/native/promptBackgroundLocation";
 import { openNativeAppSettings } from "@/lib/native/openNativeAppSettings";
 import { todaySnoozeStamp } from "@/lib/native/nativeStoreUpdate";
+import { toast } from "sonner";
 
 const DISMISS_KEY = "safenex.gpsAlwaysCoach.date";
 
@@ -46,33 +49,59 @@ export default function GpsConsentCoach({
 }) {
   const [osGranted, setOsGranted] = useState<boolean | null>(isNativeApp() ? null : true);
   const [dismissed, setDismissed] = useState(alwaysAllowDismissedToday);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
+  const refreshOs = async () => {
     if (!isNativeApp()) {
       setOsGranted(true);
       onOsLocationChange?.(true);
       return;
     }
+    try {
+      const { Geolocation } = await import("@capacitor/geolocation");
+      const cur = await Geolocation.checkPermissions();
+      const granted = locationPermissionTriState(cur);
+      setOsGranted(granted);
+      onOsLocationChange?.(granted);
+    } catch {
+      setOsGranted(null);
+      onOsLocationChange?.(null);
+    }
+  };
+
+  useEffect(() => {
     let cancelled = false;
-    const read = async () => {
-      try {
-        const { Geolocation } = await import("@capacitor/geolocation");
-        const cur = await Geolocation.checkPermissions();
-        if (cancelled) return;
-        const granted = locationPermissionTriState(cur);
-        setOsGranted(granted);
-        onOsLocationChange?.(granted);
-      } catch {
-        if (cancelled) return;
-        setOsGranted(null);
-        onOsLocationChange?.(null);
-      }
-    };
-    void read();
+    void (async () => {
+      if (cancelled) return;
+      await refreshOs();
+    })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onOsLocationChange]);
+
+  const requestOsLocation = async () => {
+    if (!isNativeApp()) return;
+    setBusy(true);
+    try {
+      const { Geolocation } = await import("@capacitor/geolocation");
+      const cur = await Geolocation.checkPermissions();
+      if (!isForegroundLocationGranted(cur)) {
+        await Geolocation.requestPermissions();
+      }
+      await promptBackgroundLocation();
+      await refreshOs();
+      const after = await Geolocation.checkPermissions();
+      if (!isForegroundLocationGranted(after)) {
+        toast.message("허용이 안 되면 아래 「앱 설정 열기」에서 위치를 켜 주세요.");
+      }
+    } catch (e: any) {
+      toast.error("위치 권한 요청 실패: " + (e?.message || "오류"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const denied = osGranted === false;
   const visible = shouldShowGpsConsentCoach({
@@ -112,7 +141,16 @@ export default function GpsConsentCoach({
         <p className="text-xs font-semibold text-destructive">위치를 허용하기 전에는 출근할 수 없습니다.</p>
       )}
       <div className="flex flex-col gap-2">
-        <Button className="w-full h-11" onClick={() => void openNativeAppSettings()}>
+        <Button className="w-full h-11" disabled={busy} onClick={() => void requestOsLocation()}>
+          위치 허용 (시스템 팝업)
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-11"
+          disabled={busy}
+          onClick={() => void openNativeAppSettings()}
+        >
           앱 설정 열기
         </Button>
         {!denied && isCheckedIn && (

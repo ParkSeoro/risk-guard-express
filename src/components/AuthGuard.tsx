@@ -4,12 +4,13 @@
  */
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { isActiveMobilePreviewRequest } from "@/lib/mobilePreview";
 import {
   hasCompletedNativePermissions,
   isNativeApp,
+  syncNativePermissionsFlagWithOs,
 } from "@/lib/native/isNativeApp";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 import { needsWorkerLocaleChoice, WORKER_LANGUAGE_PATH } from "@/lib/i18n/workerLocale";
@@ -228,6 +229,31 @@ function AccountBlockedScreen({
 export default function AuthGuard({ children, shell, allowAnonymous = false }: AuthGuardProps) {
   const { user, session, isAuthLoading, roles, rolesReady, profileReady, profile } = useAuth();
   const location = useLocation();
+  const [nativePermsChecked, setNativePermsChecked] = useState(() => !isNativeApp());
+  const [nativePermsDone, setNativePermsDone] = useState(() => hasCompletedNativePermissions());
+
+  // Re-open OS permission onboarding when location was revoked after "done".
+  useEffect(() => {
+    if (!isNativeApp()) {
+      setNativePermsChecked(true);
+      return;
+    }
+    if (!session && !user) {
+      setNativePermsDone(hasCompletedNativePermissions());
+      setNativePermsChecked(true);
+      return;
+    }
+    let cancelled = false;
+    setNativePermsChecked(false);
+    void syncNativePermissionsFlagWithOs().then((done) => {
+      if (cancelled) return;
+      setNativePermsDone(done);
+      setNativePermsChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, user]);
 
   // ① Global auth bootstrap
   if (isAuthLoading) return <LoadingSpinner />;
@@ -281,10 +307,17 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to="/consent" replace />;
   }
 
-  // ④b Native OS permissions (after legal consent, once)
+  // ④b Native OS permissions (after legal consent). Re-check OS if flag is stale.
   if (
     isNativeApp() &&
-    !hasCompletedNativePermissions() &&
+    location.pathname !== "/native-permissions" &&
+    !nativePermsChecked
+  ) {
+    return <LoadingSpinner />;
+  }
+  if (
+    isNativeApp() &&
+    !nativePermsDone &&
     location.pathname !== "/native-permissions"
   ) {
     return <Navigate to="/native-permissions" replace />;

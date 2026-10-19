@@ -4,9 +4,9 @@
  * requests Location → Notifications → Battery (Android) → Camera.
  * Location is a hard gate. Worker QR signup is already active (no admin wait).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { Geolocation } from "@capacitor/geolocation";
 import { PushNotifications } from "@capacitor/push-notifications";
@@ -28,6 +28,7 @@ import {
   isForegroundLocationGranted,
   isPushGranted,
 } from "@/lib/native/nativePermissionGate";
+import { promptBackgroundLocation } from "@/lib/native/promptBackgroundLocation";
 import { openNativeAppSettings } from "@/lib/native/openNativeAppSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -39,34 +40,6 @@ type Step = "location" | "notifications" | "battery" | "camera" | "done";
 
 function nextAfterNotifications(): Step {
   return Capacitor.getPlatform() === "android" ? "battery" : "camera";
-}
-
-async function promptBackgroundLocation() {
-  if (Capacitor.getPlatform() !== "android") return;
-  try {
-    const BackgroundGeolocation = registerPlugin<{
-      addWatcher: (opts: Record<string, unknown>, cb: () => void) => Promise<string>;
-      removeWatcher: (opts: { id: string }) => Promise<void>;
-    }>("BackgroundGeolocation");
-    if (!BackgroundGeolocation?.addWatcher) return;
-    const id = await BackgroundGeolocation.addWatcher(
-      {
-        backgroundMessage: "위험구역 자동감지를 위해 위치를 추적합니다.",
-        backgroundTitle: "SafeNex 위치",
-        requestPermissions: true,
-        stale: true,
-        distanceFilter: 50,
-      },
-      () => {},
-    );
-    try {
-      await BackgroundGeolocation.removeWatcher({ id });
-    } catch {
-      /* ignore */
-    }
-  } catch (e) {
-    console.warn("[NativePermissions] background location prompt skipped", e);
-  }
 }
 
 async function ensureSelectedProject(userId: string, isMaster: boolean) {
@@ -119,6 +92,7 @@ export default function NativePermissionsOnboarding() {
   const [locationDenied, setLocationDenied] = useState(false);
   const [pushDenied, setPushDenied] = useState(false);
   const isAndroid = Capacitor.getPlatform() === "android";
+  const autoLocationPrompted = useRef(false);
 
   useEffect(() => {
     if (!user || !isNativeApp()) return;
@@ -150,6 +124,38 @@ export default function NativePermissionsOnboarding() {
       void handle?.remove();
     };
   }, [step]);
+
+  // App launch / first paint: open the system location sheet without an extra tap.
+  useEffect(() => {
+    if (!user || !isNativeApp() || hasCompletedNativePermissions()) return;
+    if (step !== "location" || autoLocationPrompted.current) return;
+    autoLocationPrompted.current = true;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        setBusy(true);
+        try {
+          const cur = await Geolocation.checkPermissions();
+          if (!isForegroundLocationGranted(cur)) {
+            await Geolocation.requestPermissions();
+          }
+          const after = await Geolocation.checkPermissions();
+          if (!isForegroundLocationGranted(after)) {
+            setLocationDenied(true);
+            return;
+          }
+          setLocationDenied(false);
+          await promptBackgroundLocation();
+          setStep("notifications");
+        } catch (e: any) {
+          setLocationDenied(true);
+          toast.error("위치 권한 요청 실패: " + (e?.message || "오류"));
+        } finally {
+          setBusy(false);
+        }
+      })();
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [user, step]);
 
   if (isAuthLoading) {
     return (

@@ -130,6 +130,7 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id
       ? `${ADMIN}/remote-support?session=${n.related_id}`
       : `${ADMIN}/remote-support`,
+  signup_pending: () => `${ADMIN}/settings/permissions?tab=pending`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -183,6 +184,7 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id
       ? `${ADMIN}/remote-support?session=${n.related_id}`
       : `${ADMIN}/remote-support`,
+  signup_pending: () => `${ADMIN}/settings/permissions?tab=pending`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */

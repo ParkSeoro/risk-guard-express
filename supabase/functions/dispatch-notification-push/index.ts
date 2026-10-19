@@ -246,6 +246,7 @@ async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promis
   // may use the safenex_alarms / siren channel.
   const isCriticalAlarm =
     n.type !== "announcement" &&
+    n.type !== "signup_pending" &&
     n.type !== "approval_request" &&
     n.type !== "approval_result" &&
     n.type !== "vision_safety_event" &&

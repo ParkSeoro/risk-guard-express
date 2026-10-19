@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
@@ -30,6 +31,11 @@ import {
   matchesManageableUserFilters,
   personaOfUser,
 } from '@/lib/userManagementFilters';
+import {
+  canApprovePendingSignup,
+  isClientOwnerSmAnywhere,
+  type OwnerSmMembershipLike,
+} from '@/lib/signupApproval';
 
 // === New permission model ===
 // Global role: only `master` is meaningful (system-wide admin).
@@ -83,6 +89,7 @@ const UserManagement = () => {
   const { hasRole, user: currentUser } = useAuth();
   const { log } = useAuditLog();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -90,6 +97,7 @@ const UserManagement = () => {
   const [filterProject, setFilterProject] = useState('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [myMemberships, setMyMemberships] = useState<OwnerSmMembershipLike[]>([]);
 
   // Membership assignment state
   const [showAssignDialog, setShowAssignDialog] = useState(false);
@@ -111,16 +119,32 @@ const UserManagement = () => {
   const [pwdSaving, setPwdSaving] = useState(false);
 
   const isMaster = hasRole('master');
-  const canManagePermissions = isMaster || hasRole('project_admin');
+  const canManagePermissions =
+    isMaster || hasRole('project_admin') || isClientOwnerSmAnywhere(myMemberships);
 
   const fetchUsers = async () => {
     setLoading(true);
-    const [{ data: profiles }, { data: allRoles }, { data: allMembers }, authInfoRes] = await Promise.all([
+    const [{ data: profiles }, { data: allRoles }, { data: allMembers }, authInfoRes, myMemRes] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('user_roles').select('user_id, role'),
-      supabase.from('project_members').select('id, user_id, project_id, role_new, company_id, company, position_new'),
+      supabase
+        .from('project_members')
+        .select('id, user_id, project_id, role_new, company_id, company, position_new, companies:company_id(type)'),
       (supabase as any).rpc('list_manageable_user_auth_info'),
+      currentUser?.id
+        ? supabase
+            .from('project_members')
+            .select('project_id, position_new, companies:company_id(type)')
+            .eq('user_id', currentUser.id)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
+    setMyMemberships(
+      ((myMemRes as any)?.data || []).map((m: any) => ({
+        project_id: m.project_id,
+        position_new: m.position_new,
+        company_type: m.companies?.type ?? null,
+      })),
+    );
     const authMap = new Map<string, { email: string; last_sign_in_at: string | null }>();
     ((authInfoRes?.data as any[]) || []).forEach((row: any) => {
       authMap.set(row.out_user_id, {
@@ -166,7 +190,10 @@ const UserManagement = () => {
     }
   };
 
-  useEffect(() => { fetchUsers(); fetchProjects(); }, []);
+  useEffect(() => {
+    void fetchUsers();
+    void fetchProjects();
+  }, [currentUser?.id]);
 
   // Realtime: refresh on profile / membership changes
   useEffect(() => {
@@ -531,6 +558,17 @@ const UserManagement = () => {
     if (status === 'pending') setFilterPersona('all');
   };
 
+  useEffect(() => {
+    if (searchParams.get('tab') === 'pending') setStatusTab('pending');
+  }, [searchParams]);
+
+  const canApproveUser = (userId: string) =>
+    canApprovePendingSignup({
+      isMaster,
+      approverMemberships: myMemberships,
+      targetProjectIds: (userMemberships[userId] || []).map((m: any) => m.project_id),
+    });
+
   const kpis = {
     total: users.length,
     pending: users.filter(u => u.account_status === 'pending').length,
@@ -773,7 +811,7 @@ const UserManagement = () => {
                   </td>
                   <td className="text-center">
                     <div className="flex items-center gap-1 justify-center flex-wrap">
-                      {u.account_status === 'pending' && (
+                      {u.account_status === 'pending' && canApproveUser(u.user_id) && (
                         <>
                           <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-success" disabled={saving === u.user_id}
                             onClick={() => handleStatusChange(u.user_id, 'active')}
@@ -785,6 +823,9 @@ const UserManagement = () => {
                             반려
                           </Button>
                         </>
+                      )}
+                      {u.account_status === 'pending' && !canApproveUser(u.user_id) && (
+                        <span className="text-[10px] text-muted-foreground">발주처 SM·마스터만 승인</span>
                       )}
                       {u.account_status === 'active' && (
                         <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-destructive" disabled={saving === u.user_id}

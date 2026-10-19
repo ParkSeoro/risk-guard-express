@@ -64,6 +64,7 @@ const MANDATORY_EVENTS_ALL = [
   { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림', worker: true },
   { key: 'announcement',       label: '현장 공지',             desc: '관리자가 게시한 현장 공지 (끌 수 없음)', worker: true },
   { key: 'assessment_share',   label: '위험성평가 결과 공유',   desc: '회사별 평가 승인 시 소속 관리자·근로자 확인 서명 (끌 수 없음)', worker: true },
+  { key: 'signup_pending',     label: '관리자 가입 승인 요청', desc: '해당 프로젝트 발주처 SM에게 전달 (끌 수 없음)', worker: false },
 ] as const;
 
 interface EmailLogEntry {

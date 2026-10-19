@@ -2,7 +2,8 @@
 // - 네이티브만. 웹/프리뷰는 no-op.
 // - 부팅·포그라운드 복귀 시 silent 체크 → 다운로드 후 즉시 적용(set).
 // - 근로자는 강제종료/수동 확인 없이 최신 화면을 받도록 설계.
-import { supabase } from "@/integrations/supabase/client";
+// - Release lookup uses otaAnonClient (no auth Preferences) so boot splash cannot hang.
+import { getOtaAnonClient } from "./otaAnonClient";
 import { isNativeApp } from "./platform";
 
 const CHANNEL_KEY = "app-update-channel";
@@ -53,6 +54,8 @@ export type OtaCheckOptions = {
    * Default true — workers should not need force-quit.
    */
   preferImmediate?: boolean;
+  /** When true mid-flight, skip download/apply so a timed-out boot gate can mount UI. */
+  shouldAbort?: () => boolean;
 };
 
 export async function getOtaStatus(): Promise<OtaStatus> {
@@ -72,7 +75,8 @@ export async function getOtaStatus(): Promise<OtaStatus> {
     const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
     const current = await CapacitorUpdater.current();
     const currentVersion = String((current as any)?.bundle?.version || "내장");
-    const { data, error } = await supabase.rpc("get_latest_app_release", {
+    const ota = getOtaAnonClient();
+    const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: channel,
     } as any);
     if (error) {
@@ -136,7 +140,12 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
     const current = await CapacitorUpdater.current();
     const currentVersion = String((current as any)?.bundle?.version || "0.0.0");
 
-    const { data, error } = await supabase.rpc("get_latest_app_release", {
+    if (opts.shouldAbort?.()) {
+      return { ok: true, message: "업데이트 확인이 취소되었습니다.", apply: "none" };
+    }
+
+    const ota = getOtaAnonClient();
+    const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: getChannel(),
     } as any);
     if (error) return { ok: false, message: "릴리스 조회 실패: " + error.message, apply: "none" };
@@ -153,10 +162,14 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
       };
     }
 
+    if (opts.shouldAbort?.()) {
+      return { ok: true, message: "업데이트 확인이 취소되었습니다.", apply: "none" };
+    }
+
     let downloadUrl = release.bundle_url as string;
     if (downloadUrl.startsWith("storage:")) {
       const path = downloadUrl.replace(/^storage:/, "");
-      const { data: signed, error: sErr } = await supabase.storage
+      const { data: signed, error: sErr } = await ota.storage
         .from("app-updates")
         .createSignedUrl(path, 60 * 60);
       if (sErr || !signed?.signedUrl) {
@@ -170,6 +183,10 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
       version: release.version,
       checksum: release.checksum || undefined,
     } as any);
+
+    if (opts.shouldAbort?.()) {
+      return { ok: true, message: "업데이트 확인이 취소되었습니다.", apply: "none" };
+    }
 
     const immediate = !!release.mandatory || preferImmediate;
     if (immediate) {

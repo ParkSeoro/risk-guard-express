@@ -1,9 +1,15 @@
 /**
  * Pre-login OTA gate: check/download/apply before React auth UI mounts.
  * Web/preview: immediate no-op success.
+ *
+ * Hard timeout: a hung Capgo/bridge/network call must never leave workers
+ * on the "업데이트가 있으면 받는 중…" splash forever.
  */
 import { isNativeApp } from "./platform";
 import { checkAndDownloadOta, type OtaCheckOptions } from "./otaUpdater";
+
+/** Overall gate budget (check + download). Apply wait is separate. */
+export const BOOT_OTA_GATE_TIMEOUT_MS = 20_000;
 
 export type BootOtaPhase =
   | "idle"
@@ -21,6 +27,11 @@ export type BootOtaProgress = {
 };
 
 type Listener = (p: BootOtaProgress) => void;
+
+function clearBootOtaOwnership() {
+  const root = document.getElementById("root");
+  if (root) delete root.dataset.bootOta;
+}
 
 function paintSplash(p: BootOtaProgress) {
   const root = document.getElementById("root");
@@ -59,12 +70,82 @@ function paintSplash(p: BootOtaProgress) {
   `;
 }
 
+async function runBootOtaGateInner(
+  opts: OtaCheckOptions & { onProgress?: Listener; strict?: boolean; paint?: boolean },
+  emit: (p: BootOtaProgress) => void,
+  isCancelled: () => boolean,
+): Promise<BootOtaProgress> {
+  emit({ phase: "checking", message: "새 화면이 있는지 확인하는 중…" });
+
+  // Mark Capgo ready first (also done inside checkAndDownloadOta)
+  try {
+    const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
+    await CapacitorUpdater.notifyAppReady();
+  } catch {
+    /* plugin missing */
+  }
+  if (isCancelled()) {
+    return { phase: "ready", message: "업데이트 확인이 지연되어 앱을 계속합니다." };
+  }
+
+  emit({ phase: "downloading", message: "업데이트가 있으면 받는 중…" });
+  const r = await checkAndDownloadOta({
+    silent: true,
+    preferImmediate: opts.preferImmediate !== false,
+    shouldAbort: isCancelled,
+  });
+  if (isCancelled()) {
+    return { phase: "ready", message: "업데이트 확인이 지연되어 앱을 계속합니다." };
+  }
+
+  if (!r.ok) {
+    const err: BootOtaProgress = {
+      phase: "error",
+      message: r.message || "업데이트 확인에 실패했습니다. 로그인을 계속합니다.",
+    };
+    emit(err);
+    if (opts.strict) return err;
+    clearBootOtaOwnership();
+    return { ...err, phase: "ready", message: err.message };
+  }
+
+  if (r.apply === "immediate") {
+    emit({
+      phase: "applying",
+      message: "새 화면을 적용하는 중… 잠시만 기다려 주세요.",
+      version: r.version,
+    });
+    // CapacitorUpdater.set() normally reloads the WebView.
+    // Give it a moment; if still here, caller may mount the current bundle.
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    clearBootOtaOwnership();
+    return {
+      phase: "applying",
+      message: r.message,
+      version: r.version,
+    };
+  }
+
+  const done: BootOtaProgress = {
+    phase: "ready",
+    message: r.message || "최신 화면입니다.",
+    version: r.version,
+  };
+  clearBootOtaOwnership();
+  return done;
+}
+
 /**
  * Run OTA before app UI. Blocks until check finishes (or apply triggers reload).
- * Never blocks web. On failure, proceeds to login (non-fatal) unless opts.strict.
+ * Never blocks web. On failure/timeout, proceeds to login (non-fatal) unless opts.strict.
  */
 export async function runBootOtaGate(
-  opts: OtaCheckOptions & { onProgress?: Listener; strict?: boolean; paint?: boolean } = {},
+  opts: OtaCheckOptions & {
+    onProgress?: Listener;
+    strict?: boolean;
+    paint?: boolean;
+    timeoutMs?: number;
+  } = {},
 ): Promise<BootOtaProgress> {
   const paint = opts.paint !== false;
   const emit = (p: BootOtaProgress) => {
@@ -73,69 +154,41 @@ export async function runBootOtaGate(
   };
 
   if (!isNativeApp()) {
-    const done: BootOtaProgress = {
+    return {
       phase: "skipped",
       message: "웹/미리보기는 업데이트 게이트를 건너뜁니다.",
     };
-    return done;
   }
 
-  emit({ phase: "checking", message: "새 화면이 있는지 확인하는 중…" });
+  const timeoutMs = opts.timeoutMs ?? BOOT_OTA_GATE_TIMEOUT_MS;
+  let cancelled = false;
 
   try {
-    // Mark Capgo ready first (also done inside checkAndDownloadOta)
-    try {
-      const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
-      await CapacitorUpdater.notifyAppReady();
-    } catch {
-      /* plugin missing */
-    }
-
-    emit({ phase: "downloading", message: "업데이트가 있으면 받는 중…" });
-    const r = await checkAndDownloadOta({
-      silent: true,
-      preferImmediate: opts.preferImmediate !== false,
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<BootOtaProgress>((resolve) => {
+      timeoutId = setTimeout(() => {
+        cancelled = true;
+        console.warn(`[bootOtaGate] timed out after ${timeoutMs}ms — continuing to app`);
+        resolve({
+          phase: "ready",
+          message: "업데이트 확인이 지연되어 앱을 계속합니다.",
+        });
+      }, timeoutMs);
     });
 
-    if (!r.ok) {
-      const err: BootOtaProgress = {
-        phase: "error",
-        message: r.message || "업데이트 확인에 실패했습니다. 로그인을 계속합니다.",
-      };
-      emit(err);
-      if (opts.strict) return err;
-      // Non-fatal: clear splash ownership so React can mount
-      const root = document.getElementById("root");
-      if (root) delete root.dataset.bootOta;
-      return { ...err, phase: "ready", message: err.message };
-    }
-
-    if (r.apply === "immediate") {
+    const result = await Promise.race([
+      runBootOtaGateInner(opts, emit, () => cancelled),
+      timedOut,
+    ]);
+    if (timeoutId) clearTimeout(timeoutId);
+    if (cancelled) {
       emit({
-        phase: "applying",
-        message: "새 화면을 적용하는 중… 잠시만 기다려 주세요.",
-        version: r.version,
+        phase: "error",
+        message: "업데이트 확인이 지연되어 앱을 계속합니다.",
       });
-      // CapacitorUpdater.set() normally reloads the WebView.
-      // Give it a moment; if still here, caller may mount the current bundle.
-      await new Promise((resolve) => setTimeout(resolve, 4_000));
-      const root = document.getElementById("root");
-      if (root) delete root.dataset.bootOta;
-      return {
-        phase: "applying",
-        message: r.message,
-        version: r.version,
-      };
+      clearBootOtaOwnership();
     }
-
-    const done: BootOtaProgress = {
-      phase: "ready",
-      message: r.message || "최신 화면입니다.",
-      version: r.version,
-    };
-    const root = document.getElementById("root");
-    if (root) delete root.dataset.bootOta;
-    return done;
+    return result;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const err: BootOtaProgress = {
@@ -143,8 +196,7 @@ export async function runBootOtaGate(
       message: `업데이트 확인 오류: ${msg}`,
     };
     emit(err);
-    const root = document.getElementById("root");
-    if (root) delete root.dataset.bootOta;
+    clearBootOtaOwnership();
     return { phase: "ready", message: err.message };
   }
 }

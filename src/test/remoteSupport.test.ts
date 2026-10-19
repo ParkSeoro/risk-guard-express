@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canRequestRemoteSupport,
+  canSubmitRemoteSupportRequest,
   canTransitionStatus,
   isTerminalStatus,
   remoteSupportChannelName,
@@ -21,6 +22,12 @@ describe("remoteSupport permissions", () => {
     expect(canRequestRemoteSupport({ userId: "u1", isMaster: false, isAgent: true })).toBe(false);
     expect(canRequestRemoteSupport({ userId: "u1", isMaster: true, isAgent: true })).toBe(false);
     expect(canRequestRemoteSupport({ userId: null, isMaster: false, isAgent: false })).toBe(false);
+  });
+
+  it("requires prior contact confirmation before submit", () => {
+    expect(canSubmitRemoteSupportRequest({ contactedConfirmed: false, agentId: "a1" })).toBe(false);
+    expect(canSubmitRemoteSupportRequest({ contactedConfirmed: true, agentId: "" })).toBe(false);
+    expect(canSubmitRemoteSupportRequest({ contactedConfirmed: true, agentId: "a1" })).toBe(true);
   });
 });
 

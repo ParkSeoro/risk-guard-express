@@ -1,9 +1,11 @@
 /**
- * Supabase browser client — mobile/PWA auto-login relies on localStorage session persistence.
- * Do not switch storage to sessionStorage; closing the tab/PWA must keep the auth token.
+ * Supabase browser client — mobile auto-login persists via Preferences on native
+ * (SharedPreferences / UserDefaults). Web/PWA still uses localStorage.
+ * Do not switch storage to sessionStorage; closing the app must keep the session.
  */
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { createAuthStorage } from '@/lib/native/authStorage';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
@@ -22,8 +24,7 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    // Persist JWTs in localStorage so PWA / mobile browsers restore the session on reopen.
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storage: createAuthStorage(),
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,

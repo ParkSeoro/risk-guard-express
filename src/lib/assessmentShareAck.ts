@@ -35,19 +35,6 @@ export type PendingAssessmentShare = {
   notice_id: string | null;
 };
 
-/** One prompt bucket: same site + 상시/수시 + week start. */
-export function sharePromptGroupKey(item: {
-  project_id?: string | null;
-  type?: string | null;
-  start_date?: string | null;
-}): string {
-  return [
-    String(item.project_id || "").trim(),
-    String(item.type || "").trim(),
-    String(item.start_date || "").trim().slice(0, 10),
-  ].join("|");
-}
-
 export function shareTypeLabel(type?: string | null): string {
   const t = String(type || "").trim();
   if (t === "수시") return "수시 위험성평가";
@@ -63,24 +50,21 @@ export function shareAckErrorMessage(code?: string | null): string {
 }
 
 /**
- * Collapse duplicate weekly copies and honor local dismissals.
- * Approved runs prompt on the approval day, including next week's 회차.
+ * Each approved run is its own document — one prompt per unsigned run_id.
+ * Same week/type does not collapse or share signatures across runs.
  */
 export function pickPendingSharePrompts(
   items: PendingAssessmentShare[],
   opts?: {
     today?: string;
     dismissedRunIds?: Iterable<string>;
-    dismissedGroupKeys?: Iterable<string>;
   },
 ): PendingAssessmentShare[] {
   const dismissedIds = new Set(
     [...(opts?.dismissedRunIds || [])].map((id) => String(id || "").trim()).filter(Boolean),
   );
-  const dismissedGroups = new Set(
-    [...(opts?.dismissedGroupKeys || [])].map((key) => String(key || "").trim()).filter(Boolean),
-  );
   const typeRank = (t: string) => (t === "상시" ? 0 : t === "수시" ? 1 : 2);
+  const seenRun = new Set<string>();
   const sorted = (items || [])
     .filter((item) => item && item.run_id)
     .slice()
@@ -88,15 +72,14 @@ export function pickPendingSharePrompts(
       const as = String(a.start_date || "").slice(0, 10);
       const bs = String(b.start_date || "").slice(0, 10);
       if (as !== bs) return as < bs ? -1 : 1;
-      return typeRank(String(a.type || "")) - typeRank(String(b.type || ""));
+      const tr = typeRank(String(a.type || "")) - typeRank(String(b.type || ""));
+      if (tr !== 0) return tr;
+      return String(a.run_id).localeCompare(String(b.run_id));
     });
-  const seen = new Set<string>();
   const out: PendingAssessmentShare[] = [];
   for (const item of sorted) {
-    if (dismissedIds.has(item.run_id)) continue;
-    const key = sharePromptGroupKey(item);
-    if (dismissedGroups.has(key) || seen.has(key)) continue;
-    seen.add(key);
+    if (dismissedIds.has(item.run_id) || seenRun.has(item.run_id)) continue;
+    seenRun.add(item.run_id);
     out.push(item);
   }
   return out;

@@ -17,7 +17,8 @@ import { toast } from "sonner";
 import { ShieldAlert } from "lucide-react";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 /**
- * Blocking confirm after RA approval. Signature stamps 근로자 참여 및 공유 서명 once.
+ * Blocking confirm after RA approval.
+ * Each approved run collects its own 근로자 참여 및 공유 서명 (not shared across runs).
  */
 export default function ShellAssessmentShareAlert() {
   const { current, remainingCount, reload, dismiss } = usePendingAssessmentShares();

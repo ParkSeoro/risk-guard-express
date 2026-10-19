@@ -32,20 +32,20 @@ function showBootError(err: unknown) {
 
 async function boot() {
   try {
-    // Native: OTA before login UI. Web: skip.
+    // Native: Capgo ready handshake only — never block login on OTA download.
+    // (Download during boot froze WebView timers → infinite "업데이트 받는 중" splash.)
     if (isNativeApp()) {
-      const gate = await runBootOtaGate({ preferImmediate: true, paint: true });
-      if (gate.phase === "applying") {
-        // Capgo set() should reload; if it didn't, fall through to app after splash wait.
-        console.warn("[boot] OTA apply did not reload — continuing to app");
-      }
-      await runBootStoreGate();
+      await runBootOtaGate({ paint: false });
+      await Promise.race([
+        runBootStoreGate(),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 4_000)),
+      ]);
     }
 
     const { default: App } = await import("./App.tsx");
     createRoot(rootEl!).render(<App />);
     registerSWSafely();
-    // Resume / foreground checks only (boot already handled above)
+    // OTA download/apply after UI is up
     initOtaUpdater();
   } catch (err) {
     console.error("[boot]", err);

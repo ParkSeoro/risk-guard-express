@@ -1,6 +1,6 @@
 import { cmpVersion, getChannel } from "@/lib/native/otaUpdater";
+import { getOtaAnonClient } from "@/lib/native/otaAnonClient";
 import { isNativeApp, nativePlatform } from "@/lib/native/platform";
-import { supabase } from "@/integrations/supabase/client";
 
 export type NativeIdentity = { version: string; build: string };
 
@@ -80,7 +80,7 @@ export async function fetchNativeStoreUpdateState(): Promise<NativeStoreUpdateSt
   const current = await getNativeIdentity();
   if (!current) return empty;
   try {
-    const { data, error } = await supabase.rpc("get_latest_app_release", {
+    const { data, error } = await getOtaAnonClient().rpc("get_latest_app_release", {
       _channel: getChannel(),
     } as any);
     if (error) return { applicable: true, needed: false, current, minNative: null };

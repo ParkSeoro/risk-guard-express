@@ -4,7 +4,6 @@ import {
   pickPendingSharePrompts,
   runAppliesToCompany,
   runCoversDate,
-  sharePromptGroupKey,
   shareSignatureRowCount,
   shareTypeLabel,
   pairShareAcks,
@@ -119,9 +118,9 @@ describe("pickPendingSharePrompts", () => {
     ...partial,
   });
 
-  it("prompts each approved week on the approval day, one copy per week+type", () => {
+  it("keeps every run_id even when week and type match (clone/revision is independent)", () => {
     const rows = [
-      share({ run_id: "week2-old", created_at: undefined, start_date: "2026-09-07" }),
+      share({ run_id: "week2-old", start_date: "2026-09-07" }),
       share({ run_id: "week2-new", period_label: "2026년09월2주차", start_date: "2026-09-07" }),
       share({
         run_id: "week2-occasional",
@@ -138,19 +137,18 @@ describe("pickPendingSharePrompts", () => {
     ];
     expect(
       pickPendingSharePrompts(rows, { today: "2026-09-07" }).map((r) => r.run_id),
-    ).toEqual(["week2-old", "week2-occasional", "week3"]);
+    ).toEqual(["week2-new", "week2-old", "week2-occasional", "week3"]);
   });
 
-  it("hides the sibling week after a local dismiss", () => {
+  it("hides only the dismissed run_id, not other runs in the same week", () => {
     const current = share({ run_id: "signed" });
-    const sibling = share({ run_id: "copy", period_label: "2026년09월2주차" });
+    const other = share({ run_id: "copy", period_label: "2026년09월2주차" });
     expect(
-      pickPendingSharePrompts([sibling], {
+      pickPendingSharePrompts([current, other], {
         today: "2026-09-07",
         dismissedRunIds: [current.run_id],
-        dismissedGroupKeys: [sharePromptGroupKey(current)],
-      }),
-    ).toEqual([]);
+      }).map((r) => r.run_id),
+    ).toEqual(["copy"]);
   });
 
   it("labels 상시 and 수시 so the second prompt is not identical", () => {

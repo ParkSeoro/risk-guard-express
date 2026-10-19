@@ -79,6 +79,14 @@ export function canRequestRemoteSupport(opts: {
   return true;
 }
 
+/** Request dialog: require prior contact with a support agent before submit. */
+export function canSubmitRemoteSupportRequest(opts: {
+  contactedConfirmed: boolean;
+  agentId?: string | null;
+}): boolean {
+  return Boolean(opts.contactedConfirmed && opts.agentId);
+}
+
 export function isTerminalStatus(status: RemoteSupportStatus | string | null | undefined): boolean {
   return status === "ended" || status === "rejected" || status === "expired";
 }

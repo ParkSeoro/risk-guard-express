@@ -78,8 +78,8 @@ const CloneRunDialog = ({ open, onOpenChange, run, onCloned }: CloneRunDialogPro
         <AlertDialogHeader>
           <AlertDialogTitle>개정 회차 생성 (복제)</AlertDialogTitle>
           <AlertDialogDescription>
-            "{run?.period_label}" 회차의 위험 항목과 참여자를 복제하여 새로운 회차를 생성합니다.
-            상태는 '작성중'으로 설정됩니다.
+            "{run?.period_label}" 회차의 위험 항목(제외 항목 제외)과 참여자 명단을 복제합니다.
+            서명은 가져오지 않으며, 시작·종료일은 비운 채 상태 '작성중'으로 만듭니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2 py-2">

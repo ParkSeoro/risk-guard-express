@@ -1,6 +1,6 @@
 /**
- * Supabase browser client — mobile auto-login persists via Preferences on native
- * (SharedPreferences / UserDefaults). Web/PWA still uses localStorage.
+ * Supabase browser client — session persists in localStorage (web + native).
+ * Preferences bridge is disabled for now (OTA download could wedge login).
  * Do not switch storage to sessionStorage; closing the app must keep the session.
  */
 import { createClient } from '@supabase/supabase-js';

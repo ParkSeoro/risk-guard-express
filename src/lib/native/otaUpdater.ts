@@ -246,11 +246,12 @@ export async function initOtaUpdater() {
     /* plugin missing in some builds */
   }
 
-  // Allow an immediate deferred check (boot no longer downloads).
-  lastCheckAt = 0;
+  // Do not download during/just after login — Capgo download can stall the WebView
+  // and freeze auth storage / signIn. First check only after the app has been used.
+  lastCheckAt = Date.now();
   window.setTimeout(() => {
-    void runAutoCheck("boot-deferred");
-  }, 2_500);
+    void runAutoCheck("post-login-idle");
+  }, 45_000);
 
   if (resumeHooked) return;
   resumeHooked = true;

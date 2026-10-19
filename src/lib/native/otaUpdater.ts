@@ -3,6 +3,8 @@
 // - 부팅·포그라운드 복귀 시 silent 체크 → 다운로드 후 즉시 적용(set).
 // - 근로자는 강제종료/수동 확인 없이 최신 화면을 받도록 설계.
 // - Release lookup uses otaAnonClient (no auth Preferences) so boot splash cannot hang.
+// - Capgo download can stall the WebView event loop — never start it without a session.
+import { supabase } from "@/integrations/supabase/client";
 import { getOtaAnonClient } from "./otaAnonClient";
 import { isNativeApp } from "./platform";
 
@@ -214,9 +216,22 @@ let checking = false;
 let lastCheckAt = 0;
 let resumeHooked = false;
 
+async function hasAuthSession(): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return !!data.session?.access_token;
+  } catch {
+    return false;
+  }
+}
+
 async function runAutoCheck(reason: string) {
   if (!isNativeApp()) return;
   if (checking) return;
+  if (!(await hasAuthSession())) {
+    console.info(`[ota:${reason}] skipped — no auth session`);
+    return;
+  }
   const now = Date.now();
   if (now - lastCheckAt < MIN_CHECK_INTERVAL_MS) return;
   checking = true;
@@ -233,25 +248,46 @@ async function runAutoCheck(reason: string) {
   }
 }
 
+function scheduleOtaAfterAuth(reason: string, delayMs = 15_000) {
+  window.setTimeout(() => {
+    void runAutoCheck(reason);
+  }, delayMs);
+}
+
 /**
- * Foreground auto OTA after UI mount. Boot no longer downloads (see bootOtaGate).
+ * Capgo ready + OTA only after the user has a session.
+ * Root cause: CapacitorUpdater.download can stall the WebView event loop; if that
+ * runs on the login screen, signInWithPassword never settles ("처리 중…").
  */
 export async function initOtaUpdater() {
   if (!isNativeApp()) return;
   try {
-    // Mark ready ASAP so Capgo does not roll back a just-applied bundle.
     const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
     await CapacitorUpdater.notifyAppReady();
   } catch {
     /* plugin missing in some builds */
   }
 
-  // Do not download during/just after login — Capgo download can stall the WebView
-  // and freeze auth storage / signIn. First check only after the app has been used.
   lastCheckAt = Date.now();
-  window.setTimeout(() => {
-    void runAutoCheck("post-login-idle");
-  }, 45_000);
+
+  try {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) return;
+      if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+        scheduleOtaAfterAuth(`auth:${event}`);
+      }
+    });
+    void subscription;
+  } catch (e) {
+    console.warn("[ota] auth listener failed", e);
+  }
+
+  // Already signed-in cold start (restored session)
+  void hasAuthSession().then((ok) => {
+    if (ok) scheduleOtaAfterAuth("session-restore");
+  });
 
   if (resumeHooked) return;
   resumeHooked = true;

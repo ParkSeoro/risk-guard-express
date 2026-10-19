@@ -234,8 +234,7 @@ async function runAutoCheck(reason: string) {
 }
 
 /**
- * Foreground auto OTA. Boot check is handled by runBootOtaGate() in main.tsx
- * (pre-login splash) — this only hooks resume to avoid double work on cold start.
+ * Foreground auto OTA after UI mount. Boot no longer downloads (see bootOtaGate).
  */
 export async function initOtaUpdater() {
   if (!isNativeApp()) return;
@@ -247,8 +246,11 @@ export async function initOtaUpdater() {
     /* plugin missing in some builds */
   }
 
-  // Cold-start download already ran in bootOtaGate; skip immediate re-check.
-  lastCheckAt = Date.now();
+  // Allow an immediate deferred check (boot no longer downloads).
+  lastCheckAt = 0;
+  window.setTimeout(() => {
+    void runAutoCheck("boot-deferred");
+  }, 2_500);
 
   if (resumeHooked) return;
   resumeHooked = true;

@@ -62,10 +62,52 @@ describe("ZoomableDocumentPreview mobile-preview frames", () => {
 
     const preview = el.querySelector("[data-testid='zoomable-doc-preview']");
     expect(preview).toBeTruthy();
-    const scroller = preview?.querySelector(".overflow-y-scroll");
+    const scroller = preview?.querySelector("[data-testid='doc-preview-scroll']");
     expect(scroller).toBeTruthy();
+    expect(scroller?.className).toMatch(/doc-preview-scroll/);
+    expect(scroller?.className).toMatch(/overflow-y-scroll/);
     expect(scroller?.className).not.toMatch(/overflow-hidden/);
+    expect(scroller?.className).toMatch(/cursor-grab/);
     expect((scroller as HTMLElement | undefined)?.style.touchAction).toBe("none");
-    expect(el.textContent).toContain("드래그 이동");
+    expect(el.textContent).toContain("드래그·스크롤바 이동");
+  });
+
+  it("pans with mouse drag on the document surface", () => {
+    el = document.createElement("div");
+    el.style.width = "390px";
+    el.style.height = "844px";
+    document.body.appendChild(el);
+    root = createRoot(el);
+
+    act(() => {
+      root!.render(
+        <div style={{ width: 390, height: 844 }}>
+          <ZoomableDocumentPreview html={SAMPLE_HTML} loading={false} active pageWidth={A4_PORTRAIT_PX} />
+        </div>,
+      );
+    });
+
+    const scroller = el.querySelector("[data-testid='doc-preview-scroll']") as HTMLElement;
+    expect(scroller).toBeTruthy();
+    Object.defineProperty(scroller, "scrollWidth", { configurable: true, value: 1200 });
+    Object.defineProperty(scroller, "clientWidth", { configurable: true, value: 390 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 2000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 844 });
+    scroller.scrollLeft = 0;
+    scroller.scrollTop = 0;
+
+    act(() => {
+      scroller.dispatchEvent(
+        new MouseEvent("mousedown", { button: 0, clientX: 200, clientY: 200, bubbles: true }),
+      );
+    });
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 140, clientY: 160, bubbles: true }));
+    });
+    expect(scroller.scrollLeft).toBeGreaterThan(0);
+    expect(scroller.scrollTop).toBeGreaterThan(0);
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
   });
 });

@@ -68,8 +68,12 @@ export const POSITIONS_BY_COMPANY_TYPE: Record<string, ProjectPosition[]> = {
   vendor: ['CEO', 'EXECUTIVE', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER'],
 };
 
-/** Default project_role when assigning a position. */
-export function defaultRoleForPosition(position: string | null | undefined): string {
+/**
+ * Default project_role when a position is a 1:1 permission title.
+ * Job titles (공사부장·공사담당·조장) do not imply a role — return null
+ * so the existing role (e.g. 관리감독자) is kept.
+ */
+export function defaultRoleForPosition(position: string | null | undefined): string | null {
   switch ((position || '').toUpperCase()) {
     case 'OWNER_PM':
     case 'OWNER_CM':
@@ -81,18 +85,19 @@ export function defaultRoleForPosition(position: string | null | undefined): str
     case 'HSE_MANAGER':
       return 'safety_manager';
     case 'SITE_MANAGER':
-    case 'CONSTRUCTION_MGR':
       return 'site_manager';
     case 'SUPERVISOR': // 감리
       return 'supervisor';
     case 'SITE_SUPERVISOR': // 관리감독자
       return 'site_supervisor';
-    case 'FOREMAN':
-    case 'FIELD_ENGINEER':
     case 'WORKER':
       return 'worker';
+    case 'CONSTRUCTION_MGR':
+    case 'FIELD_ENGINEER':
+    case 'FOREMAN':
+      return null;
     default:
-      return 'viewer';
+      return null;
   }
 }
 
@@ -137,7 +142,8 @@ export function syncMembershipRolePosition(opts: {
 }): Record<string, string | null> {
   const out: Record<string, string | null> = { [opts.field]: opts.value };
   if (opts.field === 'position_new' && opts.value) {
-    out.role_new = defaultRoleForPosition(opts.value);
+    const role = defaultRoleForPosition(opts.value);
+    if (role) out.role_new = role;
   } else if (opts.field === 'role_new' && opts.value) {
     const pos = defaultPositionForRole(opts.value, opts.companyType);
     if (pos) out.position_new = pos;

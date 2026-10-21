@@ -28,6 +28,16 @@ describe("role ↔ position SSOT", () => {
       syncMembershipRolePosition({ field: "position_new", value: "SITE_SUPERVISOR" }),
     ).toEqual({ position_new: "SITE_SUPERVISOR", role_new: "site_supervisor" });
   });
+
+  it("keeps the current role when the job title is 공사부장·공사담당·조장", () => {
+    for (const position of ["CONSTRUCTION_MGR", "FIELD_ENGINEER", "FOREMAN"] as const) {
+      expect(defaultRoleForPosition(position)).toBeNull();
+      expect(syncMembershipRolePosition({ field: "position_new", value: position })).toEqual({
+        position_new: position,
+      });
+    }
+    expect(defaultRoleForPosition("SITE_MANAGER")).toBe("site_manager");
+  });
 });
 
 describe("filterApproversForStep — role/position drift", () => {

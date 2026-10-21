@@ -503,9 +503,8 @@ const UserManagement = () => {
     setAssignSaving(true);
     try {
       const companyName = assignCompanyId ? projectCompanies.find(c => c.id === assignCompanyId)?.name || '' : '';
-      const roleToSave = assignPosition
-        ? defaultRoleForPosition(assignPosition)
-        : assignRole;
+      const mappedRole = assignPosition ? defaultRoleForPosition(assignPosition) : null;
+      const roleToSave = mappedRole || assignRole;
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
@@ -955,7 +954,10 @@ const UserManagement = () => {
                       onValueChange={(v) => {
                         const pos = v === '_none' ? '' : v;
                         setAssignPosition(pos);
-                        if (pos) setAssignRole(defaultRoleForPosition(pos));
+                        if (pos) {
+                          const mapped = defaultRoleForPosition(pos);
+                          if (mapped) setAssignRole(mapped);
+                        }
                       }}
                     >
                       <SelectTrigger className="text-xs"><SelectValue placeholder="직책 선택" /></SelectTrigger>

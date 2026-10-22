@@ -103,6 +103,11 @@ export async function trackArtifact(
 }
 
 export async function cleanupRun(runId: string) {
+  const { data, error } = await supabase.rpc("hide_system_test_documents" as any, {
+    _run_id: runId,
+  });
+  const hidden = !error && !(data as { error?: string } | null)?.error;
+
   const { data: arts } = await supabase
     .from("system_test_artifacts")
     .select("ref_table, ref_id")
@@ -110,12 +115,11 @@ export async function cleanupRun(runId: string) {
   if (!arts) return;
   for (const a of arts) {
     try {
-      // Soft delete preferred; fallback hard delete
       const { error: softErr } = await supabase
         .from(a.ref_table as any)
         .update({ is_deleted: true } as any)
         .eq("id", a.ref_id);
-      if (softErr) {
+      if (softErr && !hidden) {
         await supabase.from(a.ref_table as any).delete().eq("id", a.ref_id);
       }
     } catch {

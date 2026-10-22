@@ -49,6 +49,7 @@ manifest 에 등록만 하고 시나리오 step 을 안 만들면 `coverage` 시
 ## 안전장치
 
 - 모든 테스트 데이터는 `__QA__` 접두사로 만든다. 그 접두사 문서는 넣는 즉시 목록에서 숨겨지고, 종료 시 `cleanupRun()` 이 남은 시험 행도 숨긴다.
+- 근로자 명단은 삭제 칸이 없고, 등록 때 생긴 교육 필수항목이 행 삭제를 막는다. 이번 실행으로 추적된 시험 근로자만 `is_active = false` 로 두고, 그 근로자의 `worker_required_items` 만 삭제 표시한다.
 - 운영 코드 수정 금지. 본 폴더 + `manifest.ts` + (필요시) `qa_*` SECURITY DEFINER RPC 만 추가
 - `EMAIL_OVERRIDE` 로 외부 알림 발송 차단 (개발 모드)
 

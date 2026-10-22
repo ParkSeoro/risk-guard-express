@@ -163,14 +163,17 @@ LANGUAGE plpgsql
 SET search_path TO 'public'
 AS $function$
 DECLARE
+  rowj jsonb := to_jsonb(NEW);
   marker text;
 BEGIN
+  -- to_jsonb so a shared trigger can read one table's column without
+  -- failing the insert on tables that do not have that column.
   marker := CASE TG_TABLE_NAME
-    WHEN 'assessment_runs' THEN NEW.period_label
-    WHEN 'work_plans' THEN NEW.title
-    WHEN 'work_permits' THEN COALESCE(NULLIF(NEW.work_name, ''), NEW.work_description)
-    WHEN 'tbm_sessions' THEN NEW.title
-    WHEN 'risk_items' THEN NEW.process
+    WHEN 'assessment_runs' THEN rowj->>'period_label'
+    WHEN 'work_plans' THEN rowj->>'title'
+    WHEN 'work_permits' THEN COALESCE(NULLIF(rowj->>'work_name', ''), rowj->>'work_description')
+    WHEN 'tbm_sessions' THEN rowj->>'title'
+    WHEN 'risk_items' THEN rowj->>'process'
     ELSE NULL
   END;
 

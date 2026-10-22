@@ -102,6 +102,18 @@ export async function trackArtifact(
     .insert({ run_id: runId, kind, ref_table: table, ref_id: id });
 }
 
+async function retireTestWorker(workerId: string) {
+  // workers has no is_deleted column, and register_worker creates
+  // worker_required_items that block a hard delete. Deactivate the test
+  // roster row and hide the items it generated. Real workers are never
+  // listed in system_test_artifacts.
+  await supabase
+    .from("worker_required_items")
+    .update({ is_deleted: true })
+    .eq("worker_id", workerId);
+  await supabase.from("workers").update({ is_active: false }).eq("id", workerId);
+}
+
 export async function cleanupRun(runId: string) {
   const { data, error } = await supabase.rpc("hide_system_test_documents" as any, {
     _run_id: runId,
@@ -115,6 +127,10 @@ export async function cleanupRun(runId: string) {
   if (!arts) return;
   for (const a of arts) {
     try {
+      if (a.ref_table === "workers") {
+        await retireTestWorker(a.ref_id);
+        continue;
+      }
       const { error: softErr } = await supabase
         .from(a.ref_table as any)
         .update({ is_deleted: true } as any)

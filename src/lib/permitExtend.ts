@@ -2,6 +2,26 @@
 import { supabase } from '@/integrations/supabase/client';
 import { permitPostStepKind } from '@/lib/permitPostApproval';
 
+/** 전회차 복사 때 이전 결재·연장 신청이 새 허가서로 따라오지 않게 뺀다. */
+const PERMIT_CLONE_OMIT_KEYS = [
+  'approved_at',
+  'reviewed_at',
+  'work_extend_until',
+  'work_extend_requested_until',
+  'work_extend_requested_at',
+  'work_extend_requested_by',
+  'work_extend_requested_reason',
+  'work_extend_reason',
+] as const;
+
+export function permitFormDataForClone(
+  formData?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const next = { ...(formData || {}) };
+  for (const key of PERMIT_CLONE_OMIT_KEYS) delete next[key];
+  return next;
+}
+
 export function permitExtendReasonFromForm(formData?: Record<string, unknown> | null): string {
   const d = formData || {};
   return String(d.work_extend_requested_reason || d.work_extend_reason || '').trim();

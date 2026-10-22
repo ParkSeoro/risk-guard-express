@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { mapPermitExtendRequestError } from '@/lib/permitExtend';
+import { mapPermitExtendRequestError, permitFormDataForClone } from '@/lib/permitExtend';
 import { Plus, FileSignature, Pencil, Trash2, Users, Copy, Clock, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
@@ -130,9 +130,7 @@ function toLocalInput(value?: string | null) {
 }
 
 function cleanCloneData(src: any) {
-  const formData = { ...(src?.form_data || {}) };
-  ['approved_at', 'reviewed_at', 'work_extend_until'].forEach((k) => delete formData[k]);
-  return formData;
+  return permitFormDataForClone(src?.form_data);
 }
 
 export default function WorkPermits() {

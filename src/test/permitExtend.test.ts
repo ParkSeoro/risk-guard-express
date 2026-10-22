@@ -4,6 +4,7 @@ import {
   isPermitExtendPostStep,
   mapPermitExtendRequestError,
   permitExtendReasonFromForm,
+  permitFormDataForClone,
 } from '@/lib/permitExtend';
 import { permitPostStepBadge, permitPostStepKind } from '@/lib/permitPostApproval';
 import { mergeApprovalSignatures, POSITION_TO_SIG, resolveSigKey } from '@/lib/permitApprovalSignatures';
@@ -23,6 +24,36 @@ describe('permitExtendReasonFromForm', () => {
   it('returns empty when neither is set', () => {
     expect(permitExtendReasonFromForm({})).toBe('');
     expect(permitExtendReasonFromForm(null)).toBe('');
+  });
+});
+
+describe('permitFormDataForClone', () => {
+  it('keeps the work content and drops the previous extension request', () => {
+    const cloned = permitFormDataForClone({
+      work_name: '3P N2 Tank 설치공사',
+      work_start: '2026-10-21T08:00',
+      work_end: '2026-10-21T17:00',
+      approved_at: '2026-10-20T07:51:29Z',
+      reviewed_at: '2026-10-20T05:32:04Z',
+      work_extend_until: '2026-10-20T18:30',
+      work_extend_requested_until: '2026-10-20T09:30:00+00:00',
+      work_extend_requested_at: '2026-10-20T04:31:05+00:00',
+      work_extend_requested_by: 'user-1',
+      work_extend_requested_reason: '내조 용접',
+      work_extend_reason: '이전 사유',
+    });
+
+    expect(cloned.work_name).toBe('3P N2 Tank 설치공사');
+    expect(cloned.work_start).toBe('2026-10-21T08:00');
+    expect(cloned.work_end).toBe('2026-10-21T17:00');
+    expect(cloned).not.toHaveProperty('approved_at');
+    expect(cloned).not.toHaveProperty('reviewed_at');
+    expect(cloned).not.toHaveProperty('work_extend_until');
+    expect(cloned).not.toHaveProperty('work_extend_requested_until');
+    expect(cloned).not.toHaveProperty('work_extend_requested_at');
+    expect(cloned).not.toHaveProperty('work_extend_requested_by');
+    expect(cloned).not.toHaveProperty('work_extend_requested_reason');
+    expect(cloned).not.toHaveProperty('work_extend_reason');
   });
 });
 

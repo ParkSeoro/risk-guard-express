@@ -1,7 +1,7 @@
 /**
  * 전회차 허가서 복제 다이얼로그
  * 같은 프로젝트·같은 종류의 최근 허가서 목록을 보여주고,
- * 선택 시 form_data / 위치 / 설명만 복사. 서명·결재·문서번호·상태는 초기화.
+ * 선택 시 form_data / 위치 / 설명만 복사. 서명·결재·연장 신청·문서번호·상태는 초기화.
  */
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Copy, FileSignature } from 'lucide-react';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
+import { permitFormDataForClone } from '@/lib/permitExtend';
 
 interface Props {
   open: boolean;
@@ -52,9 +53,7 @@ export default function ClonePreviousPermitDialog({
   const apply = async (src: any) => {
     // 복사 대상: form_data, work_description, work_location
     // 초기화 대상: signatures, gate_check_result, 결재 상태 유지 (현재 문서의 것)
-    const cleanForm = { ...(src.form_data || {}) };
-    // 서명/결재 파생 필드는 제거
-    ['approved_at'].forEach((k) => delete (cleanForm as any)[k]);
+    const cleanForm = permitFormDataForClone(src.form_data);
 
     const { error } = await supabase.from('work_permits' as any).update({
       form_data: cleanForm,

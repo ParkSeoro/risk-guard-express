@@ -170,6 +170,8 @@ const Approvals = () => {
             ? (action === 'approve' ? '발주처 CM 연장 검토 완료 → 발주처 SM 대기' : '연장 요청 반려')
           : stepKind === 'extend_sm'
             ? (action === 'approve' ? '연장 승인 완료' : '연장 요청 반려')
+          : stepKind === 'void_request_client'
+            ? (action === 'approve' ? '작업 취소 처리됨' : '작업취소 요청이 반려되었습니다. 허가서는 발행 상태입니다.')
             : (action === 'approve' ? '승인 완료' : '반려 완료');
     toast({ title });
     // 발행 최종 승인 시 TBM 일지 자동 생성·연결

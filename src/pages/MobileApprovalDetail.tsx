@@ -149,6 +149,8 @@ export default function MobileApprovalDetail() {
               ? action === "approve" ? "발주처 CM 연장 검토 완료 → 발주처 SM 대기" : "연장 요청 반려"
             : stepKind === "extend_sm"
               ? action === "approve" ? "연장 승인 완료" : "연장 요청 반려"
+            : stepKind === "void_request_client"
+              ? action === "approve" ? "작업 취소 처리됨" : "작업취소 요청이 반려되었습니다. 허가서는 발행 상태입니다."
               : action === "approve" ? "승인 완료" : "반려 처리됨",
       );
       if (action === "approve" && stepKind === "normal" && row.entity_type === "work_permit") {
@@ -296,6 +298,11 @@ export default function MobileApprovalDetail() {
                     formData={(permitRow as any)?.form_data || formData}
                     until={extendUntil}
                   />
+                )}
+                {stepKind === "void_request_client" && (
+                  <p className="text-xs text-amber-800">
+                    사유: {String(((permitRow as any)?.form_data || formData || {}).work_void_requested_reason || "").trim() || "-"}
+                  </p>
                 )}
 
                 <IMESafeTextarea

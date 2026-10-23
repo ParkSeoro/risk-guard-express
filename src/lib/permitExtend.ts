@@ -12,6 +12,10 @@ const PERMIT_CLONE_OMIT_KEYS = [
   'work_extend_requested_by',
   'work_extend_requested_reason',
   'work_extend_reason',
+  'work_void_requested_reason',
+  'work_void_requested_at',
+  'work_void_requested_by',
+  'work_void_requested_by_name',
 ] as const;
 
 export function permitFormDataForClone(
@@ -32,20 +36,33 @@ export function isPermitExtendPostStep(position?: string | null): boolean {
   return k === 'extend_cm' || k === 'extend_sm';
 }
 
+export function permitVoidRequestReasonFromForm(formData?: Record<string, unknown> | null): string {
+  return String((formData || {}).work_void_requested_reason || '').trim();
+}
+
 export async function loadPermitExtendReasons(
   rows: Array<{ entity_id?: string | null; step_position?: string | null; position?: string | null }>,
 ): Promise<Record<string, string>> {
-  const ids = Array.from(new Set(
+  const voidIds = new Set(
     rows
+      .filter((r) => permitPostStepKind(r.step_position || r.position) === 'void_request_client')
+      .map((r) => r.entity_id)
+      .filter((id): id is string => !!id),
+  );
+  const ids = Array.from(new Set([
+    ...rows
       .filter((r) => isPermitExtendPostStep(r.step_position || r.position))
       .map((r) => r.entity_id)
       .filter((id): id is string => !!id),
-  ));
+    ...voidIds,
+  ]));
   if (ids.length === 0) return {};
   const { data } = await supabase.from('work_permits' as any).select('id, form_data').in('id', ids);
   const out: Record<string, string> = {};
   for (const p of (data as { id: string; form_data?: Record<string, unknown> }[] | null) || []) {
-    const reason = permitExtendReasonFromForm(p.form_data);
+    const reason = voidIds.has(p.id)
+      ? permitVoidRequestReasonFromForm(p.form_data)
+      : permitExtendReasonFromForm(p.form_data);
     if (reason) out[p.id] = reason;
   }
   return out;

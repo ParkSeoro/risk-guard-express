@@ -43,8 +43,17 @@ export async function closeExpiredTbmSessions(
   return { ok: true, closed: ((data as any[]) || []).length };
 }
 
+/** Final issuance approval is the only result that should create a TBM. */
+export function permitIssueApprovalCreatesTbm(
+  rpcResult?: { finalized?: boolean; action?: string } | null,
+): boolean {
+  if (!rpcResult || rpcResult.finalized !== true) return false;
+  if (rpcResult.action && rpcResult.action !== "approved") return false;
+  return true;
+}
+
 /**
- * After final issuance approve (not closure/extend), ensure linked TBM exists.
+ * After final issuance approve (not closure/extend/void), ensure linked TBM exists.
  * Safe to call repeatedly — reuses existing tbm_session_id.
  */
 export async function ensureTbmAfterPermitIssued(opts: {
@@ -57,9 +66,8 @@ export async function ensureTbmAfterPermitIssued(opts: {
   force?: boolean;
 }): Promise<TbmFromPermitResult | { ok: true; skipped: true }> {
   const r = opts.rpcResult;
-  if (!opts.force) {
-    if (!r || r.finalized !== true) return { ok: true, skipped: true };
-    if (r.action && r.action !== "approved") return { ok: true, skipped: true };
+  if (!opts.force && !permitIssueApprovalCreatesTbm(r)) {
+    return { ok: true, skipped: true };
   }
   if (opts.entityType && opts.entityType !== "work_permit") {
     return { ok: true, skipped: true };

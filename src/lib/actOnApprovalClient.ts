@@ -20,6 +20,11 @@ export function approvalActionSuccessMessage(
   if (kind === "extend_sm") {
     return action === "approve" ? "연장 승인 완료" : "연장 요청 반려";
   }
+  if (kind === "void_request_client") {
+    return action === "approve"
+      ? "작업 취소 처리됨"
+      : "작업취소 요청이 반려되었습니다. 허가서는 발행 상태입니다.";
+  }
   return action === "approve" ? "승인 완료" : "반려 처리됨";
 }
 

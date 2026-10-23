@@ -24,6 +24,7 @@ export type WorkDocVoidInfo = {
   reason: string;
   byName: string;
   at: string | null;
+  requestedByName?: string;
 };
 
 export function isWorkDocVoided(row?: {
@@ -59,12 +60,15 @@ export function workDocVoidInfo(row?: {
   voided_at?: string | null;
   voided_reason?: string | null;
   voided_by_name?: string | null;
+  form_data?: { work_void_requested_by_name?: string | null } | null;
 } | null): WorkDocVoidInfo | null {
   if (!isWorkDocVoided(row)) return null;
+  const requestedByName = String(row?.form_data?.work_void_requested_by_name || '').trim();
   return {
     reason: String(row?.voided_reason || '').trim() || '-',
     byName: String(row?.voided_by_name || '').trim() || '-',
     at: row?.voided_at || null,
+    ...(requestedByName ? { requestedByName } : {}),
   };
 }
 

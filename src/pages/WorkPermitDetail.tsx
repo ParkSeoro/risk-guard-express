@@ -41,11 +41,13 @@ import PermitAiBriefingCard from '@/components/permits/PermitAiBriefingCard';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { WorkDocVoidBanner, WorkDocVoidStamp } from '@/components/work-docs/WorkDocVoidStamp';
 import { WorkDocVoidDialog } from '@/components/work-docs/WorkDocVoidDialog';
+import { WorkPermitVoidRequestDialog } from '@/components/work-docs/WorkPermitVoidRequestDialog';
 import {
   canClientVoidWorkDoc,
   isWorkDocVoided,
   workDocVoidInfo,
 } from '@/lib/workDocVoid';
+import { canRequestWorkPermitVoid } from '@/lib/permitVoidRequest';
 import {
   normalizePermitKinds,
   primaryPermitKind,
@@ -111,7 +113,7 @@ export default function WorkPermitDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, profile } = useAuth();
-  const { userCompanyId, userRole, isMaster } = useGlobalProjectAccess();
+  const { userCompanyId, userCompanyType, userRole, isMaster } = useGlobalProjectAccess();
 
   const [permit, setPermit] = useState<any>(null);
   const [approvalRows, setApprovalRows] = useState<any[]>([]);
@@ -141,6 +143,8 @@ export default function WorkPermitDetail() {
   const [workersDialogOpen, setWorkersDialogOpen] = useState(false);
   const [tbmBusy, setTbmBusy] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
+  const [voidRequestOpen, setVoidRequestOpen] = useState(false);
+  const [permitParentCompanyId, setPermitParentCompanyId] = useState<string | null>(null);
 
   const applyAssignedCrew = (next: {
     workers: PermitWorkerRow[];
@@ -417,6 +421,7 @@ export default function WorkPermitDetail() {
           setDisplayTemplate(null);
           setDisplayTemplateId(null);
           setDisplayTemplateName(null);
+          setPermitParentCompanyId(null);
           return;
         }
         const { data: proj } = await supabase
@@ -433,6 +438,8 @@ export default function WorkPermitDetail() {
           .eq('is_deleted', false);
         const permitCompanyId =
           resolveFormOwnerCompanyId(proj as any, (permit as any)?.company_id || null);
+        const ownerLink = ((pcLinks || []) as any[]).find((l) => l.company_id === ((permit as any)?.company_id || null));
+        setPermitParentCompanyId(ownerLink?.parent_company_id || null);
         const gcCompanyId = resolvePermitFormGcCompanyId({
           permitCompanyId,
           projectCompanyLinks: (pcLinks || []) as any[],
@@ -569,6 +576,21 @@ export default function WorkPermitDetail() {
     isMaster,
     status: permit?.status,
     voidedAt: permit?.voided_at,
+  });
+  const voidRequestReason = String(permit?.form_data?.work_void_requested_reason || '').trim();
+  const voidRequestPending = !!permit && !isVoided && !!voidRequestReason;
+  const canRequestVoid = canRequestWorkPermitVoid({
+    userId: user?.id,
+    userRole,
+    isMaster,
+    userCompanyId,
+    userCompanyType,
+    status: permit?.status,
+    voidedAt: permit?.voided_at,
+    createdBy: permit?.created_by,
+    permitCompanyId: permit?.company_id,
+    parentCompanyId: permitParentCompanyId,
+    pending: voidRequestPending,
   });
   const isAuthor = !permit?.created_by || permit?.created_by === user?.id;
   const readOnly = !isPermitEditable(permit?.status) || isVoided;
@@ -824,6 +846,16 @@ export default function WorkPermitDetail() {
               <Ban className="h-4 w-4 mr-1" />작업 취소
             </Button>
           )}
+          {canRequestVoid && (
+            <Button size="sm" variant="destructive" onClick={() => setVoidRequestOpen(true)}>
+              <Ban className="h-4 w-4 mr-1" />작업취소 요청
+            </Button>
+          )}
+          {voidRequestPending && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-800">
+              작업취소 결재중
+            </Badge>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -868,6 +900,12 @@ export default function WorkPermitDetail() {
       </div>
 
       <WorkDocVoidBanner info={voidInfo} />
+      {voidRequestPending && (
+        <div className="print:hidden rounded-md border border-amber-500 bg-amber-50 text-amber-900 px-3 py-2 text-sm">
+          <div className="font-bold">작업취소 결재중</div>
+          <div className="text-xs mt-1">사유 · {voidRequestReason}</div>
+        </div>
+      )}
 
       {(() => {
         const view = visibleDocumentRejection(
@@ -1175,6 +1213,12 @@ export default function WorkPermitDetail() {
         entityType="work_permit"
         entityId={permit.id}
         onVoided={() => { void load(); }}
+      />
+      <WorkPermitVoidRequestDialog
+        open={voidRequestOpen}
+        onOpenChange={setVoidRequestOpen}
+        permitId={permit.id}
+        onRequested={() => { void load(); }}
       />
 
       <Dialog open={extendOpen} onOpenChange={(v) => { setExtendOpen(v); if (!v) { setExtendUntil(''); setExtendReason(''); } }}>

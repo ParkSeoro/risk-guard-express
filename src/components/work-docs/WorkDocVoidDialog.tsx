@@ -76,7 +76,10 @@ export function WorkDocVoidDialog({
           <DialogTitle>작업 취소</DialogTitle>
           <DialogDescription>
             {label}는 삭제되지 않습니다. 빨간 네모칸으로 「작업 취소」가 찍히고,
-            근로자 당일·TBM·순찰 오늘 목록에서는 빠집니다. 연결된 다른 문서는 따로 취소해야 합니다.
+            근로자 당일 목록에서는 빠집니다.
+            {entityType === 'work_permit'
+              ? ' 연결된 TBM은 종료로 남고, 이미 받은 서명은 지워지지 않습니다.'
+              : ' 연결된 다른 문서는 따로 취소해야 합니다.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

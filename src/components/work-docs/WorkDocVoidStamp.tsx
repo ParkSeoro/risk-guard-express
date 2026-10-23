@@ -10,6 +10,9 @@ export function WorkDocVoidStamp({ info }: { info: WorkDocVoidInfo | null | unde
       <div className="work-doc-void-stamp-box">
         <div className="work-doc-void-stamp-title">작업 취소</div>
         <div className="work-doc-void-stamp-line">사유 · {info.reason}</div>
+        {info.requestedByName ? (
+          <div className="work-doc-void-stamp-line">요청자 · {info.requestedByName}</div>
+        ) : null}
         <div className="work-doc-void-stamp-line">취소자 · {info.byName}</div>
         <div className="work-doc-void-stamp-line">시각 · {formatVoidedAtKst(info.at)}</div>
       </div>
@@ -75,6 +78,7 @@ export function WorkDocVoidBanner({ info }: { info: WorkDocVoidInfo | null | und
       <div className="font-bold tracking-widest">작업 취소</div>
       <div className="text-xs mt-1 space-y-0.5">
         <div>사유 · {info.reason}</div>
+        {info.requestedByName ? <div>요청자 · {info.requestedByName}</div> : null}
         <div>취소자 · {info.byName}</div>
         <div>시각 · {formatVoidedAtKst(info.at)}</div>
       </div>

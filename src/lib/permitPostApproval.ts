@@ -4,6 +4,7 @@ export type PermitPostStepKind =
   | 'closure_sm'
   | 'extend_cm'
   | 'extend_sm'
+  | 'void_request_client'
   | 'normal';
 
 export function permitPostStepKind(position?: string | null): PermitPostStepKind {
@@ -12,6 +13,7 @@ export function permitPostStepKind(position?: string | null): PermitPostStepKind
   if (p === 'closure_sm') return 'closure_sm';
   if (p === 'extend_cm') return 'extend_cm';
   if (p === 'extend_sm') return 'extend_sm';
+  if (p === 'void_request_client') return 'void_request_client';
   return 'normal';
 }
 
@@ -35,6 +37,7 @@ export function permitPostStepBadge(kind: PermitPostStepKind): string | null {
   if (kind === 'closure_sm') return '발주처 SM 종료 승인';
   if (kind === 'extend_cm') return '발주처 CM 연장 검토';
   if (kind === 'extend_sm') return '작업허가 연장 승인';
+  if (kind === 'void_request_client') return '작업취소 승인';
   return null;
 }
 
@@ -43,6 +46,7 @@ export function permitPostStepApproveLabel(kind: PermitPostStepKind): string {
   if (kind === 'closure_sm') return '작업 완료 및 종료';
   if (kind === 'extend_cm') return '연장 검토';
   if (kind === 'extend_sm') return '연장 승인';
+  if (kind === 'void_request_client') return '작업취소 승인';
   return '승인';
 }
 

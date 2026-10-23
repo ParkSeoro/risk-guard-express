@@ -77,6 +77,33 @@ describe('cloneAssessmentRun helpers', () => {
     expect(copies[0]).not.toHaveProperty('batch_id');
   });
 
+  it('does not send generated risk scores', () => {
+    const copies = copyRiskItemsForClone(
+      [
+        {
+          project_id: 'p1',
+          process: '용접',
+          frequency: 3,
+          severity: 2,
+          risk: 6,
+          improved_frequency: 1,
+          improved_severity: 2,
+          improved_risk: 2,
+          is_deleted: false,
+          is_excluded: false,
+        },
+      ],
+      'run-new',
+      'u1',
+    );
+    expect(copies[0].frequency).toBe(3);
+    expect(copies[0].severity).toBe(2);
+    expect(copies[0].improved_frequency).toBe(1);
+    expect(copies[0].improved_severity).toBe(2);
+    expect(copies[0]).not.toHaveProperty('risk');
+    expect(copies[0]).not.toHaveProperty('improved_risk');
+  });
+
   it('copies participants without signatures', () => {
     const copies = copyParticipantsForClone(
       [

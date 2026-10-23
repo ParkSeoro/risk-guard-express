@@ -29,10 +29,8 @@ const RISK_ITEM_COPY_KEYS = [
   'improvement_measure',
   'frequency',
   'severity',
-  'risk',
   'improved_frequency',
   'improved_severity',
-  'improved_risk',
   'ppe',
   'legal_basis',
   'department',
@@ -58,6 +56,13 @@ const RISK_ITEM_COPY_KEYS = [
   'hazard_type',
   'work_phase',
 ] as const;
+
+/**
+ * Stored generated columns: risk = frequency * severity,
+ * improved_risk = improved_frequency * improved_severity.
+ * Sending either value makes Postgres reject the insert.
+ */
+export const RISK_ITEM_GENERATED_KEYS = ['risk', 'improved_risk'] as const;
 
 /**
  * Clone rules (개정 회차):
@@ -89,6 +94,7 @@ export function copyRiskItemsForClone(
       for (const key of RISK_ITEM_COPY_KEYS) {
         if (key in item) row[key] = item[key];
       }
+      for (const key of RISK_ITEM_GENERATED_KEYS) delete row[key];
       return row;
     });
 }
@@ -106,11 +112,34 @@ export function copyParticipantsForClone(
   }));
 }
 
-async function rollbackClonedRun(runId: string): Promise<void> {
+async function rollbackClonedRun(runId: string, userId: string): Promise<void> {
+  const removedAt = new Date().toISOString();
   try {
     await supabase.from('assessment_run_participants').delete().eq('run_id', runId);
-    await supabase.from('risk_items').delete().eq('run_id', runId);
-    await supabase.from('assessment_runs').delete().eq('id', runId);
+    await supabase
+      .from('risk_items')
+      .update({
+        is_deleted: true,
+        deleted_at: removedAt,
+        deleted_by: userId,
+        deleted_reason: '개정 회차 복제 실패',
+      })
+      .eq('run_id', runId);
+    // Hide the shell. Hard delete is admin-only and would detach risk_items
+    // (ON DELETE SET NULL) when the writer cannot delete those rows.
+    const { data, error } = await supabase
+      .from('assessment_runs')
+      .update({
+        is_deleted: true,
+        deleted_at: removedAt,
+        deleted_by: userId,
+        deleted_reason: '개정 회차 복제 실패',
+      })
+      .eq('id', runId)
+      .select('id');
+    if (error || !data?.length) {
+      console.warn('[cloneAssessmentRun] rollback failed', runId, error);
+    }
   } catch (e) {
     console.warn('[cloneAssessmentRun] rollback failed', runId, e);
   }
@@ -166,7 +195,7 @@ export async function cloneAssessmentRun(opts: {
     .order('sort_order');
 
   if (itemsReadErr) {
-    await rollbackClonedRun(newRun.id);
+    await rollbackClonedRun(newRun.id, userId);
     return { ok: false, error: itemsReadErr.message };
   }
 
@@ -179,7 +208,7 @@ export async function cloneAssessmentRun(opts: {
   if (copies.length > 0) {
     const { error: itemErr } = await supabase.from('risk_items').insert(copies as any);
     if (itemErr) {
-      await rollbackClonedRun(newRun.id);
+      await rollbackClonedRun(newRun.id, userId);
       return { ok: false, error: itemErr.message };
     }
     itemCount = copies.length;
@@ -191,7 +220,7 @@ export async function cloneAssessmentRun(opts: {
     .eq('run_id', source.id);
 
   if (partReadErr) {
-    await rollbackClonedRun(newRun.id);
+    await rollbackClonedRun(newRun.id, userId);
     return { ok: false, error: partReadErr.message };
   }
 
@@ -205,7 +234,7 @@ export async function cloneAssessmentRun(opts: {
       .from('assessment_run_participants')
       .insert(partCopies as any);
     if (partErr) {
-      await rollbackClonedRun(newRun.id);
+      await rollbackClonedRun(newRun.id, userId);
       return { ok: false, error: partErr.message };
     }
     participantCount = partCopies.length;

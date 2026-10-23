@@ -40,7 +40,7 @@ import {
   periodLabelPlaceholder,
   type AssessmentRunCreateForm,
 } from '@/lib/assessmentRunType';
-import { canCreateAssessmentRun, defaultAuthorUserId } from '@/lib/assessmentAuthor';
+import { canCreateAssessmentRun, canDeleteAssessmentRun, defaultAuthorUserId } from '@/lib/assessmentAuthor';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import { pickPreviousApprovedRun, stampRunCompany, type WeeklyLinkRun } from '@/lib/weeklyAssessmentLink';
 import { fetchAssessmentRunItemStats } from '@/lib/assessmentRunItemStats';
@@ -364,11 +364,14 @@ const AssessmentRuns = () => {
     return false;
   };
 
-  const canDeleteRun = (run: any) => {
-    if (isMaster) return true;
-    if (run.created_by === user?.id) return true;
-    return false;
-  };
+  const canDeleteRun = (run: any) => canDeleteAssessmentRun({
+    isMaster,
+    role: projectRole,
+    userId: user?.id,
+    createdBy: run.created_by,
+    authorUserId: run.author_user_id,
+    status: run.status,
+  });
 
   const companyLabelById = buildProjectCompanyLabelMap(allProjectCompanies);
   const companyLabelOpts = {

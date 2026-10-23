@@ -40,6 +40,33 @@ export function hasAssessmentLegalAuthor(authorUserId?: string | null): boolean 
   return !!authorUserId;
 }
 
+/** 결재에 들어간 회차는 트리거가 삭제(숨김)를 거절한다. */
+export const ASSESSMENT_DELETE_LOCKED_STATUSES = ['결재진행', '승인완료', '승인'] as const;
+
+/**
+ * 목록의 회차 삭제는 숨김이다.
+ * 마스터, 현장소장, 만든 사람(created_by), 작성 주체(author_user_id)만 버튼을 본다.
+ */
+export function canDeleteAssessmentRun(opts: {
+  isMaster?: boolean;
+  role?: string | null;
+  userId?: string | null;
+  createdBy?: string | null;
+  authorUserId?: string | null;
+  status?: string | null;
+}): boolean {
+  if (
+    opts.status
+    && (ASSESSMENT_DELETE_LOCKED_STATUSES as readonly string[]).includes(opts.status)
+  ) {
+    return false;
+  }
+  if (opts.isMaster) return true;
+  if (opts.role === 'site_manager') return true;
+  if (!opts.userId) return false;
+  return opts.userId === opts.createdBy || opts.userId === opts.authorUserId;
+}
+
 /** 상신은 지정된 관리감독자만. 마스터/SM 명의 상신 불가. */
 export function canSubmitAssessmentRun(opts: {
   userId?: string | null;

@@ -5,6 +5,7 @@ import {
   buildAssessmentAuthorCandidates,
   canAssistAssessmentWrite,
   canCreateAssessmentRun,
+  canDeleteAssessmentRun,
   canSubmitAssessmentRun,
   defaultAuthorUserId,
   formatAssessmentAuthorLabel,
@@ -25,6 +26,28 @@ describe('assessmentAuthor', () => {
     expect(canAssistAssessmentWrite('safety_manager')).toBe(true);
     expect(defaultAuthorUserId({ userId: 'sm-1', role: 'safety_manager' })).toBe('');
     expect(defaultAuthorUserId({ userId: 'sup-1', role: 'site_supervisor' })).toBe('sup-1');
+  });
+
+  it('lets master, site manager, creator, and legal author hide an open run', () => {
+    const open = { status: '작성중', createdBy: 'sm-1', authorUserId: 'sup-1' };
+    expect(canDeleteAssessmentRun({ ...open, isMaster: true })).toBe(true);
+    expect(canDeleteAssessmentRun({ ...open, role: 'site_manager', userId: 'mgr-1' })).toBe(true);
+    expect(canDeleteAssessmentRun({ ...open, userId: 'sm-1' })).toBe(true);
+    expect(canDeleteAssessmentRun({ ...open, userId: 'sup-1' })).toBe(true);
+    expect(canDeleteAssessmentRun({ ...open, role: 'site_supervisor', userId: 'other' })).toBe(false);
+    expect(canDeleteAssessmentRun({ ...open, role: 'safety_manager', userId: 'other-sm' })).toBe(false);
+    expect(canDeleteAssessmentRun({
+      isMaster: true,
+      status: '승인완료',
+      userId: 'master',
+      createdBy: 'sm-1',
+    })).toBe(false);
+    expect(canDeleteAssessmentRun({
+      role: 'site_manager',
+      userId: 'mgr-1',
+      status: '결재진행',
+      createdBy: 'mgr-1',
+    })).toBe(false);
   });
 
   it('allows only the named supervisor to submit', () => {

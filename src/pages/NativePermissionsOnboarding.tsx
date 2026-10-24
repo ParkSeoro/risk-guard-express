@@ -1,10 +1,11 @@
 /**
  * First-run OS permission onboarding for the native shell.
- * Legal consent (/consent) must already be complete — this screen
- * auto-prompts Location → Notifications(알림·사이렌) → Battery (Android) → Camera.
- * Location is a hard gate. Worker QR signup is already active (no admin wait).
+ * Legal consent (/consent) must already be complete.
+ * Location → Notifications. Android then shows the system battery Allow dialog.
+ * Camera is requested later, when a QR scan or photo is taken.
+ * Location is a hard gate. The battery step can be skipped with 나중에.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
@@ -22,24 +23,28 @@ import {
 } from "@/lib/native/isNativeApp";
 import {
   ANDROID_LOCATION_TAP_STEPS_KO,
-  BATTERY_UNRESTRICTED_STEPS_KO,
+  BATTERY_ALLOW_DIALOG_KO,
   canMarkNativePermissionsDone,
   IOS_LOCATION_TAP_STEPS_KO,
   isForegroundLocationGranted,
   isPushGranted,
 } from "@/lib/native/nativePermissionGate";
+import {
+  batteryOptimizationStatus,
+  requestBatteryUnrestricted,
+} from "@/lib/native/batteryOptimization";
 import { promptBackgroundLocation } from "@/lib/native/promptBackgroundLocation";
 import { openNativeAppSettings } from "@/lib/native/openNativeAppSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Battery, Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
+import { Battery, Bell, CheckCircle2, MapPin, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { pickSessionProjectId, readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
-type Step = "location" | "notifications" | "battery" | "camera" | "done";
+type Step = "location" | "notifications" | "battery" | "done";
 
 function nextAfterNotifications(): Step {
-  return Capacitor.getPlatform() === "android" ? "battery" : "camera";
+  return Capacitor.getPlatform() === "android" ? "battery" : "done";
 }
 
 async function ensureSelectedProject(userId: string, isMaster: boolean) {
@@ -91,8 +96,8 @@ export default function NativePermissionsOnboarding() {
   const [busy, setBusy] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
   const [pushDenied, setPushDenied] = useState(false);
+  const [batteryUnavailable, setBatteryUnavailable] = useState(false);
   const isAndroid = Capacitor.getPlatform() === "android";
-  const autoPrompted = useRef(new Set<Step>());
 
   useEffect(() => {
     if (!user || !isNativeApp()) return;
@@ -116,6 +121,10 @@ export default function NativePermissionsOnboarding() {
           const cur = await PushNotifications.checkPermissions();
           if (isPushGranted(cur)) setPushDenied(false);
         }
+        if (step === "battery") {
+          const status = await batteryOptimizationStatus();
+          if (status === "ignoring") setStep("done");
+        }
       })();
     }).then((h) => {
       handle = h;
@@ -133,7 +142,6 @@ export default function NativePermissionsOnboarding() {
         toast.error("위치 권한이 있어야 출근·금지구역이 동작합니다.");
         setLocationDenied(true);
         setStep("location");
-        autoPrompted.current.delete("location");
         return;
       }
       markNativePermissionsDone();
@@ -180,9 +188,7 @@ export default function NativePermissionsOnboarding() {
         const after = await PushNotifications.checkPermissions();
         if (!isPushGranted(after)) {
           setPushDenied(true);
-          toast.error("알림·사이렌을 켜야 금지구역·결재 푸시를 받을 수 있습니다.");
-          // Permanent deny → open settings so the worker can flip the switch.
-          await openNativeAppSettings();
+          toast.error("알림을 허용해야 금지구역·결재 푸시를 받을 수 있습니다.");
           return;
         }
         setPushDenied(false);
@@ -201,48 +207,27 @@ export default function NativePermissionsOnboarding() {
     }
   }, []);
 
-  const requestCamera = useCallback(async () => {
+  const requestBattery = useCallback(async () => {
     setBusy(true);
     try {
-      const { BarcodeScanner } = await import("@capacitor-mlkit/barcode-scanning");
-      await BarcodeScanner.requestPermissions();
-      setStep("done");
-    } catch (e: any) {
-      toast.message("카메라는 나중에 QR 스캔 시 다시 요청할 수 있습니다.");
-      setStep("done");
+      const result = await requestBatteryUnrestricted();
+      if (result === "already") {
+        setStep("done");
+        return;
+      }
+      if (result === "unavailable") {
+        setBatteryUnavailable(true);
+        return;
+      }
+      setBatteryUnavailable(false);
     } finally {
       setBusy(false);
     }
   }, []);
-
-  const openBatterySettings = useCallback(async () => {
-    setBusy(true);
-    try {
-      await openNativeAppSettings();
-      toast.message("배터리 「제한 없음」으로 바꾼 뒤 「설정했습니다」를 눌러 주세요.");
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  // Each step auto-opens the matching system sheet / settings (no extra first tap).
-  useEffect(() => {
-    if (!user || !isNativeApp() || hasCompletedNativePermissions()) return;
-    if (autoPrompted.current.has(step)) return;
-    autoPrompted.current.add(step);
-    const t = window.setTimeout(() => {
-      if (step === "location") void requestLocation();
-      else if (step === "notifications") void requestNotifications();
-      else if (step === "battery") void openBatterySettings();
-      else if (step === "camera") void requestCamera();
-      else if (step === "done") void finish();
-    }, 350);
-    return () => window.clearTimeout(t);
-  }, [user, step, requestLocation, requestNotifications, openBatterySettings, requestCamera, finish]);
 
   if (isAuthLoading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
+      <div className="min-h-dvh flex items-center justify-center text-base text-muted-foreground native-safe-pad">
         세션 확인 중…
       </div>
     );
@@ -261,12 +246,12 @@ export default function NativePermissionsOnboarding() {
     <div className="min-h-dvh bg-background flex flex-col native-safe-pad">
       <header className="px-5 pt-4 pb-2">
         <div className="flex items-center gap-2 text-primary">
-          <Shield className="h-5 w-5" />
-          <span className="font-bold text-lg">SafeNex</span>
+          <Shield className="h-6 w-6" />
+          <span className="font-bold text-xl">SafeNex</span>
         </div>
-        <h1 className="mt-3 text-xl font-bold tracking-tight">앱 권한 설정</h1>
-        <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          위치·알림(사이렌)·배터리·카메라를 순서대로 요청합니다. 팝업이 뜨면 허용해 주세요.
+        <h1 className="mt-3 text-2xl font-bold tracking-tight">앱 권한 설정</h1>
+        <p className="mt-2 text-base text-muted-foreground leading-relaxed">
+          아래 버튼을 누르면 폰 허용 창이 뜹니다. 허용을 누르세요.
         </p>
       </header>
 
@@ -276,51 +261,44 @@ export default function NativePermissionsOnboarding() {
           done={step !== "location"}
           icon={MapPin}
           title="위치"
-          desc="출근·분포·금지구역. 「앱 사용 중」이 아니라 「항상 허용」."
+          desc="출근·분포·금지구역. 「항상 허용」을 누르세요."
         />
         <StepCard
           active={step === "notifications"}
-          done={step === "battery" || step === "camera" || step === "done"}
+          done={step === "battery" || step === "done"}
           icon={Bell}
-          title="알림 · 사이렌"
-          desc="결재 푸시·금지구역 경보(사이렌). 알림 허용이 필요합니다."
+          title="알림"
+          desc="결재 푸시·금지구역 경보"
         />
         {isAndroid && (
           <StepCard
             active={step === "battery"}
-            done={step === "camera" || step === "done"}
+            done={step === "done"}
             icon={Battery}
             title="배터리 제한 없음"
-            desc="삼성·샤오미가 백그라운드 GPS·알람을 끄지 않게 합니다."
+            desc="허용 창에서 한 번만 누르면 됩니다."
           />
         )}
-        <StepCard
-          active={step === "camera"}
-          done={step === "done"}
-          icon={Camera}
-          title="카메라"
-          desc="근로자 QR 스캔·점검 사진"
-        />
       </main>
 
       <footer className="px-5 pb-6 space-y-2">
         {step === "location" && (
           <>
-            <ul className="text-xs text-muted-foreground space-y-1.5 rounded-xl border bg-muted/40 p-3">
+            <ul className="text-sm text-muted-foreground space-y-2 rounded-xl border bg-muted/40 p-4">
               {(isAndroid ? ANDROID_LOCATION_TAP_STEPS_KO : IOS_LOCATION_TAP_STEPS_KO).map((line) => (
                 <li key={line}>· {line}</li>
               ))}
             </ul>
             {locationDenied && (
-              <p className="text-xs text-destructive leading-relaxed">
-                위치를 거부하면 출근할 수 없습니다. 아래 설정에서 「항상 허용」으로 바꾼 뒤 다시 눌러 주세요.
+              <p className="text-sm text-destructive leading-relaxed">
+                위치를 거부하면 출근할 수 없습니다. 허용 창에서 「항상 허용」을 눌러 주세요.
               </p>
             )}
-            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestLocation()}>
+            <Button className="w-full h-14 text-lg" disabled={busy} onClick={() => void requestLocation()}>
               위치 허용
             </Button>
             {locationDenied && (
-              <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openNativeAppSettings()}>
+              <Button variant="outline" className="w-full h-12 text-base" disabled={busy} onClick={() => void openNativeAppSettings()}>
                 앱 설정 열기
               </Button>
             )}
@@ -329,65 +307,49 @@ export default function NativePermissionsOnboarding() {
         {step === "notifications" && (
           <>
             {pushDenied && (
-              <p className="text-xs text-destructive leading-relaxed">
+              <p className="text-sm text-destructive leading-relaxed">
                 알림을 끄면 앱을 닫았을 때 금지구역 사이렌·결재 푸시를 받지 못합니다.
               </p>
             )}
-            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestNotifications()}>
-              알림 · 사이렌 허용
+            <Button className="w-full h-14 text-lg" disabled={busy} onClick={() => void requestNotifications()}>
+              알림 허용
             </Button>
             {pushDenied && (
-              <>
-                <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openNativeAppSettings()}>
-                  앱 설정 열기
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  disabled={busy}
-                  onClick={() => {
-                    toast.message("알림 없이 진행합니다. 나중에 설정에서 켤 수 있습니다.");
-                    setStep(nextAfterNotifications());
-                  }}
-                >
-                  나중에
-                </Button>
-              </>
+              <Button
+                variant="ghost"
+                className="w-full h-12 text-base"
+                disabled={busy}
+                onClick={() => setStep(nextAfterNotifications())}
+              >
+                나중에
+              </Button>
             )}
           </>
         )}
         {step === "battery" && (
           <>
-            <ul className="text-xs text-muted-foreground space-y-1.5 rounded-xl border bg-muted/40 p-3">
-              {BATTERY_UNRESTRICTED_STEPS_KO.map((line) => (
-                <li key={line}>· {line}</li>
-              ))}
-            </ul>
-            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void openBatterySettings()}>
-              앱 설정 열기
-            </Button>
+            <p className="text-base leading-relaxed rounded-xl border bg-muted/40 p-4">
+              {batteryUnavailable
+                ? "이 폰의 앱에는 허용 창이 아직 없습니다. 나중에를 누르면 앱을 쓸 수 있습니다."
+                : BATTERY_ALLOW_DIALOG_KO}
+            </p>
+            {!batteryUnavailable && (
+              <Button className="w-full h-14 text-lg" disabled={busy} onClick={() => void requestBattery()}>
+                허용
+              </Button>
+            )}
             <Button
-              variant="outline"
+              variant="ghost"
               className="w-full h-12 text-base"
               disabled={busy}
-              onClick={() => setStep("camera")}
+              onClick={() => setStep("done")}
             >
-              설정했습니다
-            </Button>
-          </>
-        )}
-        {step === "camera" && (
-          <>
-            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestCamera()}>
-              카메라 허용
-            </Button>
-            <Button variant="ghost" className="w-full" disabled={busy} onClick={() => setStep("done")}>
               나중에
             </Button>
           </>
         )}
         {step === "done" && (
-          <Button className="w-full h-12 text-base gap-2" disabled={busy} onClick={() => void finish()}>
+          <Button className="w-full h-14 text-lg gap-2" disabled={busy} onClick={() => void finish()}>
             <CheckCircle2 className="h-5 w-5" />
             시작하기
           </Button>
@@ -417,15 +379,15 @@ function StepCard({
       }`}
     >
       <div
-        className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+        className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 ${
           done ? "bg-emerald-600 text-white" : active ? "bg-primary text-primary-foreground" : "bg-muted"
         }`}
       >
-        {done ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+        {done ? <CheckCircle2 className="h-6 w-6" /> : <Icon className="h-6 w-6" />}
       </div>
       <div>
-        <div className="font-semibold">{title}</div>
-        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+        <div className="text-lg font-semibold">{title}</div>
+        <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
       </div>
     </div>
   );

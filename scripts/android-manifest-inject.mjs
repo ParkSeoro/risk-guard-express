@@ -7,6 +7,7 @@ export const ANDROID_RUNTIME_PERMS = [
   "android.permission.POST_NOTIFICATIONS",
   "android.permission.CAMERA",
   "android.permission.INTERNET",
+  "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
 ];
 
 const HEADLESS_SERVICE = `        <service

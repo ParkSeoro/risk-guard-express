@@ -204,7 +204,7 @@ jobs:
           node scripts/inject-android-manifest.mjs android/app/src/main/AndroidManifest.xml
           # Hard fail if critical permissions / plugins missing
           MANIFEST=android/app/src/main/AndroidManifest.xml
-          for p in ACCESS_FINE_LOCATION ACCESS_BACKGROUND_LOCATION FOREGROUND_SERVICE_LOCATION POST_NOTIFICATIONS CAMERA; do
+          for p in ACCESS_FINE_LOCATION ACCESS_BACKGROUND_LOCATION FOREGROUND_SERVICE_LOCATION POST_NOTIFICATIONS CAMERA REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
             if ! grep -q "$p" "$MANIFEST"; then
               echo "::error::AndroidManifest missing $p after prepare-native"
               echo "----- AndroidManifest.xml -----"

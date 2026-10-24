@@ -15,6 +15,21 @@ describe("toKoreanWarning", () => {
     expect(toKoreanWarning("시행일을 입력하세요")).toBe("시행일을 입력하세요");
   });
 
+  it("maps the submitted document lock code without remapping every 42501", () => {
+    expect(toKoreanWarning("submitted_document_locked")).toBe(
+      "승인된 문서는 잠겨 있어 이 칸을 바꿀 수 없습니다.",
+    );
+    expect(toKoreanWarning("submitted_document_locked (42501)")).toBe(
+      "승인된 문서는 잠겨 있어 이 칸을 바꿀 수 없습니다.",
+    );
+    expect(toKoreanWarning("WORK_PERMIT_APPROVAL_RPC_REQUIRED")).toBe(
+      "허가서 승인은 결재선으로만 처리할 수 있습니다.",
+    );
+    expect(
+      toKoreanWarning("WORK_PERMIT_APPROVAL_RPC_REQUIRED: 허가서 승인은 결재선으로만 처리할 수 있습니다."),
+    ).toBe("WORK_PERMIT_APPROVAL_RPC_REQUIRED: 허가서 승인은 결재선으로만 처리할 수 있습니다.");
+  });
+
   it("drops an English tail after a Korean prefix", () => {
     expect(toKoreanWarning("저장 실패: new row violates row-level security policy")).toBe(
       "이 내용을 저장할 권한이 없습니다. 관리자에게 문의하세요.",

@@ -36,6 +36,13 @@ export function toKoreanWarning(input: unknown): string {
   const raw = warningText(input).trim();
   if (!raw) return GENERIC_KO;
 
+  if (raw.includes("submitted_document_locked")) {
+    return "승인된 문서는 잠겨 있어 이 칸을 바꿀 수 없습니다.";
+  }
+  if (raw.includes("WORK_PERMIT_APPROVAL_RPC_REQUIRED") && !HANGUL.test(raw)) {
+    return "허가서 승인은 결재선으로만 처리할 수 있습니다.";
+  }
+
   if (/row-level security|violates row-level|\bRLS\b|\b42501\b/i.test(raw)) {
     return "이 내용을 저장할 권한이 없습니다. 관리자에게 문의하세요.";
   }

@@ -39,11 +39,8 @@ export function canMarkNativePermissionsDone(opts: {
   return opts.locationGranted === true;
 }
 
-export const BATTERY_UNRESTRICTED_STEPS_KO = [
-  "앱 설정 → 배터리 (삼성: 「제한 없음」)",
-  "샤오미 등: 배터리 최적화에서 SafeNex 제외",
-  "위치는 「항상 허용」이어야 화면을 꺼도 금지구역이 울립니다",
-] as const;
+/** Shown above the one-tap system Allow dialog. No settings-menu path. */
+export const BATTERY_ALLOW_DIALOG_KO = "다음 창에서 허용을 누르세요.";
 
 /** Exact taps on the Android system sheet / 앱 설정. */
 export const ANDROID_LOCATION_TAP_STEPS_KO = [

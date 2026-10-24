@@ -20,6 +20,7 @@ describe("injectAndroidManifest", () => {
     expect(out).toContain("android.permission.FOREGROUND_SERVICE_LOCATION");
     expect(out).toContain("android.permission.POST_NOTIFICATIONS");
     expect(out).toContain("android.permission.CAMERA");
+    expect(out).toContain("android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS");
     expect(out).toContain("HeadlessTrackService");
     expect(out).toContain("com.google.mlkit.vision.DEPENDENCIES");
     expect(out).toContain("xmlns:tools=");

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANDROID_LOCATION_TAP_STEPS_KO,
-  BATTERY_UNRESTRICTED_STEPS_KO,
+  BATTERY_ALLOW_DIALOG_KO,
   canMarkNativePermissionsDone,
   checkInBlockedByLocation,
   isForegroundLocationGranted,
@@ -34,10 +34,9 @@ describe("nativePermissionGate", () => {
     expect(isPushGranted({ receive: "denied" })).toBe(false);
   });
 
-  it("keeps battery copy for Samsung unrestricted", () => {
-    expect(BATTERY_UNRESTRICTED_STEPS_KO.some((s) => s.includes("제한 없음"))).toBe(
-      true,
-    );
+  it("asks for the system battery allow dialog, not a settings hunt", () => {
+    expect(BATTERY_ALLOW_DIALOG_KO).toContain("허용");
+    expect(BATTERY_ALLOW_DIALOG_KO).not.toContain("앱 설정");
   });
 
   it("tells Android workers to tap 정확한 위치 and 항상 허용", () => {

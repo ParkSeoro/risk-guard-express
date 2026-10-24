@@ -1,7 +1,12 @@
 package org.safenex.app;
 
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -90,6 +95,58 @@ public class HeadlessTrackPlugin extends Plugin {
     if (call.getDouble("fenceRadiusM") != null) cfg.put("fenceRadiusM", call.getDouble("fenceRadiusM"));
     copy(call, cfg, "fencesJson");
     HeadlessTrackService.persistConfig(getContext(), new org.json.JSONObject(cfg.toString()));
+  }
+
+  /** System one-tap dialog. Does not open the settings tree. */
+  @PluginMethod
+  public void isIgnoringBatteryOptimizations(PluginCall call) {
+    JSObject ret = new JSObject();
+    ret.put("ignoring", isIgnoringBattery());
+    call.resolve(ret);
+  }
+
+  @PluginMethod
+  public void requestIgnoreBatteryOptimizations(PluginCall call) {
+    JSObject ret = new JSObject();
+    if (isIgnoringBattery()) {
+      ret.put("ignoring", true);
+      ret.put("prompted", false);
+      call.resolve(ret);
+      return;
+    }
+    Activity activity = getActivity();
+    if (activity == null) {
+      ret.put("ignoring", false);
+      ret.put("prompted", false);
+      ret.put("unavailable", true);
+      call.resolve(ret);
+      return;
+    }
+    try {
+      Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+      intent.setData(Uri.parse("package:" + activity.getPackageName()));
+      activity.startActivity(intent);
+      ret.put("ignoring", false);
+      ret.put("prompted", true);
+      call.resolve(ret);
+    } catch (ActivityNotFoundException | SecurityException e) {
+      Log.w(TAG, "battery prompt unavailable", e);
+      ret.put("ignoring", false);
+      ret.put("prompted", false);
+      ret.put("unavailable", true);
+      call.resolve(ret);
+    }
+  }
+
+  private boolean isIgnoringBattery() {
+    try {
+      PowerManager pm = (PowerManager) getContext().getSystemService(Activity.POWER_SERVICE);
+      if (pm == null) return false;
+      return pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+    } catch (Exception e) {
+      Log.w(TAG, "battery status unreadable", e);
+      return false;
+    }
   }
 
   private void startService() {

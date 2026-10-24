@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("assessment share pending RPC is per run", () => {
   const sql = readFileSync(
-    resolve(__dirname, "../../supabase/migrations/20261019230500_assessment_share_per_run.sql"),
+    resolve(__dirname, "../../supabase/migrations/20261019230659_assessment_share_per_run.sql"),
     "utf8",
   );
 

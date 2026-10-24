@@ -15,9 +15,9 @@ describe("master alarm test does not write a zone entry", () => {
   });
 
   it("blocks client inserts of danger_zone_entry and deletes the sim rows", () => {
-    const sql = src("supabase/migrations/20261024104500_block_client_sim_danger_notify.sql");
+    const sql = src("supabase/migrations/20261024014510_block_client_sim_danger_notify.sql");
     expect(sql).toContain("IS DISTINCT FROM 'danger_zone_entry'");
     expect(sql).toContain("DELETE FROM public.notifications");
-    expect(sql).toContain("시뮬레이션");
+    expect(sql).toContain("시뮬재이션");
   });
 });

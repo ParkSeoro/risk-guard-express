@@ -55,19 +55,19 @@ export default function EquipmentManager({ projectId, companyId, onSelect, selec
     
     if (data && data.length > 0) {
       setEquipment(data as Equipment[]);
-    } else {
-      // Seed defaults for this project
+    } else if (companyId) {
+      // Seed defaults only for a known company. A null company id is rejected for non-managers.
       const defaults = DEFAULT_EQUIPMENT.map(e => ({
         ...e,
         project_id: projectId,
-        company_id: null,
+        company_id: companyId,
         created_by: user?.id,
       }));
       const { data: inserted } = await supabase.from('equipment_master').insert(defaults).select();
       if (inserted) setEquipment(inserted as Equipment[]);
     }
     setLoading(false);
-  }, [projectId, user]);
+  }, [projectId, companyId, user]);
 
   useEffect(() => { fetchEquipment(); }, [fetchEquipment]);
 

@@ -13,7 +13,8 @@ type Props = {
 };
 
 /**
- * Master-only control: force TTS + fullscreen alert + admin push cycle (no GPS).
+ * Master-only control: local siren and full-screen alert on this phone.
+ * Does not write a project entry or send a push.
  */
 export default function MasterAlarmSimulator({ projectId, className }: Props) {
   const { profile, hasRole, roles } = useAuth();
@@ -46,12 +47,10 @@ export default function MasterAlarmSimulator({ projectId, className }: Props) {
     setBusy(false);
     setOpen(true);
     if (!r.ok) {
-      toast.error("시뮬레이션 일부 실패: " + (r.error || ""));
-    } else if (r.error) {
-      toast.message("로컬 알람 실행 · 서버 이벤트: " + r.error);
-    } else {
-      toast.success("사이렌+육성 알람 + 관리자 푸시 사이클을 트리거했습니다");
+      toast.error("이 폰 알람을 열지 못했습니다");
+      return;
     }
+    toast.success("이 폰에서만 알람을 울립니다");
   };
 
   return (
@@ -75,10 +74,10 @@ export default function MasterAlarmSimulator({ projectId, className }: Props) {
         ) : (
           <Siren className="h-5 w-5 mr-2" />
         )}
-        알람 시뮬레이션 (내 이름으로 테스트)
+        이 폰에서 알람 소리 확인
       </Button>
       <p className="text-[11px] text-muted-foreground text-center mt-1">
-        GPS·현장 진입과 무관합니다. 사이렌에 로그인 이름이 나오는 것이 정상입니다.
+        이 폰의 화면과 소리만 확인합니다. 프로젝트 진입 알림은 만들지 않습니다.
       </p>
     </>
   );

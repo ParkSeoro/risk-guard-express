@@ -9,7 +9,17 @@ import { getOtaAnonClient } from "./otaAnonClient";
 import { isNativeApp } from "./platform";
 
 const CHANNEL_KEY = "app-update-channel";
-const MIN_CHECK_INTERVAL_MS = 60_000;
+export const MIN_CHECK_INTERVAL_MS = 60_000;
+
+/** True when a check already ran and the next one is still inside the quiet window. */
+export function isAutoCheckThrottled(
+  now: number,
+  lastCheckAt: number,
+  minMs = MIN_CHECK_INTERVAL_MS,
+): boolean {
+  if (lastCheckAt <= 0) return false;
+  return now - lastCheckAt < minMs;
+}
 
 export function getChannel(): "stable" | "beta" {
   return (localStorage.getItem(CHANNEL_KEY) as any) === "beta" ? "beta" : "stable";
@@ -233,7 +243,7 @@ async function runAutoCheck(reason: string) {
     return;
   }
   const now = Date.now();
-  if (now - lastCheckAt < MIN_CHECK_INTERVAL_MS) return;
+  if (isAutoCheckThrottled(now, lastCheckAt)) return;
   checking = true;
   lastCheckAt = now;
   try {
@@ -268,7 +278,8 @@ export async function initOtaUpdater() {
     /* plugin missing in some builds */
   }
 
-  lastCheckAt = Date.now();
+  // Leave lastCheckAt at 0 so the first signed-in check is not swallowed
+  // by the 60s quiet window. A stamp here used to skip the 15s timer.
 
   try {
     const {

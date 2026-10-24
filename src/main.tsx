@@ -3,7 +3,6 @@ import "./index.css";
 import { registerSWSafely } from "./lib/registerServiceWorker";
 import { initOtaUpdater } from "./lib/native/otaUpdater";
 import { runBootOtaGate } from "./lib/native/bootOtaGate";
-import { runBootStoreGate } from "./lib/native/bootStoreGate";
 import { isNativeApp } from "./lib/native/platform";
 import { installStaleChunkAutoReload } from "./lib/staleChunkError";
 import { installIosShareableGuard } from "./lib/iosShareableGuard";
@@ -36,10 +35,6 @@ async function boot() {
     // (Download during boot froze WebView timers → infinite "업데이트 받는 중" splash.)
     if (isNativeApp()) {
       await runBootOtaGate({ paint: false });
-      await Promise.race([
-        runBootStoreGate(),
-        new Promise<void>((resolve) => window.setTimeout(resolve, 4_000)),
-      ]);
     }
 
     const { default: App } = await import("./App.tsx");

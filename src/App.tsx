@@ -8,7 +8,6 @@ import { Suspense, lazy } from "react";
 import SystemRealtimeProvider from "@/providers/SystemRealtimeProvider";
 import MobileRedirectGuard from "@/components/MobileRedirectGuard";
 import NativeAndroidBack from "@/components/NativeAndroidBack";
-import NativeStoreUpdateGate from "@/components/native/NativeStoreUpdateGate";
 import InstallPrompt from "@/components/InstallPrompt";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import AdminAppRoutes from "@/routes/AdminAppRoutes";
@@ -177,7 +176,6 @@ const App = () => (
             </AppErrorBoundary>
             <MobileRedirectGuard />
             <NativeAndroidBack />
-            <NativeStoreUpdateGate />
             <InstallPrompt />
             <OfflineSyncMount />
           </SystemRealtimeProvider>

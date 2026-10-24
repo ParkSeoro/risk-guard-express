@@ -117,6 +117,12 @@ jobs:
         run: |
           # android/ 일부 커스텀 파일만 git 추적됨 → 디렉터리는 있어도
           # build.gradle 이 없을 수 있음. 그때는 플랫폼을 다시 깐다.
+          # 출시노트는 android/ 루트라 src 보존만으로는 남지 않는다.
+          NOTES_STASH=""
+          if [ -f android/play-release-notes-ko.txt ]; then
+            NOTES_STASH=$(mktemp)
+            cp android/play-release-notes-ko.txt "$NOTES_STASH"
+          fi
           if [ ! -f "android/app/build.gradle" ]; then
             echo "Incomplete android platform — regenerating while preserving custom sources"
             CUSTOM=$(mktemp -d)
@@ -143,6 +149,10 @@ jobs:
               cp capacitor-plugins/headless-track/HeadlessTrackService.java \
                 android/app/src/main/java/org/safenex/app/HeadlessTrackService.java
             fi
+          fi
+          if [ -n "$NOTES_STASH" ]; then
+            mkdir -p android
+            cp "$NOTES_STASH" android/play-release-notes-ko.txt
           fi
           bunx cap sync android
           # FCM google-services.json (required for push)
@@ -327,6 +337,25 @@ jobs:
           path: ${{ steps.aab.outputs.path }}
           retention-days: 90
 
+      - name: Stage Play release notes
+        env:
+          VN: ${{ steps.ver.outputs.version_name }}
+          VC: ${{ steps.ver.outputs.version_code }}
+        run: |
+          if [ ! -f android/play-release-notes-ko.txt ]; then
+            echo "::error::android/play-release-notes-ko.txt 가 없습니다. Play 스토어 출시노트를 같이 올려야 합니다."
+            exit 1
+          fi
+          cp android/play-release-notes-ko.txt "safenex-play-release-notes-${VN}-${VC}.txt"
+
+      - name: Upload Play release notes
+        uses: actions/upload-artifact@v6
+        with:
+          name: safenex-play-release-notes-${{ steps.ver.outputs.version_name }}-${{ steps.ver.outputs.version_code }}.txt
+          path: safenex-play-release-notes-${{ steps.ver.outputs.version_name }}-${{ steps.ver.outputs.version_code }}.txt
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Collect Play mapping + native symbols
         run: python3 scripts/collect-play-symbols.py android/app/build play-symbols
 
@@ -372,4 +401,5 @@ jobs:
           files: |
             ${{ steps.aab.outputs.path }}
             play-symbols/*
+            safenex-play-release-notes-${{ steps.ver.outputs.version_name }}-${{ steps.ver.outputs.version_code }}.txt
           generate_release_notes: true

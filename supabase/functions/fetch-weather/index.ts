@@ -7,6 +7,39 @@ const corsHeaders = {
 };
 
 const CACHE_DURATION_MS = 30 * 60 * 1000;
+const GEOCODE_TIMEOUT_MS = 1500;
+const WEATHER_FETCH_TIMEOUT_MS = 4000;
+/** Client fallback in Dashboard / MobileWeatherCard. Not a real site pin. */
+const SEOUL_DEFAULT_LAT = 37.5665;
+const SEOUL_DEFAULT_LNG = 126.978;
+
+function fetchWithTimeout(url: string, init: RequestInit = {}, ms = GEOCODE_TIMEOUT_MS): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+}
+
+function asCoord(lat: unknown, lng: unknown): { lat: number; lng: number } | null {
+  const la = typeof lat === "number" ? lat : Number(lat);
+  const ln = typeof lng === "number" ? lng : Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
+  if (Math.abs(la) > 90 || Math.abs(ln) > 180) return null;
+  if (Math.abs(la) < 0.0001 && Math.abs(ln) < 0.0001) return null;
+  return { lat: la, lng: ln };
+}
+
+function isSeoulDefault(lat: number, lng: number): boolean {
+  return Math.abs(lat - SEOUL_DEFAULT_LAT) < 0.0002 && Math.abs(lng - SEOUL_DEFAULT_LNG) < 0.0002;
+}
+
+function coordsClose(aLat: number, aLng: number, bLat: number, bLng: number): boolean {
+  return Math.abs(aLat - bLat) <= 0.02 && Math.abs(aLng - bLng) <= 0.02;
+}
+
+function cacheCoords(data: any): { lat: number; lng: number } | null {
+  return asCoord(
+    data?.current?.lat ?? data?.resolved_location?.lat,
+    data?.current?.lng ?? data?.resolved_location?.lng,
+  );
+}
 
 // Korean address simplification for better geocoding
 function simplifyKoreanAddress(address: string): string[] {
@@ -94,9 +127,9 @@ async function geocodeAddress(address: string, owKey: string): Promise<{ lat: nu
   const variants = simplifyKoreanAddress(address);
   console.log(`Geocoding variants for "${address}":`, variants);
 
-  for (const variant of variants) {
+  for (const variant of variants.slice(0, 2)) {
     try {
-      const geoRes = await fetch(
+      const geoRes = await fetchWithTimeout(
         `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(variant)},KR&limit=3&appid=${owKey}`
       );
       const geoData = await geoRes.json();
@@ -115,10 +148,10 @@ async function geocodeAddress(address: string, owKey: string): Promise<{ lat: nu
     }
   }
 
-  // Last resort: try Nominatim (OpenStreetMap) as backup
-  for (const variant of variants.slice(0, 2)) {
+  // Last resort: try Nominatim (OpenStreetMap) as backup. One short attempt.
+  for (const variant of variants.slice(0, 1)) {
     try {
-      const nominatimRes = await fetch(
+      const nominatimRes = await fetchWithTimeout(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(variant)}&countrycodes=kr&format=json&limit=1&accept-language=ko`,
         { headers: { 'User-Agent': 'SafetyManagementSystem/1.0' } }
       );
@@ -174,7 +207,7 @@ function suggestAddresses(address: string): string[] {
 
 async function reverseGeocode(lat: number, lng: number, owKey: string): Promise<string> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lng}&limit=1&appid=${owKey}`
     );
     const data = await res.json();
@@ -194,7 +227,7 @@ async function fetchKmaWeather(lat: number, lng: number, apiKey: string) {
   const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${encodeURIComponent(apiKey)}&numOfRows=300&pageNo=1&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
   console.log(`KMA API call: base_date=${baseDate}, base_time=${baseTime}, nx=${nx}, ny=${ny}`);
   
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, WEATHER_FETCH_TIMEOUT_MS);
   const text = await res.text();
   
   try {
@@ -334,7 +367,7 @@ async function fetchOpenMeteo(lat: number, lng: number) {
     `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,precipitation_probability_max` +
     `&timezone=Asia%2FSeoul&forecast_days=5&wind_speed_unit=ms`;
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, WEATHER_FETCH_TIMEOUT_MS);
   if (!res.ok) {
     console.error("Open-Meteo HTTP", res.status, await res.text());
     return null;
@@ -428,9 +461,9 @@ function mapWmoCode(code: number): { main: string; description: string; icon: st
 
 async function geocodeNominatimOnly(address: string): Promise<{ lat: number; lng: number; city: string } | null> {
   const variants = simplifyKoreanAddress(address);
-  for (const variant of variants.slice(0, 4)) {
+  for (const variant of variants.slice(0, 2)) {
     try {
-      const nominatimRes = await fetch(
+      const nominatimRes = await fetchWithTimeout(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(variant)}&countrycodes=kr&format=json&limit=1&accept-language=ko`,
         { headers: { "User-Agent": "SafetyManagementSystem/1.0" } },
       );
@@ -451,13 +484,13 @@ async function geocodeNominatimOnly(address: string): Promise<{ lat: number; lng
 
 async function fetchOpenWeather(lat: number, lng: number, owKey: string) {
   const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${owKey}&units=metric&lang=kr`;
-  const currentRes = await fetch(currentUrl);
+  const currentRes = await fetchWithTimeout(currentUrl, {}, WEATHER_FETCH_TIMEOUT_MS);
   const currentData = await currentRes.json();
 
   if (currentData.cod && currentData.cod !== 200) return null;
 
   const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${owKey}&units=metric&lang=kr`;
-  const forecastRes = await fetch(forecastUrl);
+  const forecastRes = await fetchWithTimeout(forecastUrl, {}, WEATHER_FETCH_TIMEOUT_MS);
   const forecastData = await forecastRes.json();
 
   const current = {
@@ -539,52 +572,22 @@ async function loadDbSecrets(supabase: ReturnType<typeof createClient>): Promise
   }
 }
 
-/** Forward to legacy Lovable fetch-weather when DEST has no KMA/OW keys. */
-async function proxyLegacyWeather(body: Record<string, unknown>): Promise<Response | null> {
-  const proxyUrl = (Deno.env.get("LEGACY_WEATHER_PROXY_URL") || "").trim();
-  if (!proxyUrl) return null;
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+  });
+}
 
-  // Prefer explicit legacy anon key; otherwise try calling without JWT (verify_jwt=false sources).
-  const anon = (Deno.env.get("LEGACY_WEATHER_ANON_KEY") || "").trim();
-  try {
-    console.log("Proxying weather request to legacy:", proxyUrl);
-    const res = await fetch(proxyUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(anon ? { Authorization: `Bearer ${anon}`, apikey: anon } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    let parsed: any = null;
-    try { parsed = JSON.parse(text); } catch { /* keep raw */ }
-
-    if (!res.ok) {
-      console.error("Legacy weather proxy HTTP", res.status, text.slice(0, 300));
-      return null;
-    }
-    if (!parsed || parsed.error) {
-      console.error("Legacy weather proxy body error:", parsed?.error || text.slice(0, 200));
-      return null;
-    }
-
-    // Mark provenance so UI can show legacy source clearly
-    if (parsed && typeof parsed === "object") {
-      parsed.source = parsed.source ? `legacy_${parsed.source}` : "legacy";
-      parsed.source_label = parsed.source_label
-        ? `${parsed.source_label} (Lovable 연동)`
-        : "Lovable 날씨 연동";
-      parsed.via = "legacy_proxy";
-    }
-
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-    });
-  } catch (e) {
-    console.error("Legacy weather proxy failed:", e);
-    return null;
-  }
+/** No coordinates: do not invent Seoul weather or Seoul safety alerts. */
+function unavailableWeatherResponse(): Response {
+  return jsonResponse({
+    unavailable: true,
+    current: null,
+    alerts: [],
+    source: "none",
+    source_label: "",
+  });
 }
 
 serve(async (req) => {
@@ -604,92 +607,49 @@ serve(async (req) => {
     const dbSecrets = await loadDbSecrets(supabase);
     const owKey = (Deno.env.get("OPENWEATHER_API_KEY") || dbSecrets.OPENWEATHER_API_KEY || "").trim() || null;
     const kmaKey = (Deno.env.get("KMA_API_KEY") || dbSecrets.KMA_API_KEY || "").trim() || null;
-    const hasLocalKeys = !!(owKey || kmaKey);
 
-    // Geocode-only mode (for project creation/edit)
+    // Geocode-only mode (project create/edit). Same 404 body as before. Does not write projects.
     if (geocode_only && address) {
       let geo = owKey ? await geocodeAddress(address, owKey) : null;
       if (!geo) geo = await geocodeNominatimOnly(address);
-      if (!geo && !hasLocalKeys) {
-        const proxied = await proxyLegacyWeather({ ...body, geocode_only: true, address });
-        if (proxied) return proxied;
-      }
-      if (geo) {
-        return new Response(JSON.stringify(geo), {
-          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-        });
-      }
+      if (geo) return jsonResponse(geo);
       const suggestions = suggestAddresses(address);
-      return new Response(JSON.stringify({
+      return jsonResponse({
         error: "주소를 찾을 수 없습니다",
         suggestions: suggestions.length > 0 ? suggestions : undefined,
         message: suggestions.length > 0
           ? `"${address}" 검색 실패. 다음 주소를 시도해보세요: ${suggestions.join(', ')}`
           : `"${address}" 검색 실패. 도시명만 입력해보세요 (예: 여수, 평택, 울산)`,
-      }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      });
+      }, 404);
     }
 
     if (!project_id) {
-      return new Response(JSON.stringify({ error: "Missing project_id" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      });
+      return jsonResponse({ error: "Missing project_id" }, 400);
     }
 
-    // No local keys → try Lovable proxy first (same KMA/OW quality as before migration)
-    if (!hasLocalKeys) {
-      const proxied = await proxyLegacyWeather(body);
-      if (proxied) return proxied;
-      console.log("No local weather keys and legacy proxy unavailable; continuing with Open-Meteo");
-    }
-
-    // Resolve coordinates — prefer explicit address geocode when provided
-    let resolvedLat = lat;
-    let resolvedLng = lng;
-    let resolvedCity = "";
-
-    if (address) {
-      // Always attempt address geocode when address is sent (project site_address SSOT)
-      let geo = owKey ? await geocodeAddress(address, owKey) : null;
-      if (!geo) geo = await geocodeNominatimOnly(address);
-      if (geo) {
-        resolvedLat = geo.lat;
-        resolvedLng = geo.lng;
-        resolvedCity = geo.city;
-        if (project_id && project_id !== "__geocode__") {
-          await supabase.from("projects").update({ site_lat: resolvedLat, site_lng: resolvedLng }).eq("id", project_id);
-        }
-      }
-    }
-
-    // Default to Seoul if still no coords
-    if (!resolvedLat || !resolvedLng) {
-      resolvedLat = 37.5665;
-      resolvedLng = 126.978;
-      resolvedCity = "서울";
-    }
-
-    // Reverse geocode to get real city name
-    if (!resolvedCity && owKey) {
-      resolvedCity = await reverseGeocode(resolvedLat, resolvedLng, owKey);
-    }
-    if (!resolvedCity) {
-      // Best-effort reverse via Nominatim
-      try {
-        const rev = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${resolvedLat}&lon=${resolvedLng}&format=json&accept-language=ko`,
-          { headers: { "User-Agent": "SafetyManagementSystem/1.0" } },
-        );
-        const revData = await rev.json();
-        resolvedCity = revData?.address?.city || revData?.address?.town || revData?.address?.county || revData?.name || "";
-      } catch { /* ignore */ }
-    }
-
-    // Determine which source to fetch based on request
+    // Keys absent: Open-Meteo fills the cache. Do not call the dead Lovable proxy.
     const requestedSource = source || "kma";
 
-    // Check cache
+    let projectRow: { site_lat?: number | null; site_lng?: number | null; site_address?: string | null } | null = null;
+    if (project_id !== "__geocode__") {
+      const { data } = await supabase
+        .from("projects")
+        .select("site_lat, site_lng, site_address")
+        .eq("id", project_id)
+        .maybeSingle();
+      projectRow = data;
+    }
+
+    const stored = asCoord(projectRow?.site_lat, projectRow?.site_lng);
+    const bodyCoord = asCoord(lat, lng);
+    // Stored site pin wins over the silent Seoul pair. A far explicit pin (즐겨찾기) is kept.
+    const explicitOverride = bodyCoord
+      && !isSeoulDefault(bodyCoord.lat, bodyCoord.lng)
+      && (!stored || !coordsClose(bodyCoord.lat, bodyCoord.lng, stored.lat, stored.lng))
+      ? bodyCoord
+      : null;
+    const chosen = explicitOverride || stored;
+
     const { data: cached } = await supabase
       .from("weather_cache")
       .select("data, fetched_at")
@@ -699,14 +659,40 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
-    if (cached && cached.data && (cached.data as any)?.current?.temp !== undefined) {
-      const age = Date.now() - new Date(cached.fetched_at).getTime();
-      if (age < CACHE_DURATION_MS) {
-        console.log(`Returning cached ${requestedSource} weather data`);
-        return new Response(JSON.stringify(cached.data), {
-          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-        });
+    const cachedPoint = cacheCoords(cached?.data);
+    const cacheMatches = !!(chosen && cachedPoint && coordsClose(cachedPoint.lat, cachedPoint.lng, chosen.lat, chosen.lng)
+      && (cached?.data as any)?.current?.temp !== undefined);
+    const cacheAge = cached?.fetched_at ? Date.now() - new Date(cached.fetched_at).getTime() : Number.POSITIVE_INFINITY;
+    if (cacheMatches && cacheAge < CACHE_DURATION_MS) {
+      console.log(`Returning cached ${requestedSource} weather data`);
+      return jsonResponse(cached!.data);
+    }
+    const staleMatch = cacheMatches ? cached!.data : null;
+
+    let resolved = chosen;
+    let resolvedCity = "";
+    const siteAddress = (typeof address === "string" && address.trim())
+      ? address.trim()
+      : (projectRow?.site_address || "");
+
+    if (!resolved && siteAddress) {
+      let geo = owKey ? await geocodeAddress(siteAddress, owKey) : null;
+      if (!geo) geo = await geocodeNominatimOnly(siteAddress);
+      if (geo) {
+        resolved = { lat: geo.lat, lng: geo.lng };
+        resolvedCity = geo.city || "";
       }
+    }
+
+    if (!resolved) {
+      console.log("No site coordinates; returning no-weather without Seoul fallback");
+      return unavailableWeatherResponse();
+    }
+
+    const resolvedLat = resolved.lat;
+    const resolvedLng = resolved.lng;
+    if (!resolvedCity && owKey) {
+      resolvedCity = await reverseGeocode(resolvedLat, resolvedLng, owKey);
     }
 
     let weatherData: any = null;
@@ -781,9 +767,11 @@ serve(async (req) => {
     }
 
     if (!weatherData) {
-      return new Response(JSON.stringify({ error: "날씨 데이터를 가져올 수 없습니다. 잠시 후 다시 시도해주세요." }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      });
+      if (staleMatch) {
+        console.log("Weather provider failed; returning stale cache for the site");
+        return jsonResponse(staleMatch);
+      }
+      return jsonResponse({ error: "날씨 데이터를 가져올 수 없습니다. 잠시 후 다시 시도해주세요." }, 502);
     }
 
     // Set city name and coordinates
@@ -804,13 +792,15 @@ serve(async (req) => {
         lat: resolvedLat,
         lng: resolvedLng,
         city: weatherData.current.city || resolvedCity,
-        address: address || '',
+        address: siteAddress || '',
       },
       fetched_at: new Date().toISOString(),
     };
 
-    // Cache under the requested tab key so fallbacks still warm the UI source.
-    if (result.current.temp !== 0 || result.current.description !== "") {
+    // Cache under the requested tab key. Do not store a one-off favorite pin or a Seoul substitute.
+    const seoulSubstitute = isSeoulDefault(resolvedLat, resolvedLng)
+      && !(stored && isSeoulDefault(stored.lat, stored.lng));
+    if (!explicitOverride && !seoulSubstitute && (result.current.temp !== 0 || result.current.description !== "")) {
       await supabase
         .from("weather_cache")
         .upsert(

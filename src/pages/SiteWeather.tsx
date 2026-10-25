@@ -218,6 +218,17 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
         return;
       }
 
+      // Missing coordinates come back as 200 without current. Keep the empty card, no toast.
+      if (!data?.current) {
+        if (source === "openweather") {
+          setOwWeather(null);
+          setOwLoading(false);
+        } else {
+          setWeather(null);
+        }
+        return;
+      }
+
       if (source === "openweather") {
         setOwWeather(data);
         setOwLoading(false);

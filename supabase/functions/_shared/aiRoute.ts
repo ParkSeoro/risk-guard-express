@@ -46,6 +46,7 @@ export function resolveAiProvider(purpose: AiPurpose | string | undefined): AiPr
   return DEFAULT_AI_ROUTE[key];
 }
 
-export function hasGeminiApiKey(): boolean {
-  return !!(Deno.env.get("GEMINI_API_KEY") || "").trim();
+export async function hasGeminiApiKey(): Promise<boolean> {
+  const { resolveGeminiApiKey } = await import("./geminiNative.ts");
+  return !!(await resolveGeminiApiKey());
 }

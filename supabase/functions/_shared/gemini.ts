@@ -226,7 +226,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
   const purpose = req.purpose || (imagePresent ? "permit_template" : "default");
   const primary = resolveAiProvider(purpose);
   const openaiOn = isOpenAiFallbackEnabled();
-  const geminiOn = hasGeminiApiKey();
+  const geminiOn = await hasGeminiApiKey();
 
   if (imagePresent && !geminiOn && !openaiOn) {
     const totalText = req.messages
@@ -346,7 +346,7 @@ export async function* streamGeminiChatText(req: OAIRequest): AsyncGenerator<str
   const purpose = req.purpose || "default";
   const primary = resolveAiProvider(purpose);
   const openaiOn = isOpenAiFallbackEnabled();
-  const geminiOn = hasGeminiApiKey();
+  const geminiOn = await hasGeminiApiKey();
   const preparedMessages = injectSystemRules(req.messages, wantsJson, compact);
   const messages = preparedMessages.map((m) => ({
     role: m.role as "system" | "user" | "assistant",

@@ -64,14 +64,13 @@ export function preferOpenAiForDraft(): boolean {
 
 export const preferOpenAiForFill = preferOpenAiForDraft;
 
-/** OpenAI or NVIDIA key present — used by functions that used to require NVIDIA only. */
-export function hasChatAiKey(): boolean {
-  return !!(
-    resolveOpenAiApiKey() ||
-    Deno.env.get("GEMINI_API_KEY") ||
-    Deno.env.get("NVIDIA_API_KEY") ||
-    Deno.env.get("DEEPSEEK_API_KEY")
-  );
+/** OpenAI, Gemini (vault or env), or NVIDIA key present. */
+export async function hasChatAiKey(): Promise<boolean> {
+  if (resolveOpenAiApiKey()) return true;
+  if ((Deno.env.get("NVIDIA_API_KEY") || "").trim()) return true;
+  if ((Deno.env.get("DEEPSEEK_API_KEY") || "").trim()) return true;
+  const { resolveGeminiApiKey } = await import("./geminiNative.ts");
+  return !!(await resolveGeminiApiKey());
 }
 
 function resolveBaseUrl(): string {

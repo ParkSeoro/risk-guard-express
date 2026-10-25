@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
+import { resolveGeminiApiKey } from "../_shared/geminiNative.ts";
 import { hasChatAiKey } from "../_shared/openaiChat.ts";
 import {
   geminiJsonFromText,
@@ -175,8 +176,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    const chatReady = hasChatAiKey();
+    const geminiKey = await resolveGeminiApiKey();
+    const chatReady = await hasChatAiKey();
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await userClient.auth.getUser();

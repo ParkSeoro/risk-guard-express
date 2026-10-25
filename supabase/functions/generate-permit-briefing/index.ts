@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!hasChatAiKey()) {
+    if (!(await hasChatAiKey())) {
       return new Response(JSON.stringify({ error: 'OPENAI_API_KEY가 설정되지 않았습니다.' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

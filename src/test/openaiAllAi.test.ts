@@ -60,6 +60,20 @@ describe("AI 비용 레인", () => {
     expect(src("src/pages/Settings.tsx")).toContain("OpenAI·Gemini 비용 분리");
   });
 
+  it("Gemini auth key is sent as a header, not a query string", () => {
+    const native = src("supabase/functions/_shared/geminiNative.ts");
+    const ocr = src("supabase/functions/_shared/koreanOcr.ts");
+    expect(native).toContain("x-goog-api-key");
+    expect(native).not.toContain("?key=");
+    expect(native).toContain("gemini-3.5-flash-lite");
+    expect(native).toContain("get_runtime_secret");
+    expect(native).toContain("fromVault || fromEnv");
+    expect(ocr).toContain("geminiRequestHeaders");
+    expect(ocr).not.toContain("?key=");
+    expect(src("supabase/functions/analyze-safety-cost-document/index.ts")).toContain("resolveGeminiApiKey");
+    expect(src("supabase/functions/_shared/gemini.ts")).toContain("await hasGeminiApiKey()");
+  });
+
   it("안관비 OCR은 Gemini 다음 OpenAI 비전으로 폴백한다", () => {
     const ocr = src("supabase/functions/_shared/koreanOcr.ts");
     expect(ocr).toContain("callOpenAiChat");

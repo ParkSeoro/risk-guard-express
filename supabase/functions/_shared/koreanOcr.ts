@@ -4,6 +4,7 @@
  */
 
 import { callOpenAiChat, isOpenAiFallbackEnabled } from "./openaiChat.ts";
+import { geminiGenerateContentUrl, geminiRequestHeaders } from "./geminiNative.ts";
 
 export const OCR_STATUS_LABEL = {
   ocr_raw: 'OCR 원문입니다. 숫자·상호를 원본과 대조하세요.',
@@ -127,14 +128,14 @@ async function callGeminiVision(opts: {
   base64: string;
   hint: string;
 }): Promise<{ text: string; confidence: number | null }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_OCR_MODEL}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const url = geminiGenerateContentUrl(GEMINI_OCR_MODEL);
   const prompt = `${OCR_PROMPT}
 보조 힌트:
 ${opts.hint.slice(0, 4000)}`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: geminiRequestHeaders(opts.apiKey),
     body: JSON.stringify({
       contents: [{
         role: 'user',
@@ -274,10 +275,10 @@ export async function geminiJsonFromText(opts: {
   system: string;
   prompt: string;
 }): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_OCR_MODEL}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const url = geminiGenerateContentUrl(GEMINI_OCR_MODEL);
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: geminiRequestHeaders(opts.apiKey),
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: `${opts.system}\n\n${opts.prompt}` }] }],
       generationConfig: {

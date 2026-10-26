@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
     }
 
 
-    if (!hasChatAiKey()) {
+    if (!(await hasChatAiKey())) {
       throw new Error("GEMINI_API_KEY 또는 OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.");
     }
 

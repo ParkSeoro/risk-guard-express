@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Users, MapPin, Building2, Activity, Radio, RefreshCw } from "lucide-react";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
+import NoActiveDangerZoneBanner from "@/components/geofence/NoActiveDangerZoneBanner";
 import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
@@ -468,6 +469,8 @@ export default function WorkerDistribution() {
           )}
         </div>
       </div>
+
+      <NoActiveDangerZoneBanner projectId={projectId} />
 
       {loadError && (
         <Card className="border-destructive/40">

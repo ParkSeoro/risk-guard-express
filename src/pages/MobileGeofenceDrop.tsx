@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, MapPin, Loader2, Crosshair } from "lucide-react";
 import { toast } from "sonner";
+import NoActiveDangerZoneBanner from "@/components/geofence/NoActiveDangerZoneBanner";
 import {
   applyGpsCalibration,
   fetchProjectGpsCalibration,
@@ -199,6 +200,7 @@ export default function MobileGeofenceDrop() {
       </header>
 
       <main className="p-4 space-y-4 max-w-md mx-auto">
+        <NoActiveDangerZoneBanner projectId={projectId} showManageLink={false} />
         <Card>
           <CardContent className="pt-4 space-y-2 text-sm text-muted-foreground">
             <p>

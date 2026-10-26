@@ -39,6 +39,7 @@ import ZoneAccessRulesDialog, {
   type ZoneDraftPayload,
   type ZoneEditSeed,
 } from "@/components/geofence/ZoneAccessRulesDialog";
+import NoActiveDangerZoneBanner from "@/components/geofence/NoActiveDangerZoneBanner";
 import RotatedImageOverlay from "@/components/geofence/RotatedImageOverlay";
 import VWorldBasemap from "@/components/geofence/VWorldBasemap";
 import OrthogonalZoneCanvas, {
@@ -1525,6 +1526,11 @@ export default function SiteControlMap() {
     setFitToken(`address-refit-${Date.now()}`);
   };
 
+  const alarmZoneRefreshKey = useMemo(
+    () => zones.map((z) => `${z.id}:${z.is_active === true ? 1 : 0}:${z.zone_category ?? ""}`).join(","),
+    [zones],
+  );
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1561,6 +1567,13 @@ export default function SiteControlMap() {
           </SelectContent>
         </Select>
       </div>
+
+      <NoActiveDangerZoneBanner
+        projectId={projectId}
+        refreshKey={alarmZoneRefreshKey}
+        showManageLink={panelTab !== "zones"}
+        onManage={() => setPanelTab("zones")}
+      />
 
       <div
         className={

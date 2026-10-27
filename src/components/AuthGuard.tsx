@@ -14,6 +14,7 @@ import {
 } from "@/lib/native/isNativeApp";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 import { needsWorkerLocaleChoice, WORKER_LANGUAGE_PATH } from "@/lib/i18n/workerLocale";
+import { AuthErrorScreen } from "@/components/AuthErrorScreen";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -259,7 +260,7 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
   if (isAuthLoading) return <LoadingSpinner />;
   if (session && !profile && !profileReady) return <LoadingSpinner />;
   if (session && !profile && profileReady && !isAuthSystemPath(location.pathname)) {
-    return <LoadingSpinner />;
+    return <AuthErrorScreen />;
   }
 
   const status = (profile as { account_status?: string | null } | null)?.account_status;
@@ -355,8 +356,11 @@ export function RoleHomeRedirect() {
   const { user, session, isAuthLoading, roles, rolesReady, profileReady, profile } = useAuth();
   if (isAuthLoading) return <LoadingSpinner />;
   if (!session && !user) return <Navigate to="/login" replace />;
+  if (session && !profile && profileReady) return <AuthErrorScreen />;
   if (!rolesReady || !profileReady || !profile) return <LoadingSpinner />;
   const dest = postLoginPath(roles, profile, { rolesReady });
-  if (dest === "/" || dest === "") return <LoadingSpinner />;
+  if (dest === "/" || dest === "") {
+    return <AuthErrorScreen description="사용자 권한에 따른 이동 경로를 찾을 수 없습니다." />;
+  }
   return <Navigate to={dest} replace />;
 }

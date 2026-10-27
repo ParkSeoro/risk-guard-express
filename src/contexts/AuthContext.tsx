@@ -30,6 +30,10 @@ type AuthContextType = {
   applyProfilePatch: (patch: Partial<Profile>) => void;
   /** Re-fetch profile + roles from DB and update context (awaits completion). */
   reloadAuthProfile: () => Promise<Profile | null>;
+  /** Error message if profile or roles bootstrap failed */
+  authError: string | null;
+  /** Clear error and retry bootstrap */
+  retryAuthBootstrap: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,43 +48,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [rolesReady, setRolesReady] = useState(false);
   const [profileReady, setProfileReady] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const bootstrappedRef = useRef(false);
   const userIdRef = useRef<string | null>(null);
 
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
-    const { data, error } = await supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle();
-    if (error) {
-      console.error("Error fetching profile:", error);
+    try {
+      const { data, error } = await supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle();
+      if (error) {
+        console.error("Error fetching profile:", error);
+        setAuthError(error.message || "Failed to load profile");
+        setProfile(null);
+        return null;
+      }
+      setProfile(data);
+      return data;
+    } catch (err: any) {
+      console.error("Exception fetching profile:", err);
+      setAuthError(err?.message || "Failed to load profile");
       setProfile(null);
       return null;
     }
-    setProfile(data);
-    return data;
   }, []);
 
   const fetchRoles = useCallback(async (userId: string): Promise<AppRole[]> => {
-    // Global roles (user_roles) are usually only `master`.
-    // Partner/company admins live in project_members.role_new — must load both.
-    const [globalRes, memberRes] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("project_members").select("role_new").eq("user_id", userId),
-    ]);
-    if (globalRes.error) {
-      console.error("Error fetching user_roles:", globalRes.error);
+    try {
+      // Global roles (user_roles) are usually only `master`.
+      // Partner/company admins live in project_members.role_new — must load both.
+      const [globalRes, memberRes] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        supabase.from("project_members").select("role_new").eq("user_id", userId),
+      ]);
+      if (globalRes.error) {
+        console.error("Error fetching user_roles:", globalRes.error);
+        setAuthError((prev) => prev || globalRes.error.message);
+      }
+      if (memberRes.error) {
+        console.error("Error fetching project_members roles:", memberRes.error);
+        setAuthError((prev) => prev || memberRes.error.message);
+      }
+      const merged = new Set<string>();
+      for (const r of globalRes.data || []) {
+        if (r.role) merged.add(String(r.role));
+      }
+      for (const r of memberRes.data || []) {
+        if (r.role_new) merged.add(String(r.role_new));
+      }
+      const next = Array.from(merged) as AppRole[];
+      setRoles(next);
+      return next;
+    } catch (err: any) {
+      console.error("Exception fetching roles:", err);
+      setAuthError((prev) => prev || err?.message || "Failed to load roles");
+      setRoles([]);
+      return [];
     }
-    if (memberRes.error) {
-      console.error("Error fetching project_members roles:", memberRes.error);
-    }
-    const merged = new Set<string>();
-    for (const r of globalRes.data || []) {
-      if (r.role) merged.add(String(r.role));
-    }
-    for (const r of memberRes.data || []) {
-      if (r.role_new) merged.add(String(r.role_new));
-    }
-    const next = Array.from(merged) as AppRole[];
-    setRoles(next);
-    return next;
   }, []);
 
   const finishAuthLoading = useCallback(() => {
@@ -99,15 +121,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setRoles([]);
         setProfileReady(true);
+        setAuthError(null);
         finishAuthLoading();
         return;
       }
 
       setProfileReady(false);
       try {
-        await Promise.all([fetchProfile(nextSession.user.id), fetchRoles(nextSession.user.id)]);
-      } catch (e) {
+        const [loadedProfile] = await Promise.all([
+          fetchProfile(nextSession.user.id),
+          fetchRoles(nextSession.user.id),
+        ]);
+        if (!loadedProfile) {
+          setAuthError((prev) => prev || "계정 프로필 정보를 조회할 수 없습니다.");
+        }
+      } catch (e: any) {
         console.error("Auth hydrate failed:", e);
+        setAuthError(e?.message || "Auth hydrate failed");
         setProfile(null);
         setRoles([]);
       } finally {
@@ -186,7 +216,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("Sign out error:", e);
+    }
     resetProjectViewingSession();
     userIdRef.current = null;
     setUser(null);
@@ -195,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRoles([]);
     setRolesReady(true);
     setProfileReady(true);
+    setAuthError(null);
     setIsAuthLoading(false);
   };
 
@@ -212,10 +247,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const reloadAuthProfile = useCallback(async (): Promise<Profile | null> => {
     if (!user) return null;
-    const [p] = await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
-    setRolesReady(true);
-    return p;
+    setAuthError(null);
+    setProfileReady(false);
+    try {
+      const [p] = await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
+      if (!p) {
+        setAuthError((prev) => prev || "계정 프로필 정보를 조회할 수 없습니다.");
+      }
+      setRolesReady(true);
+      return p;
+    } catch (e: any) {
+      setAuthError(e?.message || "Failed to reload profile");
+      return null;
+    } finally {
+      setProfileReady(true);
+    }
   }, [user, fetchProfile, fetchRoles]);
+
+  const retryAuthBootstrap = useCallback(async () => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const {
+        data: { session: s },
+      } = await supabase.auth.getSession();
+      await hydrateUser(s, { isInitialBoot: true });
+    } catch (e: any) {
+      console.error("Retry auth bootstrap failed:", e);
+      setAuthError(e?.message || "Retry failed");
+      finishAuthLoading();
+    }
+  }, [hydrateUser, finishAuthLoading]);
 
   const hasRole = (role: AppRole) => roles.includes(role);
   // Shell-aware flags (match AuthGuard ADMIN_SHELL / WORKER_SHELL)
@@ -255,6 +317,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshProfile,
         applyProfilePatch,
         reloadAuthProfile,
+        authError,
+        retryAuthBootstrap,
       }}
     >
       {children}

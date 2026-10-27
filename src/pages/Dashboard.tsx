@@ -93,6 +93,10 @@ const EMPTY: DashboardData = {
   inspectionSum: EMPTY_INSP,
 };
 
+// 1시간 클라이언트 인메모리 캐시 (프로젝트별)
+const DASHBOARD_CACHE_TTL_MS = 60 * 60 * 1000;
+const dashboardCache = new Map<string, { data: DashboardData; timestamp: number }>();
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
@@ -103,12 +107,33 @@ const Dashboard = () => {
   } = useGlobalProjectAccess();
   // Ops-wide tiles = project-wide company visibility only (발주처 PA·SM / master)
   const showOpsWide = seesAllCompanies;
-  const [data, setData] = useState<DashboardData>(EMPTY);
-  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [data, setData] = useState<DashboardData>(() => {
+    return (selectedProject && dashboardCache.get(selectedProject)?.data) || EMPTY;
+  });
+  const [loading, setLoading] = useState(() => {
+    return !selectedProject || !dashboardCache.has(selectedProject);
+  });
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (force = false) => {
     if (!selectedProject || scopeStatus !== "ready") return;
-    setLoading(true);
+
+    if (force) {
+      setRefreshKey((k) => k + 1);
+    }
+
+    const cached = dashboardCache.get(selectedProject);
+    const isCacheFresh = cached && (Date.now() - cached.timestamp < DASHBOARD_CACHE_TTL_MS);
+    if (!force && isCacheFresh) {
+      setData(cached.data);
+      setLoading(false);
+      return;
+    }
+
+    // 이미 데이터가 있는 경우 화면 깜빡임/로딩 스피너 방지를 위해 백그라운드 갱신
+    if (!cached) {
+      setLoading(true);
+    }
     const today = todayKstDate();
     const dayRange = seoulDayRange(today);
 
@@ -305,7 +330,7 @@ const Dashboard = () => {
         inspectionOpenActions: openActions,
       });
 
-      setData({
+      const nextData: DashboardData = {
         attention,
         pulse: {
           onSiteWorkers,
@@ -327,7 +352,10 @@ const Dashboard = () => {
         planSum,
         permitSum,
         inspectionSum,
-      });
+      };
+
+      dashboardCache.set(selectedProject, { data: nextData, timestamp: Date.now() });
+      setData(nextData);
     } finally {
       setLoading(false);
     }
@@ -335,23 +363,18 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (accessLoading || scopeStatus !== "ready") return;
-    fetchDashboard();
+    fetchDashboard(false);
   }, [fetchDashboard, accessLoading, scopeStatus]);
 
   useEffect(() => {
-    const onFocus = () => { fetchDashboard(); };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [fetchDashboard]);
-
-  useEffect(() => {
     if (!selectedProject) return;
+    // 긴급작업·허가서·TBM 등 신규 변동이 생기면 백그라운드에서 실시간 동기화
     const channel = supabase
       .channel(`dashboard-ops-${selectedProject}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "work_permits" }, () => fetchDashboard())
-      .on("postgres_changes", { event: "*", schema: "public", table: "tbm_sessions" }, () => fetchDashboard())
-      .on("postgres_changes", { event: "*", schema: "public", table: "todo_items" }, () => fetchDashboard())
-      .on("postgres_changes", { event: "*", schema: "public", table: "assessment_runs" }, () => fetchDashboard())
+      .on("postgres_changes", { event: "*", schema: "public", table: "work_permits" }, () => fetchDashboard(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "tbm_sessions" }, () => fetchDashboard(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "todo_items" }, () => fetchDashboard(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "assessment_runs" }, () => fetchDashboard(true))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selectedProject, fetchDashboard]);
@@ -397,7 +420,7 @@ const Dashboard = () => {
               : "프로젝트를 선택하세요"}
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchDashboard()} title="새로고침">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchDashboard(true)} title="새로고침">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
@@ -411,6 +434,7 @@ const Dashboard = () => {
         companyId={userCompanyId || profile?.company_id}
         companyType={userCompanyType}
         seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
+        refreshKey={refreshKey}
       />
 
       {/* Attention / action needed */}

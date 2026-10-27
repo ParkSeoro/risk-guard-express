@@ -21,6 +21,7 @@ import {
 } from "@/components/AuthGuard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { AuthErrorScreen } from "@/components/AuthErrorScreen";
 import {
   Dialog,
   DialogContent,
@@ -60,12 +61,15 @@ export default function ConsentPage() {
   const [busy, setBusy] = useState(false);
 
   // ① Wait for global auth boot + profile row (null profile is not "unsigned")
-  if (isAuthLoading || (session && !profileReady) || (session && !profile)) {
+  if (isAuthLoading || (session && !profileReady)) {
     return (
       <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
         세션 확인 중…
       </div>
     );
+  }
+  if (session && profileReady && !profile) {
+    return <AuthErrorScreen />;
   }
   // ④ Race defense: unauthenticated URL hit → login
   if (!session || !user) return <Navigate to="/login?next=/consent" replace />;

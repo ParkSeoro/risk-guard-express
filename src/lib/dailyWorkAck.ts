@@ -79,7 +79,7 @@ export async function fetchWorkerDayPermits(
   const { data: permits, error } = await supabase
     .from("work_permits" as any)
     .select(
-      "id, work_name, work_description, location, permit_date, work_date, form_data, tbm_session_id, assessment_run_id, status, is_deleted, voided_at, company_id, contractor_company",
+      "id, work_name, work_description, location, permit_date, form_data, tbm_session_id, assessment_run_id, status, is_deleted, voided_at, company_id, contractor_company",
     )
     .eq("project_id", projectId)
     .eq("is_deleted", false);

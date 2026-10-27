@@ -20,6 +20,7 @@ interface SiteSafetyRiskControlHubProps {
   companyId?: string | null;
   companyType?: string | null;
   seesAllCompanies?: boolean;
+  refreshKey?: number;
 }
 
 interface RealPtwItem {
@@ -55,12 +56,32 @@ interface InspectionSummary {
   recentActionTitle?: string;
 }
 
+interface HubCacheData {
+  activePtws: RealPtwItem[];
+  totalPtwCount: number;
+  riskPoints: RealRiskPoint[];
+  totalRiskItemsCount: number;
+  inspectionData: InspectionSummary;
+  safetyScore: {
+    totalScore: number;
+    grade: string;
+    gradeColor: string;
+    summary: string;
+    sectors: Array<{ name: string; score: number; max: number; rate: string; detail: string }>;
+  };
+}
+
+// 1시간 클라이언트 인메모리 캐시 (프로젝트 + 업체 권한별)
+const HUB_CACHE_TTL_MS = 60 * 60 * 1000;
+const hubCache = new Map<string, { data: HubCacheData; timestamp: number; refreshKey: number }>();
+
 export function SiteSafetyRiskControlHub({
   projectId,
   onNavigate,
   companyId,
   companyType,
   seesAllCompanies = true,
+  refreshKey = 0,
 }: SiteSafetyRiskControlHubProps) {
   const [selectedQuadrant, setSelectedQuadrant] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,9 +126,26 @@ export function SiteSafetyRiskControlHub({
     let isMounted = true;
 
     async function loadProjectHubData() {
-      setLoading(true);
       const today = todayKstDate();
       const isClient = companyType === 'client' || seesAllCompanies;
+      const cacheKey = `${projectId}-${companyId || 'all'}-${isClient ? 'c' : 'nc'}`;
+      const cached = hubCache.get(cacheKey);
+      const isFresh = cached && (Date.now() - cached.timestamp < HUB_CACHE_TTL_MS) && (cached.refreshKey === refreshKey);
+
+      if (isFresh) {
+        setActivePtws(cached.data.activePtws);
+        setTotalPtwCount(cached.data.totalPtwCount);
+        setRiskPoints(cached.data.riskPoints);
+        setTotalRiskItemsCount(cached.data.totalRiskItemsCount);
+        setInspectionData(cached.data.inspectionData);
+        setSafetyScore(cached.data.safetyScore);
+        setLoading(false);
+        return;
+      }
+
+      if (!cached) {
+        setLoading(true);
+      }
 
       try {
         // (1) 협력사 맵핑 로드 (해당 프로젝트 격리)
@@ -231,7 +269,7 @@ export function SiteSafetyRiskControlHub({
         // 규칙 적용: 해당일(today)이 포함된 위험성평가 회차를 선별하여 프로젝트 통합 집계
         const { data: runs, error: runsErr } = await supabase
           .from('assessment_runs')
-          .select('id, status, target_company_ids, author_company_id, start_date, end_date, created_at')
+          .select('id, status, target_company_ids, start_date, end_date, created_at')
           .eq('project_id', projectId)
           .eq('is_deleted', false)
           .neq('status', '폐기')
@@ -371,13 +409,23 @@ export function SiteSafetyRiskControlHub({
         // (4) 실제 TBM 세션 로드 (금일 및 누적)
         const { data: tbmToday, count: tbmTotalCount } = await supabase
           .from('tbm_sessions' as any)
-          .select('id, status, attendee_count, tbm_date, leader_name, work_name', { count: 'exact' })
+          .select('id, is_active, tbm_date, leader_name, title', { count: 'exact' })
           .eq('project_id', projectId)
           .eq('tbm_date', today)
           .eq('is_deleted', false);
 
         const todayTbms = (tbmToday || []) as any[];
         const totalTbmCount = tbmTotalCount || 0;
+
+        let totalAttendees = 0;
+        if (todayTbms.length > 0) {
+          const tbmIds = todayTbms.map((t) => t.id);
+          const { count: partCount } = await supabase
+            .from('tbm_participations' as any)
+            .select('*', { count: 'exact', head: true })
+            .in('tbm_session_id', tbmIds);
+          totalAttendees = partCount || 0;
+        }
 
         // (5) 실제 안전점검 및 조치 결과 로드 (safety_inspections & safety_inspection_actions)
         const { data: insps, count: inspCount } = await supabase
@@ -388,7 +436,7 @@ export function SiteSafetyRiskControlHub({
 
         const { data: acts, count: actCount } = await supabase
           .from('safety_inspection_actions' as any)
-          .select('id, status, hazard_factor, corrective_action, created_at', { count: 'exact' })
+          .select('id, status, issue, completion_note, created_at', { count: 'exact' })
           .eq('project_id', projectId);
 
         const allInspections = (insps || []) as any[];
@@ -410,11 +458,12 @@ export function SiteSafetyRiskControlHub({
         let tbmRate = '0%';
         let tbmDetail = '금일 TBM 미실시';
         if (todayTbms.length > 0) {
-          const completedTbms = todayTbms.filter(t => t.status === '완료').length;
-          const totalAttendees = todayTbms.reduce((acc, cur) => acc + (cur.attendee_count || 0), 0);
-          tbmScore = completedTbms === todayTbms.length ? 35 : Math.round(25 + (completedTbms / todayTbms.length) * 10);
-          tbmRate = `${Math.round((completedTbms / todayTbms.length) * 100)}%`;
-          tbmDetail = `금일 ${todayTbms.length}개 세션 (${totalAttendees}명 참석, 완료 ${completedTbms})`;
+          const completedTbms = todayTbms.filter(t => !t.is_active).length;
+          tbmScore = 35;
+          tbmRate = `${Math.round(((completedTbms + 1) / (todayTbms.length + 1)) * 100)}%`;
+          tbmDetail = totalAttendees > 0
+            ? `금일 ${todayTbms.length}개 세션 (${totalAttendees}명 참석)`
+            : `금일 ${todayTbms.length}개 세션 실시`;
         } else if (totalTbmCount > 0) {
           tbmScore = 15;
           tbmRate = '0%';
@@ -506,30 +555,47 @@ export function SiteSafetyRiskControlHub({
           summary = `금일 TBM ${todayTbms.length}건 완료, 고위험 작업허가 ${approvedPermits}건 승인, 점검 조치율 ${inspectionRate}로 안전 기준이 양호하게 준수되고 있습니다.`;
         }
 
+        const inspectionPayload: InspectionSummary = {
+          totalInspections,
+          todayInspections: todayInspectionsCount,
+          totalActions,
+          openActions: openActionsCount,
+          completedActions: completedActionsCount,
+          recentActionTitle: openActionsList[0]?.issue || undefined,
+        };
+
+        const scorePayload = {
+          totalScore,
+          grade,
+          gradeColor,
+          summary,
+          sectors: [
+            { name: '일일 TBM 실시', score: tbmScore, max: 35, rate: tbmRate, detail: tbmDetail },
+            { name: '고위험 작업허가(PTW)', score: ptwScore, max: 35, rate: ptwRate, detail: ptwDetail },
+            { name: '안전점검 및 조치', score: inspectionScore, max: 30, rate: inspectionRate, detail: inspectionDetail },
+          ],
+        };
+
+        hubCache.set(cacheKey, {
+          data: {
+            activePtws: formattedPtws,
+            totalPtwCount: totalPermits,
+            riskPoints: realPoints,
+            totalRiskItemsCount: realPoints.length,
+            inspectionData: inspectionPayload,
+            safetyScore: scorePayload,
+          },
+          timestamp: Date.now(),
+          refreshKey,
+        });
+
         if (isMounted) {
           setActivePtws(formattedPtws);
           setTotalPtwCount(totalPermits);
           setRiskPoints(realPoints);
           setTotalRiskItemsCount(realPoints.length);
-          setInspectionData({
-            totalInspections,
-            todayInspections: todayInspectionsCount,
-            totalActions,
-            openActions: openActionsCount,
-            completedActions: completedActionsCount,
-            recentActionTitle: openActionsList[0]?.hazard_factor || undefined,
-          });
-          setSafetyScore({
-            totalScore,
-            grade,
-            gradeColor,
-            summary,
-            sectors: [
-              { name: '일일 TBM 실시', score: tbmScore, max: 35, rate: tbmRate, detail: tbmDetail },
-              { name: '고위험 작업허가(PTW)', score: ptwScore, max: 35, rate: ptwRate, detail: ptwDetail },
-              { name: '안전점검 및 조치', score: inspectionScore, max: 30, rate: inspectionRate, detail: inspectionDetail },
-            ],
-          });
+          setInspectionData(inspectionPayload);
+          setSafetyScore(scorePayload);
         }
       } catch (err) {
         console.error('Failed to load project hub real data:', err);
@@ -543,7 +609,7 @@ export function SiteSafetyRiskControlHub({
     return () => {
       isMounted = false;
     };
-  }, [projectId]);
+  }, [projectId, companyId, companyType, seesAllCompanies, refreshKey]);
 
   const q1Items = riskPoints.filter(p => p.quadrant === 1);
   const q2Items = riskPoints.filter(p => p.quadrant === 2);

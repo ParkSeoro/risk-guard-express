@@ -345,7 +345,9 @@ Deno.serve(async (req) => {
       .select("id, name, zone_type, geo_polygon, wifi_fingerprint")
       .eq("project_id", body.project_id)
       .eq("is_deleted", false);
-    if (zErr) throw zErr;
+    if (zErr) {
+      console.warn("[track-location] site_zones query failed (continuing with restricted_zones)", zErr);
+    }
 
     const { count: everUnified } = await supabase
       .from("restricted_zones")
@@ -500,20 +502,24 @@ Deno.serve(async (req) => {
       }
 
       if (!skipUpsert) {
-        await supabase.from("worker_last_positions").upsert(
-          {
-            worker_id: subject.worker_id,
-            project_id: body.project_id,
-            company_id: subject.company_id,
-            zone_id: lastZone,
-            lat: body.lat,
-            lng: body.lng,
-            accuracy_m: body.accuracy_m,
-            source,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "worker_id" },
-        );
+        try {
+          await supabase.from("worker_last_positions").upsert(
+            {
+              worker_id: subject.worker_id,
+              project_id: body.project_id,
+              company_id: subject.company_id,
+              zone_id: lastZone,
+              lat: body.lat,
+              lng: body.lng,
+              accuracy_m: body.accuracy_m,
+              source,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "worker_id" },
+          );
+        } catch (posErr) {
+          console.warn("[track-location] worker_last_positions upsert failed", posErr);
+        }
       }
     }
 

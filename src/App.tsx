@@ -17,6 +17,7 @@ import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { DDayMigrationConsole } from "@/components/DDayMigrationConsole";
+import { AuthErrorScreen } from "@/components/AuthErrorScreen";
 
 const Auth = lazy(() => import("@/pages/Auth"));
 const Index = lazy(() => import("@/pages/Index"));
@@ -38,7 +39,17 @@ const NativePermissionsOnboarding = lazy(
 );
 const WorkerLocaleOnboarding = lazy(() => import("@/pages/WorkerLocaleOnboarding"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 10 * 60 * 1000, // 10분: 허가서·위험성평가 등 정적 문서의 반복 재호출 방지
+      gcTime: 30 * 60 * 1000, // 30분 캐시 유지
+      retry: 1,
+    },
+  },
+});
 
 function PageFallback() {
   return (
@@ -59,7 +70,10 @@ function AuthRoute() {
     );
   }
   if (user) {
-    if (!rolesReady || !profileReady || !profile) {
+    if (profileReady && !profile) {
+      return <AuthErrorScreen />;
+    }
+    if (!rolesReady || !profileReady) {
       return (
         <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
           세션 확인 중…
@@ -103,11 +117,7 @@ function AuthRoute() {
       return <Navigate to={next} replace />;
     }
     if (!dest || dest === "/") {
-      return (
-        <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
-          세션 확인 중…
-        </div>
-      );
+      return <AuthErrorScreen description="사용자 권한에 따른 이동 경로를 찾을 수 없습니다." />;
     }
     return <Navigate to={dest} replace />;
   }
@@ -200,7 +210,10 @@ function RoleAwareRootRedirect() {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (!rolesReady || !profileReady || !profile) {
+  if (profileReady && !profile) {
+    return <AuthErrorScreen />;
+  }
+  if (!rolesReady || !profileReady) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
@@ -210,11 +223,7 @@ function RoleAwareRootRedirect() {
   const dest = postLoginPath(roles, profile, { rolesReady });
   // Never Navigate to "/" (would re-enter this redirect) or fake /consent
   if (!dest || dest === "/") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
-        세션 확인 중…
-      </div>
-    );
+    return <AuthErrorScreen description="사용자 권한에 따른 이동 경로를 찾을 수 없습니다." />;
   }
   return <Navigate to={dest} replace />;
 }

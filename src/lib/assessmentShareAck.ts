@@ -201,7 +201,7 @@ export async function fetchCompanyPeriodRunIds(
 
   const { data: rows } = await supabase
     .from("assessment_runs")
-    .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_company_id, period_label, is_deleted")
+    .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
     .eq("project_id", projectId)
     .in("status", ["승인완료", "승인", "approved", "APPROVED", "완료"])
     .eq("is_deleted", false)

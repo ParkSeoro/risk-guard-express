@@ -38,6 +38,7 @@ const groups: Group[] = [
   {
     label: "오늘", key: "today",
     items: [
+      { title: "공지사항", url: "/announcements", icon: Megaphone },
       { title: "알림", url: "/alerts", icon: Bell },
       { title: "대시보드", url: "/", icon: LayoutDashboard },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: "approvals" },
@@ -97,7 +98,6 @@ const groups: Group[] = [
   {
     label: "운영", key: "ops",
     items: [
-      { title: "현장 공지", url: "/announcements", icon: Megaphone },
       { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
       { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
       { title: "검증센터", url: "/verification-center", icon: SearchCheck },

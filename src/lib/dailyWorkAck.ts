@@ -43,43 +43,80 @@ export function seoulDayRange(day = todaySeoulDate()): { start: string; end: str
   };
 }
 
-/** Permits for today where this worker is assigned (expected crew). */
+export const PERMIT_APPROVED_STATUSES = new Set([
+  '승인',
+  '승인완료',
+  '발행완료',
+  'approved',
+  'ISSUED',
+  'APPROVED',
+  '작업중',
+  '발행',
+]);
+
+export function isPermitApprovedStatus(status?: string | null): boolean {
+  return PERMIT_APPROVED_STATUSES.has(String(status || '').trim());
+}
+
+/** Permits for today: approved only, scoped to company / worker / site admin. */
 export async function fetchWorkerDayPermits(
   projectId: string,
-  workerId: string,
+  workerId?: string | null,
   day = todaySeoulDate(),
+  companyId?: string | null,
+  isMasterOrAdmin = false,
 ): Promise<DailyPermitBrief[]> {
-  const { data: links } = await supabase
-    .from("work_permit_workers" as any)
-    .select("work_permit_id")
-    .eq("worker_id", workerId)
-    .eq("project_id", projectId);
-  const ids = ((links as any[]) || []).map((r) => r.work_permit_id).filter(Boolean);
-  if (ids.length === 0) return [];
+  let linkedPermitIds: string[] = [];
+  if (workerId) {
+    const { data: links } = await supabase
+      .from("work_permit_workers" as any)
+      .select("work_permit_id")
+      .eq("worker_id", workerId)
+      .eq("project_id", projectId);
+    linkedPermitIds = ((links as any[]) || []).map((r) => r.work_permit_id).filter(Boolean);
+  }
 
-  const { data: permits } = await supabase
+  const { data: permits, error } = await supabase
     .from("work_permits" as any)
     .select(
-      "id, work_name, work_description, location, permit_date, form_data, tbm_session_id, assessment_run_id, status, is_deleted, voided_at",
+      "id, work_name, work_description, location, permit_date, work_date, form_data, tbm_session_id, assessment_run_id, status, is_deleted, voided_at, company_id, contractor_company",
     )
-    .in("id", ids)
-    .eq("permit_date", day)
+    .eq("project_id", projectId)
     .eq("is_deleted", false);
 
+  if (error || !permits) return [];
+
   return ((permits as any[]) || [])
-    .filter((p) => isWorkerTodayPermitActive(p))
+    .filter((p) => {
+      // 1. Not deleted or voided
+      if (!isWorkerTodayPermitActive(p)) return false;
+
+      // 2. Final approved status only
+      if (!isPermitApprovedStatus(p.status)) return false;
+
+      // 3. Valid for today
+      const pDate = String(p.permit_date || p.work_date || p.form_data?.work_date || p.form_data?.permit_date || "").slice(0, 10);
+      if (pDate && pDate !== day) return false;
+
+      // 4. Company & worker scope
+      if (isMasterOrAdmin) return true;
+      if (workerId && linkedPermitIds.includes(p.id)) return true;
+      if (companyId && p.company_id === companyId) return true;
+
+      return false;
+    })
     .map((p) => {
-    const fd = p.form_data || {};
-    return {
-      id: p.id,
-      work_name: fd.work_name || p.work_name || "",
-      work_description: fd.work_description || p.work_description || "",
-      work_location: fd.work_location || p.location || "",
-      permit_date: p.permit_date,
-      tbm_session_id: p.tbm_session_id || null,
-      assessment_run_id: p.assessment_run_id || null,
-    };
-  });
+      const fd = p.form_data || {};
+      return {
+        id: p.id,
+        work_name: fd.work_name || p.work_name || "",
+        work_description: fd.work_description || p.work_description || "",
+        work_location: fd.work_location || p.location || "",
+        permit_date: p.permit_date || p.work_date || day,
+        tbm_session_id: p.tbm_session_id || null,
+        assessment_run_id: p.assessment_run_id || null,
+      };
+    });
 }
 
 export function buildWorkSummary(permits: DailyPermitBrief[]): string {

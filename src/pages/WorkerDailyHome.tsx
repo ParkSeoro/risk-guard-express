@@ -48,6 +48,7 @@ import {
   saveDailyWorkAck,
   seoulDayRange,
   shouldForceDailyAckDialog,
+  todaySeoulDate,
   type DailyPermitBrief,
 } from "@/lib/dailyWorkAck";
 import {
@@ -100,7 +101,7 @@ export default function WorkerDailyHome({
   /** 더보기 → 위치·GPS: full diagnostic panel, no check-in chrome. */
   diagnosticsOnly?: boolean;
 }) {
-  const { user, profile } = useAuth();
+  const { user, profile, roles = [] } = useAuth();
   const { t, locale } = useWorkerLocale();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const { projectId, setProjectId } = useActiveProject();
@@ -266,9 +267,37 @@ export default function WorkerDailyHome({
       }
     }
 
+    const effectiveCompanyId = workerCompanyId || profile?.company_id || null;
+    let isClientCompany = false;
+    if (effectiveCompanyId) {
+      const { data: compRow } = await supabase
+        .from("companies")
+        .select("type")
+        .eq("id", effectiveCompanyId)
+        .maybeSingle();
+      isClientCompany = compRow?.type === "client";
+    }
+
+    const isMasterOrAdmin =
+      roles.some((r) => ["master", "admin", "site_admin", "project_admin"].includes(r)) ||
+      isClientCompany;
+    const today = todaySeoulDate();
+
+    // 1. Fetch approved permits and risk runs for today (scoped to contractor, or all for site admin / master)
+    const [permits, extraRunIds] = await Promise.all([
+      fetchWorkerDayPermits(pid, wid, today, effectiveCompanyId, isMasterOrAdmin),
+      fetchCompanyPeriodRunIds(pid, effectiveCompanyId, today, isMasterOrAdmin),
+    ]);
+
+    setDayPermits(permits);
+    setPeriodRunIds(extraRunIds);
+    setWorkSummary(buildWorkSummary(permits));
+    setRiskSummary(await buildRiskSummary(permits, extraRunIds));
+
+    // 2. Fetch attendance log and personal ack if worker record exists
     if (wid) {
-      const day = seoulDayRange();
-      const [{ data: logs }, ack, permits, extraRunIds] = await Promise.all([
+      const day = seoulDayRange(today);
+      const [{ data: logs }, ack] = await Promise.all([
         supabase
           .from("worker_entry_logs")
           .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
@@ -279,30 +308,22 @@ export default function WorkerDailyHome({
           .order("entry_at", { ascending: false })
           .limit(1),
         fetchTodayAck(pid, wid),
-        fetchWorkerDayPermits(pid, wid),
-        fetchCompanyPeriodRunIds(pid, workerCompanyId),
       ]);
       const log = (logs?.[0] as EntryLog) || null;
       const done = isDailyAckComplete({ hasAckRow: !!ack, tbmConfirmed: log?.tbm_confirmed });
       setTodayLog(log);
       setAckDone(done);
-      setDayPermits(permits);
-      setPeriodRunIds(extraRunIds);
-      setWorkSummary(buildWorkSummary(permits));
-      setRiskSummary(await buildRiskSummary(permits, extraRunIds));
       if (done) setAckOpen(false);
     } else {
       setTodayLog(null);
       setAckDone(false);
-      setDayPermits([]);
-      setPeriodRunIds([]);
     }
 
     // Full GPS is owned by WorkerGlobalGps (checked-in workers / on-site managers only).
     } finally {
       setAckHydrated(true);
     }
-  }, [user, profile]);
+  }, [user, profile, roles]);
 
   useEffect(() => {
     void refresh();

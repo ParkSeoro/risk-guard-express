@@ -184,14 +184,10 @@ export function companyDocScopeMode(opts: {
     return 'tree';
   }
 
-  // 발주처 — PA/SM은 전체, 그 외는 자사
+  // 발주처(client) — 발주사는 직접 작업을 시공하지 않으므로 자사 작업허가서가 존재하지 않음.
+  // 따라서 해당 프로젝트에 배정된 발주사(에어리퀴드코리아 등) 소속 사용자는 해당 프로젝트 전체('all')를 관제·열람함.
   if (isClientType(opts.companyType) || t === 'client') {
-    if (role === 'project_admin' || role === 'safety_manager') return 'all';
-    if (role === 'worker' || role === 'viewer') return 'own';
-    // client site_manager: treat as tree of whole? Usually client sees all via PA.
-    // Fail safe: site_manager on client → all for practical owner oversight
-    if (role === 'site_manager' || role === 'supervisor' || role === 'site_supervisor') return 'all';
-    return 'own';
+    return 'all';
   }
 
   if (role === 'worker' || role === 'viewer' || role === 'contractor') return 'own';

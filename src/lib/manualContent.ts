@@ -496,6 +496,7 @@ export const MANUAL_SIDEBAR_EXCEPTIONS: string[] = [
   "위치 추적 점검",
   "AI 어시스턴트",
   "위험성평가 공지",
+  "공지사항",
 ];
 
 export function manualTextMatches(query: string, ...fields: string[]): boolean {

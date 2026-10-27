@@ -127,14 +127,28 @@ function periodSortKey(run: ShareAckRun): string {
   );
 }
 
-/** Approved runs that apply to this company on this Seoul calendar day. */
+export const ASSESSMENT_RUN_APPROVED_STATUSES = new Set([
+  "승인완료",
+  "승인",
+  "approved",
+  "APPROVED",
+  "완료",
+]);
+
+/** Approved runs that apply to this company on this Seoul calendar day (or all for master/admin). */
 export function pickCompanyPeriodRuns(
   runs: ShareAckRun[],
   companyId: string | null | undefined,
   day: string,
+  isMasterOrAdmin = false,
 ): ShareAckRun[] {
   const live = (runs || []).filter(
-    (r) => r && r.id && r.status === "승인완료" && !r.is_deleted && runAppliesToCompany(r, companyId),
+    (r) =>
+      r &&
+      r.id &&
+      ASSESSMENT_RUN_APPROVED_STATUSES.has(r.status) &&
+      !r.is_deleted &&
+      (isMasterOrAdmin || runAppliesToCompany(r, companyId)),
   );
   const covering = live.filter((r) => runCoversDate(r, day));
   if (covering.length > 0) return covering;
@@ -170,25 +184,31 @@ export async function fetchCompanyPeriodRunIds(
   projectId: string,
   companyId: string | null | undefined,
   day = todaySeoulDate(),
+  isMasterOrAdmin = false,
 ): Promise<string[]> {
-  if (!companyId) return [];
-  const { data, error } = await supabase.rpc("list_company_period_assessment_run_ids", {
-    _project_id: projectId,
-    _company_id: companyId,
-    _day: day,
-  });
-  if (!error && Array.isArray(data)) {
-    return (data as string[]).filter(Boolean);
+  if (!companyId && !isMasterOrAdmin) return [];
+
+  if (companyId && !isMasterOrAdmin) {
+    const { data, error } = await supabase.rpc("list_company_period_assessment_run_ids", {
+      _project_id: projectId,
+      _company_id: companyId,
+      _day: day,
+    });
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return (data as string[]).filter(Boolean);
+    }
   }
+
   const { data: rows } = await supabase
     .from("assessment_runs")
-    .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
+    .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, author_company_id, period_label, is_deleted")
     .eq("project_id", projectId)
-    .eq("status", "승인완료")
+    .in("status", ["승인완료", "승인", "approved", "APPROVED", "완료"])
     .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .limit(40);
-  return pickCompanyPeriodRuns((rows || []) as ShareAckRun[], companyId, day).map((r) => r.id);
+
+  return pickCompanyPeriodRuns((rows || []) as ShareAckRun[], companyId, day, isMasterOrAdmin).map((r) => r.id);
 }
 
 export async function listPendingAssessmentShares(

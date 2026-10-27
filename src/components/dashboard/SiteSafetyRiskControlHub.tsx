@@ -9,10 +9,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { todayKstDate } from '@/lib/dashboardOps';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PERMIT_APPROVED_STATUSES } from '@/lib/dailyWorkAck';
+import { ASSESSMENT_RUN_APPROVED_STATUSES, runAppliesToCompany } from '@/lib/assessmentShareAck';
+import { datePartFromDateTime, resolvePermitWorkDate } from '@/lib/permitWorkDate';
+import { PERMIT_KIND_LABEL, type PermitKindId } from '@/lib/permitKinds';
 
 interface SiteSafetyRiskControlHubProps {
   projectId?: string;
   onNavigate?: (path: string) => void;
+  companyId?: string | null;
+  companyType?: string | null;
+  seesAllCompanies?: boolean;
 }
 
 interface RealPtwItem {
@@ -48,13 +55,20 @@ interface InspectionSummary {
   recentActionTitle?: string;
 }
 
-export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRiskControlHubProps) {
+export function SiteSafetyRiskControlHub({
+  projectId,
+  onNavigate,
+  companyId,
+  companyType,
+  seesAllCompanies = true,
+}: SiteSafetyRiskControlHubProps) {
   const [selectedQuadrant, setSelectedQuadrant] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   // 1. PTW 실데이터
   const [activePtws, setActivePtws] = useState<RealPtwItem[]>([]);
   const [totalPtwCount, setTotalPtwCount] = useState(0);
+  const [pendingPtwCount, setPendingPtwCount] = useState(0);
 
   // 2. 위험성평가 4분면 실데이터
   const [riskPoints, setRiskPoints] = useState<RealRiskPoint[]>([]);
@@ -93,9 +107,10 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
     async function loadProjectHubData() {
       setLoading(true);
       const today = todayKstDate();
+      const isClient = companyType === 'client' || seesAllCompanies;
 
       try {
-        // (1) 협력사 맵핑 로드
+        // (1) 협력사 맵핑 로드 (해당 프로젝트 격리)
         const { data: companiesData } = await supabase
           .from('companies')
           .select('id, name')
@@ -107,28 +122,82 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
           companyMap[c.id] = c.name;
         });
 
-        // (2) 실제 작업허가서(work_permits) 로드
-        const { data: permitRows, count: permitTotal } = await supabase
+        // (2) 실제 작업허가서(work_permits) 로드 및 사용자 규칙 필터링
+        const { data: permitRows, error: permitErr } = await supabase
           .from('work_permits')
-          .select('id, work_name, permit_type, permit_kinds, status, contractor_company, company_id, location, personnel_count, work_start_at, work_end_at, work_date, created_at', { count: 'exact' })
+          .select('*')
           .eq('project_id', projectId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: false });
 
-        const rawPermits = permitRows || [];
-        const totalPermits = permitTotal || rawPermits.length;
+        if (permitErr) {
+          console.warn('[SiteSafetyRiskControlHub] permit query error:', permitErr);
+        }
 
-        const formattedPtws: RealPtwItem[] = rawPermits.slice(0, 6).map(p => {
-          const typeLabel = (p.permit_kinds && p.permit_kinds.length > 0)
+        const rawPermits = permitRows || [];
+
+        // 규칙 적용:
+        // 1. 제외: 삭제, 작업취소, 반려
+        // 2. 허용 상태:
+        //    - 승인/발행 완료된 허가서만 현장 관제 카드로 표시 (결재중/검토대기는 제외)
+        // 3. 날짜: 허가서 내 작업 시작일 기준 (시작일이 오늘이거나, 작업 시작~종료일 사이에 오늘이 포함된 작업)
+        let inApprovalCount = 0;
+        const validPermits = rawPermits.filter(p => {
+          if (p.is_deleted || p.status === '작업취소' || (p as any).voided_at || p.status === '반려') return false;
+
+          const s = String(p.status || '').trim();
+          const isApproved = PERMIT_APPROVED_STATUSES.has(s);
+          const isPending = ['결재중', '결재진행', '검토대기', '검토완료', '대기', '종료대기'].includes(s);
+
+          if (isPending) {
+            inApprovalCount++;
+          }
+
+          if (!isApproved) return false;
+
+          // 해당일(작업 시작일) 기준 유효 판정
+          const startDate = resolvePermitWorkDate(p) || datePartFromDateTime(p.work_start_at) || datePartFromDateTime((p as any).permit_date);
+          const endDate = datePartFromDateTime(p.work_end_at) || (p.form_data && (p.form_data as any).work_end ? datePartFromDateTime((p.form_data as any).work_end) : null) || startDate;
+
+          let isMatchDate = false;
+          if (startDate && endDate) {
+            isMatchDate = today >= startDate && today <= endDate;
+          } else if (startDate) {
+            isMatchDate = startDate === today;
+          }
+
+          if (!isMatchDate) return false;
+
+          if (!isClient && companyId) {
+            const matchesId = p.company_id === companyId;
+            const matchesName = companyMap[companyId] && p.contractor_company === companyMap[companyId];
+            if (!matchesId && !matchesName) return false;
+          }
+
+          return true;
+        });
+
+        const totalPermits = validPermits.length;
+        setPendingPtwCount(inApprovalCount);
+
+        const formattedPtws: RealPtwItem[] = validPermits.slice(0, 6).map(p => {
+          const rawKind = (p.permit_kinds && p.permit_kinds.length > 0)
             ? p.permit_kinds[0]
-            : (p.permit_type || '일반작업');
+            : (p.permit_type || 'general');
+
+          const typeLabel = PERMIT_KIND_LABEL[rawKind as PermitKindId] || (
+            rawKind === 'general' ? '일반' :
+            rawKind === 'hot_work' ? '화기' :
+            rawKind === 'confined_space' ? '밀폐공간' :
+            rawKind === 'excavation' ? '굴착·중장비' : rawKind
+          );
 
           let badgeColor = 'bg-primary/10 text-primary border-primary/30';
-          if (typeLabel.includes('화기')) badgeColor = 'bg-rose-500/10 text-rose-500 border-rose-500/30';
+          if (typeLabel.includes('화기') || rawKind === 'hot_work') badgeColor = 'bg-rose-500/10 text-rose-500 border-rose-500/30';
           else if (typeLabel.includes('양중') || typeLabel.includes('크레인')) badgeColor = 'bg-amber-500/10 text-amber-500 border-amber-500/30';
           else if (typeLabel.includes('고소') || typeLabel.includes('비계')) badgeColor = 'bg-indigo-500/10 text-indigo-500 border-indigo-500/30';
-          else if (typeLabel.includes('밀폐')) badgeColor = 'bg-purple-500/10 text-purple-500 border-purple-500/30';
-          else if (typeLabel.includes('굴착')) badgeColor = 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30';
+          else if (typeLabel.includes('밀폐') || rawKind === 'confined_space') badgeColor = 'bg-purple-500/10 text-purple-500 border-purple-500/30';
+          else if (typeLabel.includes('굴착') || rawKind === 'excavation') badgeColor = 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30';
 
           const contractorName = p.company_id && companyMap[p.company_id]
             ? companyMap[p.company_id]
@@ -139,13 +208,15 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
             const start = new Date(p.work_start_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
             const end = new Date(p.work_end_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
             timeStr = `${start} ~ ${end}`;
-          } else if (p.work_date) {
-            timeStr = p.work_date;
+          } else if ((p as any).permit_date) {
+            timeStr = (p as any).permit_date;
           }
+
+          const workTitle = p.work_name || (p as any).work_description || ((p as any).form_data && (p as any).form_data.work_title) || '작업허가 항목';
 
           return {
             id: p.id,
-            workName: p.work_name || '작업허가 항목',
+            workName: workTitle,
             permitType: typeLabel,
             status: p.status || '대기',
             contractor: contractorName,
@@ -157,28 +228,73 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
         });
 
         // (3) 실제 위험성평가 회차 및 위험항목(risk_items) 로드
-        const { data: runs } = await supabase
+        // 규칙 적용: 해당일(today)이 포함된 위험성평가 회차를 선별하여 프로젝트 통합 집계
+        const { data: runs, error: runsErr } = await supabase
           .from('assessment_runs')
-          .select('id, status')
+          .select('id, status, target_company_ids, author_company_id, start_date, end_date, created_at')
           .eq('project_id', projectId)
           .eq('is_deleted', false)
-          .neq('status', '폐기');
+          .neq('status', '폐기')
+          .order('created_at', { ascending: false });
 
-        const runIds = (runs || []).map(r => r.id);
+        if (runsErr) {
+          console.warn('[SiteSafetyRiskControlHub] assessment_runs query error:', runsErr);
+        }
+
+        const allRuns = (runs || []).filter(r => {
+          if (!ASSESSMENT_RUN_APPROVED_STATUSES.has(String(r.status || '').trim())) return false;
+          if (!isClient && companyId) {
+            return runAppliesToCompany(r, companyId);
+          }
+          return true;
+        });
+
+        // 1) 오늘 일자가 시작~종료일 사이에 포함된 회차 선별
+        let validRuns = allRuns.filter(r => {
+          const start = datePartFromDateTime(r.start_date);
+          const end = datePartFromDateTime(r.end_date);
+          if (start && end) {
+            return today >= start && today <= end;
+          }
+          if (start) {
+            return today >= start;
+          }
+          if (end) {
+            return today <= end;
+          }
+          return false;
+        });
+
+        // 2) 만약 오늘 날짜로 지정된 회차가 아직 등록되어 있지 않다면,
+        // 현장의 최신 승인 회차(가장 최근 완료된 상시/정기 평가)를 fallback으로 사용하여 관제 매트릭스가 비지 않도록 지원
+        if (validRuns.length === 0 && allRuns.length > 0) {
+          validRuns = [allRuns[0]];
+        }
+
+        // 3) 만약 승인된 회차가 아직 없더라도, 프로젝트에 등록된 최신 회차를 fallback으로 사용하여 위험요소 매트릭스 시각화
+        if (validRuns.length === 0 && (runs || []).length > 0) {
+          validRuns = [(runs as any[])[0]];
+        }
+
+        const runIds = validRuns.map(r => r.id);
         let realPoints: RealRiskPoint[] = [];
 
         if (runIds.length > 0) {
-          const { data: rawItems } = await supabase
+          const { data: rawItems, error: itemsErr } = await supabase
             .from('risk_items')
-            .select('id, process, sub_task, hazard, hazard_situation, frequency, severity, risk_score, improved_frequency, improved_severity, improved_risk_grade, risk_grade, action_plan, existing_measure')
+            .select('*')
             .in('run_id', runIds)
             .eq('is_deleted', false)
             .limit(150);
 
-          realPoints = (rawItems || []).map(item => {
+          if (itemsErr) {
+            console.warn('[SiteSafetyRiskControlHub] risk_items query error:', itemsErr);
+          }
+
+          realPoints = (rawItems || []).map((item: any) => {
             const f = item.improved_frequency || item.frequency || 2;
             const s = item.improved_severity || item.severity || 2;
-            const score = item.risk_score || (f * s);
+            const score = item.improved_risk || item.risk || (f * s);
             
             // 4분면 분할 로직 (기준점 3.0)
             let quadrant: 1 | 2 | 3 | 4 = 3;
@@ -193,7 +309,7 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
             }
 
             const title = item.hazard || item.hazard_situation || item.sub_task || item.process || '위험요인 미기재';
-            const action = item.action_plan || item.existing_measure || '산안법 기준 안전수칙 준수 및 보호구 착용 철저';
+            const action = item.improvement_measure || item.existing_measure || '산안법 기준 안전수칙 준수 및 보호구 착용 철저';
 
             return {
               id: item.id,
@@ -204,9 +320,52 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
               score,
               quadrant,
               action,
-              grade: item.improved_risk_grade || item.risk_grade || '중',
+              grade: item.improved_risk_grade || item.risk_grade || (score >= 12 ? '상' : score >= 6 ? '중' : '하'),
             };
           });
+        }
+
+        // 4) 만약 회차 연결이 없더라도 해당 프로젝트에 등록된 위험항목이 직접 존재하는 경우 통합 집계
+        if (realPoints.length === 0) {
+          const { data: directItems, error: directErr } = await supabase
+            .from('risk_items')
+            .select('*')
+            .eq('project_id', projectId)
+            .eq('is_deleted', false)
+            .limit(150);
+
+          if (directErr) {
+            console.warn('[SiteSafetyRiskControlHub] direct risk_items query error:', directErr);
+          }
+
+          if (directItems && directItems.length > 0) {
+            realPoints = directItems.map((item: any) => {
+              const f = item.improved_frequency || item.frequency || 2;
+              const s = item.improved_severity || item.severity || 2;
+              const score = item.improved_risk || item.risk || (f * s);
+              
+              let quadrant: 1 | 2 | 3 | 4 = 3;
+              if (s >= 3 && f >= 3) quadrant = 1;
+              else if (s >= 3 && f < 3) quadrant = 2;
+              else if (s < 3 && f >= 3) quadrant = 4;
+              else quadrant = 3;
+
+              const title = item.hazard || item.hazard_situation || item.sub_task || item.process || '위험요인 미기재';
+              const action = item.improvement_measure || item.existing_measure || '산안법 기준 안전수칙 준수 및 보호구 착용 철저';
+
+              return {
+                id: item.id,
+                title,
+                process: item.process || '공통공종',
+                freq: f,
+                sev: s,
+                score,
+                quadrant,
+                action,
+                grade: item.improved_risk_grade || item.risk_grade || (score >= 12 ? '상' : score >= 6 ? '중' : '하'),
+              };
+            });
+          }
         }
 
         // (4) 실제 TBM 세션 로드 (금일 및 누적)
@@ -460,12 +619,20 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
 
         {/* 우측: 현재 현장 작업허가(PTW) 실데이터 시각화 (8 cols) */}
         <div className="lg:col-span-8 rounded-xl border bg-card p-4 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className={`h-2.5 w-2.5 rounded-full ${activePtws.length > 0 ? 'bg-rose-500 animate-ping' : 'bg-slate-400'}`} />
               <h3 className="text-sm font-bold text-foreground">
-                현장 고위험 작업허가(PTW) 현황 {totalPtwCount > 0 ? `(${totalPtwCount}건 등록)` : ''}
+                현장 고위험 작업허가(PTW) 현황
               </h3>
+              <Badge variant="outline" className="text-[11px] font-semibold text-primary border-primary/30 bg-primary/5">
+                오늘 승인 {totalPtwCount}건
+              </Badge>
+              {pendingPtwCount > 0 && (
+                <Badge variant="outline" className="text-[11px] font-semibold text-amber-600 border-amber-500/30 bg-amber-500/10">
+                  결재 대기 {pendingPtwCount}건
+                </Badge>
+              )}
             </div>
             <button
               onClick={() => onNavigate?.('/work-permits')}
@@ -496,7 +663,7 @@ export function SiteSafetyRiskControlHub({ projectId, onNavigate }: SiteSafetyRi
               {activePtws.map((ptw) => (
                 <div 
                   key={ptw.id} 
-                  onClick={() => onNavigate?.(`/work-permits`)}
+                  onClick={() => onNavigate?.(`/work-permits/${ptw.id}`)}
                   className="rounded-lg border bg-muted/40 p-3 flex flex-col justify-between hover:border-primary/50 transition-colors cursor-pointer"
                 >
                   <div>

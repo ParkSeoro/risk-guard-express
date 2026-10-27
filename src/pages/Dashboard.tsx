@@ -95,11 +95,11 @@ const EMPTY: DashboardData = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const {
     projects, selectedProject,
     applyCompanyFilter, loading: accessLoading, seesAllCompanies,
-    accessibleCompanyIds, scopeStatus,
+    accessibleCompanyIds, userCompanyType, userCompanyId, scopeStatus,
   } = useGlobalProjectAccess();
   // Ops-wide tiles = project-wide company visibility only (발주처 PA·SM / master)
   const showOpsWide = seesAllCompanies;
@@ -405,7 +405,13 @@ const Dashboard = () => {
       {selectedProject && <WeatherSummaryCard projectId={selectedProject} />}
 
       {/* 실시간 고위험 작업 현황 및 4분면 위험성평가 관제 허브 */}
-      <SiteSafetyRiskControlHub projectId={selectedProject} onNavigate={navigate} />
+      <SiteSafetyRiskControlHub
+        projectId={selectedProject}
+        onNavigate={navigate}
+        companyId={userCompanyId || profile?.company_id}
+        companyType={userCompanyType}
+        seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
+      />
 
       {/* Attention / action needed */}
       <section className="space-y-3">

@@ -1,8 +1,11 @@
-import { useState, useEffect } from "react";
-import { Sparkles, CheckCircle2, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Sparkles } from "lucide-react";
 
 export function AICreditBanner() {
-  const [isAiActive, setIsAiActive] = useState(true);
+  const { roles, user } = useAuth();
+  const isMaster = (roles || []).includes("master") || user?.email === "psr1579@gmail.com";
+
+  if (!isMaster) return null;
 
   return (
     <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/60 text-emerald-300 border border-emerald-600/40 text-[11px] shadow-sm">

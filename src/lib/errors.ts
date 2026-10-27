@@ -58,7 +58,13 @@ export function toKoreanWarning(input: unknown): string {
   if (/null value in column|\b23502\b/i.test(raw)) {
     return "필수 항목이 비어 있습니다.";
   }
+  if (/quota|resource_exhausted|rate_limit|할당량|한도.?초과|일일.?한도|호출.?상한|크레딧|too many requests|\b429\b|\b402\b/i.test(raw)) {
+    return "AI 일일 호출 한도(무료 쿼터) 또는 요청 한도에 도달했습니다. 잠시 후 다시 시도하거나 유료 플랜/API 키를 확인해 주세요.";
+  }
   if (/failed to fetch|fetch failed|network|load failed|offline/i.test(raw)) {
+    if (/ai|생성|chat|gpt|gemini/i.test(raw)) {
+      return "AI 서버 연결에 실패했습니다 (일일 한도 초과 또는 일시적 통신 지연). 잠시 후 다시 시도하거나 라이브러리를 이용해 주세요.";
+    }
     return "네트워크 연결을 확인한 뒤 다시 시도해 주세요.";
   }
   if (/statement timeout|canceling statement|\b57014\b|\btimeout\b/i.test(raw)) {

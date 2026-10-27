@@ -17,6 +17,7 @@ import {
   ArrowDown, ArrowUp, ShieldAlert, Navigation, ExternalLink, Radio
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { geocodeKoreanAddress, fetchLiveWeatherData, syncProjectCoordinates } from "@/lib/koreanLocationService";
 
 interface ResolvedLocation {
   lat: number;
@@ -160,6 +161,7 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
   const [owLoading, setOwLoading] = useState(false);
   const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
   const [geocodeError, setGeocodeError] = useState("");
+  const [dbProject, setDbProject] = useState<{ site_address?: string | null; site_name?: string | null; site_lat?: number | null; site_lng?: number | null } | null>(null);
 
   const currentProject = projects.find((p) => p.id === selectedProject);
 
@@ -176,73 +178,92 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
     try {
       const { data: project } = await supabase
         .from("projects")
-        .select("site_address, site_lat, site_lng")
+        .select("site_address, site_lat, site_lng, site_name")
         .eq("id", selectedProject)
         .single();
 
-      const lat = overrideLat || (project as any)?.site_lat;
-      const lng = overrideLng || (project as any)?.site_lng;
-      const address = (project as any)?.site_address || "";
+      if (project) {
+        setDbProject(project as any);
+      }
 
-      const { data, error } = await supabase.functions.invoke("fetch-weather", {
-        body: {
-          project_id: selectedProject,
-          lat, lng,
-          // Always send site_address so geocode uses project location (Lovable parity)
-          address: address || undefined,
-          source: source || "kma",
-        },
-      });
+      let lat = overrideLat || (project as any)?.site_lat;
+      let lng = overrideLng || (project as any)?.site_lng;
+      const address = (project as any)?.site_address || (currentProject as any)?.site_address || "";
+      const siteName = (project as any)?.site_name || currentProject?.site_name || "";
 
-      // Prefer JSON error body over generic FunctionsHttpError message
-      let detail = "";
-      if (data?.error) detail = typeof data.error === "string" ? data.error : data.error.message || "";
-      if (!detail && error) {
-        const ctx = (error as { context?: Response })?.context;
-        if (ctx && typeof ctx.json === "function") {
-          try {
-            const body = await ctx.clone().json();
-            detail = body?.error || body?.message || "";
-          } catch { /* ignore */ }
+      let resolvedLoc: ResolvedLocation | undefined = undefined;
+
+      // 주소가 설정되어 있는데 위경도가 없거나 유효하지 않은 경우 보정
+      if ((!lat || !lng) && (address || siteName)) {
+        const geo = await geocodeKoreanAddress(address || siteName);
+        if (geo) {
+          lat = geo.lat;
+          lng = geo.lng;
+          resolvedLoc = { lat: geo.lat, lng: geo.lng, city: geo.city, address: address || geo.address };
+          // 백그라운드 DB 동기화
+          syncProjectCoordinates(selectedProject, address || siteName).catch(() => {});
         }
-        if (!detail) detail = error.message || "";
-      }
-      if (/non-2xx/i.test(detail)) {
-        detail = "날씨 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
-      }
-      if (detail) {
-        setErrorMsg(detail);
-        if (!source) {
-          toast({ title: "날씨 데이터 로드 실패", description: detail, variant: "destructive" });
-        }
-        return;
+      } else if (lat && lng) {
+        resolvedLoc = {
+          lat,
+          lng,
+          city: address ? (await geocodeKoreanAddress(address))?.city || siteName || "현장" : siteName || "현장",
+          address: address || "",
+        };
       }
 
-      // Missing coordinates come back as 200 without current. Keep the empty card, no toast.
-      if (!data?.current) {
+      // 1순위: Edge Function 시도 (KMA 또는 OpenWeather)
+      let edgeSuccess = false;
+      try {
+        const { data, error } = await supabase.functions.invoke("fetch-weather", {
+          body: {
+            project_id: selectedProject,
+            lat, lng,
+            address: address || undefined,
+            source: source || "kma",
+          },
+        });
+
+        if (!error && data?.current) {
+          if (!data.resolved_location && resolvedLoc) {
+            data.resolved_location = resolvedLoc;
+          }
+          if (source === "openweather") {
+            setOwWeather(data);
+            setOwLoading(false);
+          } else {
+            setWeather(data);
+          }
+          edgeSuccess = true;
+          return;
+        }
+      } catch (e) {
+        console.warn("Edge function fetch-weather error, using direct live fallback:", e);
+      }
+
+      // 2순위: Edge Function 실패 시 실시간 한국 표준 기상 클라이언트 직접 로드
+      if (!edgeSuccess && lat && lng) {
+        const live = await fetchLiveWeatherData(lat, lng, resolvedLoc);
         if (source === "openweather") {
-          setOwWeather(null);
+          setOwWeather(live);
           setOwLoading(false);
         } else {
-          setWeather(null);
+          setWeather(live);
         }
         return;
       }
 
+      // 좌표도 없고 주소도 없는 경우
       if (source === "openweather") {
-        setOwWeather(data);
+        setOwWeather(null);
         setOwLoading(false);
       } else {
-        setWeather(data);
+        setWeather(null);
       }
     } catch (err: any) {
       console.error("Weather fetch error:", err);
       if (!source) {
-        const msg = /non-2xx/i.test(err?.message || "")
-          ? "날씨 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-          : (err?.message || "날씨 데이터 로드 실패");
-        setErrorMsg(msg);
-        toast({ title: "날씨 데이터 로드 실패", description: msg, variant: "destructive" });
+        setErrorMsg("날씨 데이터를 불러오는데 실패했습니다.");
       }
     } finally {
       if (!source) setLoading(false);
@@ -264,33 +285,27 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
     setGeocodeError("");
     setAddressSuggestions([]);
     try {
-      const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
-        body: { project_id: '__geocode__', address: manualAddress.trim(), geocode_only: true },
-      });
-      
-      if (geoData?.error) {
-        setGeocodeError(geoData.message || geoData.error);
-        if (geoData.suggestions) {
-          setAddressSuggestions(geoData.suggestions);
-        }
+      const geoData = await geocodeKoreanAddress(manualAddress.trim());
+      if (!geoData) {
+        setGeocodeError("주소를 찾을 수 없습니다. 시/군/구 또는 도로명 주소를 입력해주세요 (예: 여수시 산단로, 평택시 고덕면).");
         return;
       }
 
-      const updateData: any = { site_address: manualAddress.trim() };
-      if (geoData?.lat && geoData?.lng) {
-        updateData.site_lat = geoData.lat;
-        updateData.site_lng = geoData.lng;
-      } else {
-        updateData.site_lat = null;
-        updateData.site_lng = null;
-      }
+      const updateData: any = { 
+        site_address: manualAddress.trim(),
+        site_lat: geoData.lat,
+        site_lng: geoData.lng,
+      };
       
       await supabase.from("projects").update(updateData).eq("id", selectedProject);
-      toast({ title: "주소 저장 완료", description: geoData?.lat ? `좌표: ${geoData.lat.toFixed(4)}, ${geoData.lng.toFixed(4)}` : "좌표 변환 실패 — 수동 확인 필요" });
+      toast({ 
+        title: "현장 주소 및 좌표 저장 완료", 
+        description: `위치: ${geoData.city} (좌표: ${geoData.lat.toFixed(4)}, ${geoData.lng.toFixed(4)})` 
+      });
       setEditingAddress(false);
       setGeocodeError("");
       setAddressSuggestions([]);
-      fetchWeather();
+      fetchWeather(geoData.lat, geoData.lng);
     } catch (err: any) {
       toast({ title: "저장 실패", description: err.message, variant: "destructive" });
     }
@@ -333,6 +348,9 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
     );
   }
 
+  const effectiveAddress = dbProject?.site_address || currentProject?.site_address || "";
+  const effectiveSiteName = dbProject?.site_name || currentProject?.site_name || "";
+
   return (
     <div className={`space-y-6 animate-fade-in ${isMobile ? "pb-4 min-w-0" : ""}`}>
       {/* Header */}
@@ -342,8 +360,10 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             {weather?.resolved_location?.city
-              ? `${weather.resolved_location.city} (프로젝트 기준)`
-              : currentProject ? currentProject.site_name : "프로젝트 선택 필요"}
+              ? `${weather.resolved_location.city} (${effectiveAddress || effectiveSiteName || "현장"})`
+              : effectiveAddress
+                ? `${effectiveAddress} (${effectiveSiteName || "현장"})`
+                : effectiveSiteName || "프로젝트 선택 필요"}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -421,7 +441,8 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
             </div>
           )}
 
-          {!weather?.resolved_location?.city && currentProject && (
+          {/* 현장 주소 미설정 경고: DB에 현장주소가 등록되지 않았을 때만 표시 */}
+          {!effectiveAddress && !weather?.resolved_location && (
             <div className="flex items-start gap-3 p-3 rounded-lg bg-warning/10 border border-warning/30">
               <AlertTriangle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
               <div>
@@ -430,6 +451,14 @@ const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeath
                   프로젝트 관리 → 수정에서 현장주소를 입력하면 자동으로 해당 지역의 날씨를 불러옵니다.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* 등록된 현장 주소 안내 바 */}
+          {effectiveAddress && (
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5 px-1 py-1">
+              <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span>프로젝트 등록 주소: <strong className="text-foreground">{effectiveAddress}</strong></span>
             </div>
           )}
 

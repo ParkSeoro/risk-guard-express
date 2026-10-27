@@ -26,6 +26,7 @@ import {
 } from '@/lib/companyTypes';
 import { POSITION_LABELS, positionsForCompanyType, syncMembershipRolePosition } from '@/lib/projectPositions';
 import ProjectSiteSpotsCard from '@/components/project/ProjectSiteSpotsCard';
+import { geocodeKoreanAddress } from '@/lib/koreanLocationService';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -289,12 +290,7 @@ const ProjectDetail = () => {
 
       if (projectForm.site_address.trim()) {
         try {
-          const { data: geoData, error: geoError } = await supabase.functions.invoke('fetch-weather', {
-            body: { project_id: '__geocode__', address: projectForm.site_address.trim(), geocode_only: true },
-          });
-
-          if (geoError) throw geoError;
-
+          const geoData = await geocodeKoreanAddress(projectForm.site_address.trim());
           if (geoData?.lat && geoData?.lng) {
             updateData.site_lat = geoData.lat;
             updateData.site_lng = geoData.lng;
@@ -314,7 +310,7 @@ const ProjectDetail = () => {
 
       toast({
         title: '프로젝트 기본정보가 저장되었습니다.',
-        description: geocodeFailed ? '주소는 저장되었지만 좌표 변환에 실패했습니다. 주소를 다시 확인해주세요.' : undefined,
+        description: geocodeFailed ? '주소는 저장되었으나 좌표 변환에 실패했습니다. 도시명 또는 도로명을 확인해주세요.' : undefined,
       });
       fetchAll();
     } catch (error: any) {

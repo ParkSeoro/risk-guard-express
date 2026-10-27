@@ -18,7 +18,13 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
-import { VISION_LIVE_IDLE_MS, visionSafePlaybackUrl, visionViewerHoldUrl } from "@/lib/visionFleetApi";
+import {
+  VISION_LIVE_IDLE_MS,
+  visionSafePlaybackUrl,
+  visionViewerHoldUrl,
+  detectStreamProtocol,
+  SAMPLE_CCTV_STREAM_URL,
+} from "@/lib/visionFleetApi";
 import { captureVisionFrame } from "@/lib/visionFrame";
 
 type Props = {
@@ -36,7 +42,7 @@ type Props = {
 const ZOOMS = [1, 1.5, 2, 3] as const;
 const PAN_STEP = 0.35;
 /** LTE cameras may need a full reconnect cycle after an idle kick. */
-const DEFAULT_CONNECT_MS = 60_000;
+const DEFAULT_CONNECT_MS = 15_000;
 /** A picture that does not advance for this long is frozen. Cover it and reconnect. */
 const STALL_RECONNECT_MS = 12_000;
 /** Open console keeps the camera upload even when HLS itself has stalled. */
@@ -125,7 +131,13 @@ export default function VisionLivePane({
   const [fullscreen, setFullscreen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [retry, setRetry] = useState(0);
-  const safeUrl = visionSafePlaybackUrl(playbackUrl);
+  const [sampleStreamActive, setSampleStreamActive] = useState(false);
+  const effectiveUrl = sampleStreamActive ? SAMPLE_CCTV_STREAM_URL : playbackUrl;
+  const safeUrl = visionSafePlaybackUrl(effectiveUrl);
+  const isMixedContent =
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    Boolean(effectiveUrl?.trim().startsWith("http://"));
   const zoom = ZOOMS[zoomIndex];
   const panPct = ((zoom - 1) / 2) * 100;
 
@@ -586,23 +598,60 @@ export default function VisionLivePane({
       )}
       {!waiting && offline && (
         <div
-          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80 px-4 text-center text-white"
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/85 px-4 text-center text-white"
           data-testid={`vision-pane-offline-${index}`}
         >
-          <WifiOff className="h-5 w-5" />
+          <WifiOff className="h-5 w-5 text-amber-400" />
           <p className="text-sm font-medium">송출이 없습니다</p>
-          <p className="text-[11px] text-white/70">카메라가 서버로 영상을 보내지 않고 있습니다</p>
-          <button
-            type="button"
-            className="mt-1 rounded bg-white/90 px-3 py-1.5 text-xs font-medium text-black hover:bg-white"
-            data-testid={`vision-pane-retry-${index}`}
-            onClick={() => {
-              setOffline(false);
-              setRetry((n) => n + 1);
-            }}
-          >
-            다시 시도
-          </button>
+          <p className="text-[11px] text-white/70 max-w-sm">카메라가 오프라인이거나 서버로 영상을 보내지 않고 있습니다.</p>
+          {effectiveUrl && (
+            <p className="text-[10px] text-white/50 font-mono truncate max-w-xs">
+              주소: {effectiveUrl}
+            </p>
+          )}
+          {isMixedContent && (
+            <p className="text-[10px] text-amber-300 max-w-xs bg-amber-950/60 p-1.5 rounded border border-amber-500/30">
+              보안 차단(Mixed Content): HTTPS 페이지에서는 HTTP 스트림이 차단됩니다. HTTPS 주소(.m3u8)를 사용하세요.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+            <button
+              type="button"
+              className="rounded bg-white/90 px-3 py-1 text-xs font-medium text-black hover:bg-white"
+              data-testid={`vision-pane-retry-${index}`}
+              onClick={() => {
+                setOffline(false);
+                setRetry((n) => n + 1);
+              }}
+            >
+              다시 시도
+            </button>
+            {!sampleStreamActive ? (
+              <button
+                type="button"
+                className="rounded bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-500"
+                onClick={() => {
+                  setSampleStreamActive(true);
+                  setOffline(false);
+                  setRetry((n) => n + 1);
+                }}
+              >
+                샘플 스트림으로 테스트
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="rounded bg-zinc-700 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-600"
+                onClick={() => {
+                  setSampleStreamActive(false);
+                  setOffline(false);
+                  setRetry((n) => n + 1);
+                }}
+              >
+                원본 스트림으로 복귀
+              </button>
+            )}
+          </div>
         </div>
       )}
       {!waiting && paused && (

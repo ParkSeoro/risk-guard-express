@@ -27,6 +27,7 @@ import {
   fetchAttendanceOutlines,
   isWithinAnySiteAttendance,
 } from "@/lib/tracking/siteBoundary";
+import { applyGpsCalibration, fetchProjectGpsCalibration } from "@/lib/tracking/gpsCalibration";
 import { workerGpsStartMode } from "@/lib/tracking/suspendedWorkerGps";
 import { isWorkerCurrentlySuspended } from "@/lib/workerSuspension";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
@@ -209,14 +210,21 @@ export default function WorkerGlobalGps() {
           (pos) => {
             void (async () => {
               try {
+                const cal = await fetchProjectGpsCalibration(projectId, async (id) => {
+                  const { data } = await supabase.from("projects").select("gps_calibration").eq("id", id).maybeSingle();
+                  return data?.gps_calibration ?? null;
+                });
+                const aligned = applyGpsCalibration(pos.coords.latitude, pos.coords.longitude, cal);
+                const testLat = aligned.calibrated ? aligned.lat : pos.coords.latitude;
+                const testLng = aligned.calibrated ? aligned.lng : pos.coords.longitude;
                 if (attendanceShape) {
                   const outlines = await fetchAttendanceOutlines(projectId);
                   if (outlines.length) {
                     resolve(
                       isWithinAnySiteAttendance(
                         outlines,
-                        pos.coords.latitude,
-                        pos.coords.longitude,
+                        testLat,
+                        testLng,
                         pos.coords.accuracy,
                       ),
                     );
@@ -231,8 +239,8 @@ export default function WorkerGlobalGps() {
                 resolve(
                   isInsideAnyResumeFence(
                     fences,
-                    pos.coords.latitude,
-                    pos.coords.longitude,
+                    testLat,
+                    testLng,
                     pos.coords.accuracy,
                   ),
                 );

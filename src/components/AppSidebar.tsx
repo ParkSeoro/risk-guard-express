@@ -45,7 +45,6 @@ const groups: Group[] = [
       { title: "작업허가서", url: "/work-permits", icon: FileSignature },
       { title: "작업계획서", url: "/work-plans", icon: FileText },
       { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
-      { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
     ],
   },
   {
@@ -68,56 +67,46 @@ const groups: Group[] = [
     ],
   },
   {
-    label: "더보기", key: "more",
-    items: [],
-    subgroups: [
-      {
-        label: "사고·비상",
-        key: "more-incident",
-        items: [
-          { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
-          { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
-          { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
-          { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
-        ],
-      },
-      {
-        label: "위치",
-        key: "more-location",
-        items: [
-          { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
-          { title: "근로자 분포", url: "/worker-distribution", icon: Users },
-          { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
-        ],
-      },
-      {
-        label: "보건",
-        key: "more-health",
-        items: [
-          { title: "보건 대시보드", url: "/health", icon: HeartPulse },
-          { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
-          { title: "작업환경측정", url: "/health/measurements", icon: ClipboardList },
-          { title: "화학물질/MSDS", url: "/health/chemicals", icon: FlaskConical },
-          { title: "보건교육", url: "/health/education", icon: GraduationCap },
-          { title: "유해요인조사", url: "/health/hazard-surveys", icon: ClipboardList },
-        ],
-      },
-      {
-        label: "운영",
-        key: "more-ops",
-        items: [
-          { title: "현장 공지", url: "/announcements", icon: Megaphone },
-          { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
-          { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
-          { title: "검증센터", url: "/verification-center", icon: SearchCheck },
-          { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
-          { title: "할 일", url: "/todo", icon: ListTodo },
-          { title: "프로젝트", url: "/projects", icon: FolderKanban },
-          { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
-          { title: "회사 관리", url: "/companies", icon: Building2 },
-          { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
-        ],
-      },
+    label: "사고·비상", key: "incident",
+    items: [
+      { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
+      { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
+      { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
+      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
+    ],
+  },
+  {
+    label: "위치", key: "location",
+    items: [
+      { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
+      { title: "근로자 분포", url: "/worker-distribution", icon: Users },
+      { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
+    ],
+  },
+  {
+    label: "보건", key: "health",
+    items: [
+      { title: "보건 대시보드", url: "/health", icon: HeartPulse },
+      { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
+      { title: "작업환경측정", url: "/health/measurements", icon: ClipboardList },
+      { title: "화학물질/MSDS", url: "/health/chemicals", icon: FlaskConical },
+      { title: "보건교육", url: "/health/education", icon: GraduationCap },
+      { title: "유해요인조사", url: "/health/hazard-surveys", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "운영", key: "ops",
+    items: [
+      { title: "현장 공지", url: "/announcements", icon: Megaphone },
+      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
+      { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
+      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
+      { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
+      { title: "할 일", url: "/todo", icon: ListTodo },
+      { title: "프로젝트", url: "/projects", icon: FolderKanban },
+      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
+      { title: "회사 관리", url: "/companies", icon: Building2 },
+      { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
     ],
   },
 ];
@@ -135,8 +124,6 @@ const masterOnlyItems: Item[] = [
   { title: "데이터 정합성 (단일 기준)", url: "/admin/data-audit", icon: Database },
   { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
   { title: "휴지통", url: "/admin/trash", icon: Trash2 },
-  { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
-  { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
 ];
 
 /** Sidebar labels for manual drift tests — keep in sync with the menus above. */
@@ -171,7 +158,7 @@ export function AppSidebar() {
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
-  const CONTRACTOR_GROUP_KEYS = new Set(["today", "site", "docs", "more"]);
+  const CONTRACTOR_GROUP_KEYS = new Set(["today", "site", "docs", "incident", "location", "health", "ops"]);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
     '/', '/approvals',
     '/work-plans', '/work-permits', '/tbm-logs',
@@ -199,20 +186,20 @@ export function AppSidebar() {
         .filter((g) => g.items.length > 0 || (g.subgroups?.length ?? 0) > 0)
     : scopedGroups;
 
-  const DEFAULT_OPEN = {
+  // '오늘'만 펼침(true), 나머지는 접어둔 상태(false)
+  const DEFAULT_OPEN: Record<string, boolean> = {
     today: true,
-    site: true,
-    docs: true,
-    more: false,
-    "more-incident": false,
-    "more-location": false,
-    "more-health": false,
-    "more-ops": false,
+    site: false,
+    docs: false,
+    incident: false,
+    location: false,
+    health: false,
+    ops: false,
     admin: false,
   };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("sidebar:groups") || "{}") as Record<string, boolean>;
+      const stored = JSON.parse(localStorage.getItem("sidebar:groups_v3") || "{}") as Record<string, boolean>;
       if (!("today" in stored)) return DEFAULT_OPEN;
       return { ...DEFAULT_OPEN, ...stored };
     } catch {
@@ -220,7 +207,7 @@ export function AppSidebar() {
     }
   });
   useEffect(() => {
-    localStorage.setItem('sidebar:groups', JSON.stringify(openGroups));
+    localStorage.setItem('sidebar:groups_v3', JSON.stringify(openGroups));
   }, [openGroups]);
 
   const toggleGroup = (k: string) => setOpenGroups(s => ({ ...s, [k]: !s[k] }));

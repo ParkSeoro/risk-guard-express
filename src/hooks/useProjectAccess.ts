@@ -162,7 +162,7 @@ function normalizeRole(input: string | null | undefined): ProjectRole | null {
 
 
 export interface ProjectAccess {
-  projects: { id: string; name: string; site_name: string }[];
+  projects: ProjectItem[];
   selectedProject: string;
   setSelectedProject: (id: string) => void;
   userCompanyId: string | null;
@@ -210,10 +210,19 @@ interface MemberInfo {
 }
 
 
+export type ProjectItem = {
+  id: string;
+  name: string;
+  site_name: string;
+  site_address?: string | null;
+  site_lat?: number | null;
+  site_lng?: number | null;
+};
+
 export function useProjectAccess(): ProjectAccess {
   const { user, hasRole, profile } = useAuth();
   const isMaster = hasRole('master');
-  const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [selectedProject, setSelectedProjectState] = useState(() => {
     try { return readActiveProjectId(); } catch { return ''; }
   });
@@ -325,11 +334,11 @@ export function useProjectAccess(): ProjectAccess {
     if (isMaster) {
       const { data } = await supabase
         .from('projects')
-        .select('id, name, site_name')
+        .select('id, name, site_name, site_address, site_lat, site_lng')
         .eq('is_deleted', false)
         .order('created_at', { ascending: false });
       if (data && data.length > 0) {
-        setProjects(data);
+        setProjects(data as ProjectItem[]);
         const picked = pickSessionProjectId({
           allowedIds: data.map((p) => p.id),
           defaultProjectId: profile?.default_project_id,
@@ -347,14 +356,21 @@ export function useProjectAccess(): ProjectAccess {
     } else {
       const { data: members } = await supabase
         .from('project_members')
-        .select('project_id, projects(id, name, site_name, is_deleted)')
+        .select('project_id, projects(id, name, site_name, site_address, site_lat, site_lng, is_deleted)')
         .eq('user_id', user.id);
       if (members && members.length > 0) {
         const projs = members
           .map(m => (m as any).projects)
           .filter((p: any) => p && p.is_deleted !== true)
-          .map((p: any) => ({ id: p.id, name: p.name, site_name: p.site_name }));
-        setProjects(projs);
+          .map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            site_name: p.site_name,
+            site_address: p.site_address,
+            site_lat: p.site_lat,
+            site_lng: p.site_lng,
+          }));
+        setProjects(projs as ProjectItem[]);
         const picked = pickSessionProjectId({
           allowedIds: projs.map((p: { id: string }) => p.id),
           defaultProjectId: profile?.default_project_id,

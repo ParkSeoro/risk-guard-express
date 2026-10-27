@@ -30,6 +30,8 @@ import {
   FileText, Cloud, CloudRain, Wind, Thermometer, Sun,
   FileSignature, Bot, MapPin, HardHat, ClipboardCheck,
 } from "lucide-react";
+import { SiteSafetyRiskControlHub } from "@/components/dashboard/SiteSafetyRiskControlHub";
+import { geocodeKoreanAddress, fetchLiveWeatherData, syncProjectCoordinates } from "@/lib/koreanLocationService";
 
 type TopRisk = {
   id: string;
@@ -44,6 +46,13 @@ type TopRisk = {
 
 type PermitSum = ReturnType<typeof summarizePermits>;
 
+export type InspectionSum = {
+  total: number;
+  inProgress: number;
+  completed: number;
+  openActions: number;
+};
+
 type DashboardData = {
   attention: AttentionItem[];
   pulse: SitePulse;
@@ -55,10 +64,12 @@ type DashboardData = {
   totalItems: number;
   planSum: StatusBucket;
   permitSum: PermitSum;
+  inspectionSum: InspectionSum;
 };
 
 const EMPTY_PLAN: StatusBucket = { draft: 0, inApproval: 0, approved: 0, rejected: 0, total: 0 };
 const EMPTY_PERMIT: PermitSum = { draft: 0, inApproval: 0, active: 0, closurePending: 0, rejected: 0, total: 0 };
+const EMPTY_INSP: InspectionSum = { total: 0, inProgress: 0, completed: 0, openActions: 0 };
 const EMPTY: DashboardData = {
   attention: [],
   pulse: {
@@ -79,6 +90,7 @@ const EMPTY: DashboardData = {
   totalItems: 0,
   planSum: EMPTY_PLAN,
   permitSum: EMPTY_PERMIT,
+  inspectionSum: EMPTY_INSP,
 };
 
 const Dashboard = () => {
@@ -129,6 +141,18 @@ const Dashboard = () => {
         .eq("is_deleted", false);
       tbmQ = applyCompanyFilter(tbmQ);
 
+      let inspQ: any = supabase
+        .from("safety_inspections" as any)
+        .select("id, status")
+        .eq("project_id", selectedProject)
+        .eq("is_deleted", false);
+      inspQ = applyCompanyFilter(inspQ);
+
+      const actP = supabase
+        .from("safety_inspection_actions" as any)
+        .select("id, status")
+        .eq("project_id", selectedProject);
+
       const runsP = supabase
         .from("assessment_runs")
         .select("id, status, created_by, author_user_id, target_company_ids")
@@ -165,9 +189,9 @@ const Dashboard = () => {
         : Promise.resolve({ data: [] as any[] });
 
       const [
-        permitRes, wpRes, todoRes, tbmRes, runsRes, entryRes, zoneRes, scRes, pendingRes,
+        permitRes, wpRes, todoRes, tbmRes, runsRes, entryRes, zoneRes, scRes, pendingRes, inspRes, actRes,
       ] = await Promise.all([
-        permitQ, wpQ, todoQ, tbmQ, runsP, entryP, zoneP, scP, pendingP,
+        permitQ, wpQ, todoQ, tbmQ, runsP, entryP, zoneP, scP, pendingP, inspQ, actP,
       ]);
 
       const permits = (permitRes.data || []) as Array<{ status?: string }>;
@@ -251,6 +275,20 @@ const Dashboard = () => {
         }
       }
 
+      const rawInsps = (inspRes.data || []) as Array<{ status?: string }>;
+      const rawActs = (actRes.data || []) as Array<{ status?: string }>;
+      const openActions = rawActs.filter(
+        (a) => a.status === 'open' || a.status === 'in_progress' || a.status === 'action_pending' || a.status === '미조치' || a.status === '조치중'
+      ).length;
+      const completedInsps = rawInsps.filter((i) => i.status === 'completed' || i.status === '완료').length;
+      const inProgressInsps = rawInsps.length - completedInsps;
+      const inspectionSum: InspectionSum = {
+        total: rawInsps.length,
+        inProgress: inProgressInsps,
+        completed: completedInsps,
+        openActions,
+      };
+
       const attention = buildAttentionItems({
         myPendingApprovals: myPending,
         permitDraft: permitSum.draft,
@@ -264,6 +302,7 @@ const Dashboard = () => {
         residualHigh,
         showSafetyCost: showOpsWide,
         showZone: showOpsWide,
+        inspectionOpenActions: openActions,
       });
 
       setData({
@@ -277,6 +316,7 @@ const Dashboard = () => {
           approvalPendingPermits: permitSum.inApproval,
           workPlans: workPlans.length,
           zoneAlerts,
+          openInspectionActions: openActions,
         },
         residualHigh,
         topRisks,
@@ -286,6 +326,7 @@ const Dashboard = () => {
         totalItems,
         planSum,
         permitSum,
+        inspectionSum,
       });
     } finally {
       setLoading(false);
@@ -322,6 +363,8 @@ const Dashboard = () => {
       { label: "현장 체류", value: data.pulse.onSiteWorkers, hint: `금일 출역 ${data.pulse.todayEntries}`, path: "/workers?tab=attendance&status=inside", icon: HardHat },
       { label: "금일 출역", value: data.pulse.todayEntries, hint: "오늘 입퇴장", path: "/workers?tab=attendance", icon: HardHat },
       { label: "금일 TBM", value: data.pulse.todayTbm, hint: "오늘 작성된 TBM", path: "/tbm-logs?date=today", icon: ClipboardCheck },
+      { label: "작업허가(PTW)", value: data.permitSum.active, hint: `승인·가동 중 (${data.permitSum.total}건 등록)`, path: "/work-permits", icon: FileSignature },
+      { label: "미조치 지적", value: data.inspectionSum.openActions, hint: data.inspectionSum.openActions > 0 ? "현장 시정 조치 필요" : "지적사항 없음", path: "/safety-inspections?tab=actions", icon: ShieldAlert },
     ];
     if (showOpsWide) {
       tiles.push({
@@ -333,7 +376,7 @@ const Dashboard = () => {
       });
     }
     return tiles;
-  }, [data.pulse, showOpsWide]);
+  }, [data.pulse, data.permitSum, data.inspectionSum, showOpsWide]);
 
   if (loading || accessLoading || scopeStatus !== "ready") {
     return (
@@ -360,6 +403,9 @@ const Dashboard = () => {
       </div>
 
       {selectedProject && <WeatherSummaryCard projectId={selectedProject} />}
+
+      {/* 실시간 고위험 작업 현황 및 4분면 위험성평가 관제 허브 */}
+      <SiteSafetyRiskControlHub projectId={selectedProject} onNavigate={navigate} />
 
       {/* Attention / action needed */}
       <section className="space-y-3">
@@ -420,23 +466,6 @@ const Dashboard = () => {
             </button>
           ))}
         </div>
-      </section>
-
-      <section>
-        <button
-          type="button"
-          onClick={() => navigate("/ai-assistant")}
-          className="w-full text-left rounded-lg border bg-card p-4 hover:border-primary/40 transition-colors flex items-center gap-3"
-        >
-          <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-            <Bot className="h-5 w-5 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">AI 어시스턴트</p>
-            <p className="text-xs text-muted-foreground mt-0.5">공정·위험·대책을 이 화면에서 이어서 확인합니다.</p>
-          </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-        </button>
       </section>
 
       <section className="space-y-3">
@@ -532,6 +561,21 @@ const Dashboard = () => {
           <StatusTile label="반려" value={data.permitSum.rejected} path="/work-permits?status=rejected&period=all" icon={FileSignature} />
         </div>
       </section>
+
+      <section className="space-y-3">
+        <SectionLabel>안전점검 및 조치 현황</SectionLabel>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatusTile label="전체 점검" value={data.inspectionSum.total} path="/safety-inspections" icon={ClipboardCheck} />
+          <StatusTile label="진행중" value={data.inspectionSum.inProgress} path="/safety-inspections" icon={ClipboardCheck} />
+          <StatusTile label="점검 완료" value={data.inspectionSum.completed} path="/safety-inspections" icon={CheckCircle2} />
+          <StatusTile 
+            label="미조치 지적사항" 
+            value={data.inspectionSum.openActions} 
+            path="/safety-inspections?tab=actions" 
+            icon={AlertTriangle} 
+          />
+        </div>
+      </section>
     </div>
   );
 };
@@ -616,16 +660,40 @@ function WeatherSummaryCard({ projectId }: { projectId: string }) {
       try {
         const { data: project } = await supabase
           .from("projects")
-          .select("site_lat, site_lng, site_address")
+          .select("site_lat, site_lng, site_address, site_name")
           .eq("id", projectId)
           .single();
-        const lat = (project as any)?.site_lat || 37.5665;
-        const lng = (project as any)?.site_lng || 126.978;
-        const address = (project as any)?.site_address || undefined;
-        const { data } = await supabase.functions.invoke("fetch-weather", {
-          body: { project_id: projectId, lat, lng, address },
-        });
-        setWeather(data);
+        let lat = (project as any)?.site_lat;
+        let lng = (project as any)?.site_lng;
+        const address = (project as any)?.site_address || "";
+        const siteName = (project as any)?.site_name || "";
+
+        if ((!lat || !lng) && (address || siteName)) {
+          const geo = await geocodeKoreanAddress(address || siteName);
+          if (geo) {
+            lat = geo.lat;
+            lng = geo.lng;
+            syncProjectCoordinates(projectId, address || siteName).catch(() => {});
+          }
+        }
+
+        lat = lat || 37.5665;
+        lng = lng || 126.978;
+
+        try {
+          const { data, error } = await supabase.functions.invoke("fetch-weather", {
+            body: { project_id: projectId, lat, lng, address: address || undefined },
+          });
+          if (!error && data?.current) {
+            setWeather(data);
+            return;
+          }
+        } catch {
+          // edge function failover
+        }
+
+        const live = await fetchLiveWeatherData(lat, lng, { lat, lng, city: siteName || "현장", address });
+        setWeather(live);
       } catch {
         // silent fail
       } finally {

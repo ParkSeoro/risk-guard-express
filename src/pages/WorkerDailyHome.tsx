@@ -27,10 +27,18 @@ import {
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
 import {
+  calibratedCheckInFix,
   pickCheckInGpsFix,
   rawCheckInFix,
   readFreshCheckInFix,
+  type CheckInGpsFix,
 } from "@/lib/tracking/checkInGpsFix";
+import {
+  applyGpsCalibration,
+  parseGpsCalibration,
+  type GpsCalibration,
+} from "@/lib/tracking/gpsCalibration";
+import { watchGpsCalibrationInvalidation } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
   buildRiskSummary,
   buildWorkSummary,
@@ -96,8 +104,9 @@ export default function WorkerDailyHome({
   const { t, locale } = useWorkerLocale();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const { projectId, setProjectId } = useActiveProject();
+  const [gpsCal, setGpsCal] = useState<GpsCalibration | null>(null);
   /** One-shot / polled fix for check-in distance UI before full tracking starts. */
-  const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number; raw_lat?: number; raw_lng?: number } | null>(null);
   const [probeNonce, setProbeNonce] = useState(0);
   const [checkInFences, setCheckInFences] = useState<SiteTrackingFence[]>([]);
   const [siteOutlines, setSiteOutlines] = useState<SiteBoundary[]>([]);
@@ -128,9 +137,17 @@ export default function WorkerDailyHome({
     kind: string | null;
   } | null>(null);
 
+  useEffect(() => {
+    if (!projectId) {
+      setGpsCal(null);
+      return;
+    }
+    return watchGpsCalibrationInvalidation(projectId);
+  }, [projectId]);
+
   const effectiveFix = useMemo(
-    () => pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix),
-    [lastGpsFix, probeFix],
+    () => pickCheckInGpsFix(calibratedCheckInFix(lastGpsFix, gpsCal), probeFix),
+    [lastGpsFix, probeFix, gpsCal],
   );
 
   const currentOutline = useMemo(() => {
@@ -202,11 +219,12 @@ export default function WorkerDailyHome({
     try {
     const { data: proj } = await supabase
       .from("projects")
-      .select("id, name, site_lat, site_lng")
+      .select("id, name, site_lat, site_lng, gps_calibration")
       .eq("id", pid)
       .maybeSingle();
     if (proj) {
       setProjectName(proj.name || "");
+      setGpsCal(parseGpsCalibration((proj as any).gps_calibration));
     }
     // Prefer georeferenced site_maps footprint over address-geocoded pin
     const [fences, outlines] = await Promise.all([
@@ -315,9 +333,14 @@ export default function WorkerDailyHome({
     let watchId: number | null = null;
     const apply = (pos: GeolocationPosition) => {
       if (cancelled) return;
+      const rawLat = pos.coords.latitude;
+      const rawLng = pos.coords.longitude;
+      const aligned = applyGpsCalibration(rawLat, rawLng, gpsCal);
       const next = {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
+        lat: aligned.lat,
+        lng: aligned.lng,
+        raw_lat: rawLat,
+        raw_lng: rawLng,
         accuracy: pos.coords.accuracy,
       };
       setProbeFix((prev) => {
@@ -346,7 +369,7 @@ export default function WorkerDailyHome({
       if (watchId != null) navigator.geolocation.clearWatch(watchId);
       window.clearTimeout(stop);
     };
-  }, [projectId, isCheckedIn, gpsTracking, probeNonce, diagnosticsOnly]);
+  }, [projectId, isCheckedIn, gpsTracking, probeNonce, diagnosticsOnly, gpsCal]);
 
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
@@ -403,9 +426,9 @@ export default function WorkerDailyHome({
       toast.error("위치 권한을 허용해야 출근할 수 있습니다. 「정확한 위치」와 「항상 허용」을 누르세요.");
       return;
     }
-    const fresh = await readFreshCheckInFix();
+    const fresh = await readFreshCheckInFix(12_000, gpsCal);
     if (fresh) setProbeFix(fresh);
-    const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
+    const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(calibratedCheckInFix(lastGpsFix, gpsCal), probeFix));
     if (!siteOutlines.length && !checkInFences.length) {
       toast.error("현장 좌표가 없습니다. 관리자에게 관제맵 GPS 개소 또는 주소핀을 요청하세요.");
       return;
@@ -557,9 +580,9 @@ export default function WorkerDailyHome({
       return;
     }
     if (!todayLog || !workerId || !projectId) return;
-    const fresh = await readFreshCheckInFix();
+    const fresh = await readFreshCheckInFix(12_000, gpsCal);
     if (fresh) setProbeFix(fresh);
-    const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(rawCheckInFix(lastGpsFix), probeFix));
+    const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(calibratedCheckInFix(lastGpsFix, gpsCal), probeFix));
     if (siteOutlines.length) {
       if (!fix) {
         toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 퇴근하세요.");
@@ -707,11 +730,18 @@ export default function WorkerDailyHome({
                       ? (gpsError ? "GPS 오류" : "GPS 대기…")
                       : `${Math.round(distanceM!)}m`}
                 </div>
-                <div className="col-span-2">
-                  좌표:{" "}
-                  {effectiveFix
-                    ? `${effectiveFix.lat.toFixed(5)}, ${effectiveFix.lng.toFixed(5)} (±${Math.round(effectiveFix.accuracy)}m)`
-                    : "대기"}
+                <div className="col-span-2 flex flex-wrap items-center gap-1.5">
+                  <span>
+                    좌표:{" "}
+                    {effectiveFix
+                      ? `${effectiveFix.lat.toFixed(5)}, ${effectiveFix.lng.toFixed(5)} (±${Math.round(effectiveFix.accuracy)}m)`
+                      : "대기"}
+                  </span>
+                  {gpsCal && (
+                    <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 border-emerald-500 text-emerald-700 bg-emerald-50 font-normal">
+                      현장 맵 보정 적용됨
+                    </Badge>
+                  )}
                 </div>
                 <div className="col-span-2">
                   현장 기준:{" "}

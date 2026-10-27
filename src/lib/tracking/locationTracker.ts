@@ -279,7 +279,9 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
       if (!opts.siteBoundary && fences.length === 0) return;
       const pos = await probeCurrentPosition();
       if (!pos || sessionStopped || phase !== "suspended") return;
-      if (!canResumeOnSite(opts.siteBoundary, fences, pos.lat, pos.lng, pos.accuracy)) return;
+      cal = await loadCalibration(opts.identity.project_id);
+      const aligned = applyGpsCalibration(pos.lat, pos.lng, cal);
+      if (!canResumeOnSite(opts.siteBoundary, fences, aligned.lat, aligned.lng, pos.accuracy)) return;
       phase = "tracking";
       outsideStreak = 0;
       clearResumeTimers();
@@ -326,7 +328,9 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         const accuracy = Number(location.accuracy) || 30;
         const disp = applyGpsCalibration(rawLat, rawLng, cal);
 
-        const leave = evaluateSiteLeave(opts.siteBoundary, fences, rawLat, rawLng, accuracy);
+        const checkLat = disp.calibrated ? disp.lat : rawLat;
+        const checkLng = disp.calibrated ? disp.lng : rawLng;
+        const leave = evaluateSiteLeave(opts.siteBoundary, fences, checkLat, checkLng, accuracy);
         if (leave) {
           const bump = nextOutsideStreak(leave.outside, outsideStreak);
           outsideStreak = bump.streak;
@@ -699,7 +703,9 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     if (!opts.siteBoundary && fences.length === 0) return;
     const pos = await probeCurrentPosition();
     if (!pos || stopped || phase !== "suspended") return;
-    if (!canResumeOnSite(opts.siteBoundary, fences, pos.lat, pos.lng, pos.accuracy)) return;
+    cal = await loadCalibration(identity.project_id);
+    const aligned = applyGpsCalibration(pos.lat, pos.lng, cal);
+    if (!canResumeOnSite(opts.siteBoundary, fences, aligned.lat, aligned.lng, pos.accuracy)) return;
     phase = "tracking";
     outsideStreak = 0;
     clearResumeTimers();
@@ -740,7 +746,9 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
     const here = { lat: disp.lat, lng: disp.lng, ts: now };
 
-    const leave = evaluateSiteLeave(opts.siteBoundary, fences, raw.lat, raw.lng, accuracy);
+    const checkLat = disp.calibrated ? disp.lat : raw.lat;
+    const checkLng = disp.calibrated ? disp.lng : raw.lng;
+    const leave = evaluateSiteLeave(opts.siteBoundary, fences, checkLat, checkLng, accuracy);
     if (leave) {
       const bump = nextOutsideStreak(leave.outside, outsideStreak);
       outsideStreak = bump.streak;

@@ -12,6 +12,7 @@ import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, Ale
 import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
 import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
 import { generateAccidentCasesStreaming } from '@/lib/riskAutoGenAI';
+import { getAccidentCasesFromLibrary } from '@/lib/accidentLibraryFallback';
 import { uploadAttachmentFile, buildProjectAttachmentPath } from '@/lib/compressUploadFile';
 import { calculateRiskGrade, derivedResidualFields } from '@/lib/riskGrade';
 
@@ -97,16 +98,54 @@ export default function WorkerParticipationPanel({
   useEffect(() => { reload(); }, [runId]);
 
   const runAutoAccidentGeneration = async () => {
-    if (!canEdit || detectedHighRisk.length === 0) return;
+    if (!canEdit) return;
+    const targetProcess = aiProcess.trim() || (detectedHighRisk.length > 0 ? detectedHighRisk[0] : '');
+    if (!targetProcess && detectedHighRisk.length === 0) {
+      toast({ title: '공종을 입력하거나 위험요인을 먼저 등록해주세요.', variant: 'destructive' });
+      return;
+    }
     setAutoAccidentLoading(true);
     try {
-      const res = await autoGenerateAccidentCases({ runId, projectId, items: riskItems, userId });
-      await reload();
-      onChanged?.();
-      toast({
-        title: `사고사례 라이브러리 매칭 완료`,
-        description: `고위험 카테고리 ${res.categories.length}건, 사례 ${res.inserted}건 추가`,
-      });
+      if (detectedHighRisk.length > 0) {
+        const res = await autoGenerateAccidentCases({ runId, projectId, items: riskItems, userId });
+        if (res.inserted > 0) {
+          await reload();
+          onChanged?.();
+          toast({
+            title: `사고사례 라이브러리 매칭 완료`,
+            description: `고위험 카테고리 ${res.categories.length}건, 사례 ${res.inserted}건 추가`,
+          });
+          return;
+        }
+      }
+
+      const { accidents: libAccidents } = await getAccidentCasesFromLibrary(targetProcess, aiEquipment, 4);
+      if (libAccidents.length > 0) {
+        const inserts = libAccidents.map((a) => ({
+          run_id: runId,
+          project_id: projectId,
+          process: targetProcess || '공통',
+          accident_type: a.title,
+          cause: a.cause || '',
+          result: a.result || '',
+          prevention: a.prevention || '',
+          description: a.accident_summary || '',
+          accident_summary: a.accident_summary || '',
+          location: a.location || '국내 건설현장',
+          occurrence_date: a.occurrence_date || null,
+          source_type: 'library',
+          created_by: userId,
+        }));
+        await supabase.from('assessment_accidents' as any).insert(inserts);
+        await reload();
+        onChanged?.();
+        toast({
+          title: `표준 사고사례 ${inserts.length}건 등록 완료`,
+          description: `'${targetProcess}' 관련 KOSHA 표준 라이브러리 사례가 추가되었습니다.`,
+        });
+      } else {
+        toast({ title: '사고사례를 찾을 수 없습니다.', description: '공종을 구체적으로 입력해주세요.' });
+      }
     } catch (e: any) {
       toast({ title: '생성 실패', description: e.message, variant: 'destructive' });
     } finally {
@@ -282,7 +321,7 @@ export default function WorkerParticipationPanel({
     setAccidentAILoading(true);
     setAccidentAICount(0);
     try {
-      const { accidents } = await generateAccidentCasesStreaming(
+      const { accidents, source } = await generateAccidentCasesStreaming(
         {
           processName: aiProcess.trim(),
           equipment: aiEquipment.trim() || undefined,
@@ -303,18 +342,32 @@ export default function WorkerParticipationPanel({
         prevention: a.prevention || '',
         description: a.accident_summary || `${a.cause || ''} / ${a.result || ''}`.trim(),
         accident_summary: a.accident_summary || '',
-        location: a.location || '',
+        location: a.location || '국내 건설현장',
         occurrence_date: a.occurrence_date || null,
-        source_type: 'ai',
-        created_by: userId,
+        source_type: source === 'ai' ? 'ai' : 'library',
+        created_by: userId || null,
       }));
 
-      if (inserts.length) await supabase.from('assessment_accidents' as any).insert(inserts);
+      if (inserts.length) {
+        const { error: insErr } = await supabase.from('assessment_accidents' as any).insert(inserts);
+        if (insErr) throw new Error(`사고사례 저장 실패: ${insErr.message}`);
+      }
       await reload();
       onChanged?.();
-      toast({ title: `사고사례 ${inserts.length}건 생성`, description: '발생일자·장소가 상단에 표시됩니다.' });
+      if (source === 'ai') {
+        toast({ title: `사고사례 ${inserts.length}건 AI 생성`, description: '발생일자·장소가 상단에 표시됩니다.' });
+      } else {
+        toast({
+          title: `표준 사고사례 ${inserts.length}건 등록 완료`,
+          description: 'AI 일일 한도 초과로 인해 KOSHA 표준 라이브러리 사례가 자동 반영되었습니다.',
+        });
+      }
     } catch (e: any) {
-      toast({ title: 'AI 생성 실패', description: e.message, variant: 'destructive' });
+      toast({
+        title: '사고사례 생성 안내',
+        description: e.message || 'AI 일일 한도(무료 쿼터) 소진 또는 통신 오류입니다. [라이브러리에서 가져오기]를 이용해 주세요.',
+        variant: 'destructive',
+      });
     } finally {
       setAccidentAILoading(false);
       setAccidentAICount(0);
@@ -609,7 +662,7 @@ export default function WorkerParticipationPanel({
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs gap-1 shrink-0"
-                  disabled={autoAccidentLoading || detectedHighRisk.length === 0}
+                  disabled={autoAccidentLoading || (!aiProcess.trim() && detectedHighRisk.length === 0)}
                   onClick={() => runAutoAccidentGeneration()}
                 >
                   {autoAccidentLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}

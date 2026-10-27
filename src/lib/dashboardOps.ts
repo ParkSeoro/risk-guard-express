@@ -20,6 +20,7 @@ export type SitePulse = {
   approvalPendingPermits: number;
   workPlans: number;
   zoneAlerts: number;
+  openInspectionActions?: number;
 };
 
 export type StatusBucket = {
@@ -87,6 +88,7 @@ export function buildAttentionItems(input: {
   residualHigh: number;
   showSafetyCost: boolean;
   showZone: boolean;
+  inspectionOpenActions?: number;
 }): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -163,6 +165,16 @@ export function buildAttentionItems(input: {
       count: input.raFeedbackUnresolved,
       severity: 'warning',
       path: '/risk-assessment?focus=feedback',
+    });
+  }
+  if (input.inspectionOpenActions && input.inspectionOpenActions > 0) {
+    items.push({
+      id: 'inspection-actions',
+      label: '안전점검 미조치 지적사항',
+      count: input.inspectionOpenActions,
+      severity: 'critical',
+      path: '/safety-inspections?tab=actions',
+      detail: '시정 조치 및 현장 개선 필요',
     });
   }
 

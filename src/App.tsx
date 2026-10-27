@@ -16,6 +16,7 @@ import { postLoginPath } from "@/components/AuthGuard";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { DDayMigrationConsole } from "@/components/DDayMigrationConsole";
 
 const Auth = lazy(() => import("@/pages/Auth"));
 const Index = lazy(() => import("@/pages/Index"));
@@ -150,7 +151,6 @@ const App = () => (
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/update-password" element={<UpdatePassword />} />
                 <Route path="/reset-password" element={<UpdatePassword />} />
-                <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
                 <Route path="/tbm/:token" element={<TbmParticipate />} />
                 <Route path="/worker/register" element={<WorkerRegister />} />
                 <Route path="/worker" element={<WorkerEntry />} />

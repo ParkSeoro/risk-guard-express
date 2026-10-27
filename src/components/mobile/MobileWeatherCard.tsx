@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { CloudSun, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
+import { geocodeKoreanAddress, fetchLiveWeatherData } from "@/lib/koreanLocationService";
 
 type Props = { projectId: string };
 
@@ -25,21 +26,41 @@ export default function MobileWeatherCard({ projectId }: Props) {
       try {
         const { data: project } = await supabase
           .from("projects")
-          .select("site_lat, site_lng, site_address")
+          .select("site_lat, site_lng, site_address, site_name")
           .eq("id", projectId)
           .maybeSingle();
-        const lat = (project as any)?.site_lat ?? 37.5665;
-        const lng = (project as any)?.site_lng ?? 126.978;
+        let lat = (project as any)?.site_lat;
+        let lng = (project as any)?.site_lng;
         const address = (project as any)?.site_address || "";
-        const { data, error: fnErr } = await supabase.functions.invoke("fetch-weather", {
-          body: { project_id: projectId, lat, lng, address },
-        });
-        if (cancelled) return;
-        if (fnErr) {
-          setError("날씨 조회 실패");
-          setWeather(null);
-        } else {
-          setWeather(data);
+        const siteName = (project as any)?.site_name || "";
+
+        if ((!lat || !lng) && (address || siteName)) {
+          const geo = await geocodeKoreanAddress(address || siteName);
+          if (geo) {
+            lat = geo.lat;
+            lng = geo.lng;
+          }
+        }
+        lat = lat ?? 37.5665;
+        lng = lng ?? 126.978;
+
+        let ok = false;
+        try {
+          const { data, error: fnErr } = await supabase.functions.invoke("fetch-weather", {
+            body: { project_id: projectId, lat, lng, address: address || undefined },
+          });
+          if (!fnErr && data?.current) {
+            setWeather(data);
+            setFetchedAt(new Date().toISOString());
+            ok = true;
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!ok && !cancelled) {
+          const live = await fetchLiveWeatherData(lat, lng, { lat, lng, city: siteName || "현장", address });
+          setWeather(live);
           setFetchedAt(new Date().toISOString());
         }
       } catch {

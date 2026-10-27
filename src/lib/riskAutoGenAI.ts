@@ -4,6 +4,7 @@ import { correctTerms } from './termCorrection';
 import { generateRiskItems, type GeneratedRiskItem } from './riskAutoGen';
 import { normalizeLegalBasisList } from './enrichLegalBasis';
 import { riskItemsWriteDeniedMessage } from './riskWriteAccess';
+import { getAccidentCasesFromLibrary } from './accidentLibraryFallback';
 
 export type DetailLevel = 'core' | 'comprehensive';
 
@@ -103,23 +104,29 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
 }
 
 function mapErrorMessage(rawMsg: string): string {
+  if (/requests per day|RPD|일일.?한도|일일한도|daily.*limit|quota metric/i.test(rawMsg)) {
+    return 'AI 일일 호출 한도(무료 쿼터 RPD)에 도달했습니다. 종량제(유료 플랜) 결제 계정을 연결하거나 내일(초기화 후) 다시 시도해 주세요.';
+  }
   if (/호출 상한|CALL_CAP/i.test(rawMsg)) {
     return 'AI 호출 상한에 도달했습니다. 잠시 후 다시 시도해주세요.';
   }
-  if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402|QUOTA_EXHAUSTED|할당량/i.test(rawMsg)) {
-    return 'AI 무료 할당량이 소진되었습니다. 관리자에게 문의하거나 잠시 후 다시 시도해주세요.';
+  if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402|QUOTA_EXHAUSTED|RESOURCE_EXHAUSTED|할당량|quota/i.test(rawMsg)) {
+    return 'AI 일일 무료 할당량이 소진되었습니다. 종량제(유료) 플랜을 연결하거나 잠시 후 다시 시도해주세요.';
   }
-  if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|OPENAI_API_KEY|DEEPSEEK_API_KEY|키가 유효하지/i.test(rawMsg)) {
-    return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 OPENAI_API_KEY를 Supabase Edge Secrets에 등록해야 합니다. (설정 > AI 설정)';
+  if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|OPENAI_API_KEY|DEEPSEEK_API_KEY|GEMINI_API_KEY|키가 유효하지/i.test(rawMsg)) {
+    return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 API 키를 등록해야 합니다. (설정 > AI 설정)';
   }
   if (/redeploy in progress|WORKER failed to boot|BOOT_ERROR/i.test(rawMsg)) {
     return 'AI 서버가 재시작 중입니다. 1분 후 다시 시도해주세요.';
   }
   if (/RATE_LIMIT|429|503|529|too many|너무 많|과부하/i.test(rawMsg)) {
-    return 'AI가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해주세요.';
+    return 'AI 요청이 일시적으로 너무 많습니다(분당 한도). 30초 후 다시 시도해주세요.';
   }
   if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources|AbortError|504|Gateway Timeout|gateway/i.test(rawMsg)) {
     return 'AI 응답이 너무 오래 걸려 중단되었습니다. 공종을 하나만 넣고 다시 시도해주세요.';
+  }
+  if (/failed to fetch|fetch failed|network|load failed/i.test(rawMsg)) {
+    return 'AI 서버 연결에 실패했습니다 (일일 한도 초과 또는 서버 통신 오류).';
   }
   if (/42501|row-level security|RLS|권한이 없습니다|Forbidden/i.test(rawMsg)) {
     return riskItemsWriteDeniedMessage();
@@ -831,17 +838,26 @@ async function consumeSse(
   const token = await getAccessToken();
   const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: anonKey,
-      'Content-Type': 'application/json; charset=utf-8',
-      Accept: 'text/event-stream',
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err: any) {
+    const raw = String(err?.message || err);
+    if (/failed to fetch|network|load failed/i.test(raw)) {
+      throw new Error('AI 서버 연결 실패: 일일 한도 초과 또는 서버 지연으로 연결이 중단되었습니다.');
+    }
+    throw err;
+  }
 
   if (!resp.ok) {
     let detail = '';
@@ -1146,60 +1162,81 @@ export async function generateAccidentCasesStreaming(
     onProgress?: (count: number) => void;
     signal?: AbortSignal;
   },
-): Promise<{ accidents: AIAccidentCase[]; source: 'ai' }> {
+): Promise<{ accidents: AIAccidentCase[]; source: 'ai' | 'library' | 'builtin' }> {
   const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
   const accidents: AIAccidentCase[] = [];
   const seen = new Set<string>();
 
-  await consumeSse(
-    `${baseUrl}/functions/v1/generate-accident-ai`,
-    {
-      process_name: opts.processName,
-      equipment: opts.equipment || '',
-      work_description: opts.workDescription || '',
-      work_location: opts.workLocation || '',
-      project_id: opts.projectId || '',
-      stream: true,
-      mode: 'accident',
-    },
-    {
-      onEvent: async (payload) => {
-        const accidentRaw =
-          payload.type === 'accident' && payload.accident
-            ? payload.accident
-            : payload.type === 'item' && payload.mode === 'accident' && payload.item
-              ? payload.item
-              : null;
-        if (accidentRaw) {
-          const a = mapAccidentPayload(accidentRaw);
-          if (!a) return;
-          if (a.title && seen.has(a.title)) return;
-          if (a.title) seen.add(a.title);
-          if (accidents.length >= 4) return;
-          accidents.push(a);
-          await handlers?.onAccident?.(a, accidents);
-          handlers?.onProgress?.(accidents.length);
-          return;
-        }
-        if (payload.type === 'done' && Array.isArray(payload.accident_cases)) {
-          for (const c of payload.accident_cases) {
-            const a = mapAccidentPayload(c);
-            if (!a) continue;
-            if (a.title && seen.has(a.title)) continue;
+  try {
+    await consumeSse(
+      `${baseUrl}/functions/v1/generate-accident-ai`,
+      {
+        process_name: opts.processName,
+        equipment: opts.equipment || '',
+        work_description: opts.workDescription || '',
+        work_location: opts.workLocation || '',
+        project_id: opts.projectId || '',
+        stream: true,
+        mode: 'accident',
+      },
+      {
+        onEvent: async (payload) => {
+          const accidentRaw =
+            payload.type === 'accident' && payload.accident
+              ? payload.accident
+              : payload.type === 'item' && payload.mode === 'accident' && payload.item
+                ? payload.item
+                : null;
+          if (accidentRaw) {
+            const a = mapAccidentPayload(accidentRaw);
+            if (!a) return;
+            if (a.title && seen.has(a.title)) return;
             if (a.title) seen.add(a.title);
-            if (accidents.length >= 4) break;
+            if (accidents.length >= 4) return;
             accidents.push(a);
             await handlers?.onAccident?.(a, accidents);
+            handlers?.onProgress?.(accidents.length);
+            return;
           }
-          handlers?.onProgress?.(accidents.length);
-        }
+          if (payload.type === 'done' && Array.isArray(payload.accident_cases)) {
+            for (const c of payload.accident_cases) {
+              const a = mapAccidentPayload(c);
+              if (!a) continue;
+              if (a.title && seen.has(a.title)) continue;
+              if (a.title) seen.add(a.title);
+              if (accidents.length >= 4) break;
+              accidents.push(a);
+              await handlers?.onAccident?.(a, accidents);
+            }
+            handlers?.onProgress?.(accidents.length);
+          }
+        },
       },
-    },
-    handlers?.signal,
-  );
+      handlers?.signal,
+    );
+  } catch (err: any) {
+    console.warn('[AI Engine] 사고사례 AI 호출 실패, 라이브러리 fallback 작동:', err?.message);
+    const fallback = await getAccidentCasesFromLibrary(opts.processName, opts.equipment, 4);
+    if (fallback.accidents.length > 0) {
+      for (const a of fallback.accidents) {
+        await handlers?.onAccident?.(a, fallback.accidents);
+      }
+      handlers?.onProgress?.(fallback.accidents.length);
+      return { accidents: fallback.accidents, source: fallback.source };
+    }
+    throw err;
+  }
 
   if (accidents.length === 0) {
-    throw new Error('AI가 유효한 사고사례를 반환하지 않았습니다.');
+    const fallback = await getAccidentCasesFromLibrary(opts.processName, opts.equipment, 4);
+    if (fallback.accidents.length > 0) {
+      for (const a of fallback.accidents) {
+        await handlers?.onAccident?.(a, fallback.accidents);
+      }
+      handlers?.onProgress?.(fallback.accidents.length);
+      return { accidents: fallback.accidents, source: fallback.source };
+    }
+    throw new Error('사고사례를 생성하거나 불러오지 못했습니다.');
   }
 
   return { accidents: accidents.slice(0, 4), source: 'ai' };

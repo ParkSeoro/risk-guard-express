@@ -13,6 +13,7 @@ import VisionCameraManageList, { type ManageCamera } from "@/components/vision/V
 import {
   sortVisionCamerasByRegistered,
   visionCanManage,
+  visionCanOperate,
   visionRoleLabel,
   visionSafePlaybackUrl,
   wakeVisionViewerHold,
@@ -56,6 +57,7 @@ export default function VisionFleet() {
   const { roles } = useAuth();
   const projectId = access.selectedProject;
   const canManage = visionCanManage(roles);
+  const canOperate = visionCanOperate(roles);
   const roleLabel = visionRoleLabel(roles);
   const [cameras, setCameras] = useState<CameraRow[]>([]);
   const [companies, setCompanies] = useState<ProjectCompany[]>([]);
@@ -243,6 +245,32 @@ export default function VisionFleet() {
     }
   };
 
+  const addSampleCamera = async () => {
+    if (!projectId || !canManage) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("vision_cameras" as any)
+        .insert({
+          project_id: projectId,
+          name: "테스트 CCTV (HLS 샘플)",
+          playback_url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+          health_state: "healthy",
+          gateway_id: "demo-gateway",
+          camera_id: `demo_${Date.now()}`,
+        })
+        .select()
+        .maybeSingle();
+      if (error) throw error;
+      toast.success("테스트 CCTV가 추가되었습니다. 즉시 영상 재생을 확인할 수 있습니다.");
+      void load();
+    } catch (e: any) {
+      toast.error(e?.message || "샘플 카메라 추가 실패");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-4 max-w-6xl mx-auto" data-testid="vision-fleet">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -252,11 +280,23 @@ export default function VisionFleet() {
           </h1>
           <p className="text-xs text-muted-foreground">
             {canManage
-              ? "설정은 마스터만 합니다. 소속을 정하면 시공사는 하위까지, 협력사는 자사만 봅니다."
+              ? "현장 카메라 관리 및 실시간 송출 화면입니다. HLS(.m3u8), HTTPS 스트림 또는 MediaMTX 중계를 지원합니다."
               : "현장 화면입니다. 자사·하위 협력사와 현장 공용 카메라만 보입니다."}
           </p>
         </div>
-        <Badge variant="secondary">{roleLabel}{canManage ? " · 설정" : ""}</Badge>
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <button
+              type="button"
+              className="text-xs border rounded px-2.5 py-1 bg-background hover:bg-muted font-medium flex items-center gap-1"
+              disabled={busy || !projectId}
+              onClick={() => void addSampleCamera()}
+            >
+              + 테스트 CCTV 추가
+            </button>
+          )}
+          <Badge variant="secondary">{roleLabel}{canManage ? " · 관리 권한" : ""}</Badge>
+        </div>
       </div>
 
       {!projectId && (
@@ -264,6 +304,18 @@ export default function VisionFleet() {
           <CardContent className="py-4 text-sm text-muted-foreground">프로젝트를 선택하면 이 현장의 화면이 열립니다.</CardContent>
         </Card>
       )}
+
+      {/* CCTV 점검 및 안내 카드 */}
+      <div className="rounded-lg border bg-blue-50/60 dark:bg-blue-950/20 p-3 text-xs text-slate-700 dark:text-slate-300 space-y-1.5">
+        <div className="font-semibold text-blue-950 dark:text-blue-300 flex items-center gap-1.5">
+          <Camera className="h-3.5 w-3.5" /> CCTV 스트리밍 동작 안내
+        </div>
+        <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-muted-foreground">
+          <li><strong>지원 프로토콜:</strong> 웹 브라우저 표준에 따라 <span className="text-foreground font-medium">HLS(.m3u8)</span> 또는 <span className="text-foreground font-medium">WebRTC</span> 스트림만 직접 재생 가능합니다.</li>
+          <li><strong>RTSP 카메라 연동:</strong> 현장 IP 카메라(RTSP)는 웹 직접 재생이 불가능하므로, 아래 VPS 중계(MediaMTX)를 통해 HLS 주소로 변환하여 등록해야 합니다.</li>
+          <li><strong>보안 차단(Mixed Content) 주의:</strong> 웹 앱이 HTTPS일 때 HTTP 스트림 주소는 브라우저 보안에 의해 차단되므로 HTTPS 도메인 연결을 권장합니다.</li>
+        </ul>
+      </div>
 
       <Card>
         <CardHeader className="py-3">
@@ -274,29 +326,29 @@ export default function VisionFleet() {
         <CardContent>
           <MobileVisionPlayer cameras={cameras} />
           {canManage && (
-            <>
-              <VisionVpsSetup
-                host={host}
-                onHostChange={setHost}
-                onHostSave={saveRelay}
-                name={newCamName}
-                onNameChange={setNewCamName}
-                companyId={newCamCompanyId}
-                onCompanyChange={setNewCamCompanyId}
-                companies={companies}
-                ingest={ingest}
-                relay={relay}
-                busy={busy}
-                onCreate={addCloudCamera}
-              />
-              <VisionCameraManageList
-                cameras={cameras}
-                companies={companies}
-                onSave={saveCamera}
-                onDelete={deleteCamera}
-                onRevealIngest={revealIngest}
-              />
-            </>
+            <VisionVpsSetup
+              host={host}
+              onHostChange={setHost}
+              onHostSave={saveRelay}
+              name={newCamName}
+              onNameChange={setNewCamName}
+              companyId={newCamCompanyId}
+              onCompanyChange={setNewCamCompanyId}
+              companies={companies}
+              ingest={ingest}
+              relay={relay}
+              busy={busy}
+              onCreate={addCloudCamera}
+            />
+          )}
+          {canOperate && (
+            <VisionCameraManageList
+              cameras={cameras}
+              companies={companies}
+              onSave={saveCamera}
+              onDelete={deleteCamera}
+              onRevealIngest={revealIngest}
+            />
           )}
         </CardContent>
       </Card>

@@ -17,6 +17,7 @@ import { Calendar, Building2, Users, Tag, Plus, Pencil, Trash2, Shield, ChevronD
 
 import { useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
+import { geocodeKoreanAddress } from "@/lib/koreanLocationService";
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
@@ -89,15 +90,13 @@ const Projects = () => {
         created_by: user.id,
       };
 
-      // Geocode address to coordinates
+      // Geocode address to coordinates using reliable Korean resolver
       if (form.site_address.trim()) {
         try {
-          const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
-            body: { project_id: '__geocode__', address: form.site_address.trim(), geocode_only: true },
-          });
-          if (geoData?.lat && geoData?.lng) {
-            insertData.site_lat = geoData.lat;
-            insertData.site_lng = geoData.lng;
+          const geo = await geocodeKoreanAddress(form.site_address.trim());
+          if (geo?.lat && geo?.lng) {
+            insertData.site_lat = geo.lat;
+            insertData.site_lng = geo.lng;
           }
         } catch { /* geocoding is best-effort */ }
       }
@@ -157,15 +156,13 @@ const Projects = () => {
     };
 
 
-    // Geocode address if changed
+    // Geocode address if changed using reliable Korean resolver
     if (form.site_address.trim()) {
       try {
-        const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
-          body: { project_id: '__geocode__', address: form.site_address.trim(), geocode_only: true },
-        });
-        if (geoData?.lat && geoData?.lng) {
-          updateData.site_lat = geoData.lat;
-          updateData.site_lng = geoData.lng;
+        const geo = await geocodeKoreanAddress(form.site_address.trim());
+        if (geo?.lat && geo?.lng) {
+          updateData.site_lat = geo.lat;
+          updateData.site_lng = geo.lng;
         }
       } catch { /* best-effort */ }
     }

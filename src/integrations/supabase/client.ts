@@ -7,17 +7,11 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { createAuthStorage } from '@/lib/native/authStorage';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+const DEFAULT_SUPABASE_URL = 'https://qhntxmggacorqjjmjqgo.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_2L5XwiIgCQvfZTm6GcFtlA_k3cRr-sX';
 
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  // CI AAB/OTA builds without .env.production used to throw inside createClient
-  // before React mounted → permanent white screen on Play Store installs.
-  throw new Error(
-    'Missing VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY. ' +
-      'Production builds must load .env.production (or CI secrets).',
-  );
-}
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || DEFAULT_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) || DEFAULT_SUPABASE_KEY;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

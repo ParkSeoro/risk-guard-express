@@ -77,6 +77,7 @@ import {
 } from "@/lib/workStop";
 import { toast } from "sonner";
 import { isNativeApp } from "@/lib/native/isNativeApp";
+import { triggerBackgroundOtaCheck } from "@/lib/native/otaUpdater";
 import { checkInBlockedByLocation } from "@/lib/native/nativePermissionGate";
 import GpsConsentCoach from "@/components/worker/GpsConsentCoach";
 import { useActiveProject } from "@/hooks/useActiveProject";
@@ -690,6 +691,7 @@ export default function WorkerDailyHome({
           ? "분포 위치는 배터리를 위해 3분마다 갱신됩니다. 아이폰은 위치 권한을 '항상'으로 두세요."
           : "브라우저/PWA는 앱을 켠 동안만 위치가 갱신됩니다. 실시간 분포는 네이티브 앱을 권장합니다.",
       });
+      triggerBackgroundOtaCheck("worker:checkin_done", 300, true);
     } catch (e: any) {
       toast.error(e?.message || "서명·출근 저장 실패");
     } finally {
@@ -767,6 +769,7 @@ export default function WorkerDailyHome({
           ? "이미 퇴근 처리되었습니다."
           : "퇴근이 기록되었습니다. GPS 추적을 종료합니다.",
       );
+      triggerBackgroundOtaCheck("worker:checkout_done", 300, true);
     } catch (e: any) {
       toast.error(e?.message || "퇴근 기록 실패");
     } finally {

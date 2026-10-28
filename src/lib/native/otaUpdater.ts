@@ -190,17 +190,26 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
       downloadUrl = signed.signedUrl;
     }
 
-    const bundle = await CapacitorUpdater.download({
+    const downloadPromise = CapacitorUpdater.download({
       url: downloadUrl,
       version: release.version,
       checksum: release.checksum || undefined,
     } as any);
 
+    const bundle = await Promise.race([
+      downloadPromise,
+      new Promise<never>((_, reject) =>
+        window.setTimeout(() => reject(new Error("OTA 다운로드 시간 초과(15s)")), 15_000)
+      ),
+    ]);
+
     if (opts.shouldAbort?.()) {
       return { ok: true, message: "업데이트 확인이 취소되었습니다.", apply: "none" };
     }
 
-    const immediate = !!release.mandatory || preferImmediate;
+    // Silent background auto-updates must NEVER reload while the user is operating.
+    // Use CapacitorUpdater.next() so it applies smoothly on next cold start.
+    const immediate = !opts.silent && (preferImmediate || !!release.mandatory);
     if (immediate) {
       await CapacitorUpdater.set({ id: bundle.id } as any);
       return {
@@ -235,7 +244,7 @@ async function hasAuthSession(): Promise<boolean> {
   }
 }
 
-async function runAutoCheck(reason: string) {
+async function runAutoCheck(reason: string, force = false) {
   if (!isNativeApp()) return;
   if (checking) return;
   if (!(await hasAuthSession())) {
@@ -243,11 +252,11 @@ async function runAutoCheck(reason: string) {
     return;
   }
   const now = Date.now();
-  if (isAutoCheckThrottled(now, lastCheckAt)) return;
+  if (!force && isAutoCheckThrottled(now, lastCheckAt)) return;
   checking = true;
   lastCheckAt = now;
   try {
-    const r = await checkAndDownloadOta({ silent: true, preferImmediate: true });
+    const r = await checkAndDownloadOta({ silent: true, preferImmediate: false });
     if (r.ok && r.apply !== "none") {
       console.info(`[ota:${reason}] ${r.message}`);
     }
@@ -258,10 +267,18 @@ async function runAutoCheck(reason: string) {
   }
 }
 
-function scheduleOtaAfterAuth(reason: string, delayMs = 15_000) {
+/**
+ * Triggers a silent, non-blocking background OTA check without freezing UI.
+ * Used after session restore and key events like check-in/out completion.
+ */
+export function triggerBackgroundOtaCheck(reason: string, delayMs = 1_500, force = false) {
   window.setTimeout(() => {
-    void runAutoCheck(reason);
+    void runAutoCheck(reason, force);
   }, delayMs);
+}
+
+function scheduleOtaAfterAuth(reason: string, delayMs = 1_500) {
+  triggerBackgroundOtaCheck(reason, delayMs);
 }
 
 /**
@@ -286,8 +303,10 @@ export async function initOtaUpdater() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session) return;
-      if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
-        scheduleOtaAfterAuth(`auth:${event}`);
+      if (event === "SIGNED_IN") {
+        scheduleOtaAfterAuth(`auth:${event}`, 4_000);
+      } else if (event === "INITIAL_SESSION") {
+        scheduleOtaAfterAuth(`auth:${event}`, 1_500);
       }
     });
     void subscription;
@@ -297,7 +316,7 @@ export async function initOtaUpdater() {
 
   // Already signed-in cold start (restored session)
   void hasAuthSession().then((ok) => {
-    if (ok) scheduleOtaAfterAuth("session-restore");
+    if (ok) scheduleOtaAfterAuth("session-restore", 1_500);
   });
 
   if (resumeHooked) return;

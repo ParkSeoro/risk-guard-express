@@ -96,15 +96,18 @@ type EntryLog = {
 export default function WorkerDailyHome({
   embedded = false,
   diagnosticsOnly = false,
+  activeProjectId,
 }: {
   embedded?: boolean;
   /** 더보기 → 위치·GPS: full diagnostic panel, no check-in chrome. */
   diagnosticsOnly?: boolean;
+  activeProjectId?: string;
 }) {
   const { user, profile, roles = [] } = useAuth();
   const { t, locale } = useWorkerLocale();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
-  const { projectId, setProjectId } = useActiveProject();
+  const { projectId: contextProjectId, setProjectId } = useActiveProject();
+  const projectId = activeProjectId || contextProjectId;
   const [gpsCal, setGpsCal] = useState<GpsCalibration | null>(null);
   /** One-shot / polled fix for check-in distance UI before full tracking starts. */
   const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number; raw_lat?: number; raw_lng?: number } | null>(null);
@@ -179,21 +182,19 @@ export default function WorkerDailyHome({
 
   const withinCheckIn = useMemo(() => {
     if (!effectiveFix) return false;
-    if (siteOutlines.length) {
-      return isWithinAnySiteAttendance(
-        siteOutlines,
-        effectiveFix.lat,
-        effectiveFix.lng,
-        effectiveFix.accuracy,
-      );
-    }
-    if (!checkInFences.length) return false;
-    return isInsideAnyCheckInFence(
+    const insideOutline = siteOutlines.length > 0 && isWithinAnySiteAttendance(
+      siteOutlines,
+      effectiveFix.lat,
+      effectiveFix.lng,
+      effectiveFix.accuracy,
+    );
+    const insideFence = checkInFences.length > 0 && isInsideAnyCheckInFence(
       checkInFences,
       effectiveFix.lat,
       effectiveFix.lng,
       effectiveFix.accuracy,
     );
+    return insideOutline || insideFence;
   }, [checkInFences, effectiveFix, siteOutlines]);
 
   const displayFence = currentSpot || checkInFences[0] || null;
@@ -210,7 +211,41 @@ export default function WorkerDailyHome({
   const checkedOut = !!todayLog?.exit_at;
 
   const refresh = useCallback(async () => {
-    const pid = readActiveProjectId();
+    let pid = activeProjectId || readActiveProjectId();
+    if (!pid && user) {
+      // 1. project_members 에서 소속된 첫 현장 우선 자동 탐색
+      const { data: mRow } = await supabase
+        .from("project_members")
+        .select("project_id, projects(id, is_deleted)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const memberPid = mRow?.project_id && (mRow as any)?.projects?.is_deleted !== true ? mRow.project_id : null;
+      if (memberPid) {
+        pid = memberPid;
+        writeActiveProjectId(pid);
+      } else {
+        // 2. workers 전화번호 역조회 보조
+        const rawPhone = profile?.phone || (user.email?.endsWith("@worker.local") ? user.email.replace("@worker.local", "") : "");
+        const digits = rawPhone.replace(/\D/g, "");
+        if (digits) {
+          const { data: wRow } = await supabase
+            .from("workers")
+            .select("project_id")
+            .or(`phone.ilike.%${digits}%,phone.eq.${digits}`)
+            .neq("is_active", false)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (wRow?.project_id) {
+            pid = wRow.project_id;
+            writeActiveProjectId(pid);
+          }
+        }
+      }
+    }
+
     setProjectId(pid);
     if (!pid || !user) {
       setAckHydrated(true);
@@ -237,19 +272,97 @@ export default function WorkerDailyHome({
 
     let wid: string | null = null;
     let workerCompanyId: string | null = null;
-    if (profile?.phone) {
-      const digits = profile.phone.replace(/\D/g, "");
-      const { data: workers } = await supabase
-        .from("workers")
-        .select(
-          "id, phone, name, company_id, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind",
-        )
-        .eq("project_id", pid)
-        .eq("is_active", true)
-        .limit(100);
-      const matched = (workers || []).find(
-        (w) => (w.phone || "").replace(/\D/g, "") === digits,
-      ) as any;
+    const rawPhone = profile?.phone || (user?.email?.endsWith("@worker.local") ? user.email.replace("@worker.local", "") : "");
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+
+    const candidatePhones = new Set<string>();
+    if (cleanDigits) {
+      candidatePhones.add(cleanDigits);
+      if (cleanDigits.length === 11 && cleanDigits.startsWith("010")) {
+        candidatePhones.add(`${cleanDigits.slice(0, 3)}-${cleanDigits.slice(3, 7)}-${cleanDigits.slice(7)}`);
+        candidatePhones.add(`82${cleanDigits.slice(1)}`);
+      } else if (cleanDigits.length === 10 && cleanDigits.startsWith("01")) {
+        candidatePhones.add(`${cleanDigits.slice(0, 3)}-${cleanDigits.slice(3, 6)}-${cleanDigits.slice(6)}`);
+      } else if (cleanDigits.startsWith("82") && cleanDigits.length >= 11) {
+        const local = "0" + cleanDigits.slice(2);
+        candidatePhones.add(local);
+        if (local.length === 11) {
+          candidatePhones.add(`${local.slice(0, 3)}-${local.slice(3, 7)}-${local.slice(7)}`);
+        }
+      }
+    }
+
+    if (candidatePhones.size > 0) {
+      let matched: any = null;
+
+      // 1. Try fast indexed RPC first for each candidate phone format
+      for (const cand of candidatePhones) {
+        try {
+          const { data: rpcWorker } = await supabase.rpc("lookup_project_worker_by_phone", {
+            _project_id: pid,
+            _phone: cand,
+          });
+          const found = Array.isArray(rpcWorker) ? rpcWorker[0] : rpcWorker;
+          if (found?.id) {
+            matched = found;
+            break;
+          }
+        } catch {
+          // ignore RPC errors
+        }
+      }
+
+      // 2. Direct match on workers table for candidate numbers
+      if (!matched) {
+        for (const cand of candidatePhones) {
+          const { data: direct } = await supabase
+            .from("workers")
+            .select(
+              "id, phone, name, company_id, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind, is_active",
+            )
+            .eq("project_id", pid)
+            .or(`phone.ilike.%${cand}%,phone.eq.${cand}`)
+            .neq("is_active", false)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (direct?.id) {
+            matched = direct;
+            break;
+          }
+        }
+      }
+
+      // 3. Fallback: scan workers table for this project (newest first, up to 1,000)
+      if (!matched) {
+        const { data: workers } = await supabase
+          .from("workers")
+          .select(
+            "id, phone, name, company_id, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind, is_active",
+          )
+          .eq("project_id", pid)
+          .order("created_at", { ascending: false })
+          .limit(1000);
+
+        matched = (workers || []).find((w) => {
+          if (w.is_active === false) return false;
+          const wDigits = (w.phone || "").replace(/\D/g, "");
+          return cleanDigits && (wDigits === cleanDigits || candidatePhones.has(wDigits));
+        }) as any;
+      }
+
+      // Ensure full suspension info if loaded from partial RPC
+      if (matched?.id && !("site_entry_suspended_until" in matched)) {
+        const { data: full } = await supabase
+          .from("workers")
+          .select(
+            "id, phone, name, company_id, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind",
+          )
+          .eq("id", matched.id)
+          .maybeSingle();
+        matched = full || matched;
+      }
+
       wid = matched?.id || null;
       setWorkerId(wid);
       workerCompanyId = (matched?.company_id as string | null) || null;
@@ -323,7 +436,7 @@ export default function WorkerDailyHome({
     } finally {
       setAckHydrated(true);
     }
-  }, [user, profile, roles]);
+  }, [user, profile, roles, activeProjectId]);
 
   useEffect(() => {
     void refresh();
@@ -458,16 +571,18 @@ export default function WorkerDailyHome({
       toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 출근하세요.");
       return;
     }
-    if (siteOutlines.length) {
-      if (!isWithinAnySiteAttendance(siteOutlines, fix.lat, fix.lng, fix.accuracy)) {
-        const d = Math.round(distanceToNearestSiteOutlineM(siteOutlines, fix.lat, fix.lng) || 0);
-        toast.error(`개소 안(바깥 100~300m까지)에서만 출근할 수 있습니다 · 테두리까지 ${d}m`);
+    const insideOutline = siteOutlines.length > 0 && isWithinAnySiteAttendance(siteOutlines, fix.lat, fix.lng, fix.accuracy);
+    const insideFence = checkInFences.length > 0 && isInsideAnyCheckInFence(checkInFences, fix.lat, fix.lng, fix.accuracy);
+
+    if (siteOutlines.length > 0 || checkInFences.length > 0) {
+      if (!insideOutline && !insideFence) {
+        const dOutline = siteOutlines.length ? Math.round(distanceToNearestSiteOutlineM(siteOutlines, fix.lat, fix.lng) || 0) : null;
+        const dFence = checkInFences.length ? Math.round(nearestFenceDistanceM(checkInFences, fix.lat, fix.lng) || 0) : null;
+        const dists = [dOutline, dFence].filter((n): n is number => n !== null);
+        const minDist = dists.length ? Math.min(...dists) : 0;
+        toast.error(`개소 안(바깥 100~300m까지)에서만 출근할 수 있습니다 · 테두리까지 ${minDist}m`);
         return;
       }
-    } else if (!isInsideAnyCheckInFence(checkInFences, fix.lat, fix.lng, fix.accuracy)) {
-      const d = Math.round(nearestFenceDistanceM(checkInFences, fix.lat, fix.lng) || 0);
-      toast.error(`개소 펜스 안에서만 출근할 수 있습니다 · 가장 가까운 개소 ${d}m`);
-      return;
     }
     if (!workerId || !projectId) {
       toast.error("근로자 프로필(전화↔workers)을 찾을 수 없습니다. 관리자에게 등록을 요청하세요.");
@@ -604,14 +719,20 @@ export default function WorkerDailyHome({
     const fresh = await readFreshCheckInFix(12_000, gpsCal);
     if (fresh) setProbeFix(fresh);
     const fix = pickCheckInGpsFix(fresh, pickCheckInGpsFix(calibratedCheckInFix(lastGpsFix, gpsCal), probeFix));
-    if (siteOutlines.length) {
+    const insideOutline = siteOutlines.length > 0 && isWithinAnySiteAttendance(siteOutlines, fix?.lat ?? 0, fix?.lng ?? 0, fix?.accuracy);
+    const insideFence = checkInFences.length > 0 && isInsideAnyCheckInFence(checkInFences, fix?.lat ?? 0, fix?.lng ?? 0, fix?.accuracy);
+
+    if (siteOutlines.length > 0 || checkInFences.length > 0) {
       if (!fix) {
         toast.error("위치를 잡지 못했습니다. 「위치 다시 잡기」를 누른 뒤 다시 퇴근하세요.");
         return;
       }
-      if (!isWithinAnySiteAttendance(siteOutlines, fix.lat, fix.lng, fix.accuracy)) {
-        const d = Math.round(distanceToNearestSiteOutlineM(siteOutlines, fix.lat, fix.lng) || 0);
-        toast.error(`개소 안(바깥 100~300m까지)에서만 퇴근할 수 있습니다 · 테두리까지 ${d}m`);
+      if (!insideOutline && !insideFence) {
+        const dOutline = siteOutlines.length ? Math.round(distanceToNearestSiteOutlineM(siteOutlines, fix.lat, fix.lng) || 0) : null;
+        const dFence = checkInFences.length ? Math.round(nearestFenceDistanceM(checkInFences, fix.lat, fix.lng) || 0) : null;
+        const dists = [dOutline, dFence].filter((n): n is number => n !== null);
+        const minDist = dists.length ? Math.min(...dists) : 0;
+        toast.error(`개소 안(바깥 100~300m까지)에서만 퇴근할 수 있습니다 · 테두리까지 ${minDist}m`);
         return;
       }
     }

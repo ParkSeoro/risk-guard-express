@@ -268,15 +268,25 @@ export default function WorkerAttendance() {
   useEffect(() => {
     if (!projectId) return;
     void load();
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void load();
+      }, 3000);
+    };
+
     const ch = supabase
       .channel(`worker_entry_logs:${projectId}:${date}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "worker_entry_logs", filter: `project_id=eq.${projectId}` },
-        () => void load(),
+        debouncedLoad,
       )
       .subscribe();
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(ch);
     };
   }, [projectId, date, load]);

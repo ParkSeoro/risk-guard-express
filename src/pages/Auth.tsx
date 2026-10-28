@@ -438,6 +438,16 @@ const Auth = () => {
         }
       }
 
+      if (selectedProject) {
+        writeActiveProjectId(selectedProject);
+        if (signUpData?.user?.id) {
+          void supabase
+            .from('profiles')
+            .update({ default_project_id: selectedProject } as any)
+            .eq('user_id', signUpData.user.id);
+        }
+      }
+
       setPin(last4);
       rememberWorkerLoginOnDevice(digits, last4, true);
       toast({

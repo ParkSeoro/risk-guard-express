@@ -61,11 +61,21 @@ export function NotificationBell() {
       )
       .subscribe();
 
-    // 폴백 폴링 (realtime 끊김 대비)
-    const interval = setInterval(fetchNotifications, 60_000);
+    // 폴백 폴링 (realtime 끊김 대비) - 백그라운드 탭에서는 조회 일시중지
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchNotifications();
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) fetchNotifications();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [user, fetchNotifications]);
 

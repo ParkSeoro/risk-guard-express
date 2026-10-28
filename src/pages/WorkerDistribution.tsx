@@ -113,15 +113,21 @@ export default function WorkerDistribution() {
     loadPositions();
     void fetchActiveSiteSpots(projectId).then(setSpots);
     setRtStatus("connecting");
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadCounts("realtime");
+        loadPositions();
+      }, 3000);
+    };
+
     const ch = supabase
       .channel(`wd:${projectId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "worker_last_positions", filter: `project_id=eq.${projectId}` },
-        () => {
-          loadCounts("realtime");
-          loadPositions();
-        },
+        debouncedLoad,
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") setRtStatus("connected");
@@ -130,14 +136,29 @@ export default function WorkerDistribution() {
         }
       });
     const t = setInterval(() => {
+      if (document.hidden) return;
       loadCounts("polling");
       loadPositions();
     }, 60000);
-    const tick = setInterval(() => setNowTick(Date.now()), 1000);
+    const tick = setInterval(() => {
+      if (document.hidden) return;
+      setNowTick(Date.now());
+    }, 1000);
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        loadCounts("polling");
+        loadPositions();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(ch);
       clearInterval(t);
       clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);

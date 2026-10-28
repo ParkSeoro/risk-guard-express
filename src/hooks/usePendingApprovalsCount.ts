@@ -26,6 +26,7 @@ export function usePendingApprovalsCount() {
     let cancelled = false;
 
     const load = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const { data } = await supabase.rpc('count_my_pending_entity_approvals');
         if (!cancelled) setCount(asPendingCount(data));
@@ -36,12 +37,16 @@ export function usePendingApprovalsCount() {
 
     load();
     const t = setInterval(load, 60_000);
-    const onFocus = () => load();
-    window.addEventListener('focus', onFocus);
+    const onVisibilityChange = () => {
+      if (!document.hidden) void load();
+    };
+    window.addEventListener('focus', onVisibilityChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       cancelled = true;
       clearInterval(t);
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('focus', onVisibilityChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [user]);
 

@@ -61,7 +61,7 @@ export default function MobileToday() {
           <div className="px-3 py-2 text-xs font-medium text-muted-foreground border-b">
             출퇴근 · TBM
           </div>
-          <WorkerDailyHome embedded />
+          <WorkerDailyHome embedded activeProjectId={projectId || preview.previewProjectId} />
         </div>
       </div>
     );

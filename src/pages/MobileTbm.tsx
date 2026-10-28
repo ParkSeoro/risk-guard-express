@@ -142,6 +142,7 @@ export default function MobileTbm() {
   useEffect(() => {
     if (!session || !isManager) return;
     const tick = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       const { data } = await supabase
         .from("tbm_participations" as any)
         .select("worker_name, company_name, created_at")
@@ -151,7 +152,12 @@ export default function MobileTbm() {
     };
     tick();
     const t = setInterval(tick, 4000);
-    return () => clearInterval(t);
+    const onVis = () => { if (!document.hidden) void tick(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [session, isManager]);
 
   const openQr = async (s: TbmSession) => {

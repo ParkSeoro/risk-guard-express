@@ -136,6 +136,9 @@ export function buildWorkSummary(permits: DailyPermitBrief[]): string {
     .join("\n");
 }
 
+const riskSummaryCache = new Map<string, { summary: string; timestamp: number }>();
+const RISK_SUMMARY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 /** Pull top hazards from linked assessment runs, then the company's period RA. */
 export async function buildRiskSummary(
   permits: DailyPermitBrief[],
@@ -148,7 +151,7 @@ export async function buildRiskSummary(
         ...extraRunIds,
       ].filter(Boolean),
     ),
-  ] as string[];
+  ].sort() as string[];
   if (runIds.length === 0) {
     return [
       "연결된 위험성평가가 배정되지 않았습니다. 아래 기본 안전수칙을 반드시 준수하세요.",
@@ -158,6 +161,13 @@ export async function buildRiskSummary(
       "4. 작업 전 주변 위험요인(추락·협착·화재·중독 등)을 재확인합니다.",
     ].join("\n");
   }
+
+  const cacheKey = runIds.join(",");
+  const cached = riskSummaryCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < RISK_SUMMARY_CACHE_TTL) {
+    return cached.summary;
+  }
+
   const { data: items } = await supabase
     .from("risk_items")
     .select("hazard, hazard_situation, improvement_measure, risk_grade, process")
@@ -168,13 +178,16 @@ export async function buildRiskSummary(
   if (rows.length === 0) {
     return "위험성평가 항목을 불러오지 못했습니다. 현장 관리자 지시에 따르세요.";
   }
-  return rows
+  const summary = rows
     .map((r, i) => {
       const hz = r.hazard || r.hazard_situation || "위험";
       const m = r.improvement_measure ? ` → ${r.improvement_measure}` : "";
       return `${i + 1}. [${r.process || "-"}] ${hz}${m}`;
     })
     .join("\n");
+
+  riskSummaryCache.set(cacheKey, { summary, timestamp: Date.now() });
+  return summary;
 }
 
 export async function saveDailyWorkAck(payload: DailyAckPayload): Promise<{ id: string } | { error: string }> {

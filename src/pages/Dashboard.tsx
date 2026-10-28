@@ -368,15 +368,26 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (!selectedProject) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void fetchDashboard(true);
+      }, 3000);
+    };
+
     // 긴급작업·허가서·TBM 등 신규 변동이 생기면 백그라운드에서 실시간 동기화
     const channel = supabase
       .channel(`dashboard-ops-${selectedProject}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "work_permits" }, () => fetchDashboard(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "tbm_sessions" }, () => fetchDashboard(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "todo_items" }, () => fetchDashboard(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "assessment_runs" }, () => fetchDashboard(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "work_permits" }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tbm_sessions" }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "todo_items" }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "assessment_runs" }, debouncedFetch)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
   }, [selectedProject, fetchDashboard]);
 
   const currentProject = projects.find((p) => p.id === selectedProject);

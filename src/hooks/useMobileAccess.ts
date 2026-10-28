@@ -73,19 +73,61 @@ export function useMobileAccess() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const def = String((profile as { default_project_id?: string | null } | null)?.default_project_id || "").trim();
     const stored = readActiveProjectId();
-    if (!def && !stored) return;
-    const picked = pickSessionProjectId({
-      allowedIds: [def, stored].filter(Boolean),
-      defaultProjectId: def || null,
-      storedId: stored,
-      defaultReady: profile != null,
-    });
-    if (!picked) return;
-    setProjectIdState(picked);
-    if (picked !== stored) writeActiveProjectId(picked);
-  }, [profile]);
+
+    if (def || stored) {
+      const picked = pickSessionProjectId({
+        allowedIds: [def, stored].filter(Boolean),
+        defaultProjectId: def || null,
+        storedId: stored,
+        defaultReady: profile != null,
+      });
+      if (picked) {
+        setProjectIdState(picked);
+        if (picked !== stored) writeActiveProjectId(picked);
+        return;
+      }
+    }
+
+    // 신규 근로자 첫 로그인 대비: 기본 현장 및 저장된 현장이 없을 때 project_members/workers에서 자동 탐색
+    if (!stored && user) {
+      (async () => {
+        const { data: mRow } = await supabase
+          .from("project_members")
+          .select("project_id, projects(id, is_deleted)")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const memberPid = mRow?.project_id && (mRow as any)?.projects?.is_deleted !== true ? mRow.project_id : null;
+        if (!cancelled && memberPid) {
+          setProjectIdState(memberPid);
+          writeActiveProjectId(memberPid);
+          return;
+        }
+
+        const rawPhone = profile?.phone || (user.email?.endsWith("@worker.local") ? user.email.replace("@worker.local", "") : "");
+        const digits = rawPhone.replace(/\D/g, "");
+        if (digits) {
+          const { data: wRow } = await supabase
+            .from("workers")
+            .select("project_id")
+            .or(`phone.ilike.%${digits}%,phone.eq.${digits}`)
+            .neq("is_active", false)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!cancelled && wRow?.project_id) {
+            setProjectIdState(wRow.project_id);
+            writeActiveProjectId(wRow.project_id);
+          }
+        }
+      })();
+    }
+    return () => { cancelled = true; };
+  }, [profile, user]);
 
   useEffect(() => {
     if (preview.isPreview && preview.previewProjectId) {

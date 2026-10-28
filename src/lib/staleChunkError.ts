@@ -10,7 +10,7 @@ export const STALE_CHUNK_USER_MESSAGE =
   '화면이 이전 버전입니다. 페이지를 새로고침한 뒤 [초안 생성]을 다시 눌러 주세요.';
 
 export const STALE_CHUNK_PAGE_MESSAGE =
-  '화면이 이전 버전입니다. 페이지를 새로고침해 주세요.';
+  '새로운 시스템 버전이 업데이트되었습니다. 최신 화면으로 새로고침합니다.';
 
 const RELOAD_KEY = 'safenex.stale-chunk-reload';
 export const STALE_CHUNK_RELOAD_COOLDOWN_MS = 15_000;

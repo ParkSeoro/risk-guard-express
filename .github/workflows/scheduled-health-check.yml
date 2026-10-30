@@ -1,0 +1,171 @@
+name: SafeNex Automated Health Check & Telegram Alert
+
+on:
+  schedule:
+    # 매일 한국시간 07:00 (현장 출근 및 작업 전 점검) - UTC 22:00
+    - cron: '0 22 * * *'
+    # 매일 한국시간 22:00 (야간 퇴근 후 안정성 점검) - UTC 13:00
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+    inputs:
+      alert_only:
+        description: '장애 발생 시에만 텔레그램 발송 (기본: false - 항상 정기 브리핑)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    name: Run System Diagnostic & Alert
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run SafeNex Diagnostic & Push Telegram Notification
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://qhntxmggacorqjjmjqgo.supabase.co' }}
+          SUPABASE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_ANON_KEY || 'sb_publishable_2L5XwiIgCQvfZTm6GcFtlA_k3cRr-sX' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_ONLY: ${{ inputs.alert_only }}
+        run: |
+          node -e '
+          const SUPABASE_URL = process.env.SUPABASE_URL;
+          const SUPABASE_KEY = process.env.SUPABASE_KEY;
+          const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+          const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+          const alertOnly = process.env.ALERT_ONLY === "true";
+
+          async function callRpc(rpcName, body = {}) {
+            try {
+              const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
+                method: "POST",
+                headers: {
+                  apikey: SUPABASE_KEY,
+                  Authorization: `Bearer ${SUPABASE_KEY}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(body),
+              });
+              if (!res.ok) {
+                const errText = await res.text();
+                return { ok: false, data: null, error: `HTTP ${res.status}: ${errText}` };
+              }
+              const data = await res.json();
+              return { ok: true, data };
+            } catch (err) {
+              return { ok: false, data: null, error: err.message };
+            }
+          }
+
+          async function sendTelegram(html) {
+            if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+              console.log("[Telegram] Token or Chat ID not configured in GitHub Secrets.");
+              return false;
+            }
+            try {
+              const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: TELEGRAM_CHAT_ID,
+                  text: html,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true,
+                }),
+              });
+              if (!res.ok) {
+                console.error("[Telegram] Send failed:", await res.text());
+                return false;
+              }
+              console.log("[Telegram] Notification sent successfully!");
+              return true;
+            } catch (err) {
+              console.error("[Telegram] Network error:", err);
+              return false;
+            }
+          }
+
+          async function run() {
+            const kstTime = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
+            console.log(`[Diagnostic] Checking SafeNex at ${kstTime} (KST)...`);
+
+            const criticalIssues = [];
+            const warningIssues = [];
+
+            // 1. Data Integrity Check
+            const integrityRes = await callRpc("check_data_integrity");
+            if (!integrityRes.ok) {
+              criticalIssues.push(`데이터 무결성 검사 실패: ${integrityRes.error}`);
+            } else if (Array.isArray(integrityRes.data)) {
+              for (const item of integrityRes.data) {
+                if (item.count > 0) {
+                  if (item.severity === "critical") criticalIssues.push(`${item.detail} (${item.count}건)`);
+                  else if (item.severity === "high") warningIssues.push(`${item.detail} (${item.count}건)`);
+                }
+              }
+            }
+
+            // 2. Data Consistency Check
+            const consistencyRes = await callRpc("audit_data_consistency");
+            if (!consistencyRes.ok) {
+              warningIssues.push(`데이터 정합성 감사 실패: ${consistencyRes.error}`);
+            } else if (consistencyRes.data && consistencyRes.data.total_issues > 0) {
+              warningIssues.push(`데이터 정합성 결함 발견: 총 ${consistencyRes.data.total_issues}건`);
+            }
+
+            // 3. OTA Release Check
+            let latestRelease = null;
+            const releaseRes = await callRpc("get_latest_app_release", { _channel: "stable" });
+            if (releaseRes.ok && Array.isArray(releaseRes.data) && releaseRes.data.length > 0) {
+              latestRelease = releaseRes.data[0];
+            }
+
+            // Status determination
+            let status = "OK";
+            if (criticalIssues.length > 0) status = "CRITICAL";
+            else if (warningIssues.length > 0) status = "WARNING";
+
+            const statusBadge =
+              status === "OK" ? "🟢 <b>정상 (Healthy)</b>" :
+              status === "WARNING" ? "🟡 <b>주의 (Warning)</b>" : "🔴 <b>긴급 장애 (Critical Alert)</b>";
+
+            let msg = `<b>🛡️ SafeNex 시스템 점검 리포트</b>\n`;
+            msg += `───────────────────────\n`;
+            msg += `• <b>점검 일시</b>: <code>${kstTime} (KST)</code>\n`;
+            msg += `• <b>상태 판정</b>: ${statusBadge}\n`;
+            msg += `• <b>원격 DB 연결</b>: ${integrityRes.ok ? "✅ 정상" : "❌ 연결 실패"}\n`;
+            if (latestRelease) {
+              msg += `• <b>현재 배포본(OTA)</b>: <code>${latestRelease.version}</code> (${latestRelease.mandatory ? "필수" : "선택"})\n`;
+            }
+            msg += `───────────────────────\n`;
+
+            if (criticalIssues.length > 0) {
+              msg += `\n🚨 <b>[긴급 조치 요망]</b>\n`;
+              for (const c of criticalIssues) msg += `  ⚠️ ${c}\n`;
+            }
+            if (warningIssues.length > 0) {
+              msg += `\n⚠️ <b>[주의/점검 권장]</b>\n`;
+              for (const w of warningIssues.slice(0, 5)) msg += `  • ${w}\n`;
+              if (warningIssues.length > 5) msg += `  • ...외 ${warningIssues.length - 5}건\n`;
+            }
+            if (status === "OK") {
+              msg += `\n✨ <i>이상 징후 없음: 중대재해, 긴급 작업중지, 데이터 결함 0건.</i>\n`;
+            } else {
+              msg += `\n💬 <i>상세 조치가 필요한 경우 AI 에이전트에게 바로 점검을 요청하세요.</i>\n`;
+            }
+
+            console.log("Status:", status);
+            const shouldSend = status === "CRITICAL" || !alertOnly;
+            if (shouldSend) {
+              await sendTelegram(msg);
+            } else {
+              console.log("Suppressed notification (alert_only=true and status is OK/WARNING).");
+            }
+          }
+
+          run().catch((e) => {
+            console.error("Diagnostic execution error:", e);
+            process.exit(1);
+          });
+          '

@@ -8,7 +8,9 @@
     "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "typecheck:undeclared": "node scripts/check-undeclared-names.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

@@ -103,7 +103,7 @@ describe("VisionFleet role wall", () => {
     auth.roles = ["master"];
     await mount(<VisionFleet />);
     expect(el!.querySelector('[data-testid="vision-fleet"]')).toBeTruthy();
-    expect(el!.textContent).toContain("설정은 마스터만 합니다");
+    expect(el!.textContent).toContain("현장 카메라 관리 및 실시간 송출 화면입니다");
     expect(el!.querySelector('[data-testid="vision-camera-company"]')).toBeTruthy();
     expect(el!.textContent).toContain("현장 공용");
     expect(el!.querySelector('[data-testid="vision-vps-setup"]')).toBeTruthy();
@@ -115,17 +115,15 @@ describe("VisionFleet role wall", () => {
     expect(el!.textContent).not.toContain("현장 Gateway");
   });
 
-  it("shows only the single-camera player to a site manager", async () => {
+  it("lets a site manager operate cameras without the master relay setup", async () => {
     auth.roles = ["site_manager"];
     await mount(<VisionFleet />);
     expect(el!.textContent).toContain("현장 화면입니다");
     expect(el!.querySelector('[data-testid="mobile-vision-player"]')).toBeTruthy();
     expect(el!.querySelector('[data-testid="vision-quad-grid"]')).toBeNull();
     expect(el!.querySelector('[data-testid="vision-vps-setup"]')).toBeNull();
-    expect(el!.querySelector('[data-testid="vision-camera-manage"]')).toBeNull();
-    expect(el!.textContent).not.toContain("추가");
-    expect(el!.textContent).not.toContain("수정");
-    expect(el!.textContent).not.toContain("삭제");
+    expect(el!.querySelector('[data-testid="vision-camera-manage"]')).toBeTruthy();
+    expect(el!.textContent).not.toContain("테스트 CCTV 추가");
   });
 
   it("keeps mobile vision as a single-camera view for every role", async () => {

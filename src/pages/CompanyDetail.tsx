@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Building2, ChevronLeft, Trash2, Plus, Save, UserPlus } from 'lucide-react';
+import { CONSTRUCTION_TYPE_OPTIONS } from '@/lib/constructionTypes';
 
 interface Company {
   id: string; project_id: string; name: string; type: string;
@@ -82,7 +83,7 @@ export default function CompanyDetail() {
           <TabsTrigger value="managers">관리자</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview"><OverviewTab company={company} canEdit={canEdit} onSaved={setCompany} /></TabsContent>
+        <TabsContent value="overview"><OverviewTab company={company} /></TabsContent>
         <TabsContent value="construction"><ConstructionTab company={company} canEdit={canEdit} /></TabsContent>
         <TabsContent value="departments"><DepartmentsTab company={company} canEdit={canEdit} /></TabsContent>
         <TabsContent value="managers"><ManagersTab company={company} canEdit={canEdit} currentUserId={user?.id} /></TabsContent>
@@ -92,48 +93,26 @@ export default function CompanyDetail() {
 }
 
 /* ----------------------------- Overview ----------------------------- */
-function OverviewTab({ company, canEdit, onSaved }: { company: Company; canEdit: boolean; onSaved: (c: Company) => void }) {
-  const { toast } = useToast();
-  const [form, setForm] = useState(company);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => { setForm(company); }, [company]);
-
-  const save = async () => {
-    setSaving(true);
-    const { data, error } = await supabase.from('companies').update({
-      name: form.name,
-      business_no: form.business_no,
-      contact: form.contact,
-      address: form.address,
-    }).eq('id', company.id).select().single();
-    setSaving(false);
-    if (error) { toast({ title: '저장 실패', description: error.message, variant: 'destructive' }); return; }
-    onSaved(data as any);
-    toast({ title: '저장되었습니다.' });
-  };
-
+function OverviewTab({ company }: { company: Company }) {
   const field = (label: string, key: keyof Company) => (
     <div className="space-y-1">
       <Label className="text-xs">{label}</Label>
-      <Input value={(form as any)[key] || ''} disabled={!canEdit}
-        onChange={e => setForm({ ...form, [key]: e.target.value } as Company)} />
+      <Input value={(company as any)[key] || ''} disabled />
     </div>
   );
 
   return (
     <Card><CardContent className="p-4 space-y-4">
+      <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs">
+        업체 기본 정보는 설정 &gt; 업체 관리에서 마스터만 수정합니다.
+        <Link to="/settings/companies" className="ml-2 text-primary underline">설정으로 이동</Link>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {field('회사명', 'name')}
         {field('사업자번호', 'business_no')}
         {field('대표/연락처', 'contact')}
         {field('본사 주소', 'address')}
       </div>
-      {canEdit && (
-        <Button size="sm" onClick={save} disabled={saving} className="gap-1.5">
-          <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
-        </Button>
-      )}
     </CardContent></Card>
   );
 }
@@ -198,7 +177,22 @@ function ConstructionTab({ company, canEdit }: { company: Company; canEdit: bool
         </div>
         <div className="space-y-1">
           <Label className="text-xs">공종</Label>
-          <Input disabled={!canEdit} value={info.construction_type} onChange={e => setInfo({ ...info, construction_type: e.target.value })} />
+          <Select
+            value={info.construction_type || '__none__'}
+            onValueChange={(v) => setInfo({ ...info, construction_type: v === '__none__' ? '' : v })}
+            disabled={!canEdit}
+          >
+            <SelectTrigger><SelectValue placeholder="공종 선택" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">선택 안 함</SelectItem>
+              {info.construction_type && !(CONSTRUCTION_TYPE_OPTIONS as readonly string[]).includes(info.construction_type) && (
+                <SelectItem value={info.construction_type}>{info.construction_type}</SelectItem>
+              )}
+              {CONSTRUCTION_TYPE_OPTIONS.map((opt) => (
+                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <Label className="text-xs">도급금액(원)</Label>

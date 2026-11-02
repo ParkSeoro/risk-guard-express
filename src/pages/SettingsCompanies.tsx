@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { Building2, Plus, Search, Pencil, Trash2, Merge, Network } from 'lucide-react';
 import { COMPANY_TYPE_OPTIONS, companyTypeLabel, normalizeCompanyType } from '@/lib/companyTypes';
+import { looseCompanyLabel } from '@/lib/companyRegistration';
 
 interface CompanyRow {
   id: string;
@@ -50,6 +51,8 @@ export default function SettingsCompanies() {
   const [mergeSrc, setMergeSrc] = useState<string>('');
   const [mergeDst, setMergeDst] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [requests, setRequests] = useState<any[]>([]);
+  const isMaster = hasRole('master');
 
   const fetchAll = async () => {
     setLoading(true);
@@ -80,10 +83,20 @@ export default function SettingsCompanies() {
       const project_ids = projectIdsByCompany[c.id] || [];
       return { ...c, project_ids, project_count: project_ids.length };
     }));
+    if (hasRole('master')) {
+      const { data: reqs } = await (supabase as any)
+        .from('company_registration_requests')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true });
+      setRequests(reqs || []);
+    } else {
+      setRequests([]);
+    }
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [isMaster]);
 
   const filtered = useMemo(() => rows.filter(r => {
     if (!search) return true;
@@ -159,10 +172,6 @@ export default function SettingsCompanies() {
             is_deleted: false,
             role_in_project: type,
           }).eq('id', cur.id);
-        } else {
-          await (supabase as any).from('project_companies').update({
-            role_in_project: type,
-          }).eq('id', cur.id);
         }
       } else {
         await (supabase as any).from('project_companies').upsert({
@@ -194,6 +203,35 @@ export default function SettingsCompanies() {
       .update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq('id', id);
     if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
     toast({ title: '삭제되었습니다' });
+    fetchAll();
+  };
+
+  const approveRequest = async (requestId: string, useCompanyId?: string) => {
+    const { data, error } = await (supabase as any).rpc('approve_company_registration_request', {
+      p_request_id: requestId,
+      p_use_company_id: useCompanyId || null,
+    });
+    if (error) { toast({ title: '승인 실패', description: error.message, variant: 'destructive' }); return; }
+    if (data?.result !== 'approved') {
+      toast({ title: '승인하지 못했습니다', description: data?.message || data?.result, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '승인되어 현장에 연결되었습니다' });
+    fetchAll();
+  };
+
+  const rejectRequest = async (requestId: string) => {
+    const reason = prompt('거절 사유를 입력하세요.');
+    if (!reason || !reason.trim()) return;
+    const { data, error } = await (supabase as any).rpc('reject_company_registration_request', {
+      p_request_id: requestId,
+      p_reason: reason.trim(),
+    });
+    if (error || data?.result !== 'rejected') {
+      toast({ title: '거절 실패', description: error?.message || data?.message || data?.result, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '거절했습니다' });
     fetchAll();
   };
 
@@ -239,6 +277,41 @@ export default function SettingsCompanies() {
           </Button>
         </div>
       </div>
+
+      {isMaster && requests.length > 0 && (
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2"><CardTitle className="text-sm">업체 등록 요청 ({requests.length})</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {requests.map((req) => {
+              const loose = looseCompanyLabel(req.name);
+              const similar = rows.filter((r) => !r.is_deleted && loose && looseCompanyLabel(r.name) === loose && r.id !== req.matched_company_id);
+              return (
+                <div key={req.id} className="rounded-md border p-3 text-sm space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{req.name}</span>
+                    <Badge variant="outline">{companyTypeLabel(req.type)}</Badge>
+                    <Badge variant="secondary">{req.request_kind === 'link' ? '현장 연결' : '신규 회사'}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    신청 {req.requester_name} {req.requester_email || ''} {req.requester_phone || ''}
+                    {req.business_no ? ` · 사업자 ${req.business_no}` : ''}
+                    {req.memo ? ` · ${req.memo}` : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => approveRequest(req.id)}>승인</Button>
+                    <Button size="sm" variant="outline" onClick={() => rejectRequest(req.id)}>거절</Button>
+                    {similar.map((c) => (
+                      <Button key={c.id} size="sm" variant="secondary" onClick={() => approveRequest(req.id, c.id)}>
+                        기존 "{c.name}"로 연결
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {mergeMode && (
         <Card className="border-warning/40">

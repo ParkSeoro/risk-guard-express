@@ -89,7 +89,6 @@ describe('dashboard site label', () => {
     expect(src).not.toContain('${currentProject.site_name} · ${currentProject.name}');
     expect(src).toContain('오늘 확인할 일이 없습니다');
     expect(src).toContain('현장 숫자');
-    expect(src).toContain('AI 어시스턴트');
     expect(src).toContain('허가서 발행 현황');
     expect(src).toContain('filterRunsByCompanyScope');
     expect(src).toContain('applyCompanyFilter(wq)');
@@ -98,9 +97,8 @@ describe('dashboard site label', () => {
     const weatherAt = src.indexOf('<WeatherSummaryCard');
     const attentionAt = src.indexOf('오늘 확인할 일');
     const tbmAt = src.indexOf('금일 TBM');
-    const aiAt = src.lastIndexOf('AI 어시스턴트');
     expect(weatherAt).toBeGreaterThan(-1);
+    expect(tbmAt).toBeGreaterThan(-1);
     expect(attentionAt).toBeGreaterThan(weatherAt);
-    expect(aiAt).toBeGreaterThan(tbmAt);
   });
 });

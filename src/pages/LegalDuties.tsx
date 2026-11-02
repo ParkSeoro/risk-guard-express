@@ -70,12 +70,16 @@ const LegalDuties = () => {
     if (!access.selectedProject || !user) return;
     setGenerating(true);
 
-    const { data: constructionInfo } = await supabase
-      .from('company_construction_info')
-      .select('construction_type')
-      .eq('project_id', access.selectedProject);
-
-    const constructionType = constructionInfo?.[0]?.construction_type || '일반';
+    let constructionType = '일반';
+    if (access.userCompanyId) {
+      const { data: ownInfo } = await supabase
+        .from('company_construction_info')
+        .select('construction_type')
+        .eq('project_id', access.selectedProject)
+        .eq('company_id', access.userCompanyId)
+        .maybeSingle();
+      constructionType = ownInfo?.construction_type || '일반';
+    }
     const applicableDuties = getDutiesForConstructionType(constructionType);
 
     const existingNames = duties.map(d => d.duty_name);

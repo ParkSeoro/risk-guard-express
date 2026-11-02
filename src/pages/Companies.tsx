@@ -9,6 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Building2, Users, ChevronRight, Search, Network, HardHat, AlertCircle } from 'lucide-react';
 import { COMPANY_TYPE_LABELS, resolveProjectCompanyType } from '@/lib/companyTypes';
+import { formatKRW } from '@/lib/safetyCost';
+import { isRelationSubcontractorType, safetyScaleHint } from '@/lib/safetyScaleHint';
 
 interface CompanyRow {
   id: string;
@@ -19,6 +21,11 @@ interface CompanyRow {
   department_count: number;
   worker_count: number;
   has_construction_info: boolean;
+  construction_name: string;
+  construction_type: string;
+  construction_period_start: string;
+  construction_period_end: string;
+  construction_amount: number;
 }
 
 const TYPE_LABEL = COMPANY_TYPE_LABELS as Record<string, string>;
@@ -53,27 +60,42 @@ export default function Companies() {
 
     const ids = list.map(c => c.id);
     const counts: Record<string, { m: number; d: number; w: number }> = {};
-    const ciSet = new Set<string>();
+    const constructionByCompany = new Map<string, any>();
     if (ids.length > 0) {
       const mgrsP: any = (supabase.from('company_managers' as any) as any).select('company_id').in('company_id', ids).eq('is_deleted', false);
       const depsP: any = supabase.from('company_departments' as any).select('company_id').in('company_id', ids).eq('is_deleted', false);
       const wksP: any = (supabase.from('workers') as any).select('company_id').in('company_id', ids).eq('is_deleted', false);
-      const cisP: any = supabase.from('company_construction_info' as any).select('company_id').in('company_id', ids);
+      const cisP: any = supabase.from('company_construction_info' as any)
+        .select('company_id, construction_name, construction_type, construction_period_start, construction_period_end, construction_amount')
+        .eq('project_id', selectedProject)
+        .in('company_id', ids);
       const [mgrsR, depsR, wksR, cisR]: any[] = await Promise.all([mgrsP, depsP, wksP, cisP]);
       const mgrs = mgrsR?.data; const deps = depsR?.data; const wks = wksR?.data; const cis = cisR?.data;
       ids.forEach(id => { counts[id] = { m: 0, d: 0, w: 0 }; });
       (mgrs as any[] | null)?.forEach(m => { if (counts[m.company_id]) counts[m.company_id].m++; });
       (deps as any[] | null)?.forEach(d => { if (counts[d.company_id]) counts[d.company_id].d++; });
       (wks as any[] | null)?.forEach(w => { if (counts[w.company_id]) counts[w.company_id].w++; });
-      (cis as any[] | null)?.forEach(c => ciSet.add(c.company_id));
+      (cis as any[] | null)?.forEach(c => constructionByCompany.set(c.company_id, c));
     }
-    setCompanies(list.map(c => ({
-      ...c,
-      manager_count: counts[c.id]?.m || 0,
-      department_count: counts[c.id]?.d || 0,
-      worker_count: counts[c.id]?.w || 0,
-      has_construction_info: ciSet.has(c.id),
-    })));
+    setCompanies(list.map((c: any) => {
+      const info = constructionByCompany.get(c.id);
+      const amount = Number(info?.construction_amount || 0);
+      const hasInfo = !!(info && (
+        info.construction_type || info.construction_period_start || info.construction_period_end || amount > 0
+      ));
+      return {
+        ...c,
+        manager_count: counts[c.id]?.m || 0,
+        department_count: counts[c.id]?.d || 0,
+        worker_count: counts[c.id]?.w || 0,
+        has_construction_info: hasInfo,
+        construction_name: info?.construction_name || '',
+        construction_type: info?.construction_type || '',
+        construction_period_start: info?.construction_period_start || '',
+        construction_period_end: info?.construction_period_end || '',
+        construction_amount: amount,
+      };
+    }));
     setLoading(false);
   };
 
@@ -110,7 +132,10 @@ export default function Companies() {
     if (filterType !== 'all' && c.type !== filterType) return false;
     if (search) {
       const t = search.toLowerCase();
-      return c.name?.toLowerCase().includes(t) || c.scope?.toLowerCase().includes(t);
+      return c.name?.toLowerCase().includes(t)
+        || c.scope?.toLowerCase().includes(t)
+        || c.construction_name?.toLowerCase().includes(t)
+        || c.construction_type?.toLowerCase().includes(t);
     }
     return true;
   }), [companies, search, filterType]);
@@ -170,7 +195,7 @@ export default function Companies() {
         <CardContent className="py-3 flex items-center gap-3">
           <div className="flex-1 relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="회사명, 공사범위 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input placeholder="회사명, 공종, 공사명 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <span className="text-xs text-muted-foreground shrink-0">{filtered.length} / {companies.length}곳</span>
         </CardContent>
@@ -192,7 +217,20 @@ export default function Companies() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(c => {
-            const needsInfo = !c.has_construction_info && (c.type === 'contractor' || c.type === 'vendor');
+            const amountTarget = c.type === 'gc' || c.type === 'contractor' || c.type === 'vendor';
+            const needsInfo = amountTarget && !c.has_construction_info;
+            const hint = amountTarget
+              ? safetyScaleHint({
+                  amount: c.construction_amount,
+                  constructionType: c.construction_type,
+                  periodStart: c.construction_period_start,
+                  periodEnd: c.construction_period_end,
+                  relationSubcontractor: isRelationSubcontractorType(c.type),
+                })
+              : null;
+            const period = (c.construction_period_start || c.construction_period_end)
+              ? `${c.construction_period_start || '미정'} ~ ${c.construction_period_end || '미정'}`
+              : '';
             return (
               <Link key={c.id} to={`/companies/${c.id}`} className="block">
                 <Card className={`hover:border-primary/50 transition-colors h-full ${needsInfo ? 'border-destructive/40' : ''}`}>
@@ -204,17 +242,25 @@ export default function Companies() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent className="text-xs text-muted-foreground space-y-1.5">
-                    {c.scope && <div className="line-clamp-2">{c.scope}</div>}
+                    {amountTarget && (
+                      needsInfo ? (
+                        <div className="flex items-center gap-1 text-[10px] text-destructive">
+                          <AlertCircle className="h-3 w-3" /> 공사정보 없음
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5 text-foreground/80">
+                          <div>{[c.construction_type, period, c.construction_amount > 0 ? formatKRW(c.construction_amount) : ''].filter(Boolean).join(' · ')}</div>
+                          <div>선임 참고: {hint?.appointment}</div>
+                          <div>기술지도 참고: {hint?.technicalGuidance}</div>
+                          <div className="text-[10px] text-muted-foreground">이 업체 도급금액 기준 참고</div>
+                        </div>
+                      )
+                    )}
                     <div className="flex items-center gap-3 pt-1 flex-wrap">
                       <span className="flex items-center gap-1"><Users className="h-3 w-3" />관리자 {c.manager_count}</span>
                       <span className="flex items-center gap-1"><Network className="h-3 w-3" />부서 {c.department_count}</span>
                       <span className="flex items-center gap-1"><HardHat className="h-3 w-3" />근로자 {c.worker_count}</span>
                     </div>
-                    {needsInfo && (
-                      <div className="flex items-center gap-1 text-[10px] text-destructive pt-1">
-                        <AlertCircle className="h-3 w-3" /> 공사정보 미등록 — 클릭하여 등록
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
               </Link>

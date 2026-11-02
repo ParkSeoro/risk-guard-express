@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +16,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserCheck, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { differenceInCalendarDays, startOfDay, addDays } from "date-fns";
+import { resolveProjectCompanyType } from "@/lib/companyTypes";
+import { formatKRW } from "@/lib/safetyCost";
+import { isRelationSubcontractorType, safetyScaleHint } from "@/lib/safetyScaleHint";
+
+type SiteCompany = {
+  id: string;
+  name: string;
+  type: string;
+  construction_type: string;
+  construction_period_start: string;
+  construction_period_end: string;
+  construction_amount: number;
+};
 
 type Row = {
   id: string; project_id: string; full_name: string; role_type: string;
@@ -40,6 +54,7 @@ export default function SafetyAppointments() {
   const { user } = useAuth();
   const { log } = useAuditLog();
   const [rows, setRows] = useState<Row[]>([]);
+  const [siteCompanies, setSiteCompanies] = useState<SiteCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
@@ -47,7 +62,7 @@ export default function SafetyAppointments() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [form, setForm] = useState({
-    full_name: "", role_type: "안전관리자", appointed_at: new Date().toISOString().slice(0,10),
+    full_name: "", role_type: "안전관리자", company_id: "", appointed_at: new Date().toISOString().slice(0,10),
     ended_at: "", reason: "", reported_to_authority_at: "", authority_doc_no: "", evidence_url: "",
   });
 
@@ -58,19 +73,54 @@ export default function SafetyAppointments() {
       .eq("project_id", projectId).eq("is_deleted", false).order("appointed_at", { ascending: false });
     if (error) toast.error(error.message);
     setRows((data as Row[]) || []);
+    const { data: links } = await (supabase as any)
+      .from("project_companies")
+      .select("company_id, role_in_project, companies:company_id(id, name, type, is_deleted)")
+      .eq("project_id", projectId)
+      .eq("is_deleted", false);
+    const companies = (links || [])
+      .map((l: any) => l.companies ? {
+        id: l.companies.id as string,
+        name: l.companies.name as string,
+        type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
+        deleted: l.companies.is_deleted === true,
+      } : null)
+      .filter((c: any) => c && !c.deleted && c.type !== "client");
+    const ids = companies.map((c: any) => c.id);
+    const infoByCompany = new Map<string, any>();
+    if (ids.length > 0) {
+      const { data: infos } = await (supabase as any)
+        .from("company_construction_info")
+        .select("company_id, construction_type, construction_period_start, construction_period_end, construction_amount")
+        .eq("project_id", projectId)
+        .in("company_id", ids);
+      (infos || []).forEach((row: any) => infoByCompany.set(row.company_id, row));
+    }
+    setSiteCompanies(companies.map((c: any) => {
+      const info = infoByCompany.get(c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        construction_type: info?.construction_type || "",
+        construction_period_start: info?.construction_period_start || "",
+        construction_period_end: info?.construction_period_end || "",
+        construction_amount: Number(info?.construction_amount || 0),
+      };
+    }));
     setLoading(false);
   }
   useEffect(() => { load(); }, [projectId]);
 
   function openCreate() {
     setEditing(null);
-    setForm({ full_name: "", role_type: "안전관리자", appointed_at: new Date().toISOString().slice(0,10), ended_at: "", reason: "", reported_to_authority_at: "", authority_doc_no: "", evidence_url: "" });
+    setForm({ full_name: "", role_type: "안전관리자", company_id: "", appointed_at: new Date().toISOString().slice(0,10), ended_at: "", reason: "", reported_to_authority_at: "", authority_doc_no: "", evidence_url: "" });
     setOpen(true);
   }
   function openEdit(r: Row) {
     setEditing(r);
     setForm({
-      full_name: r.full_name, role_type: r.role_type, appointed_at: r.appointed_at,
+      full_name: r.full_name, role_type: r.role_type, company_id: r.company_id || "", appointed_at: r.appointed_at,
       ended_at: r.ended_at || "", reason: r.reason || "",
       reported_to_authority_at: r.reported_to_authority_at ? r.reported_to_authority_at.slice(0,10) : "",
       authority_doc_no: r.authority_doc_no || "", evidence_url: r.evidence_url || "",
@@ -80,8 +130,13 @@ export default function SafetyAppointments() {
   async function save() {
     if (!projectId) return;
     if (!form.full_name.trim()) { toast.error("성명을 입력하세요"); return; }
+    if (form.role_type === "안전관리자" && !form.company_id) {
+      toast.error("안전관리자는 소속 업체를 선택하세요");
+      return;
+    }
     const payload: any = {
       project_id: projectId, full_name: form.full_name.trim(), role_type: form.role_type,
+      company_id: form.company_id || null,
       appointed_at: form.appointed_at, ended_at: form.ended_at || null,
       reason: form.reason || null,
       reported_to_authority_at: form.reported_to_authority_at || null,
@@ -126,6 +181,8 @@ export default function SafetyAppointments() {
 
   const active = rows.filter(isActive);
   const hasManager = active.some(r => r.role_type === '안전관리자');
+  const activeManagers = active.filter(r => r.role_type === '안전관리자');
+  const gcSites = siteCompanies.filter(c => c.type === 'gc');
   const unreportedCount = rows.filter(r => !r.reported_to_authority_at && isActive(r)).length;
 
   return (
@@ -141,6 +198,58 @@ export default function SafetyAppointments() {
       {!hasManager && !loading && (
         <Card className="border-destructive">
           <CardContent className="p-3 text-sm text-destructive">⚠️ 현재 활성 안전관리자가 등록되어 있지 않습니다. 산안법 §17에 따라 선임 의무가 있을 수 있습니다.</CardContent>
+        </Card>
+      )}
+
+      {!loading && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">이 업체 도급금액 기준 참고</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {gcSites.length === 0 ? (
+              <p className="text-muted-foreground">이 현장에 시공사가 없습니다. 현장 한 줄은 시공사 공사정보를 봅니다.</p>
+            ) : gcSites.map((gc) => (
+              <p key={gc.id} className="text-muted-foreground">
+                현장(시공사 {gc.name}): {gc.construction_amount > 0 ? formatKRW(gc.construction_amount) : '도급금액 없음'}
+                {(gc.construction_period_start || gc.construction_period_end)
+                  ? ` · ${gc.construction_period_start || '미정'} ~ ${gc.construction_period_end || '미정'}`
+                  : ''}
+              </p>
+            ))}
+            {siteCompanies.map((c) => {
+              const hint = safetyScaleHint({
+                amount: c.construction_amount,
+                constructionType: c.construction_type,
+                periodStart: c.construction_period_start,
+                periodEnd: c.construction_period_end,
+                relationSubcontractor: isRelationSubcontractorType(c.type),
+              });
+              const appointed = activeManagers.filter(r => r.company_id === c.id).length;
+              return (
+                <div key={c.id} className="rounded-md border p-3 space-y-1">
+                  <div className="font-medium">{c.name}</div>
+                  {hint.hasAmount ? (
+                    <>
+                      <p>참고 규모: {hint.appointment}</p>
+                      <p>지금 선임된 안전관리자: {appointed}명</p>
+                      <p>기술지도 참고: {hint.technicalGuidance}</p>
+                    </>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{hint.appointment}</span>
+                      <Button asChild size="sm" variant="outline">
+                        <Link to={`/companies/${c.id}`}>공사정보 입력</Link>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {siteCompanies.length === 0 && (
+              <p className="text-muted-foreground">이 현장에 공사금액을 볼 업체가 없습니다.</p>
+            )}
+          </CardContent>
         </Card>
       )}
 
@@ -181,7 +290,7 @@ export default function SafetyAppointments() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50"><tr className="text-left">
-                  <th className="p-2">성명</th><th className="p-2">직위</th>
+                  <th className="p-2">성명</th><th className="p-2">직위</th><th className="p-2">소속 업체</th>
                   <th className="p-2">선임일</th><th className="p-2">해임일</th>
                   <th className="p-2">노동청 신고</th><th className="p-2">문서번호</th>
                   <th className="p-2">상태</th><th className="p-2"></th>
@@ -193,6 +302,7 @@ export default function SafetyAppointments() {
                       <tr key={r.id} className="border-t hover:bg-muted/30">
                         <td className="p-2 font-medium">{r.full_name}</td>
                         <td className="p-2"><Badge variant="outline">{r.role_type}</Badge></td>
+                        <td className="p-2">{siteCompanies.find(c => c.id === r.company_id)?.name || (r.company_id ? "연결된 업체" : "업체 없음")}</td>
                         <td className="p-2 whitespace-nowrap">{r.appointed_at}</td>
                         <td className="p-2 whitespace-nowrap">{r.ended_at || "-"}</td>
                         <td className="p-2 whitespace-nowrap">
@@ -233,6 +343,17 @@ export default function SafetyAppointments() {
                   <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+            </div>
+            <div>
+              <Label>소속 업체 {form.role_type === "안전관리자" ? "*" : "(선택)"}</Label>
+              <Select value={form.company_id || "__none__"} onValueChange={v => setForm({ ...form, company_id: v === "__none__" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="이 현장에 연결된 업체" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">선택 안 함</SelectItem>
+                  {siteCompanies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">안전관리자는 업체를 골라야 회사별 선임 수에 집계됩니다. 이미 연결된 업체와 새로 연결한 업체를 같이 보여 줍니다.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>선임일</Label><Input type="date" value={form.appointed_at} onChange={e => setForm({ ...form, appointed_at: e.target.value })} /></div>

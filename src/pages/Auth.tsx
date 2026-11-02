@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
@@ -14,7 +16,8 @@ import {
   positionsForCompanyType,
   positionLabel,
 } from '@/lib/projectPositions';
-import { normalizeCompanyType } from '@/lib/companyTypes';
+import { normalizeCompanyType, COMPANY_TYPE_OPTIONS } from '@/lib/companyTypes';
+import { submitCompanyRegistration } from '@/lib/companyRegistration';
 import JobTypeSelect from '@/components/JobTypeSelect';
 import { jobTypeSchema, type StandardJobType } from '@/lib/jobCategories';
 import { koreanName, zodErrorMessage } from '@/lib/commonSchemas';
@@ -58,6 +61,7 @@ interface DirectoryRow {
   company_id: string;
   company_name: string;
   company_type: string;
+  role_in_project?: string;
 }
 
 const roleLabels: Record<string, string> = {
@@ -117,6 +121,11 @@ const Auth = () => {
   const [selectedCompany, setSelectedCompany] = useState(qrCompany);
   const [selectedPosition, setSelectedPosition] = useState('');
   const [selectedJobType, setSelectedJobType] = useState<StandardJobType | ''>('');
+  const [showCompanyRequest, setShowCompanyRequest] = useState(false);
+  const [requestSending, setRequestSending] = useState(false);
+  const [companyRequest, setCompanyRequest] = useState({
+    name: '', business_no: '', type: 'contractor', contact: '', address: '', parent_company_id: '', memo: '',
+  });
   const [qrProjectName, setQrProjectName] = useState('');
   const [qrCompanyName, setQrCompanyName] = useState('');
   const { toast } = useToast();
@@ -260,6 +269,59 @@ const Auth = () => {
     () => positionsForCompanyType(selectedCompanyRow?.company_type),
     [selectedCompanyRow?.company_type],
   );
+  const parentGcOptions = useMemo(
+    () => directory.filter((d) => d.project_id === selectedProject && normalizeCompanyType(d.role_in_project) === 'gc'),
+    [directory, selectedProject],
+  );
+
+  const submitSignupCompanyRequest = async () => {
+    if (!selectedProject) {
+      toast({ title: '참여 현장을 먼저 선택하세요.', variant: 'destructive' });
+      return;
+    }
+    if (!companyRequest.name.trim()) {
+      toast({ title: '회사명을 입력하세요.', variant: 'destructive' });
+      return;
+    }
+    if (!displayName.trim()) {
+      toast({ title: '가입 화면에 신청자 이름을 입력하세요.', variant: 'destructive' });
+      return;
+    }
+    if (companyRequest.type === 'contractor' && !companyRequest.parent_company_id) {
+      toast({ title: '협력사는 이 현장의 시공사를 상위 업체로 고르세요.', variant: 'destructive' });
+      return;
+    }
+    setRequestSending(true);
+    const res = await submitCompanyRegistration({
+      name: companyRequest.name.trim(),
+      businessNo: companyRequest.business_no,
+      type: companyRequest.type,
+      contact: companyRequest.contact,
+      address: companyRequest.address,
+      projectId: selectedProject,
+      parentCompanyId: companyRequest.type === 'contractor' ? companyRequest.parent_company_id : null,
+      requesterName: displayName.trim(),
+      requesterEmail: email,
+      requesterPhone: phone,
+      memo: companyRequest.memo,
+    });
+    setRequestSending(false);
+    if (res.result === 'already_linked') {
+      toast({ title: '이미 이 현장에 있는 업체입니다. 목록에서 고르세요.' });
+      return;
+    }
+    if (res.result === 'already_pending') {
+      toast({ title: '같은 업체 요청이 이미 접수되어 있습니다.' });
+      return;
+    }
+    if (res.result !== 'submitted') {
+      toast({ title: '등록 요청 실패', description: res.message || res.result, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '등록 요청을 보냈습니다. 승인된 뒤 목록에서 업체를 고르고 가입하세요.' });
+    setShowCompanyRequest(false);
+    setCompanyRequest({ name: '', business_no: '', type: 'contractor', contact: '', address: '', parent_company_id: '', memo: '' });
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -820,6 +882,14 @@ const Auth = () => {
                           ))}
                         </SelectContent>
                       </Select>
+                      <button
+                        type="button"
+                        className="text-xs text-primary underline disabled:text-muted-foreground"
+                        disabled={!selectedProject}
+                        onClick={() => setShowCompanyRequest(true)}
+                      >
+                        소속 회사가 목록에 없으신가요?
+                      </button>
                     </div>
                     <div className="space-y-1.5">
                       <Label>직책 *</Label>
@@ -1033,6 +1103,71 @@ const Auth = () => {
           </div>
         </CardContent>
       </Card>
+      <Dialog open={showCompanyRequest} onOpenChange={setShowCompanyRequest}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>업체 등록 요청</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              마스터가 승인한 뒤 이 현장 업체 목록에서 고르고 가입합니다. 도급금액은 현장에 연결된 뒤에 입력합니다.
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs">회사명 *</Label>
+              <Input value={companyRequest.name} onChange={(e) => setCompanyRequest({ ...companyRequest, name: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">사업자번호</Label>
+              <Input value={companyRequest.business_no} onChange={(e) => setCompanyRequest({ ...companyRequest, business_no: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">유형</Label>
+              <Select
+                value={companyRequest.type}
+                onValueChange={(v) => setCompanyRequest({ ...companyRequest, type: v, parent_company_id: '' })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {COMPANY_TYPE_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {companyRequest.type === 'contractor' && (
+              <div className="space-y-1">
+                <Label className="text-xs">상위 시공사 *</Label>
+                <Select
+                  value={companyRequest.parent_company_id || '__none__'}
+                  onValueChange={(v) => setCompanyRequest({ ...companyRequest, parent_company_id: v === '__none__' ? '' : v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="이 현장의 시공사" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">선택</SelectItem>
+                    {parentGcOptions.map((c) => (
+                      <SelectItem key={c.company_id} value={c.company_id}>{c.company_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {parentGcOptions.length === 0 && (
+                  <p className="text-[10px] text-muted-foreground">이 현장에 시공사로 연결된 업체가 없습니다.</p>
+                )}
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label className="text-xs">연락처</Label>
+              <Input value={companyRequest.contact} onChange={(e) => setCompanyRequest({ ...companyRequest, contact: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">주소</Label>
+              <Input value={companyRequest.address} onChange={(e) => setCompanyRequest({ ...companyRequest, address: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">메모</Label>
+              <Textarea value={companyRequest.memo} onChange={(e) => setCompanyRequest({ ...companyRequest, memo: e.target.value })} />
+            </div>
+            <Button type="button" className="w-full" disabled={requestSending} onClick={submitSignupCompanyRequest}>
+              {requestSending ? '보내는 중...' : '등록 요청'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {!isNativeApp() && (
         <a href="/manual" className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline">
           사용 설명서 보기 (관리자 & 근로자용)

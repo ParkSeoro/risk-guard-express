@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search
@@ -27,6 +28,10 @@ import {
 import { POSITION_LABELS, positionsForCompanyType, syncMembershipRolePosition } from '@/lib/projectPositions';
 import ProjectSiteSpotsCard from '@/components/project/ProjectSiteSpotsCard';
 import { geocodeKoreanAddress } from '@/lib/koreanLocationService';
+import ConstructionFields from '@/components/company/ConstructionFields';
+import { constructionFormFromRow, emptyConstructionForm, upsertProjectConstruction, type ConstructionForm } from '@/lib/companyConstruction';
+import { submitCompanyRegistration } from '@/lib/companyRegistration';
+import { formatKRW } from '@/lib/safetyCost';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -65,7 +70,7 @@ const ProjectDetail = () => {
   const [memberRole, setMemberRole] = useState('viewer');
   const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '', client_safety_service: false });
+  const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', parent_company_id: '', source_company_id: '', client_safety_service: false, requester_name: '', memo: '', ...emptyConstructionForm() });
   const [globalCompanies, setGlobalCompanies] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState('');
   const [savingProject, setSavingProject] = useState(false);
@@ -91,7 +96,7 @@ const ProjectDetail = () => {
 
   // Must be declared before effects that reference it (TDZ / "Cannot access before initialization")
   const [editingCompany, setEditingCompany] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', business_no: '', contact: '', type: 'gc', parent_company_id: '', scope: '', period: '', client_safety_service: false });
+  const [editForm, setEditForm] = useState({ name: '', type: 'gc', parent_company_id: '', client_safety_service: false, ...emptyConstructionForm() });
 
   const canManage = isMaster || projectRole === 'project_admin';
 
@@ -149,7 +154,21 @@ const ProjectDetail = () => {
         client_safety_service: l.client_safety_service === true,
       } : null)
       .filter((c: any) => c && c.is_deleted === false);
-    setCompanies(projCompanies);
+    const companyIds = projCompanies.map((c: any) => c.id);
+    const constructionByCompany = new Map<string, any>();
+    if (companyIds.length > 0) {
+      const { data: constructionRows } = await (supabase as any)
+        .from('company_construction_info')
+        .select('company_id, construction_name, construction_type, construction_period_start, construction_period_end, construction_amount')
+        .eq('project_id', projectId)
+        .in('company_id', companyIds);
+      (constructionRows || []).forEach((row: any) => constructionByCompany.set(row.company_id, row));
+    }
+    setCompanies(projCompanies.map((c: any) => ({
+      ...c,
+      ...(constructionByCompany.get(c.id) || {}),
+      id: c.id,
+    })));
 
     setInvites(invitesRes.data || []);
     setJoinRequests(requestsRes.data || []);
@@ -449,59 +468,85 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
+  const blankCompanyForm = () => ({
+    name: '', type: 'gc', business_no: '', contact: '', parent_company_id: '', source_company_id: '',
+    client_safety_service: false, requester_name: '', memo: '', ...emptyConstructionForm(),
+  });
+
+  const constructionOf = (form: ConstructionForm): ConstructionForm => ({
+    construction_name: form.construction_name,
+    construction_type: form.construction_type,
+    construction_period_start: form.construction_period_start,
+    construction_period_end: form.construction_period_end,
+    construction_amount: form.construction_amount,
+  });
+
   const handleAddCompany = async () => {
     if (!projectId) return;
-    // Enforce hierarchy: contractor must have a parent GC
     if (companyForm.type === 'contractor' && !companyForm.parent_company_id) {
-      const gcParents = getParentCandidates('contractor');
-      if (gcParents.length > 0) {
-        toast({ title: '협력사는 반드시 상위 시공사를 선택해야 합니다.', variant: 'destructive' });
+      const gcParents = getParentCandidates('contractor').filter((c) => companyForm.source_company_id || c.inProject);
+      if (gcParents.length > 0 || !companyForm.source_company_id) {
+        toast({ title: '협력사는 이 현장에 연결된 시공사를 상위 업체로 고르세요.', variant: 'destructive' });
         return;
       }
+    }
+    if (!companyForm.source_company_id) {
+      if (!companyForm.name.trim()) {
+        toast({ title: '업체명을 입력하거나 목록에서 고르세요.', variant: 'destructive' });
+        return;
+      }
+      const requester = companyForm.requester_name.trim() || getProfileName(user?.id || '') || user?.email || '';
+      const res = await submitCompanyRegistration({
+        name: companyForm.name.trim(),
+        businessNo: companyForm.business_no,
+        type: companyForm.type,
+        contact: companyForm.contact,
+        projectId,
+        parentCompanyId: companyForm.parent_company_id || null,
+        requesterName: requester,
+        requesterEmail: user?.email || '',
+        memo: companyForm.memo,
+      });
+      if (res.result === 'already_linked') {
+        toast({ title: '이미 이 현장에 연결된 업체입니다. 목록에서 고르세요.' });
+        return;
+      }
+      if (res.result === 'already_pending') {
+        toast({ title: '같은 업체 요청이 이미 접수되어 있습니다.' });
+        return;
+      }
+      if (res.result !== 'submitted') {
+        toast({ title: '등록 요청 실패', description: res.message || res.result, variant: 'destructive' });
+        return;
+      }
+      toast({ title: res.request_kind === 'link' ? '현장 연결 요청을 보냈습니다.' : '업체 등록 요청을 보냈습니다. 마스터 승인 후 연결됩니다.' });
+      setShowAddCompany(false);
+      setCompanyForm(blankCompanyForm());
+      return;
     }
     const parentLinkErr = await ensureParentLinkedToProject(companyForm.parent_company_id, companyForm.type);
     if (parentLinkErr) {
       toast({ title: '상위 업체 연결 실패', description: parentLinkErr, variant: 'destructive' });
       return;
     }
-    let linkCompanyId = companyForm.source_company_id || '';
-    // Only create a NEW row in the GLOBAL companies master when the user did NOT pick one from the directory.
-    if (!linkCompanyId) {
-      const insertData: any = {
-        name: companyForm.name,
-        type: companyForm.type,
-        business_no: companyForm.business_no,
-        contact: companyForm.contact,
-        // Note: parent/scope/period are per-project — stored on project_companies below
-      };
-      const { data: inserted, error } = await supabase.from('companies').insert([insertData]).select('id').single();
-      if (error) {
-        const msg = /companies_norm_name_uidx|duplicate key/i.test(error.message)
-          ? '동일한 이름의 업체가 이미 시스템에 등록되어 있습니다. 업체명 검색에서 기존 업체를 선택해 주세요.'
-          : error.message;
-        toast({ title: '추가 실패', description: msg, variant: 'destructive' });
-        return;
-      }
-      linkCompanyId = inserted?.id || '';
-    }
-    if (linkCompanyId) {
-      const linkPayload: any = {
-        project_id: projectId,
-        company_id: linkCompanyId,
-        role_in_project: companyForm.type,
-        parent_company_id: companyForm.parent_company_id || null,
-        client_safety_service: companyForm.client_safety_service === true,
-        is_deleted: false,
-      };
-      const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
-        linkPayload,
-        { onConflict: 'project_id,company_id' }
-      );
-      if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
-    }
-    toast({ title: '업체가 프로젝트에 등록되었습니다.' });
+    const linkPayload: any = {
+      project_id: projectId,
+      company_id: companyForm.source_company_id,
+      role_in_project: companyForm.type,
+      parent_company_id: companyForm.parent_company_id || null,
+      client_safety_service: companyForm.client_safety_service === true,
+      is_deleted: false,
+    };
+    const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
+      linkPayload,
+      { onConflict: 'project_id,company_id' }
+    );
+    if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
+    const constructionErr = await upsertProjectConstruction(companyForm.source_company_id, projectId, constructionOf(companyForm));
+    if (constructionErr) { toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' }); return; }
+    toast({ title: '업체가 프로젝트에 연결되었습니다.' });
     setShowAddCompany(false);
-    setCompanyForm({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '', client_safety_service: false });
+    setCompanyForm(blankCompanyForm());
     fetchAll();
   };
 
@@ -524,18 +569,23 @@ const ProjectDetail = () => {
   };
 
   // Edit dialog helpers (state declared above to avoid TDZ with useEffect deps)
-  const openEditCompany = (c: any) => {
+  const openEditCompany = async (c: any) => {
     setEditingCompany(c);
     setEditForm({
       name: c.name || '',
-      business_no: c.business_no || '',
-      contact: c.contact || '',
       type: normalizeCompanyType(c.type) || 'gc',
       parent_company_id: c.parent_company_id || '',
-      scope: c.scope || '',
-      period: c.period || '',
       client_safety_service: c.client_safety_service === true,
+      ...constructionFormFromRow(c),
     });
+    if (!projectId) return;
+    const { data } = await (supabase as any)
+      .from('company_construction_info')
+      .select('*')
+      .eq('company_id', c.id)
+      .eq('project_id', projectId)
+      .maybeSingle();
+    setEditForm((prev) => ({ ...prev, ...constructionFormFromRow(data) }));
   };
   const handleUpdateCompany = async () => {
     if (!editingCompany || !projectId) return;
@@ -544,7 +594,6 @@ const ProjectDetail = () => {
       toast({ title: '상위 업체 연결 실패', description: parentLinkErr, variant: 'destructive' });
       return;
     }
-    // Project-scoped fields
     const { error: linkErr } = await (supabase as any).from('project_companies')
       .update({
         role_in_project: editForm.type,
@@ -554,20 +603,9 @@ const ProjectDetail = () => {
       .eq('project_id', projectId)
       .eq('company_id', editingCompany.id);
     if (linkErr) { toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' }); return; }
-    // Global master fields (name / business_no / contact) — master only
-    if (isMaster) {
-      const { error: gErr } = await (supabase as any).from('companies')
-        .update({ name: editForm.name, business_no: editForm.business_no, contact: editForm.contact })
-        .eq('id', editingCompany.id);
-      if (gErr) {
-        const msg = /companies_norm_name_uidx|duplicate key/i.test(gErr.message)
-          ? '동일한 이름의 업체가 이미 존재합니다.'
-          : gErr.message;
-        toast({ title: '마스터 업데이트 실패', description: msg, variant: 'destructive' });
-        return;
-      }
-    }
-    toast({ title: '업체 정보가 수정되었습니다.' });
+    const constructionErr = await upsertProjectConstruction(editingCompany.id, projectId, constructionOf(editForm));
+    if (constructionErr) { toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' }); return; }
+    toast({ title: '이 현장의 업체 정보를 저장했습니다.' });
     await log('업체 수정', 'project_company', editingCompany.id, projectId);
     setEditingCompany(null);
     fetchAll();
@@ -969,10 +1007,17 @@ const ProjectDetail = () => {
                                 <Badge variant="secondary" className="text-[10px]">발주처 안전용역</Badge>
                               )}
                             </div>
-                            {(c.scope || c.contact) && (
+                            {c.type !== 'client' && (
                               <p className="text-xs text-muted-foreground">
-                                {c.scope && `공사범위: ${c.scope}`}
-                                {c.contact && ` · 연락처: ${c.contact}`}
+                                {c.construction_type || c.construction_period_start || c.construction_period_end || Number(c.construction_amount) > 0
+                                  ? [
+                                      c.construction_type,
+                                      (c.construction_period_start || c.construction_period_end)
+                                        ? `${c.construction_period_start || '미정'} ~ ${c.construction_period_end || '미정'}`
+                                        : '',
+                                      Number(c.construction_amount) > 0 ? formatKRW(c.construction_amount) : '',
+                                    ].filter(Boolean).join(' · ')
+                                  : '공사정보 없음'}
                               </p>
                             )}
                           </div>
@@ -1235,7 +1280,7 @@ const ProjectDetail = () => {
                 {filteredGlobalCompanies.length === 0 ? (
                   <div className="p-3 text-xs text-muted-foreground">
                     {companyForm.name.trim()
-                      ? <>일치하는 업체가 없습니다. 입력한 이름으로 <b>신규 업체</b>로 등록됩니다.</>
+                      ? <>일치하는 업체가 없습니다. 아래 정보로 <b>등록 요청</b>을 보내세요.</>
                       : '설정에 등록된 업체가 여기에 표시됩니다.'}
                   </div>
                 ) : (
@@ -1261,9 +1306,9 @@ const ProjectDetail = () => {
                 )}
               </div>
               {companyForm.source_company_id ? (
-                <p className="text-[10px] text-primary">✓ 시스템 업체 마스터에서 선택됨 (프로젝트에 연결됩니다)</p>
+                <p className="text-[10px] text-primary">시스템 업체에서 선택됨. 이 현장 역할과 공사정보를 저장합니다.</p>
               ) : companyForm.name.trim() ? (
-                <p className="text-[10px] text-muted-foreground">목록에서 고르지 않으면 신규 업체로 등록됩니다.</p>
+                <p className="text-[10px] text-muted-foreground">목록에 없으면 등록 요청만 보냅니다. 마스터가 승인한 뒤 이 현장에 연결됩니다.</p>
               ) : null}
             </div>
             <div className="space-y-1.5">
@@ -1283,15 +1328,21 @@ const ProjectDetail = () => {
                   <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">(선택 안 함)</SelectItem>
-                    {getParentCandidates('contractor').map(c => (
+                    {(companyForm.source_company_id
+                      ? getParentCandidates('contractor')
+                      : getParentCandidates('contractor').filter((c) => c.inProject)
+                    ).map(c => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name} (시공사){!c.inProject ? ' · 설정에서 연결' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {getParentCandidates('contractor').length === 0 && (
-                  <p className="text-[10px] text-warning">시공사가 없습니다. 설정에서 시공사를 등록하거나 이 프로젝트에 먼저 추가하세요.</p>
+                {(companyForm.source_company_id
+                  ? getParentCandidates('contractor')
+                  : getParentCandidates('contractor').filter((c) => c.inProject)
+                ).length === 0 && (
+                  <p className="text-[10px] text-warning">이 현장에 연결된 시공사가 없습니다. 시공사를 먼저 연결하세요.</p>
                 )}
               </div>
             )}
@@ -1314,42 +1365,48 @@ const ProjectDetail = () => {
                 )}
               </div>
             )}
-            <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
-            <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
-            <Input placeholder="공사범위 (선택)" value={companyForm.scope} onChange={e => setCompanyForm({ ...companyForm, scope: e.target.value })} />
-            <label className="flex items-start gap-2 text-sm">
-              <Checkbox
-                checked={companyForm.client_safety_service}
-                onCheckedChange={(v) => setCompanyForm({ ...companyForm, client_safety_service: v === true })}
-              />
-              <span>
-                발주처 안전용역
-                <span className="block text-[10px] text-muted-foreground">이 회사의 열람자는 현장 전체를 읽기만 합니다. 저장과 결재는 되지 않습니다.</span>
-              </span>
-            </label>
-            <Button onClick={handleAddCompany} className="w-full">등록</Button>
+            {!companyForm.source_company_id && (
+              <>
+                <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
+                <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
+                <Input placeholder="신청자 이름" value={companyForm.requester_name} onChange={e => setCompanyForm({ ...companyForm, requester_name: e.target.value })} />
+                <Textarea placeholder="메모 (선택)" value={companyForm.memo} onChange={e => setCompanyForm({ ...companyForm, memo: e.target.value })} />
+              </>
+            )}
+            {companyForm.source_company_id && (
+              <>
+                <ConstructionFields
+                  value={constructionOf(companyForm)}
+                  onChange={(next) => setCompanyForm({ ...companyForm, ...next })}
+                />
+                <label className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    checked={companyForm.client_safety_service}
+                    onCheckedChange={(v) => setCompanyForm({ ...companyForm, client_safety_service: v === true })}
+                  />
+                  <span>
+                    발주처 안전용역
+                    <span className="block text-[10px] text-muted-foreground">이 회사의 열람자는 현장 전체를 읽기만 합니다. 저장과 결재는 되지 않습니다.</span>
+                  </span>
+                </label>
+              </>
+            )}
+            <Button onClick={handleAddCompany} className="w-full">
+              {companyForm.source_company_id ? '이 현장에 연결' : '등록 요청'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Edit Company Dialog */}
       <Dialog open={!!editingCompany} onOpenChange={(o) => !o && setEditingCompany(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>업체 정보 수정</DialogTitle></DialogHeader>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>이 현장 업체 정보</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-xs">업체명 {!isMaster && <span className="text-muted-foreground">(마스터만 수정 가능)</span>}</Label>
-              <Input value={editForm.name} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">사업자번호 {!isMaster && <span className="text-muted-foreground">(마스터만)</span>}</Label>
-                <Input value={editForm.business_no} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, business_no: e.target.value })} />
-              </div>
-              <div>
-                <Label className="text-xs">연락처 {!isMaster && <span className="text-muted-foreground">(마스터만)</span>}</Label>
-                <Input value={editForm.contact} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, contact: e.target.value })} />
-              </div>
+              <Label className="text-xs">업체명</Label>
+              <Input value={editForm.name} disabled />
+              <p className="text-[10px] text-muted-foreground mt-1">이름·사업자번호·연락처는 설정 &gt; 업체 관리에서 수정합니다.</p>
             </div>
             <div>
               <Label className="text-xs">유형 (이 프로젝트 기준)</Label>
@@ -1381,6 +1438,10 @@ const ProjectDetail = () => {
                 )}
               </div>
             )}
+            <ConstructionFields
+              value={constructionOf(editForm)}
+              onChange={(next) => setEditForm({ ...editForm, ...next })}
+            />
             <label className="flex items-start gap-2 text-sm">
               <Checkbox
                 checked={editForm.client_safety_service}

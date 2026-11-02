@@ -10,10 +10,11 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
 import { fetchAttendanceExceptions, type AttendanceExceptions, type ExceptionItem } from "@/lib/laborEvidence";
 
-type SectionKey = keyof Omit<AttendanceExceptions, "date">;
+type SectionKey = Exclude<keyof Omit<AttendanceExceptions, "date">, "permitCrewTotal">;
 
 const SECTIONS: Array<{ key: SectionKey; title: string; hint: string }> = [
-  { key: "missingAttendance", title: "미출역", hint: "활성 명부인데 당일 입장이 없습니다. 출입정지자는 제외합니다." },
+  { key: "permitNoShow", title: "허가서 배정 미출역", hint: "승인된 당일 허가서에 넣은 사람만 봅니다. 미리 등록만 한 신규 입사자는 포함하지 않습니다." },
+  { key: "missingAttendance", title: "미출역", hint: "활성 명부인데 당일 입장이 없습니다. 입사일이 아직 오지 않은 사람과 출입정지자는 제외합니다." },
   { key: "missingExit", title: "미퇴근", hint: "입장 후 퇴근이 없는 기록입니다. 추정 마감하지 않고 정정으로 처리하세요." },
   { key: "missingDailyAck", title: "일일서약 없음", hint: "입장했는데 당일 작업/위험 서약이 없습니다." },
   { key: "missingTbm", title: "TBM 미참석", hint: "당일 TBM 세션이 있는데 참여 기록이 없습니다." },
@@ -21,7 +22,6 @@ const SECTIONS: Array<{ key: SectionKey; title: string; hint: string }> = [
   { key: "overdueRequired", title: "교육·건진 기한초과", hint: "법정 의무사항이 기한을 넘겼습니다." },
   { key: "missingHealthLog", title: "건강일지 미작성", hint: "일일 건강일지 대상이 출근했는데 기록이 없습니다." },
   { key: "gpsBlocked", title: "GPS 차단", hint: "위치 동의·권한·펜스 문제로 추적이 꺼진 상태입니다." },
-  { key: "permitNoShow", title: "허가서 배정 미출역", hint: "당일 허가서 투입인데 입장이 없습니다." },
   { key: "ppePending", title: "보호구 미수령 출근", hint: "출근했는데 보호구 수령 서명이 남아 있습니다." },
 ];
 
@@ -66,6 +66,11 @@ export default function WorkerExceptionBoard() {
       </div>
 
       {loading && <Skeleton className="h-24 w-full" />}
+      {!loading && data && (
+        <p className="text-sm">
+          허가서 등록 {data.permitCrewTotal}명 · 출근 미처리 {data.permitNoShow.length}명
+        </p>
+      )}
       {!loading && (
         <p className="text-sm text-muted-foreground">
           {date} 예외 {total}건

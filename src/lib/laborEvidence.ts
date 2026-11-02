@@ -70,6 +70,7 @@ export type AttendanceExceptions = {
   missingHealthLog: ExceptionItem[];
   gpsBlocked: ExceptionItem[];
   permitNoShow: ExceptionItem[];
+  permitCrewTotal: number;
   ppePending: ExceptionItem[];
 };
 
@@ -360,6 +361,7 @@ function emptyExceptions(date: string): AttendanceExceptions {
     missingHealthLog: [],
     gpsBlocked: [],
     permitNoShow: [],
+    permitCrewTotal: 0,
     ppePending: [],
   };
 }
@@ -392,7 +394,7 @@ async function fetchExceptionsFallback(projectId: string, date: string): Promise
   const { data: workers } = await supabase
     .from("workers")
     .select(
-      "id, name, company_name, job_type, is_active, phone, requires_daily_health_log, site_entry_suspended_until",
+      "id, name, company_name, job_type, is_active, phone, hire_date, requires_daily_health_log, site_entry_suspended_until",
     )
     .eq("project_id", projectId)
     .eq("is_active", true)
@@ -416,6 +418,7 @@ async function fetchExceptionsFallback(projectId: string, date: string): Promise
 
   for (const w of roster) {
     if (isWorkerCurrentlySuspended(w)) continue;
+    if (w.hire_date && String(w.hire_date) > date) continue;
     if (!present.has(w.id)) {
       out.missingAttendance.push({
         workerId: w.id,
@@ -581,14 +584,17 @@ async function fetchExceptionsFallback(projectId: string, date: string): Promise
   if (permitIds.length) {
     const { data: permits } = await supabase
       .from("work_permits" as any)
-      .select("id, work_name, permit_date, is_deleted")
+      .select("id, work_name, permit_date, is_deleted, status")
       .in("id", permitIds)
       .eq("permit_date", date)
-      .eq("is_deleted", false);
+      .eq("is_deleted", false)
+      .in("status", ["승인", "승인완료", "발행완료", "approved", "ISSUED", "APPROVED"]);
     const todayPermits = new Set(((permits as any[]) || []).map((p) => p.id));
     const pname = Object.fromEntries(((permits as any[]) || []).map((p) => [p.id, p.work_name]));
+    const crew = new Set<string>();
     for (const l of (links as any[]) || []) {
-      if (!todayPermits.has(l.work_permit_id)) continue;
+      if (!todayPermits.has(l.work_permit_id) || !l.worker_id) continue;
+      crew.add(l.worker_id);
       if (present.has(l.worker_id)) continue;
       const w = roster.find((x) => x.id === l.worker_id);
       out.permitNoShow.push({
@@ -599,6 +605,7 @@ async function fetchExceptionsFallback(projectId: string, date: string): Promise
         workName: pname[l.work_permit_id],
       });
     }
+    out.permitCrewTotal = crew.size;
   }
 
   return out;
@@ -625,6 +632,7 @@ export async function fetchAttendanceExceptions(
       missingHealthLog: asRows(d.missing_health_log).map(mapExItem),
       gpsBlocked: asRows(d.gps_blocked).map(mapExItem),
       permitNoShow: asRows(d.permit_no_show).map(mapExItem),
+      permitCrewTotal: Number(d.permit_crew_total) || 0,
       ppePending: asRows(d.ppe_pending).map(mapExItem),
     };
   }

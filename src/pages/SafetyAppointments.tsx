@@ -62,7 +62,7 @@ export default function SafetyAppointments() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [form, setForm] = useState({
-    full_name: "", role_type: "안전관리자", appointed_at: new Date().toISOString().slice(0,10),
+    full_name: "", role_type: "안전관리자", company_id: "", appointed_at: new Date().toISOString().slice(0,10),
     ended_at: "", reason: "", reported_to_authority_at: "", authority_doc_no: "", evidence_url: "",
   });
 
@@ -114,13 +114,13 @@ export default function SafetyAppointments() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ full_name: "", role_type: "안전관리자", appointed_at: new Date().toISOString().slice(0,10), ended_at: "", reason: "", reported_to_authority_at: "", authority_doc_no: "", evidence_url: "" });
+    setForm({ full_name: "", role_type: "안전관리자", company_id: "", appointed_at: new Date().toISOString().slice(0,10), ended_at: "", reason: "", reported_to_authority_at: "", authority_doc_no: "", evidence_url: "" });
     setOpen(true);
   }
   function openEdit(r: Row) {
     setEditing(r);
     setForm({
-      full_name: r.full_name, role_type: r.role_type, appointed_at: r.appointed_at,
+      full_name: r.full_name, role_type: r.role_type, company_id: r.company_id || "", appointed_at: r.appointed_at,
       ended_at: r.ended_at || "", reason: r.reason || "",
       reported_to_authority_at: r.reported_to_authority_at ? r.reported_to_authority_at.slice(0,10) : "",
       authority_doc_no: r.authority_doc_no || "", evidence_url: r.evidence_url || "",
@@ -130,8 +130,13 @@ export default function SafetyAppointments() {
   async function save() {
     if (!projectId) return;
     if (!form.full_name.trim()) { toast.error("성명을 입력하세요"); return; }
+    if (form.role_type === "안전관리자" && !form.company_id) {
+      toast.error("안전관리자는 소속 업체를 선택하세요");
+      return;
+    }
     const payload: any = {
       project_id: projectId, full_name: form.full_name.trim(), role_type: form.role_type,
+      company_id: form.company_id || null,
       appointed_at: form.appointed_at, ended_at: form.ended_at || null,
       reason: form.reason || null,
       reported_to_authority_at: form.reported_to_authority_at || null,
@@ -285,7 +290,7 @@ export default function SafetyAppointments() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50"><tr className="text-left">
-                  <th className="p-2">성명</th><th className="p-2">직위</th>
+                  <th className="p-2">성명</th><th className="p-2">직위</th><th className="p-2">소속 업체</th>
                   <th className="p-2">선임일</th><th className="p-2">해임일</th>
                   <th className="p-2">노동청 신고</th><th className="p-2">문서번호</th>
                   <th className="p-2">상태</th><th className="p-2"></th>
@@ -297,6 +302,7 @@ export default function SafetyAppointments() {
                       <tr key={r.id} className="border-t hover:bg-muted/30">
                         <td className="p-2 font-medium">{r.full_name}</td>
                         <td className="p-2"><Badge variant="outline">{r.role_type}</Badge></td>
+                        <td className="p-2">{siteCompanies.find(c => c.id === r.company_id)?.name || (r.company_id ? "연결된 업체" : "업체 없음")}</td>
                         <td className="p-2 whitespace-nowrap">{r.appointed_at}</td>
                         <td className="p-2 whitespace-nowrap">{r.ended_at || "-"}</td>
                         <td className="p-2 whitespace-nowrap">
@@ -337,6 +343,17 @@ export default function SafetyAppointments() {
                   <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+            </div>
+            <div>
+              <Label>소속 업체 {form.role_type === "안전관리자" ? "*" : "(선택)"}</Label>
+              <Select value={form.company_id || "__none__"} onValueChange={v => setForm({ ...form, company_id: v === "__none__" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="이 현장에 연결된 업체" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">선택 안 함</SelectItem>
+                  {siteCompanies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">안전관리자는 업체를 골라야 회사별 선임 수에 집계됩니다. 이미 연결된 업체와 새로 연결한 업체를 같이 보여 줍니다.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>선임일</Label><Input type="date" value={form.appointed_at} onChange={e => setForm({ ...form, appointed_at: e.target.value })} /></div>

@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Building2, ChevronLeft, Trash2, Plus, Save, UserPlus } from 'lucide-react';
 import { CONSTRUCTION_TYPE_OPTIONS } from '@/lib/constructionTypes';
+import { upsertProjectConstruction } from '@/lib/companyConstruction';
 
 interface Company {
   id: string; project_id: string; name: string; type: string;
@@ -120,56 +121,61 @@ function OverviewTab({ company }: { company: Company }) {
 /* ----------------------------- Construction ----------------------------- */
 function ConstructionTab({ company, canEdit }: { company: Company; canEdit: boolean }) {
   const { toast } = useToast();
+  const { selectedProject } = useGlobalProjectAccess();
   const [info, setInfo] = useState<any>({
     construction_name: '', construction_type: '',
     construction_period_start: '', construction_period_end: '',
     construction_amount: 0,
   });
-  const [existingId, setExistingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!selectedProject) return;
+    let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from('company_construction_info')
         .select('*')
         .eq('company_id', company.id)
-        .eq('project_id', company.project_id)
+        .eq('project_id', selectedProject)
         .maybeSingle();
-      if (data) {
-        setInfo({
-          construction_name: data.construction_name || '',
-          construction_type: data.construction_type || '',
-          construction_period_start: data.construction_period_start || '',
-          construction_period_end: data.construction_period_end || '',
-          construction_amount: data.construction_amount || 0,
-        });
-        setExistingId(data.id);
-      }
+      if (cancelled) return;
+      setInfo({
+        construction_name: data?.construction_name || '',
+        construction_type: data?.construction_type || '',
+        construction_period_start: data?.construction_period_start || '',
+        construction_period_end: data?.construction_period_end || '',
+        construction_amount: data?.construction_amount || 0,
+      });
     })();
-  }, [company.id, company.project_id]);
+    return () => { cancelled = true; };
+  }, [company.id, selectedProject]);
 
   const save = async () => {
+    if (!selectedProject) {
+      toast({ title: '상단에서 현장을 먼저 선택하세요.', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
-    const payload = {
-      company_id: company.id,
-      project_id: company.project_id,
-      construction_name: info.construction_name,
-      construction_type: info.construction_type,
-      construction_period_start: info.construction_period_start || null,
-      construction_period_end: info.construction_period_end || null,
-      construction_amount: Number(info.construction_amount) || 0,
-    };
-    const { error } = existingId
-      ? await supabase.from('company_construction_info').update(payload).eq('id', existingId)
-      : await supabase.from('company_construction_info').insert([payload]);
+    const error = await upsertProjectConstruction(company.id, selectedProject, {
+      construction_name: info.construction_name || '',
+      construction_type: info.construction_type || '',
+      construction_period_start: info.construction_period_start || '',
+      construction_period_end: info.construction_period_end || '',
+      construction_amount: info.construction_amount ? String(info.construction_amount) : '',
+    });
     setSaving(false);
-    if (error) { toast({ title: '저장 실패', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: '저장되었습니다.' });
+    if (error) { toast({ title: '저장 실패', description: error, variant: 'destructive' }); return; }
+    toast({ title: '이 현장의 공사정보를 저장했습니다.' });
   };
 
   return (
     <Card><CardContent className="p-4 space-y-4">
+      <p className="text-xs text-muted-foreground">
+        {selectedProject
+          ? '상단에서 선택한 현장의 공사정보입니다. 이미 현장에 연결된 업체도 같은 행을 사용합니다.'
+          : '상단에서 현장을 선택하면 이 업체의 공사정보를 볼 수 있습니다.'}
+      </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1 md:col-span-2">
           <Label className="text-xs">공사명</Label>

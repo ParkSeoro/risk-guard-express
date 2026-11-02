@@ -175,25 +175,18 @@ export function SiteSafetyRiskControlHub({
         const rawPermits = permitRows || [];
 
         // 규칙 적용:
-        // 1. 제외: 삭제, 작업취소, 반려
-        // 2. 허용 상태:
-        //    - 승인/발행 완료된 허가서만 현장 관제 카드로 표시 (결재중/검토대기는 제외)
-        // 3. 날짜: 허가서 내 작업 시작일 기준 (시작일이 오늘이거나, 작업 시작~종료일 사이에 오늘이 포함된 작업)
-        let inApprovalCount = 0;
-        const validPermits = rawPermits.filter(p => {
-          if (p.is_deleted || p.status === '작업취소' || (p as any).voided_at || p.status === '반려') return false;
+        // 1. 제외: 삭제, 작업취소, voided
+        // 2. 협력사 권한 필터링: 비발주처 계정은 해당 협력사 허가서만 선별
+        // 3. 금일(today) 작업 대상 허가서 선별: 시작일~종료일 사이에 오늘이 포함되거나, 시작일이 오늘인 허가서
+        const todayCandidatePermits = rawPermits.filter(p => {
+          if (p.is_deleted || p.status === '작업취소' || (p as any).voided_at) return false;
 
-          const s = String(p.status || '').trim();
-          const isApproved = PERMIT_APPROVED_STATUSES.has(s);
-          const isPending = ['결재중', '결재진행', '검토대기', '검토완료', '대기', '종료대기'].includes(s);
-
-          if (isPending) {
-            inApprovalCount++;
+          if (!isClient && companyId) {
+            const matchesId = p.company_id === companyId;
+            const matchesName = companyMap[companyId] && p.contractor_company === companyMap[companyId];
+            if (!matchesId && !matchesName) return false;
           }
 
-          if (!isApproved) return false;
-
-          // 해당일(작업 시작일) 기준 유효 판정
           const startDate = resolvePermitWorkDate(p) || datePartFromDateTime(p.work_start_at) || datePartFromDateTime((p as any).permit_date);
           const endDate = datePartFromDateTime(p.work_end_at) || (p.form_data && (p.form_data as any).work_end ? datePartFromDateTime((p.form_data as any).work_end) : null) || startDate;
 
@@ -204,17 +197,22 @@ export function SiteSafetyRiskControlHub({
             isMatchDate = startDate === today;
           }
 
-          if (!isMatchDate) return false;
-
-          if (!isClient && companyId) {
-            const matchesId = p.company_id === companyId;
-            const matchesName = companyMap[companyId] && p.contractor_company === companyMap[companyId];
-            if (!matchesId && !matchesName) return false;
-          }
-
-          return true;
+          return isMatchDate;
         });
 
+        // 금일 작업 허가서 상태별 정밀 분류
+        const todayApprovedPermits = todayCandidatePermits.filter(p => {
+          const s = String(p.status || '').trim();
+          return PERMIT_APPROVED_STATUSES.has(s);
+        });
+
+        const todayPendingPermits = todayCandidatePermits.filter(p => {
+          const s = String(p.status || '').trim();
+          return ['결재중', '결재진행', '검토대기', '검토완료', '대기', '종료대기'].includes(s);
+        });
+
+        const inApprovalCount = todayPendingPermits.length;
+        const validPermits = todayApprovedPermits;
         const totalPermits = validPermits.length;
         setPendingPtwCount(inApprovalCount);
 
@@ -478,21 +476,22 @@ export function SiteSafetyRiskControlHub({
         let ptwScore = 35;
         let ptwRate = '100%';
         let ptwDetail = '진행 중인 고위험 작업 없음';
-        const approvedPermits = rawPermits.filter(p => 
-          p.status === '승인' || p.status === '승인완료' || p.status === '발행완료' || p.status === '작업중' || p.status === 'approved' || p.status === 'ISSUED'
-        ).length;
-        const inApprovalPermits = rawPermits.filter(p => 
-          p.status === '결재중' || p.status === '결재진행' || p.status === '검토대기'
-        ).length;
-        const draftOrRejectedPermits = rawPermits.filter(p => 
-          p.status === '작성중' || p.status === '임시저장' || p.status === '반려'
-        ).length;
 
-        if (rawPermits.length > 0) {
-          const approvalRatio = (approvedPermits + inApprovalPermits * 0.7) / rawPermits.length;
+        const todayTotalCount = todayCandidatePermits.length;
+        const todayApprovedCount = todayApprovedPermits.length;
+        const todayPendingCount = todayPendingPermits.length;
+
+        if (todayTotalCount > 0) {
+          // 금일 등록된 고위험 작업허가서가 존재하는 경우: 금일 허가서 승인 비율 기준 산출
+          const approvalRatio = (todayApprovedCount + todayPendingCount * 0.7) / todayTotalCount;
           ptwScore = Math.round(Math.min(35, Math.max(10, approvalRatio * 35)));
-          ptwRate = `${Math.round((approvedPermits / rawPermits.length) * 100)}%`;
-          ptwDetail = `승인 ${approvedPermits}건 / 결재중 ${inApprovalPermits}건 (총 ${rawPermits.length}건)`;
+          ptwRate = `${Math.round((todayApprovedCount / todayTotalCount) * 100)}%`;
+          ptwDetail = `승인 ${todayApprovedCount}건 / 결재중 ${todayPendingCount}건 (금일 ${todayTotalCount}건)`;
+        } else if (rawPermits.length > 0) {
+          // 금일 예정된 고위험 작업이 없는 날 (정상 통제 준수)
+          ptwScore = 35;
+          ptwRate = '100%';
+          ptwDetail = '금일 등록된 고위험 작업 없음 (정상 대기)';
         } else {
           ptwScore = 35; // 허가 없이 무단 진행하는 작업이 없으므로 안전상 기본 준수
           ptwRate = '정상 대기';
@@ -543,16 +542,16 @@ export function SiteSafetyRiskControlHub({
 
         // 현장 실제 상황에 맞춘 동적 요약 브리핑 생성
         let summary = '';
-        if (todayTbms.length === 0 && rawPermits.length === 0 && totalInspections === 0 && realPoints.length === 0) {
+        if (todayTbms.length === 0 && todayTotalCount === 0 && totalInspections === 0 && realPoints.length === 0) {
           summary = '현장 운영 데이터(TBM, PTW, 안전점검, 위험성평가) 수집 대기 중입니다. 현장 작업을 등록하면 실시간 안전 건전성이 자동 산출됩니다.';
         } else if (openActionsCount > 0) {
           summary = `안전점검 미조치 지적사항이 ${openActionsCount}건 남아있어 즉각적인 시정 조치가 필요합니다. (조치율: ${inspectionRate})`;
         } else if (todayTbms.length === 0) {
           summary = `금일 일일 TBM 일지가 등록되지 않았습니다. 작업 투입 전 TBM 안전교육을 실시하고 등록해주세요.`;
-        } else if (draftOrRejectedPermits > 0) {
-          summary = `작업허가서 중 미승인/결재 대기 항목이 ${draftOrRejectedPermits}건 있습니다. 무단 작업을 방지하기 위해 승인을 완료하세요.`;
+        } else if (todayPendingCount > 0) {
+          summary = `금일 작업허가서 중 결재 대기 항목이 ${todayPendingCount}건 있습니다. 무단 작업을 방지하기 위해 승인을 완료하세요.`;
         } else {
-          summary = `금일 TBM ${todayTbms.length}건 완료, 고위험 작업허가 ${approvedPermits}건 승인, 점검 조치율 ${inspectionRate}로 안전 기준이 양호하게 준수되고 있습니다.`;
+          summary = `금일 TBM ${todayTbms.length}건 완료, 고위험 작업허가 ${todayApprovedCount}건 승인, 점검 조치율 ${inspectionRate}로 안전 기준이 양호하게 준수되고 있습니다.`;
         }
 
         const inspectionPayload: InspectionSummary = {

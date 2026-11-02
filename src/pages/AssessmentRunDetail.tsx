@@ -891,7 +891,10 @@ const AssessmentRunDetail = () => {
   useEffect(() => {
     if (!runId) return;
     if (!(autoGenJob.status === 'running' && autoGenJob.runId === runId)) return;
-    const t = setInterval(() => { fetchAll(); }, 4000);
+    const t = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      fetchAll();
+    }, 4000);
     return () => clearInterval(t);
   }, [runId, autoGenJob.status, autoGenJob.runId, fetchAll]);
 
@@ -899,7 +902,10 @@ const AssessmentRunDetail = () => {
   useEffect(() => {
     if (!runId || !run) return;
     if (!['결재진행'].includes(run?.status)) return;
-    const interval = setInterval(() => { fetchAll(); }, 15000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      fetchAll();
+    }, 15000);
     return () => clearInterval(interval);
   }, [runId, run?.status, fetchAll]);
 

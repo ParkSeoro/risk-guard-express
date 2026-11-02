@@ -121,6 +121,7 @@ export default function VisionLivePane({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const [paused, setPaused] = useState(false);
+  const pausedByHideRef = useRef(false);
   const [offline, setOffline] = useState(false);
   const [live, setLive] = useState(false);
   const [held, setHeld] = useState(false);
@@ -154,10 +155,29 @@ export default function VisionLivePane({
     if (!safeUrl || paused) return;
     const timer = window.setTimeout(() => {
       setHeld(false);
+      pausedByHideRef.current = false;
       setPaused(true);
     }, idleMs);
     return () => window.clearTimeout(timer);
   }, [safeUrl, paused, idleMs, retry]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== "visible") {
+        if (!paused) {
+          pausedByHideRef.current = true;
+          setPaused(true);
+        }
+        return;
+      }
+      if (pausedByHideRef.current) {
+        pausedByHideRef.current = false;
+        setPaused(false);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [paused]);
 
   useEffect(() => {
     if (!safeUrl || paused) return;

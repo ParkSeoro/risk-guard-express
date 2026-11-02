@@ -141,22 +141,44 @@ export default function MobileTbm() {
 
   useEffect(() => {
     if (!session || !isManager) return;
+    let cancelled = false;
     const tick = async () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof document !== "undefined" && document.hidden) return;
       const { data } = await supabase
         .from("tbm_participations" as any)
         .select("worker_name, company_name, created_at")
         .eq("tbm_session_id", session.id)
         .order("created_at", { ascending: false });
-      setParticipants((data as any) || []);
+      if (!cancelled) setParticipants((data as any) || []);
     };
-    tick();
-    const t = setInterval(tick, 4000);
-    const onVis = () => { if (!document.hidden) void tick(); };
+    void tick();
+    const channel = supabase
+      .channel(`tbm-participants-${session.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "tbm_participations",
+          filter: `tbm_session_id=eq.${session.id}`,
+        },
+        () => {
+          void tick();
+        },
+      )
+      .subscribe();
+    const t = setInterval(() => {
+      void tick();
+    }, 60_000);
+    const onVis = () => {
+      if (!document.hidden) void tick();
+    };
     document.addEventListener("visibilitychange", onVis);
     return () => {
+      cancelled = true;
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVis);
+      void supabase.removeChannel(channel);
     };
   }, [session, isManager]);
 

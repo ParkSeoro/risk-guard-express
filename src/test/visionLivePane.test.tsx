@@ -308,6 +308,27 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("재생 중");
   });
 
+  it("stops the stream while the tab is hidden and resumes when it is shown", () => {
+    const original = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    const setVisibility = (value: "hidden" | "visible") => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => value });
+    };
+    mount();
+    showPicture();
+    act(() => {
+      setVisibility("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-idle-0"]')).toBeTruthy();
+    expect((el!.querySelector("video") as HTMLVideoElement).getAttribute("src")).toBeNull();
+    act(() => {
+      setVisibility("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(el!.querySelector('[data-testid="vision-pane-idle-0"]')).toBeNull();
+    if (original) Object.defineProperty(document, "visibilityState", original);
+  });
+
   it("stops HLS pull after the idle window and lets the viewer resume", () => {
     vi.useFakeTimers();
     mount();

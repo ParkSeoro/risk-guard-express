@@ -45,7 +45,9 @@ describe("fetch-weather cache first", () => {
     expect(src).toContain("unavailable: true");
     expect(src).toContain("current: null");
     const save = siteWeather.slice(siteWeather.indexOf("const handleSaveAddress"));
-    expect(save).toContain("geocode_only: true");
-    expect(siteWeather).toContain("if (!data?.current)");
+    expect(save).toContain("geocodeKoreanAddress");
+    expect(save).toContain("site_lat: geoData.lat");
+    expect(save).not.toContain("geocode_only");
+    expect(siteWeather).toContain("data?.current");
   });
 });

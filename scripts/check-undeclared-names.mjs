@@ -5,15 +5,16 @@
  * Intentionally ignores the rest of the (currently noisy) tsc surface.
  */
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url);
-const tsc = require.resolve("typescript/bin/tsc");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const tsc = path.join(root, "node_modules", "typescript", "bin", "tsc");
 
 const result = spawnSync(
   process.execPath,
   [tsc, "-p", "tsconfig.app.json", "--noEmit", "--pretty", "false"],
-  { encoding: "utf8" },
+  { encoding: "utf8", cwd: root },
 );
 
 const out = `${result.stdout || ""}${result.stderr || ""}`;

@@ -11,21 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck:undeclared
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck:undeclared
 
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm test
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run test

@@ -42,8 +42,8 @@ export function shouldSuppressLocalSirenOffsite(opts: {
   // 2. Check circular fences
   const fences = listTrackingFences({ siteFences: opts.fences, siteCenter: opts.fence });
   if (!fences.length) {
-    // If no circular fence and either no outlines or inside outlines, do not suppress
-    return opts.outlines && opts.outlines.length > 0;
+    // No circular fence. Outlines that exist and were not matched above mean off-site.
+    return Boolean(opts.outlines && opts.outlines.length > 0);
   }
 
   const insideFenceCal = isInsideAnyResumeFence(fences, testLat, testLng, acc);

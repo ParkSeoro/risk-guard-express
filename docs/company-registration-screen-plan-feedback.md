@@ -34,9 +34,13 @@
 - **답변: 맞음 (현행 유지)**
 - `company_departments` 및 `company_managers`는 로그인 계정이나 결재 권한(`project_members`)과 무관한 회사 명부이므로, 이번 범위에서 현장별로 분할하지 않고 공통으로 유지합니다.
 
-### Q4. 저장되지 않는 공사 범위·기간 입력을 지우고, 공사 정보는 회사 상세의 현장별 `company_construction_info`만 쓰는 것이 맞는지?
-- **답변: 맞음 (제거 찬성)**
-- `ProjectDetail.tsx`의 팝업에서 입력받는 `scope`, `period`는 DB에 반영되지 않고 버려지던 유령 필드였습니다. 이를 완전히 제거하고, 현장별 공사 정보는 `CompanyDetail.tsx`의 `company_construction_info`로 일원화합니다.
+### Q4. 저장되지 않던 공사 범위·기간 입력을 지우고, 공사 정보는 회사 상세의 현장별 `company_construction_info`만 쓰는 것이 맞는지?
+- **답변: 단순 삭제 불가! 사용자가 직접 입력할 수 있어야 하며 실제 DB에 저장되어야 함 (PO 핵심 지적)**
+- **이유**: **공사금액(도급금액), 공종, 공사기간(착공~준공일)**은 산업안전보건법상 **안전관리자 선임 의무 여부, 건설재해예방기술지도 계약 대상 판정, 법적 필수업무(`LegalDuties.tsx`) 산정의 필수 기초 데이터**입니다.
+- **개선 방향**:
+  - 기존 `ProjectDetail.tsx`의 문제는 '공사개요를 입력받는 것' 자체가 아니라, **'입력은 받아놓고 정작 DB(`company_construction_info`)에 저장하지 않고 버리던(유실) 결함'**이었습니다.
+  - 따라서 입력을 무작정 지워버리면 안 되며, 사용자가 현장 업체 등록/수정 시(또는 회사 상세에서) **공사명, 공종, 도급금액, 착공일, 준공일을 직접 입력할 수 있어야 하고, 이것이 `company_construction_info`에 확실하게 INSERT/UPDATE(Upsert)되어 저장**되어야 합니다.
+
 
 ---
 
@@ -102,9 +106,10 @@ CREATE TABLE public.company_registration_requests (
    - `role_in_project` 덮어쓰기 루프 제거 (기존 현장 연결의 역할 보존, 신규 연결 시에만 초기값 부여).
    - 마스터용 [업체 등록 요청함] (Pending Requests) 탭/테이블 추가 (승인 / 반려 모달).
 2. **`src/pages/ProjectDetail.tsx`**:
-   - 미저장 필드(`scope`, `period`) UI 제거.
+   - **공사개요 정상 저장 연동**: 임의의 레거시 필드(`scope`, `period`) 대신, 사용자가 직접 입력한 **공사명(`construction_name`), 공종(`construction_type`), 도급금액(`construction_amount`), 착공일(`construction_period_start`), 준공일(`construction_period_end`)**을 `company_construction_info` 테이블에 upsert 연동하여 **안전관리자 선임 및 재해예방기술지도 대상 판정 데이터가 정상 유지**되도록 수정.
    - 업체 검색 결과 없을 때 직접 `companies.insert` 대신 "새 업체 등록 요청" 모달로 연결.
-   - 현장 관리자는 `role_in_project`, `parent_company_id`, 발주처 안전열람만 수정 가능하도록 제어.
+   - 현장 관리자는 `role_in_project`, `parent_company_id`, 발주처 안전열람 및 **해당 현장의 공사개요**를 수정 가능하도록 제어 (단, 전역 사명/사업자번호 수정은 마스터만 허용).
+
 3. **`src/pages/CompanyDetail.tsx`**:
    - 개요 탭 [저장] 버튼 제거 및 마스터 수정 안내 배너 적용.
    - 공사 개요(`company_construction_info`) 탭 현장별 격리 유지.

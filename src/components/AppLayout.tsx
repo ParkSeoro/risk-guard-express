@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { adminBackTarget } from "@/lib/adminBack";
 import { resolveAdminApprovalsReturnPath } from "@/lib/approvalInboxPreview";
 import { NotificationBell } from "@/components/NotificationBell";
+import { MessengerButton } from "@/components/messenger/MessengerButton";
 import { HelpButton } from "@/components/HelpButton";
 import { TutorialOverlay } from "@/components/TutorialOverlay";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
@@ -127,6 +128,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="hidden md:block">
                   <AICreditBanner />
                 </div>
+                <MessengerButton currentProjectId={projectAccess.selectedProject} />
                 <NotificationBell />
                 <RemoteSupportAgentPendingBadge />
                 <RemoteSupportButton />

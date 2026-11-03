@@ -23,6 +23,7 @@ import { useEffect, type ReactNode } from "react";
 import { GpsStatusChip, useGpsUi } from "@/lib/tracking/gpsStatusUi";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { localeHtmlLang } from "@/lib/i18n/workerLocale";
+import { MessengerButton } from "@/components/messenger/MessengerButton";
 
 const ICONS: Record<string, typeof Home> = {
   today: Home,
@@ -89,6 +90,12 @@ export default function MobileShell({ children }: { children: ReactNode }) {
             block={gpsUi.block}
             accuracyM={gpsUi.accuracyM}
           />
+          {bucket !== "worker" && (
+            <MessengerButton
+              currentProjectId={projectId}
+              className="text-primary-foreground hover:text-primary-foreground/90 hover:bg-primary-foreground/10 h-8 w-8 shrink-0"
+            />
+          )}
           <Badge variant="secondary" className="text-[10px] shrink-0">
             {bucket === "worker" ? t("bucketWorker") : bucket === "master" ? t("bucketMaster") : t("bucketManager")}
           </Badge>

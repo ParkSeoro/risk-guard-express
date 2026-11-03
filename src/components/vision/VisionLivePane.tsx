@@ -42,7 +42,7 @@ type Props = {
 const ZOOMS = [1, 1.5, 2, 3] as const;
 const PAN_STEP = 0.35;
 /** LTE cameras may need a full reconnect cycle after an idle kick. */
-const DEFAULT_CONNECT_MS = 15_000;
+const DEFAULT_CONNECT_MS = 30_000;
 /** A picture that does not advance for this long is frozen. Cover it and reconnect. */
 const STALL_RECONNECT_MS = 12_000;
 /** Open console keeps the camera upload even when HLS itself has stalled. */

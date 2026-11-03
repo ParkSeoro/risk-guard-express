@@ -497,6 +497,7 @@ export const MANUAL_SIDEBAR_EXCEPTIONS: string[] = [
   "AI 어시스턴트",
   "위험성평가 공지",
   "공지사항",
+  "건설안전팀",
 ];
 
 export function manualTextMatches(query: string, ...fields: string[]): boolean {

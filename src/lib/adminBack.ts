@@ -56,6 +56,7 @@ export const ADMIN_BACK_PARENTS: Record<string, string | null> = {
   "emergency-drills": "/",
   "worker-education": "/",
   "safety-appointments": "/",
+  "owner-safety": "/",
   alerts: "/",
   "work-stop": "/",
   "contractor-scorecard": "/",

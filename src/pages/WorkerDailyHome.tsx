@@ -81,7 +81,7 @@ import { triggerBackgroundOtaCheck } from "@/lib/native/otaUpdater";
 import { checkInBlockedByLocation } from "@/lib/native/nativePermissionGate";
 import GpsConsentCoach from "@/components/worker/GpsConsentCoach";
 import { useActiveProject } from "@/hooks/useActiveProject";
-import { readActiveProjectId } from "@/lib/activeProject";
+import { readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
 import { displayPledge } from "@/lib/i18n/pledges";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";

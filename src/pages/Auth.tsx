@@ -34,6 +34,7 @@ import { rememberWorkerLoginOnDevice, workerLoginPrefill, loadWorkerLoginMemory 
 import { initialLoginAudience } from '@/lib/loginAudience';
 import { Checkbox } from '@/components/ui/checkbox';
 import { writeLoginIntent } from '@/components/AuthGuard';
+import { writeActiveProjectId } from '@/lib/activeProject';
 import { isNativeApp } from '@/lib/native/isNativeApp';
 import { openPlayStore } from '@/lib/playStore';
 import { isIosWebClient } from '@/lib/iosWebPath';

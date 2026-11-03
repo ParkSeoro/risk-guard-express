@@ -1,0 +1,725 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { OfficialLetter } from './types';
+import { INITIAL_LETTERS } from './sampleData';
+import { OfficialLetterEditor } from './OfficialLetterEditor';
+import { ReceivedLetterModal } from './ReceivedLetterModal';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  FileText,
+  Plus,
+  Search,
+  Download,
+  Trash2,
+  Edit3,
+  CheckCircle2,
+  Clock,
+  Send,
+  Inbox,
+  Sparkles,
+  Paperclip,
+  ArrowDownLeft,
+  ArrowUpRight,
+  AlertCircle,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { differenceInCalendarDays, startOfDay } from 'date-fns';
+
+const STORAGE_KEY = 'safenex_owner_official_letters';
+
+export function OfficialLetterRegistry() {
+  const [letters, setLetters] = useState<OfficialLetter[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch {
+      /* ignore */
+    }
+    return INITIAL_LETTERS;
+  });
+
+  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | '발신' | '수신'>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [editingLetter, setEditingLetter] = useState<OfficialLetter | null>(null);
+
+  // Received letter modal state
+  const [receivedModalOpen, setReceivedModalOpen] = useState(false);
+  const [selectedReceivedLetter, setSelectedReceivedLetter] = useState<OfficialLetter | null>(null);
+
+  // Sync to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(letters));
+    } catch {
+      /* ignore */
+    }
+  }, [letters]);
+
+  // Compute next auto-increment document number for outgoing letters
+  const generateNextDocNumber = (): string => {
+    const currentYear = new Date().getFullYear();
+    const yy = String(currentYear).slice(-2); // "26"
+    const prefix = `ALK Technology - Construction Safety - ${yy}-`;
+
+    let maxSeq = 0;
+    letters.forEach((l) => {
+      if (l.doc_number.startsWith(prefix)) {
+        const match = l.doc_number.match(new RegExp(`${prefix}(\\d+)호`));
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        }
+      }
+    });
+
+    const nextSeq = String(maxSeq + 1).padStart(2, '0');
+    return `${prefix}${nextSeq}호`;
+  };
+
+  // Compute next document number for received letters
+  const generateNextRecDocNumber = (): string => {
+    const currentYear = new Date().getFullYear();
+    const yy = String(currentYear).slice(-2); // "26"
+    const prefix = `ALK-REC-${yy}-`;
+
+    let maxSeq = 0;
+    letters.forEach((l) => {
+      if (l.doc_number.startsWith(prefix)) {
+        const match = l.doc_number.match(new RegExp(`${prefix}(\\d+)호`));
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        }
+      }
+    });
+
+    const nextSeq = String(maxSeq + 1).padStart(2, '0');
+    return `${prefix}${nextSeq}호`;
+  };
+
+  const handleCreateNewOutgoing = () => {
+    const today = new Date();
+    const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${String(today.getDate()).padStart(2, '0')}.`;
+    const nextNumber = generateNextDocNumber();
+
+    const newLetter: OfficialLetter = {
+      id: `letter-${Date.now()}`,
+      doc_number: nextNumber,
+      direction: '발신',
+      dispatch_date: formattedDate,
+      recipient: '각 사 대표이사',
+      reference: '에어리퀴드코리아 기술본부 CM팀, 건설안전팀',
+      sender: '에어리퀴드코리아 기술본부 건설안전팀 박서로 차장',
+      sender_department: '에어리퀴드코리아 기술본부 건설안전팀',
+      sender_title: '차장',
+      sender_name: '박 서 로',
+      subject: '',
+      content_paragraphs: [
+        '귀 사의 무궁한 발전과 건설 현장의 무재해를 기원합니다.',
+        '당사는 안전 의식 고취 및 안전관리 강화를 위해 아래와 같이 공지하오니 협조 바랍니다.',
+      ],
+      sub_items_title: '- 아 래 -',
+      sub_items: [
+        {
+          label: '가. 일 정',
+          text: '2026년 00월 00일',
+        },
+        {
+          label: '나. 장 소',
+          text: 'GSC 여수 H2/LCO2 PJT 현장',
+        },
+      ],
+      status: '작성중',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setEditingLetter(newLetter);
+  };
+
+  const handleOpenNewReceived = () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const nextNumber = generateNextRecDocNumber();
+
+    const newRecLetter: OfficialLetter = {
+      id: `letter-rec-${Date.now()}`,
+      direction: '수신',
+      doc_number: nextNumber,
+      dispatch_date: todayStr.replace(/-/g, '. ') + '.',
+      received_at: todayStr,
+      sender_organization: '',
+      original_doc_number: '',
+      sender: '',
+      recipient: '에어리퀴드코리아(유) 건설안전팀',
+      reference: '기술본부 CM팀',
+      subject: '',
+      handling_assignee: '박서로 차장',
+      handling_due_date: '',
+      handling_status: '접수',
+      status: '접수완료',
+      action_taken: '',
+      reply_doc_number: '',
+      attachment_name: '',
+      attachment_url: '',
+      notes: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setSelectedReceivedLetter(newRecLetter);
+    setReceivedModalOpen(true);
+  };
+
+  const handleSaveLetter = (updated: OfficialLetter) => {
+    setLetters((prev) => {
+      const idx = prev.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = updated;
+        return next;
+      }
+      return [updated, ...prev];
+    });
+    setEditingLetter(null);
+    setReceivedModalOpen(false);
+    setSelectedReceivedLetter(null);
+  };
+
+  const handleSaveReceivedLetter = (updated: OfficialLetter) => {
+    setLetters((prev) => {
+      const idx = prev.findIndex((l) => l.id === updated.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = updated;
+        return next;
+      }
+      return [updated, ...prev];
+    });
+    toast.success('수신 공문 내역이 저장되었습니다.');
+  };
+
+  // Immediate reply draft generation from a received letter
+  const handleRequestReplyDraft = (receivedLetter: OfficialLetter) => {
+    const today = new Date();
+    const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${String(today.getDate()).padStart(2, '0')}.`;
+    const nextNumber = generateNextDocNumber();
+
+    const replyLetter: OfficialLetter = {
+      id: `letter-${Date.now()}`,
+      doc_number: nextNumber,
+      direction: '발신',
+      dispatch_date: formattedDate,
+      recipient: receivedLetter.sender_organization || receivedLetter.sender || '각 사 대표이사',
+      reference: '에어리퀴드코리아 기술본부 CM팀, 건설안전팀',
+      sender: '에어리퀴드코리아 기술본부 건설안전팀 박서로 차장',
+      sender_department: '에어리퀴드코리아 기술본부 건설안전팀',
+      sender_title: '차장',
+      sender_name: '박 서 로',
+      subject: `[회신] ${receivedLetter.subject}`,
+      content_paragraphs: [
+        '귀 기관(사)의 무궁한 발전과 노고에 감사드립니다.',
+        `귀 기관(사)의 공문 [문서번호: ${receivedLetter.original_doc_number || receivedLetter.doc_number}]과 관련하여, 현장 안전관리 조치 및 검토 결과를 아래와 같이 회신합니다.`,
+      ],
+      sub_items_title: '- 아 래 -',
+      sub_items: [
+        {
+          label: '가. 현장 조치 내용',
+          text: receivedLetter.action_taken || '지적 및 권고사항에 대한 현장 이행 완료',
+        },
+        {
+          label: '나. 첨부 증빙 서류',
+          text: '현장 개선 전·후 사진대지 및 안전점검 이행확인서 각 1부',
+        },
+      ],
+      status: '작성중',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setEditingLetter(replyLetter);
+    toast.info(`수신 공문에 대한 회신 공문(${nextNumber}) 초안이 기안되었습니다.`);
+  };
+
+  const handleDelete = (id: string, docNumber: string) => {
+    if (!window.confirm(`[${docNumber}] 공문을 삭제하시겠습니까?`)) return;
+    setLetters((prev) => prev.filter((l) => l.id !== id));
+    toast.success('공문이 삭제되었습니다.');
+  };
+
+  const outgoingLetters = useMemo(() => letters.filter((l) => l.direction === '발신'), [letters]);
+  const incomingLetters = useMemo(() => letters.filter((l) => l.direction === '수신'), [letters]);
+
+  const filteredLetters = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return letters.filter((l) => {
+      if (activeTab !== 'all' && l.direction !== activeTab) return false;
+      if (statusFilter !== 'all') {
+        if (l.direction === '수신') {
+          if (l.handling_status !== statusFilter && l.status !== statusFilter) return false;
+        } else {
+          if (l.status !== statusFilter) return false;
+        }
+      }
+      if (
+        q &&
+        !`${l.doc_number} ${l.subject} ${l.recipient} ${l.sender} ${l.sender_organization || ''} ${l.original_doc_number || ''} ${l.reference}`
+          .toLowerCase()
+          .includes(q)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [letters, search, activeTab, statusFilter]);
+
+  // Export CSV
+  const handleExportCSV = () => {
+    const headers = [
+      '구분',
+      '문서번호',
+      '발송/접수일자',
+      '발신처(기관)',
+      '수신처',
+      '원문서번호',
+      '공문제목',
+      '진행상태/조치현황',
+      '담당자',
+      '회신공문번호',
+    ];
+    const rows = filteredLetters.map((l) => [
+      `"${l.direction}"`,
+      `"${l.doc_number}"`,
+      `"${l.dispatch_date || l.received_at || ''}"`,
+      `"${(l.sender_organization || l.sender || '').replace(/"/g, '""')}"`,
+      `"${(l.recipient || '').replace(/"/g, '""')}"`,
+      `"${(l.original_doc_number || '').replace(/"/g, '""')}"`,
+      `"${l.subject.replace(/"/g, '""')}"`,
+      `"${l.direction === '수신' ? l.handling_status || l.status : l.status}"`,
+      `"${l.handling_assignee || l.sender_name || ''}"`,
+      `"${l.reply_doc_number || ''}"`,
+    ]);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `건설안전팀_공문수발신대장_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success('공문 대장이 CSV 파일로 다운로드되었습니다.');
+  };
+
+  if (editingLetter) {
+    return (
+      <OfficialLetterEditor
+        letter={editingLetter}
+        onSave={handleSaveLetter}
+        onClose={() => setEditingLetter(null)}
+      />
+    );
+  }
+
+  const renderStatusBadge = (letter: OfficialLetter) => {
+    if (letter.direction === '수신') {
+      const hStatus = letter.handling_status || '접수';
+      switch (hStatus) {
+        case '처리완료':
+          return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white gap-1"><CheckCircle2 className="h-3 w-3" /> 처리완료</Badge>;
+        case '조치/회신중':
+          return <Badge className="bg-orange-500 hover:bg-orange-500 text-white gap-1"><Clock className="h-3 w-3" /> 조치·회신중</Badge>;
+        case '담당자배정':
+          return <Badge className="bg-blue-600 hover:bg-blue-600 text-white gap-1">담당자배정</Badge>;
+        case '단순공람':
+          return <Badge variant="secondary" className="gap-1">단순공람</Badge>;
+        case '접수':
+        default:
+          return <Badge variant="outline" className="text-blue-700 bg-blue-50 border-blue-200 gap-1">신규접수</Badge>;
+      }
+    }
+
+    switch (letter.status) {
+      case '발송완료':
+        return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white gap-1"><CheckCircle2 className="h-3 w-3" /> 발송완료</Badge>;
+      case '팀장승인':
+        return <Badge className="bg-blue-600 hover:bg-blue-600 text-white gap-1"><Clock className="h-3 w-3" /> 팀장승인</Badge>;
+      case '작성중':
+      default:
+        return <Badge variant="secondary" className="gap-1"><Edit3 className="h-3 w-3" /> 작성중</Badge>;
+    }
+  };
+
+  const renderDDayBadge = (dueStr?: string) => {
+    if (!dueStr) return null;
+    const diff = differenceInCalendarDays(new Date(dueStr), startOfDay(new Date()));
+    if (diff < 0) {
+      return (
+        <Badge variant="destructive" className="text-[10px] py-0 px-1.5 whitespace-nowrap">
+          D+{Math.abs(diff)} 초과
+        </Badge>
+      );
+    }
+    if (diff === 0) {
+      return (
+        <Badge className="bg-orange-600 hover:bg-orange-600 text-white text-[10px] py-0 px-1.5 whitespace-nowrap">
+          오늘 마감
+        </Badge>
+      );
+    }
+    if (diff <= 3) {
+      return (
+        <Badge variant="outline" className="text-orange-600 border-orange-300 text-[10px] py-0 px-1.5 whitespace-nowrap">
+          D-{diff} 임박
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-muted-foreground text-[10px] py-0 px-1.5 whitespace-nowrap">
+        D-{diff}
+      </Badge>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Top statistics summary banner */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <Card
+          className={`cursor-pointer transition-colors border ${activeTab === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}
+          onClick={() => setActiveTab('all')}
+        >
+          <CardContent className="p-3.5 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium">전체 수발신 공문</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">{letters.length}건</p>
+            </div>
+            <FileText className="h-7 w-7 text-primary/50" />
+          </CardContent>
+        </Card>
+
+        <Card
+          className={`cursor-pointer transition-colors border ${activeTab === '발신' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}
+          onClick={() => setActiveTab('발신')}
+        >
+          <CardContent className="p-3.5 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                <ArrowUpRight className="h-3.5 w-3.5 text-primary" /> 발신 공문 (대외공식)
+              </p>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <p className="text-2xl font-bold text-primary">{outgoingLetters.length}건</p>
+                <span className="text-[11px] text-muted-foreground">
+                  (완료 {outgoingLetters.filter((l) => l.status === '발송완료').length})
+                </span>
+              </div>
+            </div>
+            <Send className="h-7 w-7 text-primary/40" />
+          </CardContent>
+        </Card>
+
+        <Card
+          className={`cursor-pointer transition-colors border ${activeTab === '수신' ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20' : 'hover:bg-muted/30'}`}
+          onClick={() => setActiveTab('수신')}
+        >
+          <CardContent className="p-3.5 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                <ArrowDownLeft className="h-3.5 w-3.5 text-blue-600" /> 수신 공문 (대외접수)
+              </p>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <p className="text-2xl font-bold text-blue-600">{incomingLetters.length}건</p>
+                <span className="text-[11px] text-orange-600 font-semibold">
+                  (조치중 {incomingLetters.filter((l) => l.handling_status === '조치/회신중' || l.handling_status === '접수').length})
+                </span>
+              </div>
+            </div>
+            <Inbox className="h-7 w-7 text-blue-500/40" />
+          </CardContent>
+        </Card>
+
+        <Card className="bg-amber-500/5 border-amber-500/20">
+          <CardContent className="p-3.5 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground font-medium">다음 공식 발신 채번</p>
+              <p className="text-xs font-mono font-bold text-amber-700 mt-1 truncate" title={generateNextDocNumber()}>
+                {generateNextDocNumber().replace('ALK Technology - Construction Safety - ', '')}
+              </p>
+              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                수신: {generateNextRecDocNumber()}
+              </p>
+            </div>
+            <Sparkles className="h-7 w-7 text-amber-500/40" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Registry Card */}
+      <Card>
+        <CardHeader className="p-4 pb-3 flex flex-row items-center justify-between flex-wrap gap-2">
+          <div>
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              건설안전팀 공식 공문 수발신 대장
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              에어리퀴드코리아 기술본부 건설안전팀 발신 공문 채번 및 대외 수신 공문 접수·조치·회신 통합 관리
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={handleExportCSV} className="h-8 text-xs gap-1">
+              <Download className="h-3.5 w-3.5" /> 엑셀(CSV) 내보내기
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenNewReceived}
+              className="h-8 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+            >
+              <Inbox className="h-3.5 w-3.5" /> 수신 공문 접수 등록
+            </Button>
+
+            <Button size="sm" onClick={handleCreateNewOutgoing} className="h-8 text-xs gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> 새 공문 작성 (발신 자동채번)
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-4 pt-0 space-y-3">
+          {/* Tabs & Filters */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-b pb-2.5">
+            {/* View Tabs */}
+            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setActiveTab('all')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                  activeTab === 'all'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                전체 공문 ({letters.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('발신')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${
+                  activeTab === '발신'
+                    ? 'bg-background text-primary shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ArrowUpRight className="h-3 w-3" /> 발신 공문 ({outgoingLetters.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('수신')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${
+                  activeTab === '수신'
+                    ? 'bg-background text-blue-600 shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ArrowDownLeft className="h-3 w-3" /> 수신 공문 ({incomingLetters.length})
+              </button>
+            </div>
+
+            {/* Search and Status Filter */}
+            <div className="flex items-center gap-2 flex-1 max-w-md">
+              <div className="relative flex-1">
+                <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-2.5" />
+                <Input
+                  placeholder="문서번호, 제목, 발신처/수신처 검색..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs"
+                />
+              </div>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-32 h-8 text-xs"><SelectValue placeholder="진행상태" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 상태</SelectItem>
+                  <SelectItem value="작성중">작성중</SelectItem>
+                  <SelectItem value="팀장승인">팀장승인</SelectItem>
+                  <SelectItem value="발송완료">발송완료</SelectItem>
+                  <SelectItem value="접수">신규접수</SelectItem>
+                  <SelectItem value="조치/회신중">조치/회신중</SelectItem>
+                  <SelectItem value="처리완료">처리완료</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="border rounded-md overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-muted/60 text-muted-foreground font-medium">
+                <tr className="border-b">
+                  <th className="p-2.5 w-14 text-center">구분</th>
+                  <th className="p-2.5 min-w-[200px]">문서 번호</th>
+                  <th className="p-2.5 min-w-[280px]">공문 제목 (件)</th>
+                  <th className="p-2.5 w-36">발신처 / 수신처</th>
+                  <th className="p-2.5 w-24">일자</th>
+                  <th className="p-2.5 w-24">담당자</th>
+                  <th className="p-2.5 w-28 text-center">진행 상태</th>
+                  <th className="p-2.5 w-24 text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredLetters.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                      검색 조건에 일치하는 공문 기록이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLetters.map((letter) => {
+                    const isIncoming = letter.direction === '수신';
+
+                    return (
+                      <tr key={letter.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="p-2.5 text-center">
+                          <Badge
+                            variant="outline"
+                            className={
+                              isIncoming
+                                ? 'text-blue-700 bg-blue-50 border-blue-200 text-[10px] py-0 font-medium'
+                                : 'text-primary bg-primary/5 border-primary/30 text-[10px] py-0 font-medium'
+                            }
+                          >
+                            {letter.direction}
+                          </Badge>
+                        </td>
+                        <td className="p-2.5 font-mono text-[11px] font-medium text-slate-900 dark:text-slate-100">
+                          <div>{letter.doc_number}</div>
+                          {isIncoming && letter.original_doc_number && (
+                            <div className="text-[10px] text-muted-foreground truncate" title={`원문: ${letter.original_doc_number}`}>
+                              원문: {letter.original_doc_number}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2.5 font-medium">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isIncoming) {
+                                  setSelectedReceivedLetter(letter);
+                                  setReceivedModalOpen(true);
+                                } else {
+                                  setEditingLetter(letter);
+                                }
+                              }}
+                              className="hover:underline text-left text-slate-900 dark:text-slate-100 hover:text-primary transition-colors truncate max-w-[340px]"
+                              title={letter.subject}
+                            >
+                              {letter.subject || '(제목 없음)'}
+                            </button>
+                            {isIncoming && renderDDayBadge(letter.handling_due_date)}
+                            {letter.attachment_name && (
+                              <span
+                                className="inline-flex items-center text-[10px] text-muted-foreground hover:text-foreground"
+                                title={`첨부파일: ${letter.attachment_name}`}
+                              >
+                                <Paperclip className="h-3 w-3 text-emerald-600" />
+                              </span>
+                            )}
+                          </div>
+                          {letter.reply_doc_number && (
+                            <div className="text-[10px] text-primary flex items-center gap-1 mt-0.5 font-mono">
+                              <ArrowUpRight className="h-3 w-3" /> 회신공문: {letter.reply_doc_number}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-muted-foreground text-[11px]">
+                          {isIncoming ? (
+                            <div>
+                              <div className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[140px]" title={letter.sender_organization || letter.sender}>
+                                {letter.sender_organization || letter.sender}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">→ 건설안전팀 접수</div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[140px]" title={letter.recipient}>
+                                {letter.recipient}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">에어리퀴드 건설안전팀 발송</div>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-muted-foreground whitespace-nowrap text-[11px]">
+                          {letter.dispatch_date || letter.received_at}
+                        </td>
+                        <td className="p-2.5 text-muted-foreground whitespace-nowrap text-[11px]">
+                          {isIncoming ? letter.handling_assignee || '미지정' : letter.sender_name || '박서로 차장'}
+                        </td>
+                        <td className="p-2.5 text-center whitespace-nowrap">
+                          {renderStatusBadge(letter)}
+                        </td>
+                        <td className="p-2.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                if (isIncoming) {
+                                  setSelectedReceivedLetter(letter);
+                                  setReceivedModalOpen(true);
+                                } else {
+                                  setEditingLetter(letter);
+                                }
+                              }}
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              title={isIncoming ? '수신 공문 조치 및 열람' : '발신 공문 열람 및 수정'}
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(letter.id, letter.doc_number)}
+                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                              title="삭제"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Received Letter Action & Management Modal */}
+      <ReceivedLetterModal
+        letter={selectedReceivedLetter}
+        isOpen={receivedModalOpen}
+        onClose={() => {
+          setReceivedModalOpen(false);
+          setSelectedReceivedLetter(null);
+        }}
+        onSave={handleSaveReceivedLetter}
+        existingOutgoingLetters={outgoingLetters}
+        onRequestReplyDraft={handleRequestReplyDraft}
+      />
+    </div>
+  );
+}
+
+export default OfficialLetterRegistry;

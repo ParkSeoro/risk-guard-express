@@ -31,6 +31,7 @@ import {
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
 import { trackLocationInvokeUserMessage } from "@/lib/tracking/trackLocationClient";
+import { type SiteTrackPhase, nextOutsideStreak } from "@/lib/tracking/siteTrackPhase";
 import {
   createMotionIdleState,
   nextMotionIdle,

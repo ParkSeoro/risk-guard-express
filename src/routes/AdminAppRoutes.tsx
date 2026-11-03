@@ -5,6 +5,7 @@ import ContractorGate from "@/components/ContractorGate";
 import RoleGuard from "@/components/RoleGuard";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
 import * as P from "@/routes/lazyPages";

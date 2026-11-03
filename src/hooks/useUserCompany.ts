@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { pickProjectMemberRow, readPreferredCompanyId } from '@/lib/companyDocScope';
 import { readActiveProjectId } from '@/lib/activeProject';
 

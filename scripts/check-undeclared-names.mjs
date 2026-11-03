@@ -21,8 +21,9 @@ const out = `${result.stdout || ""}${result.stderr || ""}`;
 const lines = out.split(/\r?\n/).filter(Boolean);
 const undeclared = lines.filter(
   (l) =>
-    /\berror TS2304:\b/.test(l) || // Cannot find name 'X'
-    /\berror TS2552:\b/.test(l), // Cannot find name 'X'. Did you mean 'Y'?
+    /\berror TS2304:/.test(l) || // Cannot find name 'X'
+    /\berror TS2552:/.test(l) || // Cannot find name 'X'. Did you mean 'Y'?
+    /\berror TS2663:/.test(l), // Cannot find name 'X'. Did you mean the instance member 'this.X'?
 );
 
 if (undeclared.length === 0) {

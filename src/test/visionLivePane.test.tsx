@@ -217,6 +217,20 @@ describe("VisionLivePane", () => {
     expect(el!.textContent).toContain("재생 중");
   });
 
+  it("stays on the connecting message through a 15 second reconnect", () => {
+    vi.useFakeTimers();
+    mount();
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(el!.textContent).toContain("카메라를 연결하고 있습니다");
+    expect(el!.querySelector('[data-testid="vision-pane-offline-0"]')).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(el!.textContent).toContain("송출이 없습니다");
+  });
+
   it("says the camera is not publishing when no picture arrives", () => {
     vi.useFakeTimers();
     mount(undefined, 8_000);

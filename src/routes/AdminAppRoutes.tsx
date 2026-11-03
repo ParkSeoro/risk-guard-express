@@ -5,7 +5,8 @@ import ContractorGate from "@/components/ContractorGate";
 import RoleGuard from "@/components/RoleGuard";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
+import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
 import * as P from "@/routes/lazyPages";
 
 function Fallback() {
@@ -14,6 +15,15 @@ function Fallback() {
       관리 화면 로딩 중…
     </div>
   );
+}
+
+function OwnerSafetyRouteGuard({ children }: { children: React.ReactNode }) {
+  const { user, profile, roles, loading } = useAuth();
+  const access = useGlobalProjectAccessOptional();
+  if (loading) return null;
+  const ok = isOwnerSafetyManager(access, roles, user?.email, profile?.display_name);
+  if (!ok) return <Navigate to="/app/admin" replace />;
+  return <>{children}</>;
 }
 
 /**
@@ -142,6 +152,14 @@ function AdminAppRoutesInner() {
             <Route path="emergency-drills" element={<P.LazyEmergencyDrills />} />
             <Route path="worker-education" element={<P.LazyWorkerEducation />} />
             <Route path="safety-appointments" element={<P.LazySafetyAppointments />} />
+            <Route
+              path="owner-safety"
+              element={
+                <OwnerSafetyRouteGuard>
+                  <P.LazyOwnerSafetyWorkspace />
+                </OwnerSafetyRouteGuard>
+              }
+            />
             <Route path="alerts" element={<P.LazyNotificationInbox />} />
             <Route path="work-stop" element={<P.LazyWorkStopRequests />} />
             <Route path="contractor-scorecard" element={<RoleGuard><P.LazyContractorScorecard /></RoleGuard>} />

@@ -1,6 +1,6 @@
 import { Bell, LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
-  Shield, SearchCheck, Settings,
+  Shield, ShieldCheck, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
@@ -23,6 +23,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Button } from "@/components/ui/button";
 import { ADMIN_APP_BASE, toAdminUrl } from "@/lib/adminNav";
 import { VISION_VIEW_ROLES } from "@/lib/visionFleetApi";
+import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
 
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
 
@@ -46,6 +47,7 @@ const groups: Group[] = [
       { title: "작업허가서", url: "/work-permits", icon: FileSignature },
       { title: "작업계획서", url: "/work-plans", icon: FileText },
       { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
+      { title: "건설안전팀", url: "/owner-safety", icon: ShieldCheck },
     ],
   },
   {
@@ -138,7 +140,7 @@ export function sidebarMenuTitles(): string[] {
 export function AppSidebar() {
   const { state, toggleSidebar, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed";
-  const { profile, signOut, hasRole, roles } = useAuth();
+  const { user, profile, signOut, hasRole, roles } = useAuth();
   const access = useGlobalProjectAccessOptional();
   const isMaster = hasRole('master');
   const isContractorCo = !!access && !access.isMaster &&
@@ -169,9 +171,16 @@ export function AppSidebar() {
     '/profile', '/settings/account', '/manual',
     ...(canViewVision ? ['/vision-fleet'] : []),
   ]);
+  const canViewOwnerSafety = isOwnerSafetyManager(access, roles, user?.email, profile?.display_name);
   const scopedGroups = groups.map((g) => {
-    if (g.key !== "site" || canViewVision) return g;
-    return { ...g, items: g.items.filter((i) => i.url !== "/vision-fleet") };
+    let items = g.items;
+    if (g.key === "site" && !canViewVision) {
+      items = items.filter((i) => i.url !== "/vision-fleet");
+    }
+    if (g.key === "today" && !canViewOwnerSafety) {
+      items = items.filter((i) => i.url !== "/owner-safety");
+    }
+    return { ...g, items };
   });
   const visibleGroups = restrictToContractorUI
     ? scopedGroups

@@ -124,4 +124,5 @@ export const LazyWorkerDistribution = L(() => import("@/pages/WorkerDistribution
 export const LazyAdminTrackingHealth = L(() => import("@/pages/AdminTrackingHealth"));
 export const LazyCompanies = L(() => import("@/pages/Companies"));
 export const LazyCompanyDetail = L(() => import("@/pages/CompanyDetail"));
+export const LazyOwnerSafetyWorkspace = L(() => import("@/pages/OwnerSafetyWorkspace"));
 export const LazyNotFound = L(() => import("@/pages/NotFound"));

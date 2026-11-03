@@ -19,9 +19,14 @@ describe("permit crew no-show notice", () => {
     expect(sql).toContain("'승인완료'");
     expect(sql).toContain("permit_date = v_day");
     expect(sql).toContain("permit_crew_no_show_summary");
-    expect(sql).toContain("IN ('project_admin', 'safety_manager')");
-    expect(sql).toContain("pm.company_id = comp.company_id");
-    expect(sql).toContain("= 'site_manager'");
+    expect(sql).toContain("IN ('project_admin', 'safety_manager', 'site_manager')");
+    expect(sql).toContain("public.can_access_company_data(pm.user_id, comp.project_id, comp.company_id)");
+    expect(sql).toContain("IS NOT DISTINCT FROM comp.company_id::text");
+    expect(sql).toContain("GROUP BY x.project_id, x.company_id");
+    expect((sql.match(/INSERT INTO public\.notifications/g) || []).length).toBe(2);
+    expect(sql).not.toContain("permit_no_show_visible");
+    expect(sql).not.toContain("list_attendance_exceptions");
+    expect(sql).not.toContain("cron.schedule");
     expect(sql).not.toContain("UPDATE public.worker_entry_logs");
     expect(sql).not.toContain("INSERT INTO public.worker_entry_logs");
     expect(sql).not.toContain("'작업취소'");

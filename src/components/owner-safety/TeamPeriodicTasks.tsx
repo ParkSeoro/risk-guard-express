@@ -52,13 +52,23 @@ export function TeamPeriodicTasks() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<PeriodicTask | null>(null);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    title: string;
+    category: string;
+    description: string;
+    assignee: string;
+    due_rule: string;
+    due_date: string;
+    status: 'pending' | 'in_progress' | 'completed';
+    notes: string;
+  }>({
     title: '',
     category: '현장순회/점검',
     description: '',
     assignee: '박서로 차장',
     due_rule: '매일 09:30',
     due_date: new Date().toISOString().slice(0, 10),
+    status: 'pending',
     notes: '',
   });
 
@@ -79,6 +89,7 @@ export function TeamPeriodicTasks() {
       assignee: '박서로 차장',
       due_rule: activeCycle === 'daily' ? '매일 09:30' : activeCycle === 'weekly' ? '매주 금요일' : '매월 말일',
       due_date: new Date().toISOString().slice(0, 10),
+      status: 'pending',
       notes: '',
     });
     setModalOpen(true);
@@ -93,6 +104,7 @@ export function TeamPeriodicTasks() {
       assignee: task.assignee,
       due_rule: task.due_rule,
       due_date: task.due_date,
+      status: task.status,
       notes: task.notes || '',
     });
     setModalOpen(true);
@@ -116,6 +128,8 @@ export function TeamPeriodicTasks() {
                 assignee: form.assignee,
                 due_rule: form.due_rule,
                 due_date: form.due_date,
+                status: form.status,
+                completed_at: form.status === 'completed' ? (editingTask.completed_at || new Date().toISOString()) : undefined,
                 notes: form.notes,
               }
             : t
@@ -132,7 +146,8 @@ export function TeamPeriodicTasks() {
         assignee: form.assignee,
         due_rule: form.due_rule,
         due_date: form.due_date,
-        status: 'pending',
+        status: form.status,
+        completed_at: form.status === 'completed' ? new Date().toISOString() : undefined,
         notes: form.notes,
       };
       setTasks((prev) => [newTask, ...prev]);
@@ -140,6 +155,21 @@ export function TeamPeriodicTasks() {
     }
 
     setModalOpen(false);
+  };
+
+  const handleDirectStatusChange = (id: string, nextStatus: 'pending' | 'in_progress' | 'completed') => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        return {
+          ...t,
+          status: nextStatus,
+          completed_at: nextStatus === 'completed' ? (t.completed_at || new Date().toISOString()) : undefined,
+        };
+      })
+    );
+    const label = nextStatus === 'completed' ? '완료' : nextStatus === 'in_progress' ? '진행중' : '대기중';
+    toast.success(`업무 상태가 [${label}]로 변경되었습니다.`);
   };
 
   const toggleStatus = (id: string) => {
@@ -321,14 +351,42 @@ export function TeamPeriodicTasks() {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                    <Button
-                      variant={isDone ? 'outline' : inProgress ? 'default' : 'secondary'}
-                      size="sm"
-                      onClick={() => toggleStatus(task.id)}
-                      className="h-7 text-xs px-2.5"
+                    <Select
+                      value={task.status}
+                      onValueChange={(val: any) => handleDirectStatusChange(task.id, val)}
                     >
-                      {isDone ? '완료됨' : inProgress ? '진행중' : '시작하기'}
-                    </Button>
+                      <SelectTrigger className="h-7 w-[86px] text-[11px] px-1.5 py-0 border-dashed">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">대기중</SelectItem>
+                        <SelectItem value="in_progress">진행중</SelectItem>
+                        <SelectItem value="completed">완료</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {!isDone ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDirectStatusChange(task.id, 'completed')}
+                        className="h-7 text-xs px-2.5 text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 gap-1 font-medium"
+                        title="원클릭 완료 처리"
+                      >
+                        <Check className="h-3.5 w-3.5 text-emerald-600" /> 완료
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDirectStatusChange(task.id, 'in_progress')}
+                        className="h-7 text-xs px-2 text-muted-foreground hover:text-foreground gap-1"
+                        title="진행중으로 상태 되돌리기"
+                      >
+                        <Clock className="h-3 w-3" /> 다시 진행
+                      </Button>
+                    )}
+
                     <Button
                       variant="ghost"
                       size="icon"
@@ -418,6 +476,21 @@ export function TeamPeriodicTasks() {
                   onChange={(e) => setForm({ ...form, due_date: e.target.value })}
                 />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">진행 상태</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v: any) => setForm({ ...form, status: v })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">대기중</SelectItem>
+                  <SelectItem value="in_progress">진행중</SelectItem>
+                  <SelectItem value="completed">완료</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1">

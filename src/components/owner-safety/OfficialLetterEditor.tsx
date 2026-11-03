@@ -27,9 +27,7 @@ export function OfficialLetterEditor({ letter: initialLetter, onSave, onClose }:
     sender_name: initialLetter.sender_name || defaultAuthorName,
     sender_title: initialLetter.sender_title || '차장',
     sender_department: initialLetter.sender_department || '에어리퀴드코리아 기술본부 건설안전팀',
-    sender:
-      initialLetter.sender ||
-      `에어리퀴드코리아 기술본부 건설안전팀 ${defaultAuthorName} ${initialLetter.sender_title || '차장'}`,
+    sender: initialLetter.sender !== undefined ? initialLetter.sender : '',
   }));
 
   const [activeView, setActiveView] = useState<'editor' | 'preview'>('preview');

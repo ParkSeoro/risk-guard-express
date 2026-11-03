@@ -14,29 +14,32 @@ export HLS_HOST
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl disable --now vision-hls >/dev/null 2>&1 || true
-  # The compose service viewer-gate is the one that runs. An older unit would kick twice.
   systemctl disable --now safenex-viewer-gate >/dev/null 2>&1 || true
 fi
-# An older nginx publisher binds 1935 on the host and hides MediaMTX.
-docker rm -f vision-rtmp >/dev/null 2>&1 || true
 
+# Stop any legacy containers binding port 1935 or 8888
+docker rm -f vision-rtmp mediamtx vision-relay-mediamtx-1 vision-relay-viewer-gate-1 >/dev/null 2>&1 || true
+
+docker compose down --remove-orphans >/dev/null 2>&1 || true
 docker compose up -d
 
 cat <<EOF
 
 ===============================
- SafeNex 비전 관제 → 중계 저장에 넣을 값
-    ${PUB}
+ SafeNex 비전 관제 (arut/nginx-rtmp-module 기반 중계)
+    서버 공인 IP: ${PUB}
 
- VIGI RTMP 서버 주소 (H.264, RTMP)
-    rtmp://${PUB}:1935/live
+ VIGI / NVR RTMP 송출 주소 (H.264)
+    rtmp://${PUB}:1935/live/<카메라_스트림_키>
 
- 브라우저 HLS (자동 HTTPS)
-    https://${HLS_HOST}
+ 브라우저 HLS 재생 주소 (자동 HTTPS)
+    https://${HLS_HOST}/live/<카메라_스트림_키>/index.m3u8
 
- 이 서버에서 열 포트
-    1935 (RTMP), 80, 443 (HLS 인증서)
+ AWS Lightsail / VPS 방화벽 필수 오픈 포트
+    - 1935 (TCP): RTMP 카메라 송출
+    - 80   (TCP): Let's Encrypt 인증서 발급
+    - 443  (TCP): 브라우저 HTTPS 스트리밍
 ===============================
 
-사무실 PC/공유기 NAT는 쓰지 마세요. VPS 방화벽에서 위 포트만 열면 됩니다.
+사무실 PC/공유기 NAT는 쓰지 마세요. VPS 방화벽에서 위 포트(1935, 80, 443)만 열면 됩니다.
 EOF

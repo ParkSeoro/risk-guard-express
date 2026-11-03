@@ -2,15 +2,13 @@
 	encode gzip
 	header {
 		Access-Control-Allow-Origin *
-		Access-Control-Allow-Methods "GET, OPTIONS"
+		Access-Control-Allow-Methods "GET, OPTIONS, HEAD"
 		Access-Control-Allow-Headers *
 	}
 	@options method OPTIONS
 	respond @options 204
-	handle /live/*/viewer-status {
-		reverse_proxy viewer-gate:9197
-	}
+
 	handle {
-		reverse_proxy mediamtx:8888
+		reverse_proxy nginx-rtmp:8088
 	}
 }

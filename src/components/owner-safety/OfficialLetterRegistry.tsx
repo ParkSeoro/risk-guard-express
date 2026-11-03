@@ -115,16 +115,15 @@ export function OfficialLetterRegistry() {
       doc_number: nextNumber,
       direction: '발신',
       dispatch_date: formattedDate,
-      recipient: '각 사 대표이사',
-      reference: '에어리퀴드코리아 기술본부 CM팀, 건설안전팀',
-      sender: '에어리퀴드코리아 기술본부 건설안전팀 박서로 차장',
+      recipient: '',
+      reference: '',
+      sender: '',
       sender_department: '에어리퀴드코리아 기술본부 건설안전팀',
       sender_title: '차장',
       sender_name: '박 서 로',
       subject: '',
       content_paragraphs: [
         '귀 사의 무궁한 발전과 건설 현장의 무재해를 기원합니다.',
-        '당사는 안전 의식 고취 및 안전관리 강화를 위해 아래와 같이 공지하오니 협조 바랍니다.',
       ],
       sub_items_title: '- 아 래 -',
       sub_items: [
@@ -206,6 +205,36 @@ export function OfficialLetterRegistry() {
     toast.success('수신 공문 내역이 저장되었습니다.');
   };
 
+  const handleUpdateLetterStatus = (letterId: string, newStatus: string) => {
+    setLetters((prev) =>
+      prev.map((l) => {
+        if (l.id !== letterId) return l;
+        if (l.direction === '수신') {
+          return {
+            ...l,
+            handling_status: newStatus as any,
+            status: (newStatus === '처리완료' ? '처리완료' : newStatus === '조치/회신중' ? '조치중' : '접수완료') as any,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return {
+          ...l,
+          status: newStatus as any,
+          updated_at: new Date().toISOString(),
+        };
+      })
+    );
+    toast.success(`진행 상태가 [${newStatus}]로 변경되었습니다.`);
+  };
+
+  const handleQuickComplete = (letter: OfficialLetter) => {
+    if (letter.direction === '수신') {
+      handleUpdateLetterStatus(letter.id, '처리완료');
+    } else {
+      handleUpdateLetterStatus(letter.id, '발송완료');
+    }
+  };
+
   // Immediate reply draft generation from a received letter
   const handleRequestReplyDraft = (receivedLetter: OfficialLetter) => {
     const today = new Date();
@@ -217,9 +246,9 @@ export function OfficialLetterRegistry() {
       doc_number: nextNumber,
       direction: '발신',
       dispatch_date: formattedDate,
-      recipient: receivedLetter.sender_organization || receivedLetter.sender || '각 사 대표이사',
-      reference: '에어리퀴드코리아 기술본부 CM팀, 건설안전팀',
-      sender: '에어리퀴드코리아 기술본부 건설안전팀 박서로 차장',
+      recipient: receivedLetter.sender_organization || receivedLetter.sender || '',
+      reference: '',
+      sender: '',
       sender_department: '에어리퀴드코리아 기술본부 건설안전팀',
       sender_title: '차장',
       sender_name: '박 서 로',
@@ -330,30 +359,75 @@ export function OfficialLetterRegistry() {
   const renderStatusBadge = (letter: OfficialLetter) => {
     if (letter.direction === '수신') {
       const hStatus = letter.handling_status || '접수';
-      switch (hStatus) {
-        case '처리완료':
-          return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white gap-1"><CheckCircle2 className="h-3 w-3" /> 처리완료</Badge>;
-        case '조치/회신중':
-          return <Badge className="bg-orange-500 hover:bg-orange-500 text-white gap-1"><Clock className="h-3 w-3" /> 조치·회신중</Badge>;
-        case '담당자배정':
-          return <Badge className="bg-blue-600 hover:bg-blue-600 text-white gap-1">담당자배정</Badge>;
-        case '단순공람':
-          return <Badge variant="secondary" className="gap-1">단순공람</Badge>;
-        case '접수':
-        default:
-          return <Badge variant="outline" className="text-blue-700 bg-blue-50 border-blue-200 gap-1">신규접수</Badge>;
-      }
+      return (
+        <div className="flex items-center justify-center">
+          <Select
+            value={hStatus}
+            onValueChange={(val) => handleUpdateLetterStatus(letter.id, val)}
+          >
+            <SelectTrigger className="h-6 w-[105px] text-[11px] px-1.5 py-0 border-dashed hover:border-solid bg-transparent">
+              <SelectValue>
+                {hStatus === '처리완료' ? (
+                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" /> 처리완료
+                  </span>
+                ) : hStatus === '조치/회신중' ? (
+                  <span className="text-orange-600 dark:text-orange-400 font-medium flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> 조치중
+                  </span>
+                ) : hStatus === '담당자배정' ? (
+                  <span className="text-blue-600 dark:text-blue-400 font-medium">담당자배정</span>
+                ) : hStatus === '단순공람' ? (
+                  <span className="text-muted-foreground font-medium">단순공람</span>
+                ) : (
+                  <span className="text-blue-700 dark:text-blue-400 font-medium">신규접수</span>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="접수">신규 접수</SelectItem>
+              <SelectItem value="담당자배정">담당자 배정</SelectItem>
+              <SelectItem value="조치/회신중">조치·회신 진행중</SelectItem>
+              <SelectItem value="처리완료">현장 조치완료</SelectItem>
+              <SelectItem value="단순공람">단순 공람 종결</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      );
     }
 
-    switch (letter.status) {
-      case '발송완료':
-        return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white gap-1"><CheckCircle2 className="h-3 w-3" /> 발송완료</Badge>;
-      case '팀장승인':
-        return <Badge className="bg-blue-600 hover:bg-blue-600 text-white gap-1"><Clock className="h-3 w-3" /> 팀장승인</Badge>;
-      case '작성중':
-      default:
-        return <Badge variant="secondary" className="gap-1"><Edit3 className="h-3 w-3" /> 작성중</Badge>;
-    }
+    const curStatus = letter.status || '작성중';
+    return (
+      <div className="flex items-center justify-center">
+        <Select
+          value={curStatus}
+          onValueChange={(val) => handleUpdateLetterStatus(letter.id, val)}
+        >
+          <SelectTrigger className="h-6 w-[95px] text-[11px] px-1.5 py-0 border-dashed hover:border-solid bg-transparent">
+            <SelectValue>
+              {curStatus === '발송완료' ? (
+                <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-600" /> 발송완료
+                </span>
+              ) : curStatus === '팀장승인' ? (
+                <span className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> 팀장승인
+                </span>
+              ) : (
+                <span className="text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1">
+                  <Edit3 className="h-3 w-3" /> 작성중
+                </span>
+              )}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="작성중">작성중</SelectItem>
+            <SelectItem value="팀장승인">팀장승인 (검토대기)</SelectItem>
+            <SelectItem value="발송완료">발송완료</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    );
   };
 
   const renderDDayBadge = (dueStr?: string) => {
@@ -669,6 +743,19 @@ export function OfficialLetterRegistry() {
                         </td>
                         <td className="p-2.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
+                            {((isIncoming && letter.handling_status !== '처리완료') ||
+                              (!isIncoming && letter.status !== '발송완료')) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleQuickComplete(letter)}
+                                className="h-7 px-2 text-[11px] text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 gap-1 font-medium"
+                                title="원클릭 완료 처리"
+                              >
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                {isIncoming ? '조치완료' : '발송완료'}
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"

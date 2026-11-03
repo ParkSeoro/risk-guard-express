@@ -123,6 +123,46 @@ export function ReceivedLetterModal({
     onClose();
   };
 
+  const handleQuickCompleteSave = () => {
+    if (!form.subject?.trim()) {
+      toast.error('수신 공문 제목을 입력해주세요.');
+      return;
+    }
+    if (!form.sender_organization?.trim()) {
+      toast.error('발신 기관/회사명을 입력해주세요.');
+      return;
+    }
+
+    const payload: OfficialLetter = {
+      id: form.id || `letter-rec-${Date.now()}`,
+      direction: '수신',
+      doc_number: form.doc_number || 'ALK-REC-26-01호',
+      dispatch_date: form.received_at ? form.received_at.replace(/-/g, '. ') + '.' : todayStr.replace(/-/g, '. ') + '.',
+      received_at: form.received_at || todayStr,
+      sender_organization: form.sender_organization.trim(),
+      original_doc_number: form.original_doc_number?.trim() || '',
+      sender: form.sender?.trim() || form.sender_organization.trim(),
+      recipient: form.recipient?.trim() || '에어리퀴드코리아(유) 건설안전팀',
+      reference: form.reference?.trim() || '기술본부 CM팀',
+      subject: form.subject.trim(),
+      handling_assignee: form.handling_assignee?.trim() || '박서로 차장',
+      handling_due_date: form.handling_due_date || '',
+      handling_status: '처리완료',
+      status: '처리완료',
+      action_taken: form.action_taken || '현장 조치 및 검토 완료',
+      reply_doc_number: form.reply_doc_number || '',
+      attachment_name: form.attachment_name || '',
+      attachment_url: form.attachment_url || '',
+      notes: form.notes || '',
+      created_at: form.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    onSave(payload);
+    toast.success('수신 공문이 [처리완료] 상태로 저장되었습니다.');
+    onClose();
+  };
+
   const handleReplyDraftClick = () => {
     if (onRequestReplyDraft && form.subject) {
       onClose();
@@ -358,14 +398,26 @@ export function ReceivedLetterModal({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="gap-2 sm:gap-2 flex-wrap sm:flex-nowrap justify-between">
           <Button variant="ghost" size="sm" onClick={onClose} className="h-8 text-xs">
             취소
           </Button>
-          <Button size="sm" onClick={handleSave} className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            {isEditing ? '수신 공문 조치 내역 저장' : '수신 공문 접수 등록'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleQuickCompleteSave}
+              className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              현장 조치 완료로 즉시 종결
+            </Button>
+            <Button size="sm" onClick={handleSave} className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {isEditing ? '조치 내역 저장' : '수신 공문 접수 등록'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

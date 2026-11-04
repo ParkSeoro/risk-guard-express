@@ -60,6 +60,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
     location.pathname.includes("/risk-assessment/") ||
     location.pathname.includes("/work-plans/");
   const isMessenger = location.pathname.includes("/messenger");
+  const messengerRoomOpen = isMessenger && new URLSearchParams(location.search).has("room");
   const showMessenger = bucket !== "worker" && !isPureWorkerUser(roles);
 
   // Legal CTA for field workers; managers process via Today / 현장
@@ -70,7 +71,10 @@ export default function MobileShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="min-h-dvh bg-muted/30 flex flex-col overflow-x-clip"
+      className={cn(
+        "bg-muted/30 flex flex-col overflow-x-clip",
+        isMessenger ? "h-dvh max-h-dvh overflow-hidden" : "min-h-dvh",
+      )}
       data-testid="mobile-shell"
       data-mobile-role={displayRole}
       data-mobile-bucket={bucket}
@@ -82,7 +86,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
       )}
 
       {!hideChrome && (
-        <header className="sticky top-0 z-30 bg-primary text-primary-foreground px-3 pb-2.5 pt-[max(0.625rem,var(--sat))] flex items-center gap-2">
+        <header className="sticky top-0 z-30 shrink-0 bg-primary text-primary-foreground px-3 pb-2.5 pt-[max(0.625rem,var(--sat))] flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm leading-tight">SafeNex</div>
             <div className="text-[10px] opacity-80 truncate">
@@ -111,8 +115,9 @@ export default function MobileShell({ children }: { children: ReactNode }) {
         className={cn(
           "flex-1 min-h-0",
           isMessenger
-            ? "h-[calc(100dvh-3.75rem-4.25rem-var(--sat)-var(--sab))] overflow-hidden"
+            ? "flex flex-col overflow-hidden"
             : !hideChrome && contentPad,
+          isMessenger && !messengerRoomOpen && "pb-[calc(4.25rem+var(--sab))]",
         )}
       >
         {children}
@@ -131,7 +136,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
         </Button>
       )}
 
-      {!hideChrome && (
+      {!hideChrome && !messengerRoomOpen && (
         <nav
           className="fixed bottom-0 inset-x-0 z-30 border-t bg-background pb-[var(--sab)]"
           data-testid="mobile-bottom-nav"

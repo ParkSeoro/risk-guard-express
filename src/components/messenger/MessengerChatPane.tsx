@@ -289,7 +289,7 @@ export function MessengerChatPane({
       : room.other_participant?.full_name || "1:1 대화방");
 
   return (
-    <div className="flex flex-col h-full w-full bg-background overflow-hidden relative overscroll-contain">
+    <div className="flex flex-col h-full min-h-0 w-full bg-background overflow-hidden relative overscroll-contain">
       {/* 대화방 상단 헤더 (모바일 노치 대응 safe-area-inset-top) */}
       <header className="px-3 pt-[max(0.625rem,var(--sat))] pb-2.5 border-b bg-card flex items-center justify-between shrink-0 shadow-xs z-10">
         <div className="flex items-center gap-2 min-w-0">
@@ -326,7 +326,7 @@ export function MessengerChatPane({
       </header>
 
       {/* 메시지 리스트 뷰포트 */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2 space-y-1">
         {loading ? (
           <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
             메시지를 불러오는 중...

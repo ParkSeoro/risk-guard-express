@@ -60,7 +60,7 @@ export function MessengerRoomList({
   });
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 bg-background overflow-hidden">
       {/* 헤더 및 새 대화 버튼 (모바일 상태바 safe area 대응) */}
       <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -130,7 +130,7 @@ export function MessengerRoomList({
       </div>
 
       {/* 대화방 리스트 */}
-      <div className="flex-1 overflow-y-auto divide-y divide-border/60">
+      <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-border/60">
         {loading ? (
           <div className="py-12 text-center text-xs text-muted-foreground">
             대화방 목록을 불러오는 중...

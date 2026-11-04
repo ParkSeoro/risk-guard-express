@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Navigate, useLocation, useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "@/components/messenger/MessengerRoomList";
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";
@@ -12,8 +12,6 @@ import { MessageSquare } from "lucide-react";
 
 export default function MessengerPage() {
   const { user, roles, rolesReady } = useAuth();
-  const location = useLocation();
-  const inMobileShell = location.pathname.startsWith("/app/worker/");
   const [searchParams, setSearchParams] = useSearchParams();
   const initialRoomId = searchParams.get("room");
   const projectAccess = useGlobalProjectAccessOptional();
@@ -92,15 +90,11 @@ export default function MessengerPage() {
 
   return (
     <div
-      className={
-        inMobileShell
-          ? "h-full w-full flex bg-background overflow-hidden overscroll-contain"
-          : "h-dvh md:h-[calc(100vh-3.5rem)] w-full flex bg-background overflow-hidden overscroll-contain"
-      }
+      className="flex-1 h-full min-h-0 w-full flex bg-background overflow-hidden overscroll-contain"
     >
       {/* 대화방 목록 패널 (데스크톱 360px 고정, 모바일에서는 선택된 방이 없을 때 전체 너비) */}
       <div
-        className={`w-full md:w-80 lg:w-96 border-r flex flex-col shrink-0 h-full ${
+        className={`w-full md:w-80 lg:w-96 border-r flex flex-col shrink-0 h-full min-h-0 ${
           selectedRoomId ? "hidden md:flex" : "flex"
         }`}
       >
@@ -115,7 +109,7 @@ export default function MessengerPage() {
 
       {/* 대화창 본체 (선택된 방이 있을 때 표시, 없을 때 데스크톱 플레이스홀더) */}
       <div
-        className={`flex-1 h-full min-w-0 ${
+        className={`flex-1 h-full min-h-0 min-w-0 ${
           selectedRoomId ? "flex" : "hidden md:flex"
         }`}
       >

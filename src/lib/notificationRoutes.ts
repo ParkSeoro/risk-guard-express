@@ -48,6 +48,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
     id ? `${ADMIN}/vision-fleet?event=${id}` : `${ADMIN}/vision-fleet`,
   remote_support_session: (id) =>
     id ? `${ADMIN}/remote-support?session=${id}` : `${ADMIN}/remote-support`,
+  chat_room: (id) => (id ? `${ADMIN}/messenger?room=${id}` : `${ADMIN}/messenger`),
 };
 
 /** Mobile shell equivalents — prefer list/viewer pages that exist under /app/worker. */
@@ -77,6 +78,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   zone_event: () => `${WORKER}/alerts`,
   vision_safety_event: (id) =>
     id ? `${WORKER}/vision-events?event=${id}` : `${WORKER}/vision-events`,
+  chat_room: (id) => (id ? `${WORKER}/messenger?room=${id}` : `${WORKER}/messenger`),
 };
 
 const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -131,6 +133,8 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
       ? `${ADMIN}/remote-support?session=${n.related_id}`
       : `${ADMIN}/remote-support`,
   signup_pending: () => `${ADMIN}/settings/permissions?tab=pending`,
+  chat_message: (n) =>
+    n.related_id ? `${ADMIN}/messenger?room=${n.related_id}` : `${ADMIN}/messenger`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -185,6 +189,8 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
       ? `${ADMIN}/remote-support?session=${n.related_id}`
       : `${ADMIN}/remote-support`,
   signup_pending: () => `${ADMIN}/settings/permissions?tab=pending`,
+  chat_message: (n) =>
+    n.related_id ? `${WORKER}/messenger?room=${n.related_id}` : `${WORKER}/messenger`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */

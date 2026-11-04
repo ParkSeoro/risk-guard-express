@@ -61,8 +61,8 @@ export function MessengerRoomList({
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-      {/* 헤더 및 새 대화 버튼 */}
-      <div className="p-3 border-b bg-card shrink-0 flex items-center justify-between">
+      {/* 헤더 및 새 대화 버튼 (모바일 상태바 safe area 대응) */}
+      <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-semibold">메신저</h2>

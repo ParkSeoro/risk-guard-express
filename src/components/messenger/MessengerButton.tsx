@@ -5,6 +5,7 @@ import { fetchChatUnreadTotal } from "@/lib/messengerApi";
 import { MessengerDrawer } from "./MessengerDrawer";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 interface MessengerButtonProps {
@@ -14,6 +15,7 @@ interface MessengerButtonProps {
 
 export function MessengerButton({ currentProjectId, className }: MessengerButtonProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -67,13 +69,23 @@ export function MessengerButton({ currentProjectId, className }: MessengerButton
     };
   }, [user, refreshUnread]);
 
+  const handleClick = () => {
+    // 모바일 스마트폰 화면에서는 서랍 패널 대신 전체화면 페이지로 바로 연결하여 화면 깨짐 방지
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    if (isMobile) {
+      navigate("/app/admin/messenger");
+    } else {
+      setIsDrawerOpen(true);
+    }
+  };
+
   return (
     <>
       <Button
         variant="ghost"
         size="icon"
         className={cn("relative h-9 w-9 text-muted-foreground hover:text-foreground", className)}
-        onClick={() => setIsDrawerOpen(true)}
+        onClick={handleClick}
         title="SafeNex 메신저"
         aria-label="메신저 열기"
       >

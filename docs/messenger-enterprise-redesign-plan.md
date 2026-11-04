@@ -119,7 +119,7 @@ flowchart LR
 
 기존 테이블(`chat_rooms`, `chat_participants`, `chat_room_messages`, `chat_attachments`, `chat_reactions`) 스키마를 그대로 활용하면서 아래 보안 RPC(`SECURITY DEFINER`, `can_use_messenger` 및 `is_chat_room_participant` 검증 포함)를 추가한다:
 
-1. `invite_chat_participants(p_room_id uuid, p_user_ids uuid[])`: 기존 대화방에 신규 참여자 초대 및 시스템 메시지 기록. 초대한 사람과 초대받는 사람 모두 `can_use_messenger` 여야 하고, 방의 현장 소속이 아니면 넣지 않는다. 새 방 생성(`create_chat_room`)과 같은 현장 확인이다. 근로자 계정은 여기서 빠진다.
+1. `invite_chat_participants(p_room_id uuid, p_user_ids uuid[])`: 기존 대화방에 신규 참여자 초대 및 시스템 메시지 기록. 초대한 사람과 초대받는 사람 모두 `can_use_messenger` 여야 하고, 방의 현장 소속이 아니면 넣지 않는다. 새 방 생성(`create_chat_room`)과 같은 현장 확인이다. 예외는 발주처다. 회사 종류가 client(발주처, owner)이고 `project_members.company_id`가 같으면 다른 현장 동료도 명단과 초대에 나온다. 다른 발주처 회사나 시공사·협력사의 다른 현장 사람은 그대로 숨긴다. 근로자 계정은 여기서 빠진다.
 2. `leave_chat_room(p_room_id uuid)`: `left_at = NOW()` 처리 및 퇴장 시스템 메시지 기록
 3. `set_chat_room_name(p_room_id uuid, p_name text, p_for_everyone boolean)`: 내 화면 이름은 참여자 누구나. 전원에게 보이는 이름은 방 만든 사람, 마스터, 또는 그 현장의 관리자·안전관리자·현장소장만.
 4. `set_chat_pinned_message(p_room_id uuid, p_message_id uuid)`: 공지 고정과 해제도 같은 사람만.

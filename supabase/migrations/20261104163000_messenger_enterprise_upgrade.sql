@@ -10,6 +10,33 @@
 -- 7. Realtime publication for chat_reactions
 -- ====================================================================
 
+-- 발주처(client) 같은 회사는 현장이 달라도 메신저에서 한 소속으로 본다.
+-- 시공사·협력사는 이 함수가 false라서 기존처럼 같은 현장만 초대된다.
+CREATE OR REPLACE FUNCTION public.messenger_shares_client_company(p_me uuid, p_them uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT p_me IS NOT NULL
+     AND p_them IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM public.project_members mine
+       JOIN public.companies mc ON mc.id = mine.company_id
+       JOIN public.project_members theirs
+         ON theirs.user_id = p_them
+        AND theirs.company_id = mine.company_id
+       WHERE mine.user_id = p_me
+         AND mine.company_id IS NOT NULL
+         AND lower(btrim(COALESCE(mc.type, ''))) IN ('client', '발주처', 'owner')
+     );
+$$;
+
+REVOKE ALL ON FUNCTION public.messenger_shares_client_company(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.messenger_shares_client_company(uuid, uuid) TO service_role;
+
 -- 1. 대화방 추가 초대
 CREATE OR REPLACE FUNCTION public.invite_chat_participants(
   p_room_id uuid,
@@ -66,15 +93,18 @@ BEGIN
       CONTINUE;
     END IF;
 
-    -- Same project gate as create_chat_room. A room member cannot pull staff from another site.
-    IF NOT v_is_master AND NOT EXISTS (
+    -- Same project as create_chat_room, plus the same client company on another project.
+    IF NOT v_is_master
+       AND NOT EXISTS (
       SELECT 1
       FROM public.project_members mine
       JOIN public.project_members theirs ON theirs.project_id = mine.project_id
       WHERE mine.user_id = v_my_user_id
         AND theirs.user_id = v_uid
         AND (v_room_project_id IS NULL OR mine.project_id = v_room_project_id)
-    ) THEN
+    )
+       AND NOT public.messenger_shares_client_company(v_my_user_id, v_uid)
+    THEN
       CONTINUE;
     END IF;
 

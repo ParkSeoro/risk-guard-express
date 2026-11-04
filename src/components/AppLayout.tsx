@@ -1,6 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { ArrowLeft, User, LogOut, Building2, Smartphone } from "lucide-react";
+import { ArrowLeft, User, LogOut, Building2, Smartphone, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,7 +38,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const projectAccess = useProjectAccess();
   const showBackToMobile = isForceDesktop() && isLikelyPhoneDevice();
   const location = useLocation();
-  const isMessenger = location.pathname.includes("/messenger");
+  const isMessenger =
+    location.pathname.includes("/messenger") ||
+    location.pathname.includes("/desktop-workspace");
+  const isDesktopWorkspace = location.pathname.includes("/desktop-workspace");
   const navigate = useNavigate();
   const structuralBack = adminBackTarget(location.pathname);
   const backTarget = structuralBack
@@ -130,7 +133,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <AICreditBanner />
                 </div>
                 {!isPureWorkerUser(roles) && (
-                  <MessengerButton currentProjectId={projectAccess.selectedProject} />
+                  <>
+                    <Button
+                      type="button"
+                      variant={isDesktopWorkspace ? "default" : "outline"}
+                      size="sm"
+                      className="hidden md:inline-flex h-8 px-2.5 text-xs gap-1.5"
+                      onClick={() =>
+                        navigate(
+                          isDesktopWorkspace
+                            ? "/app/admin"
+                            : "/app/admin/desktop-workspace",
+                        )
+                      }
+                      title="카카오톡·네이버웍스 스타일 PC 통합 워크스페이스 전환"
+                    >
+                      <Monitor className="h-3.5 w-3.5" />
+                      <span>{isDesktopWorkspace ? "일반 관리자 뷰" : "PC 카톡형 워크스페이스"}</span>
+                    </Button>
+                    <MessengerButton currentProjectId={projectAccess.selectedProject} />
+                  </>
                 )}
                 <NotificationBell />
                 <RemoteSupportAgentPendingBadge />

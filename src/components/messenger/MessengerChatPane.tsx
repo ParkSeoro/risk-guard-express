@@ -48,8 +48,10 @@ import {
   PanelRightOpen,
   FileCheck2,
   UploadCloud,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { openDesktopPopoutWindow } from "@/lib/desktopBridge";
 
 interface MessengerChatPaneProps {
   room: ChatRoom;
@@ -769,6 +771,24 @@ export function MessengerChatPane({
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground hidden sm:inline-flex"
+            onClick={() =>
+              openDesktopPopoutWindow({
+                url: `${window.location.origin}/app/admin/messenger?room=${room.id}&popout=1`,
+                title: `SafeNex 대화 - ${roomTitle}`,
+                width: 440,
+                height: 720,
+              })
+            }
+            title="대화방 새 창으로 분리 (카카오톡 스타일 독립 창)"
+            aria-label="대화방 새 창으로 열기"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Button>
           <Button
             type="button"
             variant="ghost"

@@ -35,22 +35,35 @@ interface MessengerRoomListProps {
   rooms: ChatRoom[];
   selectedRoomId?: string | null;
   onSelectRoom: (room: ChatRoom) => void;
+  onDoubleClickRoom?: (room: ChatRoom) => void;
   onOpenNewChat: () => void;
   onRoomCreated?: (roomId: string) => void;
   currentProjectId?: string | null;
   loading?: boolean;
+  forcedTab?: "rooms" | "directory";
+  onTabChange?: (tab: "rooms" | "directory") => void;
+  hideHeader?: boolean;
 }
 
 export function MessengerRoomList({
   rooms,
   selectedRoomId,
   onSelectRoom,
+  onDoubleClickRoom,
   onOpenNewChat,
   onRoomCreated,
   currentProjectId,
   loading = false,
+  forcedTab,
+  onTabChange,
+  hideHeader = false,
 }: MessengerRoomListProps) {
-  const [activeTab, setActiveTab] = useState<"rooms" | "directory">("rooms");
+  const [internalTab, setInternalTab] = useState<"rooms" | "directory">("rooms");
+  const activeTab = forcedTab ?? internalTab;
+  const setActiveTab = (next: "rooms" | "directory") => {
+    setInternalTab(next);
+    onTabChange?.(next);
+  };
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "unread" | "favorite" | "direct" | "group">("all");
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => getFavoriteRoomIds());
@@ -189,20 +202,22 @@ export function MessengerRoomList({
   return (
     <div className="flex flex-col h-full min-h-0 bg-background overflow-hidden">
       {/* 헤더 및 새 대화 버튼 */}
-      <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-primary" />
-          <h2 className="text-sm font-semibold">SafeNex 메신저</h2>
+      {!hideHeader && (
+        <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">SafeNex 메신저</h2>
+          </div>
+          <Button
+            size="sm"
+            onClick={onOpenNewChat}
+            className="h-7 px-2.5 text-xs gap-1 shadow-2xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>새 대화</span>
+          </Button>
         </div>
-        <Button
-          size="sm"
-          onClick={onOpenNewChat}
-          className="h-7 px-2.5 text-xs gap-1 shadow-2xs"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>새 대화</span>
-        </Button>
-      </div>
+      )}
 
       {/* 상단 2탭 전환: 대화방 | 현장 조직도 */}
       <div className="grid grid-cols-2 border-b bg-muted/30 shrink-0 p-1 gap-1">
@@ -316,6 +331,8 @@ export function MessengerRoomList({
                 <div
                   key={room.id}
                   onClick={() => onSelectRoom(room)}
+                  onDoubleClick={() => onDoubleClickRoom?.(room)}
+                  title="클릭하여 대화방 열기 · 더블클릭하여 새 창으로 분리"
                   className={cn(
                     "group flex items-start gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors relative",
                     isSelected && "bg-primary/5 hover:bg-primary/10",

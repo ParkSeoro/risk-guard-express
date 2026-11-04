@@ -4,7 +4,7 @@ import { MessengerRoomList } from "./MessengerRoomList";
 import { MessengerChatPane } from "./MessengerChatPane";
 import { NewChatDialog } from "./NewChatDialog";
 import { Button } from "@/components/ui/button";
-import { Maximize2, X } from "lucide-react";
+import { Maximize2, Monitor, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { messengerHomePath } from "@/lib/messengerPath";
 import { supabase } from "@/integrations/supabase/client";
@@ -112,6 +112,23 @@ export function MessengerDrawer({
             SafeNex 실시간 비즈니스 메신저
           </span>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px] gap-1 text-primary hover:text-primary"
+              onClick={() => {
+                onClose();
+                navigate(
+                  selectedRoomId
+                    ? `/app/admin/desktop-workspace?room=${selectedRoomId}`
+                    : "/app/admin/desktop-workspace",
+                );
+              }}
+              title="카카오톡 PC처럼 좌측 대화목록 + 우측 업무 통합 화면으로 열기"
+            >
+              <Monitor className="h-3.5 w-3.5" />
+              <span>카톡형 PC모드</span>
+            </Button>
             <Button
               variant="ghost"
               size="icon"

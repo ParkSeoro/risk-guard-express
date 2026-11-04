@@ -126,4 +126,5 @@ export const LazyCompanies = L(() => import("@/pages/Companies"));
 export const LazyCompanyDetail = L(() => import("@/pages/CompanyDetail"));
 export const LazyOwnerSafetyWorkspace = L(() => import("@/pages/OwnerSafetyWorkspace"));
 export const LazyMessengerPage = L(() => import("@/pages/MessengerPage"));
+export const LazyDesktopWorkspacePage = L(() => import("@/pages/DesktopWorkspacePage"));
 export const LazyNotFound = L(() => import("@/pages/NotFound"));

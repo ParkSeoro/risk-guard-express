@@ -448,7 +448,7 @@ Deno.serve(async (req) => {
 
     const workTypeName = WORK_TYPE_NAMES[bodyPlan.work_type] || bodyPlan.work_type;
 
-    const docTitle = `${bodyPlan.title || "작업계획서"}`;
+    const docTitle = String(bodyPlan.title || "작업계획서").replace(/(?:\s*\(v\d+\))+\s*$/i, "").trim() || "작업계획서";
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -580,7 +580,7 @@ ${(plan.status === "작업취소" || plan.voided_at) ? `<div class="void-stamp-h
 
 <div class="report-header">
   <div class="report-title">작 업 계 획 서</div>
-  <div class="report-subtitle">${escapeHtml(bodyPlan.title)}</div>
+  <div class="report-subtitle">${escapeHtml(docTitle)}</div>
   <div class="report-info">
     <div class="report-info-row">
       <div class="report-info-label">현장명</div>

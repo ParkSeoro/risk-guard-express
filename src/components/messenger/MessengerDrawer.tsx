@@ -152,6 +152,8 @@ export function MessengerDrawer({
               selectedRoomId={selectedRoomId}
               onSelectRoom={handleSelectRoom}
               onOpenNewChat={() => setIsNewChatOpen(true)}
+              onRoomCreated={handleRoomCreated}
+              currentProjectId={currentProjectId}
               loading={loading}
             />
           )}

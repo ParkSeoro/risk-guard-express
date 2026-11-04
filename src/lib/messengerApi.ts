@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   CHAT_MESSAGE_PAGE_SIZE,
   olderChatMessagesFilter,
+  type SafetyDocCardPayload,
 } from "@/lib/chatMessages";
 import {
   compressUploadFile,
@@ -16,6 +17,7 @@ export interface ChatRoom {
   id: string;
   project_id: string | null;
   name: string | null;
+  custom_name?: string | null;
   is_group: boolean;
   created_by: string | null;
   last_message_text: string | null;
@@ -134,6 +136,38 @@ export interface ChatReadReceiptsResult {
   error?: string;
 }
 
+const FAVORITE_ROOMS_KEY = "safenex_messenger_favorite_rooms_v1";
+
+export function getFavoriteRoomIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(FAVORITE_ROOMS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function toggleFavoriteRoomId(roomId: string): string[] {
+  const current = new Set(getFavoriteRoomIds());
+  if (current.has(roomId)) {
+    current.delete(roomId);
+  } else {
+    current.add(roomId);
+  }
+  const next = Array.from(current);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(FAVORITE_ROOMS_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return next;
+}
+
 /**
  * 내가 참여 중인 대화방 목록 조회 (참여자 정보 및 미확인 카운트 포함)
  */
@@ -154,40 +188,54 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
 
   const roomIds = (myParticipations as any[]).map((p) => p.room_id);
 
-  // 2. 대화방 기본 정보 조회
-  const { data: rooms, error: roomErr } = await supabase
-    .from("chat_rooms" as any)
-    .select("*")
-    .in("id", roomIds)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
+  // 2. 대화방 기본 정보 및 참여자 전체 정보 병렬 조회
+  const [{ data: rooms, error: roomErr }, { data: allParticipants }] = await Promise.all([
+    supabase
+      .from("chat_rooms" as any)
+      .select("*")
+      .in("id", roomIds)
+      .order("last_message_at", { ascending: false, nullsFirst: false }),
+    supabase
+      .from("chat_participants" as any)
+      .select("id, room_id, user_id, joined_at, last_read_at")
+      .in("room_id", roomIds)
+      .is("left_at", null),
+  ]);
 
   if (roomErr || !rooms) return [];
 
-  // 3. 각 방의 참여자 전체 정보 조회 (profiles 매핑)
-  const { data: allParticipants } = await supabase
-    .from("chat_participants" as any)
-    .select("id, room_id, user_id, joined_at, last_read_at")
-    .in("room_id", roomIds)
-    .is("left_at", null);
+  const participantUserIds = Array.from(
+    new Set((allParticipants || []).map((p: any) => p.user_id).filter(Boolean)),
+  );
 
-  const participantUserIds = Array.from(new Set((allParticipants || []).map((p: any) => p.user_id)));
-  
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, display_name, company, position")
-    .in("user_id", participantUserIds);
+  const { data: profiles } =
+    participantUserIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("user_id, display_name, company, position")
+          .in("user_id", participantUserIds)
+      : { data: [] as any[] };
 
   const profileMap = new Map((profiles || []).map((pr) => [pr.user_id, pr]));
-
-  // 4. 각 방의 미확인 메시지 수 집계
   const myPartMap = new Map((myParticipations as any[]).map((p) => [p.room_id, p]));
 
+  const { data: unreadRows, error: unreadErr } = await (supabase.rpc as any)("count_my_chat_unreads", {
+    p_room_ids: roomIds,
+  });
+  const unreadMap = new Map<string, number>();
+  if (!unreadErr && Array.isArray(unreadRows)) {
+    for (const row of unreadRows as { room_id: string; unread_count: number }[]) {
+      unreadMap.set(row.room_id, Number(row.unread_count) || 0);
+    }
+  }
+
+  // 3. 각 방의 미확인 메시지 수. RPC가 있으면 한 번만 묻고, 아직 함수가 없으면 방마다 센다.
   const enrichedRooms: ChatRoom[] = await Promise.all(
     (rooms as any[]).map(async (room) => {
       const myPart = myPartMap.get(room.id);
-      let unread_count = 0;
+      let unread_count = unreadMap.get(room.id) || 0;
 
-      if (myPart?.last_read_at) {
+      if (unreadErr && myPart?.last_read_at) {
         const { count } = await supabase
           .from("chat_room_messages" as any)
           .select("id", { count: "exact", head: true })
@@ -224,12 +272,13 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
 
       return {
         ...room,
+        custom_name: myPart?.room_name_override || null,
         unread_count,
         notifications_enabled: myPart?.is_notification_enabled !== false,
         participants: roomParticipants,
         other_participant: otherParticipant,
       };
-    })
+    }),
   );
 
   return enrichedRooms;
@@ -272,12 +321,19 @@ async function hydrateChatMessages(rows: any[]): Promise<ChatRoomMessage[]> {
     ),
   );
 
-  const [{ data: profiles }, { data: attachments }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("user_id, display_name, company, position")
-      .in("user_id", senderIds),
-    supabase.from("chat_attachments" as any).select("*").in("message_id", messageIds),
+  const [{ data: profiles }, { data: attachments }, { data: reactions }] = await Promise.all([
+    senderIds.length > 0
+      ? supabase
+          .from("profiles")
+          .select("user_id, display_name, company, position")
+          .in("user_id", senderIds)
+      : Promise.resolve({ data: [] as any[] }),
+    messageIds.length > 0
+      ? supabase.from("chat_attachments" as any).select("*").in("message_id", messageIds)
+      : Promise.resolve({ data: [] as any[] }),
+    messageIds.length > 0
+      ? supabase.from("chat_reactions" as any).select("*").in("message_id", messageIds)
+      : Promise.resolve({ data: [] as any[] }),
   ]);
 
   const profileMap = new Map((profiles || []).map((pr) => [pr.user_id, pr]));
@@ -286,6 +342,13 @@ async function hydrateChatMessages(rows: any[]): Promise<ChatRoomMessage[]> {
     const list = attachmentMap.get(att.message_id) || [];
     list.push(att);
     attachmentMap.set(att.message_id, list);
+  });
+
+  const reactionMap = new Map<string, ChatReaction[]>();
+  (reactions || []).forEach((rx: any) => {
+    const list = reactionMap.get(rx.message_id) || [];
+    list.push(rx);
+    reactionMap.set(rx.message_id, list);
   });
 
   const msgMap = new Map<string, any>();
@@ -305,6 +368,7 @@ async function hydrateChatMessages(rows: any[]): Promise<ChatRoomMessage[]> {
       sender_company: pr?.company || null,
       sender_role: pr?.position || null,
       attachments: attachmentMap.get(m.id) || [],
+      reactions: reactionMap.get(m.id) || [],
       parent_message: parent
         ? {
             id: parent.id,
@@ -472,12 +536,12 @@ export async function sendChatMessage(
   }
 
   // last_message_* 는 메시지 INSERT 트리거가 갱신한다.
-  // chat_rooms 에는 참여자 UPDATE 정책이 없어 여기서 고치면 조용히 실패한다.
   await markChatRoomRead(roomId, (newMsg as any).id);
 
   return {
     ...(newMsg as any),
     attachments: savedAttachments,
+    reactions: [],
   } as ChatRoomMessage;
 }
 
@@ -542,6 +606,23 @@ export async function fetchChatMessageReadReceipts(
 }
 
 /**
+ * 미확인 참여자에게 재알림 푸시 발송 (라인웍스/네이버웍스 스타일 콕 찌르기)
+ */
+export async function remindUnreadChatParticipants(
+  messageId: string,
+): Promise<number | null> {
+  const { data, error } = await (supabase.rpc as any)("remind_unread_chat_participants", {
+    p_message_id: messageId,
+  });
+
+  if (error) {
+    console.error("remindUnreadChatParticipants error:", error);
+    return null;
+  }
+  return typeof data === "number" ? data : 0;
+}
+
+/**
  * 이 방 알림만 켜거나 끈다. 참여자 행은 본인 것만 바뀐다.
  */
 export async function setChatNotificationEnabled(
@@ -588,4 +669,272 @@ export async function fetchChatUnreadTotal(): Promise<number> {
     return 0;
   }
   return typeof data === "number" ? data : 0;
+}
+
+/**
+ * 이모지 리액션 토글 (추가 또는 해제)
+ */
+export async function toggleChatReaction(
+  messageId: string,
+  emoji: string,
+): Promise<{ added: boolean; reaction?: ChatReaction } | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: existing } = await supabase
+    .from("chat_reactions" as any)
+    .select("id")
+    .eq("message_id", messageId)
+    .eq("user_id", user.id)
+    .eq("emoji", emoji)
+    .maybeSingle();
+
+  if (existing && (existing as any).id) {
+    const { error: delErr } = await supabase
+      .from("chat_reactions" as any)
+      .delete()
+      .eq("id", (existing as any).id);
+    if (delErr) {
+      console.error("toggleChatReaction delete error:", delErr);
+      return null;
+    }
+    return { added: false };
+  }
+
+  const { data: inserted, error: insErr } = await supabase
+    .from("chat_reactions" as any)
+    .insert({
+      message_id: messageId,
+      user_id: user.id,
+      emoji,
+    })
+    .select("*")
+    .single();
+
+  if (insErr || !inserted) {
+    console.error("toggleChatReaction insert error:", insErr);
+    return null;
+  }
+
+  return { added: true, reaction: inserted as ChatReaction };
+}
+
+/**
+ * 대화방 상단 공지 고정 / 해제
+ */
+export async function setChatPinnedMessage(
+  roomId: string,
+  messageId: string | null,
+): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("set_chat_pinned_message", {
+    p_room_id: roomId,
+    p_message_id: messageId,
+  });
+
+  if (!error) return data === true;
+
+  // Fallback: direct update if RPC is not deployed yet
+  const { error: upErr } = await supabase
+    .from("chat_rooms" as any)
+    .update({ pinned_message_id: messageId, updated_at: new Date().toISOString() })
+    .eq("id", roomId);
+
+  return !upErr;
+}
+
+/**
+ * 고정된 공지 메시지 단건 조회
+ */
+export async function fetchPinnedMessagePreview(
+  messageId: string,
+): Promise<{ id: string; content: string; sender_name: string } | null> {
+  const { data: msg } = await supabase
+    .from("chat_room_messages" as any)
+    .select("id, sender_id, content, is_deleted")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (!msg || (msg as any).is_deleted) return null;
+
+  const { data: pr } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("user_id", (msg as any).sender_id)
+    .maybeSingle();
+
+  return {
+    id: (msg as any).id,
+    content: (msg as any).content || "",
+    sender_name: pr?.display_name || "관리자",
+  };
+}
+
+/**
+ * 본인 메시지 삭제 (회수)
+ */
+export async function deleteMyChatMessage(messageId: string): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("delete_my_chat_message", {
+    p_message_id: messageId,
+  });
+
+  if (!error) return data === true;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const { error: upErr } = await supabase
+    .from("chat_room_messages" as any)
+    .update({
+      is_deleted: true,
+      content: "삭제된 메시지입니다.",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", messageId)
+    .eq("sender_id", user.id);
+
+  return !upErr;
+}
+
+/**
+ * 대화방 추가 인원 초대
+ */
+export async function inviteChatParticipants(
+  roomId: string,
+  userIds: string[],
+): Promise<number> {
+  const { data, error } = await (supabase.rpc as any)("invite_chat_participants", {
+    p_room_id: roomId,
+    p_user_ids: userIds,
+  });
+
+  if (!error && typeof data === "number") return data;
+  console.error("inviteChatParticipants error:", error);
+  return 0;
+}
+
+/**
+ * 대화방 나가기
+ */
+export async function leaveChatRoom(roomId: string): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("leave_chat_room", {
+    p_room_id: roomId,
+  });
+
+  if (!error) return data === true;
+  console.error("leaveChatRoom error:", error);
+  return false;
+}
+
+/**
+ * 대화방 이름 변경
+ */
+export async function setChatRoomName(
+  roomId: string,
+  name: string,
+  forEveryone = false,
+): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("set_chat_room_name", {
+    p_room_id: roomId,
+    p_name: name,
+    p_for_everyone: forEveryone,
+  });
+
+  if (!error) return data === true;
+  console.error("setChatRoomName error:", error);
+  return false;
+}
+
+/**
+ * 대화방 내 모든 사진 및 첨부파일 모아보기 조회 (우측 서랍용)
+ */
+export async function fetchRoomAttachments(roomId: string): Promise<ChatAttachment[]> {
+  const { data: msgRows } = await supabase
+    .from("chat_room_messages" as any)
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (!msgRows || msgRows.length === 0) return [];
+  const msgIds = (msgRows as any[]).map((m) => m.id);
+
+  const { data: attachments } = await supabase
+    .from("chat_attachments" as any)
+    .select("*")
+    .in("message_id", msgIds)
+    .order("created_at", { ascending: false });
+
+  return (attachments as ChatAttachment[]) || [];
+}
+
+/**
+ * 대화방에서 즉시 공유 가능한 SafeNex 안전문서 목록 조회
+ */
+export async function fetchShareableSafetyDocs(
+  projectId?: string | null,
+): Promise<SafetyDocCardPayload[]> {
+  let permitQuery = supabase
+    .from("work_permits")
+    .select("id, work_name, permit_date, status, location_detail")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (projectId) permitQuery = permitQuery.eq("project_id", projectId);
+
+  let runQuery = supabase
+    .from("assessment_runs")
+    .select("id, period_label, status, start_date, end_date")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (projectId) runQuery = runQuery.eq("project_id", projectId);
+
+  let planQuery = supabase
+    .from("work_plans")
+    .select("id, title, status, work_location")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (projectId) planQuery = planQuery.eq("project_id", projectId);
+
+  const [permitsRes, runsRes, plansRes] = await Promise.all([
+    permitQuery,
+    runQuery,
+    planQuery,
+  ]);
+
+  const docs: SafetyDocCardPayload[] = [];
+
+  for (const p of (permitsRes.data || []) as any[]) {
+    docs.push({
+      kind: "work_permit",
+      id: p.id,
+      title: p.work_name || "작업허가서",
+      subtitle: [p.permit_date, p.location_detail].filter(Boolean).join(" · ") || null,
+      statusLabel: p.status || null,
+      url: `/app/admin/work-permits/${p.id}`,
+    });
+  }
+
+  for (const r of (runsRes.data || []) as any[]) {
+    docs.push({
+      kind: "assessment_run",
+      id: r.id,
+      title: r.period_label || "위험성평가",
+      subtitle: [r.start_date, r.end_date].filter(Boolean).join(" ~ ") || null,
+      statusLabel: r.status || null,
+      url: `/app/admin/assessment-run/${r.id}`,
+    });
+  }
+
+  for (const pl of (plansRes.data || []) as any[]) {
+    docs.push({
+      kind: "work_plan",
+      id: pl.id,
+      title: pl.title || "작업계획서",
+      subtitle: pl.work_location || null,
+      statusLabel: pl.status || null,
+      url: `/app/admin/work-plan/${pl.id}`,
+    });
+  }
+
+  return docs;
 }

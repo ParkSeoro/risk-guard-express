@@ -5,9 +5,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fetchChatMessageReadReceipts, type ChatReadReceiptsResult } from "@/lib/messengerApi";
-import { CheckCheck, Clock, Phone, ShieldCheck, User } from "lucide-react";
+import {
+  fetchChatMessageReadReceipts,
+  remindUnreadChatParticipants,
+  type ChatReadReceiptsResult,
+} from "@/lib/messengerApi";
+import { BellRing, CheckCheck, Clock, Loader2, Phone, ShieldCheck, User } from "lucide-react";
+import { toast } from "sonner";
 
 interface ReadReceiptModalProps {
   messageId: string | null;
@@ -18,10 +24,13 @@ interface ReadReceiptModalProps {
 export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModalProps) {
   const [data, setData] = useState<ChatReadReceiptsResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reminding, setReminding] = useState(false);
+  const [remindedOnce, setRemindedOnce] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !messageId) {
       setData(null);
+      setRemindedOnce(false);
       return;
     }
     setLoading(true);
@@ -45,13 +54,33 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
     }
   };
 
+  const handleRemindUnreaders = async () => {
+    if (!messageId || reminding || unreaders.length === 0) return;
+    setReminding(true);
+    try {
+      const count = await remindUnreadChatParticipants(messageId);
+      if (count === null) {
+        toast.error("재알림 발송에 실패했습니다.");
+      } else if (count < 0) {
+        toast.info("같은 메시지는 10분에 한 번만 다시 알릴 수 있습니다.");
+      } else if (count === 0) {
+        toast.info("알림을 켠 미확인 참여자가 없습니다.");
+      } else {
+        setRemindedOnce(true);
+        toast.success(`미확인 참여자 ${count}명에게 재알림 푸시를 발송했습니다.`);
+      }
+    } finally {
+      setReminding(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="p-4 border-b bg-muted/40">
           <DialogTitle className="text-sm font-semibold flex items-center gap-2">
             <CheckCheck className="h-4 w-4 text-primary" />
-            읽음 확인 현황 (라인웍스 스타일)
+            메시지 수신·읽음 확인 현황
           </DialogTitle>
         </DialogHeader>
 
@@ -64,7 +93,7 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
             {data.error}
           </div>
         ) : (
-          <Tabs defaultValue="readers" className="flex-1 flex flex-col min-h-0">
+          <Tabs defaultValue={unreaders.length > 0 ? "unreaders" : "readers"} className="flex-1 flex flex-col min-h-0">
             <div className="px-4 pt-3 border-b bg-muted/20">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="readers" className="text-xs">
@@ -137,34 +166,58 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
                   모든 참여자가 메시지를 확인했습니다! 🎉
                 </div>
               ) : (
-                unreaders.map((u) => (
-                  <div
-                    key={u.user_id}
-                    className="flex items-center justify-between p-2.5 rounded-lg border bg-card/60"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="h-8 w-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-semibold shrink-0">
-                        {u.name?.slice(0, 1) || <User className="h-4 w-4" />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium truncate">{u.name || "사용자"}</span>
-                          {u.role && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
-                              {u.role}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {u.company || "소속 미지정"}
-                        </div>
-                      </div>
+                <>
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-2">
+                    <div className="text-[11px] text-amber-800 dark:text-amber-300 leading-tight">
+                      <p className="font-semibold">아직 {unreaders.length}명이 확인하지 않았습니다.</p>
+                      <p className="text-[10px] opacity-80 mt-0.5">미확인 참여자에게만 즉시 푸시 알림을 다시 보낼 수 있습니다.</p>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium shrink-0">
-                      미확인
-                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      disabled={reminding || remindedOnce}
+                      onClick={() => void handleRemindUnreaders()}
+                      className="h-7 px-2.5 text-[11px] gap-1 shrink-0 bg-amber-600 hover:bg-amber-500 text-white"
+                    >
+                      {reminding ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <BellRing className="h-3 w-3" />
+                      )}
+                      <span>{remindedOnce ? "재알림 완료" : "미확인자 재알림"}</span>
+                    </Button>
                   </div>
-                ))
+
+                  {unreaders.map((u) => (
+                    <div
+                      key={u.user_id}
+                      className="flex items-center justify-between p-2.5 rounded-lg border bg-card/60"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="h-8 w-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-semibold shrink-0">
+                          {u.name?.slice(0, 1) || <User className="h-4 w-4" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium truncate">{u.name || "사용자"}</span>
+                            {u.role && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                                {u.role}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {u.company || "소속 미지정"}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium shrink-0">
+                        미확인
+                      </span>
+                    </div>
+                  ))}
+                </>
               )}
             </TabsContent>
           </Tabs>

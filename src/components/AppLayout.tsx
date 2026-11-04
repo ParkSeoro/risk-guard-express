@@ -38,6 +38,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const projectAccess = useProjectAccess();
   const showBackToMobile = isForceDesktop() && isLikelyPhoneDevice();
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isPopoutWindow = searchParams.get("popout") === "1";
   const isMessenger =
     location.pathname.includes("/messenger") ||
     location.pathname.includes("/desktop-workspace");
@@ -70,6 +72,74 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <RemoteSupportHost>
           <div className="h-dvh w-screen overflow-hidden bg-background flex flex-col">
             <AppErrorBoundary>{children}</AppErrorBoundary>
+          </div>
+        </RemoteSupportHost>
+      </ProjectAccessContext.Provider>
+    );
+  }
+
+  // 미니 메신저에서 아이콘을 눌러 띄운 독립 팝업 창(?popout=1):
+  // 왼쪽 웹 사이드바(AppSidebar) 없이 깔끔한 상단 현장 선택 바 + 해당 업무 페이지(기존 권한/업체 필터 100% 동일)만 표시!
+  if (isPopoutWindow) {
+    return (
+      <ProjectAccessContext.Provider value={projectAccess}>
+        <RemoteSupportHost>
+          <div className="min-h-screen flex flex-col w-full bg-background print:block">
+            <header className="h-12 flex items-center justify-between gap-2 border-b bg-slate-900 text-slate-100 px-3 shrink-0 print:hidden">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="h-6 w-6 rounded-md bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shrink-0">
+                  S
+                </span>
+                {backTarget && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-slate-300 hover:text-white hover:bg-slate-800"
+                    aria-label="뒤로"
+                    onClick={() => navigate(`${backTarget}${backTarget.includes("?") ? "&" : "?"}popout=1`)}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                {projectAccess.projects.length > 0 && (
+                  <div className="flex items-center gap-1.5 min-w-0 max-w-xs">
+                    <Building2 className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <Select
+                      value={projectAccess.selectedProject}
+                      onValueChange={projectAccess.setSelectedProject}
+                    >
+                      <SelectTrigger className="h-7 text-xs bg-slate-800 border-slate-700 text-slate-100 min-w-[160px]">
+                        <SelectValue placeholder="현장 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projectAccess.projects.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="text-xs">
+                            <div className="flex flex-col">
+                              <span>{p.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{p.site_name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0 text-xs text-slate-300">
+                <span className="font-semibold text-white">{profile?.display_name || "관리자"}</span>
+                <span className="text-slate-400">({roleLabel})</span>
+              </div>
+            </header>
+            <main
+              className={`flex-1 min-h-0 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 ${
+                location.pathname.includes("/messenger")
+                  ? "overflow-hidden p-0 flex flex-col h-[calc(100dvh-3rem)]"
+                  : "overflow-auto p-3 sm:p-5"
+              }`}
+            >
+              <AppErrorBoundary>{children}</AppErrorBoundary>
+            </main>
           </div>
         </RemoteSupportHost>
       </ProjectAccessContext.Provider>

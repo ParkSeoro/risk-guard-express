@@ -266,20 +266,28 @@ export function applyDesktopWindowMode(mode: DesktopWindowMode): void {
 
 /**
  * Open a standalone pop-out window (like double-clicking a chat room in KakaoTalk PC,
- * or popping out a Work Permit / Safety Cost window).
+ * or popping out a Work Permit / Safety Cost / Dashboard window).
+ * Passes `?popout=1` so `AppLayout` hides the web sidebar and renders a clean standalone window.
  */
 export function openDesktopPopoutWindow(opts: {
   url: string;
   title?: string;
   width?: number;
   height?: number;
+  windowName?: string;
 }): void {
   if (typeof window === "undefined") return;
   const width = opts.width ?? 460;
   const height = opts.height ?? 720;
+
+  let finalUrl = opts.url;
+  if (!finalUrl.includes("popout=1")) {
+    finalUrl += finalUrl.includes("?") ? "&popout=1" : "?popout=1";
+  }
+
   if (window.safenexDesktop?.openPopoutWindow) {
     void window.safenexDesktop.openPopoutWindow({
-      url: opts.url,
+      url: finalUrl,
       title: opts.title || "SafeNex",
       width,
       height,
@@ -289,7 +297,9 @@ export function openDesktopPopoutWindow(opts: {
   const left = Math.max(40, Math.round((window.screen.width - width) / 2));
   const top = Math.max(40, Math.round((window.screen.height - height) / 2));
   const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
-  window.open(opts.url, opts.title || "_blank", features);
+  const winName = opts.windowName || opts.title || "_blank";
+  const win = window.open(finalUrl, winName, features);
+  win?.focus();
 }
 
 /**

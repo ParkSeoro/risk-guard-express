@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzeSafetyCostCompliance,
+  formatMoneyInput,
+  formatWonKorean,
   isSafetyCostLegacyImport,
   isSafetyCostReportLocked,
   sumLiveSafetyCostAmounts,
@@ -69,6 +71,28 @@ describe('safetyCost money SSOT', () => {
     expect(byCat['3']).toBe(50000);
     expect(byCat['5']).toBe(20000);
     expect(byCat['2']).toBe(0);
+  });
+});
+
+describe('safety cost amount display', () => {
+  it('groups money inputs by thousands and keeps an empty field empty', () => {
+    expect(formatMoneyInput('220000')).toBe('220,000');
+    expect(formatMoneyInput('1,210,000')).toBe('1,210,000');
+    expect(formatMoneyInput('')).toBe('');
+    expect(formatMoneyInput(null)).toBe('');
+  });
+
+  it('reads the item total in Korean under the amount', () => {
+    expect(formatWonKorean(1210000)).toBe('백이십일만 원');
+    expect(formatWonKorean(1100000)).toBe('백십만 원');
+    expect(formatWonKorean(110000)).toBe('십일만 원');
+    expect(formatWonKorean(220000)).toBe('이십이만 원');
+    expect(formatWonKorean(222000)).toBe('이십이만이천 원');
+    expect(formatWonKorean(10000)).toBe('일만 원');
+    expect(formatWonKorean(100000000)).toBe('일억 원');
+    expect(formatWonKorean(15)).toBe('십오 원');
+    expect(formatWonKorean(0)).toBe('');
+    expect(formatWonKorean('')).toBe('');
   });
 });
 

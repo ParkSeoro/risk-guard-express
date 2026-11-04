@@ -163,6 +163,56 @@ export function formatKRW(value: number | string | null | undefined) {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n);
 }
 
+const WON_DIGITS = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'] as const;
+const WON_SMALL = ['', '십', '백', '천'] as const;
+const WON_BIG = ['', '만', '억', '조', '경'] as const;
+
+function moneyInteger(value: number | string | null | undefined) {
+  const text = String(value ?? '').replace(/,/g, '').trim();
+  if (!text) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n);
+}
+
+/** 입력 칸에 보여줄 금액. 빈 값은 빈 칸으로 두고, 천 단위 콤마만 붙인다. */
+export function formatMoneyInput(value: number | string | null | undefined) {
+  const n = moneyInteger(value);
+  if (n === null) return '';
+  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(n);
+}
+
+function koreanWonGroup(n: number) {
+  const text = String(n).padStart(4, '0');
+  let out = '';
+  for (let i = 0; i < 4; i++) {
+    const digit = Number(text[i]);
+    if (!digit) continue;
+    const unit = WON_SMALL[3 - i];
+    out += `${digit === 1 && unit ? '' : WON_DIGITS[digit]}${unit}`;
+  }
+  return out;
+}
+
+/** 금액 아래에 붙는 한글. 0과 빈 값은 보여 주지 않는다. 예: 1210000 → 백이십일만 원 */
+export function formatWonKorean(value: number | string | null | undefined) {
+  const n = moneyInteger(value);
+  if (n === null || n <= 0) return '';
+  let rest = n;
+  const groups: number[] = [];
+  while (rest > 0 && groups.length < WON_BIG.length) {
+    groups.push(rest % 10000);
+    rest = Math.floor(rest / 10000);
+  }
+  if (rest > 0) return `${formatMoneyInput(n)}원`;
+  let words = '';
+  for (let i = groups.length - 1; i >= 0; i--) {
+    if (!groups[i]) continue;
+    words += `${koreanWonGroup(groups[i])}${WON_BIG[i]}`;
+  }
+  return words ? `${words} 원` : '';
+}
+
 export function getSafetyCostStatusLabel(status: string) {
   const map: Record<string, string> = { draft: '작성중', submitted: '결재중', approved: '승인완료', rejected: '반려' };
   return map[status] || status;

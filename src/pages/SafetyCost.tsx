@@ -23,6 +23,7 @@ import { evaluateEvidencePack, packGateSummary, type EvidenceKind } from '@/lib/
 import { itemMissingDailyHard, itemTransactionEvidenceRows, type SourceTransactionFile } from '@/lib/safetyCostItemEvidence';
 import { EvidencePackPanel } from '@/components/safety-cost/EvidencePackPanel';
 import { SafetyCostItemCards } from '@/components/safety-cost/SafetyCostItemCards';
+import { SafetyCostMoneyFields } from '@/components/safety-cost/SafetyCostMoneyFields';
 import { LegacyImportWizard } from '@/components/safety-cost/LegacyImportWizard';
 import { PpeLedgerPanel } from '@/components/safety-cost/PpeLedgerPanel';
 import { PpeStockPanel } from '@/components/safety-cost/PpeStockPanel';
@@ -1178,8 +1179,7 @@ const SafetyCost = () => {
           <div className="space-y-1"><Label>판정</Label><Select value={editingItem.classification_status} onValueChange={(v) => setEditingItem((p) => ({ ...p, classification_status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="usable">사용 가능</SelectItem><SelectItem value="warning">사용 불가</SelectItem><SelectItem value="review">검토 필요</SelectItem></SelectContent></Select></div>
           <div className="space-y-1"><Label>수량</Label><Input type="number" value={editingItem.quantity} onChange={(e) => updateEditingItemMoney('quantity', e.target.value)} /></div>
           <div className="space-y-1"><Label>단위</Label><Input value={editingItem.unit} onChange={(e) => setEditingItem((p) => ({ ...p, unit: e.target.value }))} /></div>
-          <div className="space-y-1"><Label>단가</Label><Input type="number" value={editingItem.unit_price} onChange={(e) => updateEditingItemMoney('unit_price', e.target.value)} /></div>
-          <div className="space-y-1"><Label>공급가액</Label><Input type="number" value={editingItem.supply_amount} onChange={(e) => updateEditingItemMoney('supply_amount', e.target.value)} /></div><div className="space-y-1"><Label>부가세</Label><Input type="number" value={editingItem.vat_amount} onChange={(e) => updateEditingItemMoney('vat_amount', e.target.value)} /></div><div className="space-y-1"><Label>금액</Label><Input type="number" value={editingItem.amount} readOnly className="bg-muted/40" /></div>
+          <SafetyCostMoneyFields unitPrice={editingItem.unit_price} supplyAmount={editingItem.supply_amount} vatAmount={editingItem.vat_amount} amount={editingItem.amount} onChange={updateEditingItemMoney} />
           <div className="space-y-1 md:col-span-2"><Label>판정 사유</Label><Textarea rows={3} value={editingItem.ai_reason} onChange={(e) => setEditingItem((p) => ({ ...p, ai_reason: e.target.value }))} /></div>
           <div className="space-y-1 md:col-span-2"><Label>법적 근거</Label><Textarea rows={3} value={editingItem.legal_basis} onChange={(e) => setEditingItem((p) => ({ ...p, legal_basis: e.target.value }))} /></div>
           {isLegacyImport ? null : editingItem.id ? (

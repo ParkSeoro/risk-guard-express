@@ -62,6 +62,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setForceDesktop(false);
     window.location.assign(MOBILE_ADMIN_HOME);
   };
+
+  // 카톡형 PC 미니 메신저(/desktop-workspace)는 웹 관리자 사이드바·헤더 없이 순수 메신저 창으로 렌더링
+  if (isDesktopWorkspace) {
+    return (
+      <ProjectAccessContext.Provider value={projectAccess}>
+        <RemoteSupportHost>
+          <div className="h-dvh w-screen overflow-hidden bg-background flex flex-col">
+            <AppErrorBoundary>{children}</AppErrorBoundary>
+          </div>
+        </RemoteSupportHost>
+      </ProjectAccessContext.Provider>
+    );
+  }
+
   return (
     <ProjectAccessContext.Provider value={projectAccess}>
       <RemoteSupportHost>

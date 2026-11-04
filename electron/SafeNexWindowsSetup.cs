@@ -85,11 +85,11 @@ namespace SafeNexDesktop
             _mutex = new Mutex(true, "Local\\SafeNexPC_SingleInstance_Mutex_v1", out createdNew);
             if (!createdNew)
             {
-                // Already running -> open the workspace window via local server port if active
+                // Already running -> open the mini messenger window via local server port if active
                 int existingPort = ReadSavedPort(installDir);
                 if (existingPort > 0)
                 {
-                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, false);
+                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, true);
                 }
                 return;
             }
@@ -137,11 +137,19 @@ namespace SafeNexDesktop
 
                 if (!string.IsNullOrEmpty(browserExe))
                 {
-                    int width = compactMode ? 430 : 1440;
-                    int height = compactMode ? 760 : 900;
+                    int width = compactMode ? 410 : 1360;
+                    int height = compactMode ? 740 : 880;
+                    Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
+                    int posX = compactMode
+                        ? Math.Max(0, workArea.Right - width - 16)
+                        : Math.Max(0, workArea.Left + (workArea.Width - width) / 2);
+                    int posY = compactMode
+                        ? Math.Max(0, workArea.Bottom - height - 16)
+                        : Math.Max(0, workArea.Top + (workArea.Height - height) / 2);
+
                     string args = string.Format(
-                        "--app=\"{0}\" --user-data-dir=\"{1}\" --window-size={2},{3} --disable-features=Translate",
-                        url, profileDir, width, height
+                        "--app=\"{0}\" --user-data-dir=\"{1}\" --window-size={2},{3} --window-position={4},{5} --disable-features=Translate",
+                        url, profileDir, width, height, posX, posY
                     );
                     Process.Start(new ProcessStartInfo
                     {
@@ -295,8 +303,8 @@ namespace SafeNexDesktop
             };
             _chkCompactMode = new CheckBox
             {
-                Text = "시작 시 카톡형 미니모드(폭 430px)로 가볍게 실행",
-                Checked = false,
+                Text = "카카오톡처럼 화면 오른쪽 구석에 미니 메신저 창으로 띄우기 (권장)",
+                Checked = true,
                 Location = new Point(28, 192),
                 AutoSize = true
             };
@@ -575,14 +583,14 @@ namespace SafeNexDesktop
                 ContextMenuStrip = menu
             };
 
-            _trayIcon.DoubleClick += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", false);
+            _trayIcon.DoubleClick += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", true);
 
-            bool startCompact = false;
+            bool startCompact = true;
             try
             {
                 string cfg = Path.Combine(_installDir, "mode.cfg");
-                if (File.Exists(cfg) && File.ReadAllText(cfg).Trim() == "compact")
-                    startCompact = true;
+                if (File.Exists(cfg) && File.ReadAllText(cfg).Trim() == "expanded")
+                    startCompact = false;
             }
             catch { }
 
@@ -593,14 +601,14 @@ namespace SafeNexDesktop
         {
             ContextMenuStrip menu = new ContextMenuStrip();
 
-            ToolStripMenuItem openFullItem = new ToolStripMenuItem("🖥️ 카톡형 통합 워크스페이스 열기 (대화+업무)");
-            openFullItem.Font = new Font(menu.Font, FontStyle.Bold);
-            openFullItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", false);
-            menu.Items.Add(openFullItem);
-
-            ToolStripMenuItem openMiniItem = new ToolStripMenuItem("📱 카톡 미니모드 (폭 430px 슬림 창) 열기");
+            ToolStripMenuItem openMiniItem = new ToolStripMenuItem("💬 SafeNex 카톡형 미니 메신저 열기 (오른쪽 구석)");
+            openMiniItem.Font = new Font(menu.Font, FontStyle.Bold);
             openMiniItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", true);
             menu.Items.Add(openMiniItem);
+
+            ToolStripMenuItem openFullItem = new ToolStripMenuItem("🖥️ 넓은 분할 화면으로 열기");
+            openFullItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", false);
+            menu.Items.Add(openFullItem);
 
             menu.Items.Add(new ToolStripSeparator());
 

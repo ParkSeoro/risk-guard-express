@@ -126,13 +126,23 @@ function createTray() {
 }
 
 function createMainWindow() {
+  const { screen } = require("electron");
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const workArea = primaryDisplay.workArea;
+  const width = 410;
+  const height = 740;
+  const posX = Math.max(0, workArea.x + workArea.width - width - 16);
+  const posY = Math.max(0, workArea.y + workArea.height - height - 16);
+
   const iconPath = getAppIconPath();
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 380,
-    minHeight: 600,
-    title: "SafeNex PC 안전관리 워크스페이스",
+    width,
+    height,
+    x: posX,
+    y: posY,
+    minWidth: 360,
+    minHeight: 560,
+    title: "SafeNex PC 메신저",
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {

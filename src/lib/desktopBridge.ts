@@ -71,7 +71,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopAppSettings = {
   autoStartOnBoot: true,
   keepLoggedIn: true,
   minimizeToTrayOnClose: true,
-  defaultWindowMode: "expanded",
+  defaultWindowMode: "compact",
   desktopNotificationBanner: true,
   soundNotification: true,
   alwaysOnTop: false,

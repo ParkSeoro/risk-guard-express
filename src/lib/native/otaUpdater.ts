@@ -1,15 +1,40 @@
 // OTA 자동 업데이트 (Capgo Capacitor Updater + Supabase Storage)
 // - 네이티브만. 웹/프리뷰는 no-op.
-// - 부팅·포그라운드 복귀 시 silent 체크 → 다운로드 후 즉시 적용(set).
-// - 근로자는 강제종료/수동 확인 없이 최신 화면을 받도록 설계.
+// - 로그인·가입 화면에서는 받지 않는다. 다운로드가 로그인 요청과 겹치면
+//   관리자 signInWithPassword / 근로자 전화 로그인이 "처리 중…"에서 멈춘다.
+// - 앱(/app)에 들어온 뒤에만 받고, 화면은 그대로 둔다.
+// - 앱을 벗어날 때 받은 묶음으로 바꾼다. 다음에 열면 새 화면이다.
 // - Release lookup uses otaAnonClient (no auth Preferences) so boot splash cannot hang.
-// - Capgo download can stall the WebView event loop — never start it without a session.
 import { supabase } from "@/integrations/supabase/client";
 import { getOtaAnonClient } from "./otaAnonClient";
 import { isNativeApp } from "./platform";
 
 const CHANNEL_KEY = "app-update-channel";
 export const MIN_CHECK_INTERVAL_MS = 60_000;
+/** Site networks need more than 15s for a ~3MB bundle. Login is not waiting on this. */
+export const OTA_DOWNLOAD_TIMEOUT_MS = 90_000;
+
+/** True only after the user has left login, signup, and worker entry. */
+export function isAppShellPath(pathname: string): boolean {
+  return pathname === "/app" || pathname.startsWith("/app/");
+}
+
+/** Download only with a session and only inside the app shell. */
+export function canStartOtaDownload(hasSession: boolean, pathname: string): boolean {
+  return hasSession && isAppShellPath(pathname);
+}
+
+/**
+ * Reload onto a staged bundle only while the app is in the background and
+ * the visible page is still the app shell. Never on the login screen.
+ */
+export function canApplyStagedOta(
+  inBackground: boolean,
+  pathname: string,
+  bundleId: string | null | undefined,
+): boolean {
+  return inBackground && isAppShellPath(pathname) && !!bundleId;
+}
 
 /** True when a check already ran and the next one is still inside the quiet window. */
 export function isAutoCheckThrottled(
@@ -140,6 +165,7 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
   message: string;
   version?: string;
   apply: "immediate" | "next_cold_start" | "none";
+  bundleId?: string;
 }> {
   const preferImmediate = opts.preferImmediate !== false;
   if (!isNativeApp()) {
@@ -199,7 +225,10 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
     const bundle = await Promise.race([
       downloadPromise,
       new Promise<never>((_, reject) =>
-        window.setTimeout(() => reject(new Error("OTA 다운로드 시간 초과(15s)")), 15_000)
+        window.setTimeout(
+          () => reject(new Error("OTA 다운로드 시간 초과")),
+          OTA_DOWNLOAD_TIMEOUT_MS,
+        ),
       ),
     ]);
 
@@ -222,9 +251,10 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
     await CapacitorUpdater.next({ id: bundle.id } as any);
     return {
       ok: true,
-      message: `${release.version} 다운로드 완료. 앱을 다시 열면 적용됩니다.`,
+      message: `${release.version} 다운로드 완료. 앱을 벗어나면 다음 실행에 적용됩니다.`,
       version: String(release.version),
       apply: "next_cold_start",
+      bundleId: String(bundle.id),
     };
   } catch (e: any) {
     return { ok: false, message: e?.message || String(e), apply: "none" };
@@ -234,6 +264,9 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
 let checking = false;
 let lastCheckAt = 0;
 let resumeHooked = false;
+let inBackground = false;
+let stagedBundleId: string | null = null;
+let shellRetryTimer: number | null = null;
 
 async function hasAuthSession(): Promise<boolean> {
   try {
@@ -244,21 +277,56 @@ async function hasAuthSession(): Promise<boolean> {
   }
 }
 
-async function runAutoCheck(reason: string, force = false) {
+async function applyStagedBundle(reason: string) {
+  const id = stagedBundleId;
+  if (!id || !canApplyStagedOta(inBackground, window.location.pathname, id)) return;
+  stagedBundleId = null;
+  try {
+    const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
+    await CapacitorUpdater.set({ id } as any);
+    console.info(`[ota:${reason}] staged bundle will show on next open`);
+  } catch (e) {
+    stagedBundleId = id;
+    console.warn(`[ota:${reason}] apply failed`, e);
+  }
+}
+
+async function runAutoCheck(
+  reason: string,
+  force = false,
+  opts?: { retryIfOutsideShell?: boolean },
+) {
   if (!isNativeApp()) return;
   if (checking) return;
-  if (!(await hasAuthSession())) {
-    console.info(`[ota:${reason}] skipped — no auth session`);
+  // Path first: do not touch the auth client while login or signup is on screen.
+  if (!isAppShellPath(window.location.pathname)) {
+    console.info(`[ota:${reason}] skipped — outside app shell`);
+    if (opts?.retryIfOutsideShell && shellRetryTimer == null) {
+      shellRetryTimer = window.setTimeout(() => {
+        shellRetryTimer = null;
+        void runAutoCheck("enter-app");
+      }, 3_000);
+    }
     return;
   }
-  const now = Date.now();
-  if (!force && isAutoCheckThrottled(now, lastCheckAt)) return;
   checking = true;
-  lastCheckAt = now;
   try {
-    const r = await checkAndDownloadOta({ silent: true, preferImmediate: false });
-    if (r.ok && r.apply !== "none") {
+    if (!(await hasAuthSession())) {
+      console.info(`[ota:${reason}] skipped — no auth session`);
+      return;
+    }
+    const now = Date.now();
+    if (!force && isAutoCheckThrottled(now, lastCheckAt)) return;
+    lastCheckAt = now;
+    const r = await checkAndDownloadOta({
+      silent: true,
+      preferImmediate: false,
+      shouldAbort: () => !isAppShellPath(window.location.pathname),
+    });
+    if (r.bundleId) {
+      stagedBundleId = r.bundleId;
       console.info(`[ota:${reason}] ${r.message}`);
+      await applyStagedBundle(`${reason}:already-away`);
     }
   } catch (e) {
     console.warn(`[ota:${reason}] failed`, e);
@@ -277,14 +345,17 @@ export function triggerBackgroundOtaCheck(reason: string, delayMs = 1_500, force
   }, delayMs);
 }
 
-function scheduleOtaAfterAuth(reason: string, delayMs = 1_500) {
-  triggerBackgroundOtaCheck(reason, delayMs);
+function scheduleOtaAfterAuth(reason: string, delayMs = 4_000) {
+  window.setTimeout(() => {
+    void runAutoCheck(reason, false, { retryIfOutsideShell: true });
+  }, delayMs);
 }
 
 /**
- * Capgo ready + OTA only after the user has a session.
+ * Capgo ready at boot. Download waits until the user is inside /app.
  * Root cause: CapacitorUpdater.download can stall the WebView event loop; if that
- * runs on the login screen, signInWithPassword never settles ("처리 중…").
+ * runs on the login screen, admin signInWithPassword and worker phone sign-in
+ * never settle ("처리 중…").
  */
 export async function initOtaUpdater() {
   if (!isNativeApp()) return;
@@ -302,11 +373,12 @@ export async function initOtaUpdater() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session) return;
-      if (event === "SIGNED_IN") {
+      if (!session) {
+        stagedBundleId = null;
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
         scheduleOtaAfterAuth(`auth:${event}`, 4_000);
-      } else if (event === "INITIAL_SESSION") {
-        scheduleOtaAfterAuth(`auth:${event}`, 1_500);
       }
     });
     void subscription;
@@ -314,17 +386,25 @@ export async function initOtaUpdater() {
     console.warn("[ota] auth listener failed", e);
   }
 
-  // Already signed-in cold start (restored session)
-  void hasAuthSession().then((ok) => {
-    if (ok) scheduleOtaAfterAuth("session-restore", 1_500);
-  });
+  // Backup for a restored session. Path is checked before any auth read,
+  // so a phone sitting on the login screen does not touch the session.
+  window.setTimeout(() => {
+    if (!isAppShellPath(window.location.pathname)) return;
+    void runAutoCheck("session-restore");
+  }, 4_000);
 
   if (resumeHooked) return;
   resumeHooked = true;
   try {
     const { App } = await import("@capacitor/app");
     App.addListener("appStateChange", ({ isActive }) => {
-      if (isActive) void runAutoCheck("resume");
+      if (isActive) {
+        inBackground = false;
+        void runAutoCheck("resume");
+        return;
+      }
+      inBackground = true;
+      void applyStagedBundle("background");
     });
   } catch (e) {
     console.warn("[ota] appStateChange hook failed", e);

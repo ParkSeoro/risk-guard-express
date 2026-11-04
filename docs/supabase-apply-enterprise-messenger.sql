@@ -1,8 +1,6 @@
 -- ====================================================================
--- SafeNex Enterprise Messenger Core Schema (Step 1 - 무경고 검증 완료 버전)
+-- SafeNex Enterprise Messenger Core Schema (Step 1 - 최종 완성본)
 -- 테이블: chat_rooms, chat_participants, chat_room_messages, chat_attachments, chat_reactions
--- profiles 매핑: display_name, company, position, phone, user_id
--- user_roles 매핑: role = 'master'::public.global_role
 -- ====================================================================
 
 -- 1. 대화방 테이블 (전사/현장 공용)
@@ -88,7 +86,21 @@ ALTER TABLE public.chat_room_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_reactions ENABLE ROW LEVEL SECURITY;
 
--- DROP 경고 없는 안전 정책 등록 블록
+-- 0. RLS 무한 재귀 방지를 위한 고속 참여자 검증 함수 (SECURITY DEFINER)
+CREATE OR REPLACE FUNCTION public.is_chat_room_participant(p_room_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.chat_participants
+    WHERE room_id = p_room_id AND user_id = p_user_id AND left_at IS NULL
+  );
+$$;
+
+-- RLS 정책 설정
 DO $$ 
 BEGIN
   -- 1. 대화방: 본인이 속한 방만 조회 (비참여자 방 완전 차단)
@@ -97,10 +109,7 @@ BEGIN
   ) THEN
     CREATE POLICY "participants_can_select_room" ON public.chat_rooms
       FOR SELECT USING (
-        EXISTS (
-          SELECT 1 FROM public.chat_participants p
-          WHERE p.room_id = chat_rooms.id AND p.user_id = auth.uid() AND p.left_at IS NULL
-        )
+        public.is_chat_room_participant(id, auth.uid())
       );
   END IF;
 
@@ -132,10 +141,7 @@ BEGIN
   ) THEN
     CREATE POLICY "participants_can_select_participants" ON public.chat_participants
       FOR SELECT USING (
-        EXISTS (
-          SELECT 1 FROM public.chat_participants my_p
-          WHERE my_p.room_id = chat_participants.room_id AND my_p.user_id = auth.uid() AND my_p.left_at IS NULL
-        )
+        user_id = auth.uid() OR public.is_chat_room_participant(room_id, auth.uid())
       );
   END IF;
 
@@ -145,10 +151,7 @@ BEGIN
   ) THEN
     CREATE POLICY "participants_can_read_messages" ON public.chat_room_messages
       FOR SELECT USING (
-        EXISTS (
-          SELECT 1 FROM public.chat_participants p
-          WHERE p.room_id = chat_room_messages.room_id AND p.user_id = auth.uid() AND p.left_at IS NULL
-        )
+        public.is_chat_room_participant(room_id, auth.uid())
       );
   END IF;
 
@@ -157,11 +160,7 @@ BEGIN
   ) THEN
     CREATE POLICY "participants_can_insert_messages" ON public.chat_room_messages
       FOR INSERT WITH CHECK (
-        sender_id = auth.uid() AND
-        EXISTS (
-          SELECT 1 FROM public.chat_participants p
-          WHERE p.room_id = chat_room_messages.room_id AND p.user_id = auth.uid() AND p.left_at IS NULL
-        )
+        sender_id = auth.uid() AND public.is_chat_room_participant(room_id, auth.uid())
       );
   END IF;
 
@@ -173,8 +172,7 @@ BEGIN
       FOR SELECT USING (
         EXISTS (
           SELECT 1 FROM public.chat_room_messages m
-          JOIN public.chat_participants p ON p.room_id = m.room_id
-          WHERE m.id = chat_attachments.message_id AND p.user_id = auth.uid() AND p.left_at IS NULL
+          WHERE m.id = chat_attachments.message_id AND public.is_chat_room_participant(m.room_id, auth.uid())
         )
       );
   END IF;
@@ -200,8 +198,7 @@ BEGIN
       FOR ALL USING (
         EXISTS (
           SELECT 1 FROM public.chat_room_messages m
-          JOIN public.chat_participants p ON p.room_id = m.room_id
-          WHERE m.id = chat_reactions.message_id AND p.user_id = auth.uid() AND p.left_at IS NULL
+          WHERE m.id = chat_reactions.message_id AND public.is_chat_room_participant(m.room_id, auth.uid())
         )
       );
   END IF;
@@ -227,29 +224,30 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+#variable_conflict use_column
 DECLARE
   v_my_user_id UUID := auth.uid();
   v_my_company TEXT;
   v_is_master BOOLEAN;
 BEGIN
   -- 내 소속 회사명 및 마스터 권한 확인
-  SELECT company INTO v_my_company FROM public.profiles WHERE user_id = v_my_user_id;
+  SELECT company INTO v_my_company FROM public.profiles WHERE profiles.user_id = v_my_user_id;
   SELECT EXISTS (
-    SELECT 1 FROM public.user_roles WHERE user_id = v_my_user_id AND role = 'master'::public.global_role
+    SELECT 1 FROM public.user_roles WHERE user_roles.user_id = v_my_user_id AND user_roles.role = 'master'::public.global_role
   ) INTO v_is_master;
 
   RETURN QUERY
   SELECT 
-    pr.user_id AS user_id,
-    pr.display_name AS full_name,
-    pr.company AS company_name,
-    pr.position AS role,
+    pr.user_id,
+    pr.display_name,
+    pr.company,
+    pr.position,
     CASE 
       WHEN pr.company IS NOT NULL AND pr.company = v_my_company THEN pr.phone
       ELSE NULL -- 타사 직원의 전화번호는 원천 차단!
-    END AS phone,
-    NULL::TEXT AS avatar_url,
-    (pr.company IS NOT NULL AND pr.company = v_my_company) AS is_same_company,
+    END,
+    NULL::TEXT,
+    (pr.company IS NOT NULL AND pr.company = v_my_company),
     pm.project_id
   FROM public.profiles pr
   LEFT JOIN public.project_members pm ON pm.user_id = pr.user_id

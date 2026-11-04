@@ -4,7 +4,7 @@ import { Bell, LayoutDashboard, FolderKanban, ShieldAlert, Database,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
-  Building2, FolderOpen, Video,
+  Building2, FolderOpen, Video, MessageSquare,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -41,6 +41,7 @@ const groups: Group[] = [
     items: [
       { title: "공지사항", url: "/announcements", icon: Megaphone },
       { title: "알림", url: "/alerts", icon: Bell },
+      { title: "실시간 메신저", url: "/messenger", icon: MessageSquare },
       { title: "대시보드", url: "/", icon: LayoutDashboard },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: "approvals" },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },

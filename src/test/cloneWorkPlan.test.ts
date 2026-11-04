@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWorkPlanCloneInsert, workPlanCloneTitle } from "@/lib/cloneWorkPlan";
+import { buildWorkPlanCloneInsert, workPlanCloneTitle, workPlanDisplayTitle } from "@/lib/cloneWorkPlan";
 import { buildRiggingPlanPayload } from "@/lib/riggingPlanPersist";
 
 const source = {
@@ -22,9 +22,11 @@ const source = {
 };
 
 describe("작업계획서 회차 복사", () => {
-  it("제목에 다음 회차만 붙인다", () => {
-    expect(workPlanCloneTitle("사무동 양중", 3)).toBe("사무동 양중 (v4)");
-    expect(workPlanCloneTitle("", null)).toBe("작업계획서 (v2)");
+  it("제목에는 작업명만 남기고 회차 표기는 붙이지 않는다", () => {
+    expect(workPlanCloneTitle("사무동 양중", 3)).toBe("사무동 양중");
+    expect(workPlanCloneTitle("", null)).toBe("작업계획서");
+    expect(workPlanDisplayTitle("터파기_06W (v8) (v9) (v10)")).toBe("터파기_06W");
+    expect(workPlanCloneTitle("터파기_06W (v8) (v9)", 9)).toBe("터파기_06W");
   });
 
   it("본문·작업기간·작성 주체를 복사하고 결재는 작성중으로 둔다", () => {
@@ -32,7 +34,7 @@ describe("작업계획서 회차 복사", () => {
     expect(row.project_id).toBe("proj-1");
     expect(row.company_id).toBe("co-1");
     expect(row.work_type).toBe("heavy_lifting");
-    expect(row.title).toBe("사무동 양중 (v4)");
+    expect(row.title).toBe("사무동 양중");
     expect(row.version).toBe(4);
     expect(row.status).toBe("작성중");
     expect(row.parent_id).toBe("plan-1");

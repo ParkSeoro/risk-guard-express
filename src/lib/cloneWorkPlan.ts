@@ -23,9 +23,16 @@ export type WorkPlanCloneSource = {
   auto_education_enabled?: boolean | null;
 };
 
-export function workPlanCloneTitle(title: string | null | undefined, version: number | null | undefined): string {
-  const base = (title || "작업계획서").trim() || "작업계획서";
-  return `${base} (v${(version || 1) + 1})`;
+const TRAILING_VERSION = /(?:\s*\(v\d+\))+\s*$/i;
+
+/** 회차 복사가 제목 끝에 쌓아 둔 (v8) (v9) 를 뺀 작업명. 회차 번호는 version 칸에 있다. */
+export function workPlanDisplayTitle(title: string | null | undefined): string {
+  const cleaned = String(title || "").replace(TRAILING_VERSION, "").trim();
+  return cleaned || "작업계획서";
+}
+
+export function workPlanCloneTitle(title: string | null | undefined, _version?: number | null): string {
+  return workPlanDisplayTitle(title);
 }
 
 /** Insert row for the new draft. Approval, void, and signatures stay off this object. */

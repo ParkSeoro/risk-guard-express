@@ -14,6 +14,7 @@ import {
   fetchWorkPlanPrintHtml,
 } from "@/lib/approvalDocPreview";
 import { extractWorkPlanHazardCards, type WorkPlanHazardCard } from "@/lib/workPlanHazardCards";
+import { workPlanDisplayTitle } from "@/lib/cloneWorkPlan";
 import { bundleRiskItems, reviewBundleForStatus } from "@/lib/approvalReviewBundle";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
@@ -163,7 +164,7 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
         </Button>
         <div className="flex-1 min-w-0">
           <div className="text-xs uppercase tracking-wide text-sky-100">작업계획서 · 문서 보기</div>
-          <div className="font-bold text-lg truncate leading-snug">{plan?.title || "작업계획"}</div>
+          <div className="font-bold text-lg truncate leading-snug">{plan ? workPlanDisplayTitle(plan.title) : "작업계획"}</div>
         </div>
         {plan && <Badge className="bg-white/20 text-white border-0 shrink-0">{plan.status}</Badge>}
       </header>

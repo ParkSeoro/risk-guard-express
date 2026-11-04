@@ -20,6 +20,8 @@ import {
   isSubmitterApprovalStep,
 } from "@/lib/approvalRules";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
+import { approvalCardHeading } from "@/lib/approvalDocumentTitle";
+import { loadApprovalDocumentTitles } from "@/lib/loadApprovalDocumentTitles";
 import {
   permitPostStepKind,
   permitPostStepBadge,
@@ -40,6 +42,7 @@ export default function MobileApprovals() {
   const [tab, setTab] = useState<TabKey>("mine");
   const [pendingRows, setPendingRows] = useState<any[]>([]);
   const [historyRows, setHistoryRows] = useState<any[]>([]);
+  const [docTitles, setDocTitles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -68,7 +71,13 @@ export default function MobileApprovals() {
 
       // Desktop parity: 상신(기안) 단계는 승인/반려 UI에 노출하지 않음
       setPendingRows(((pending as any[]) || []).filter((r) => !isSubmitterApprovalStep(r)));
-      setHistoryRows((history as any[]) || []);
+      const historyList = (history as any[]) || [];
+      setHistoryRows(historyList);
+      try {
+        setDocTitles(await loadApprovalDocumentTitles(historyList));
+      } catch {
+        setDocTitles({});
+      }
       try {
         setExtendReasons(await loadPermitExtendReasons(((pending as any[]) || [])));
       } catch {
@@ -273,7 +282,11 @@ export default function MobileApprovals() {
       const first = current[0] || (steps as any[])[0];
       const entityType = first?.entity_type || "";
       const entityId = first?.entity_id || "";
-      const title = first?.step || entityTypeLabel(entityType);
+      const title = approvalCardHeading({
+        entityType,
+        entityId,
+        titles: docTitles,
+      });
       const rejected = current.some((s) => s.status === "반려");
       const allApproved = current.length > 0 && current.every((s) => s.status === "승인");
       const postIsExtend = timeline.postSteps.some((s) =>

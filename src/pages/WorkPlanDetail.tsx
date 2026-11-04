@@ -8,6 +8,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { isForceDesktop } from '@/components/MobileRedirectGuard';
 import MobileWorkPlanViewer from '@/pages/MobileWorkPlanViewer';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
+import { workPlanDisplayTitle } from '@/lib/cloneWorkPlan';
 import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
@@ -568,7 +569,7 @@ const WorkPlanDetail = () => {
       const { printHtmlDocument } = await import('@/lib/printHtmlDocument');
       const html = await fetchWorkPlanPrintHtml(planId);
       await printHtmlDocument(html, {
-        title: `${plan?.title || '작업계획서'} (1/2 본문·결재)`,
+        title: `${workPlanDisplayTitle(plan?.title)} (1/2 본문·결재)`,
         waitForAfterPrint: true,
       });
       const {
@@ -590,7 +591,7 @@ const WorkPlanDetail = () => {
       const attPdf = await mergeOriginalAttachmentsPdf(files);
       if (attPdf) {
         await printPdfBytes(attPdf, {
-          title: `${plan?.title || '작업계획서'} (2/2 첨부)`,
+          title: `${workPlanDisplayTitle(plan?.title)} (2/2 첨부)`,
           waitForAfterPrint: true,
         });
       }
@@ -632,7 +633,7 @@ const WorkPlanDetail = () => {
         description: files.length ? `${files.length}건` : '첨부 없음',
       });
       const bytes = await buildWorkPlanPacketPdf({ bodyHtml: html, files });
-      const fileName = workPlanPacketFileName(plan?.title || '작업계획서');
+      const fileName = workPlanPacketFileName(workPlanDisplayTitle(plan?.title));
       downloadPdfBytes(bytes, fileName);
       progressToast.dismiss();
       toast({ title: 'PDF를 저장했습니다', description: fileName });
@@ -726,7 +727,7 @@ const WorkPlanDetail = () => {
             <span>작업계획서</span><span>/</span><span>{wpType?.name}</span>
             {plan.version > 1 && <Badge variant="outline" className="text-[9px] h-4">v{plan.version}</Badge>}
           </div>
-          <h1 className="text-lg font-bold">{plan.title}</h1>
+          <h1 className="text-lg font-bold">{workPlanDisplayTitle(plan.title)}</h1>
           {authorName && (
             <p className="text-xs text-muted-foreground">작성 관리감독자: {authorName}</p>
           )}

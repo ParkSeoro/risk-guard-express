@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { WORK_PLAN_TYPES, getWorkPlanTypesGrouped } from '@/lib/workPlanTemplates';
+import { workPlanDisplayTitle } from '@/lib/cloneWorkPlan';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import { canDeleteDraftWorkPlan, defaultAuthorUserId, prefillOverviewSupervisor, workPlanAuthorCompanyIds } from '@/lib/workPlanAuthor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -426,7 +427,7 @@ const WorkPlans = () => {
                       className="text-sm leading-tight cursor-pointer hover:underline"
                       onClick={() => navigate(`/work-plan/${plan.id}`)}
                     >
-                      {plan.title}
+                      {workPlanDisplayTitle(plan.title)}
                       {plan.version > 1 && <span className="text-muted-foreground ml-1">v{plan.version}</span>}
                     </CardTitle>
                     <div className="flex items-center gap-1 shrink-0">
@@ -445,7 +446,7 @@ const WorkPlans = () => {
                             <FileText className="h-3.5 w-3.5 mr-2" /> 열기
                           </DropdownMenuItem>
                           {access.canEdit('work_plan') && (
-                            <DropdownMenuItem onClick={() => { setEditTarget(plan); setEditTitle(plan.title); }}>
+                            <DropdownMenuItem onClick={() => { setEditTarget(plan); setEditTitle(workPlanDisplayTitle(plan.title)); }}>
                               <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
                             </DropdownMenuItem>
                           )}

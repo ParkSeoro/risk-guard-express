@@ -26,6 +26,8 @@ import {
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
+import { approvalCardHeading } from "@/lib/approvalDocumentTitle";
+import { loadApprovalDocumentTitles } from "@/lib/loadApprovalDocumentTitles";
 import { authorCompanyIdsForRuns, filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { approvalDocumentKey, filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
@@ -69,18 +71,6 @@ function resolveLinkedRun(
   return null;
 }
 
-function documentCardTitle(run: any | null, steps: any[]): string {
-  if (run) {
-    const typeLabel = entityTypeLabel(steps[0]?.entity_type || 'assessment_run');
-    return `[${typeLabel}] ${run.period_label || run.type || ''}`.trim();
-  }
-  const first = steps[0];
-  const typeLabel = entityTypeLabel(first?.entity_type);
-  // Prefer RPC-enriched title when present on a step row (some views denormalize it)
-  const title = first?.entity_title || first?.title || '';
-  return title ? `${typeLabel} · ${title}` : typeLabel;
-}
-
 const Approvals = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, hasRole } = useAuth();
@@ -100,6 +90,7 @@ const Approvals = () => {
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [docTitles, setDocTitles] = useState<Record<string, string>>({});
   const [authoredDocKeys, setAuthoredDocKeys] = useState<Set<string>>(() => new Set());
   const [runs, setRuns] = useState<any[]>([]);
   const [rejectComment, setRejectComment] = useState('');
@@ -296,7 +287,16 @@ const Approvals = () => {
         });
       }
 
+      let titles: Record<string, string> = {};
+      try {
+        titles = await loadApprovalDocumentTitles(approvalsData);
+      } catch {
+        titles = {};
+      }
+      if (seq !== fetchSeqRef.current) return;
+
       setAuthoredDocKeys(authored);
+      setDocTitles(titles);
       setApprovals(approvalsData);
       setRuns(runsData);
     } finally {
@@ -360,8 +360,16 @@ const Approvals = () => {
     for (const [groupKey, steps] of Object.entries(group)) {
       const run = resolveLinkedRun(runs, groupKey, steps as any[]);
       const typeLabel = entityTypeLabel((steps as any[])[0]?.entity_type || (run ? 'assessment_run' : null));
+      const first = (steps as any[])[0];
+      const heading = approvalCardHeading({
+        entityType: first?.entity_type || (run ? 'assessment_run' : null),
+        entityId: run?.id || first?.entity_id,
+        periodLabel: run?.period_label,
+        titles: docTitles,
+      });
       const text = [
         typeLabel,
+        heading,
         run?.type, run?.period_label,
         ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''} ${s.entity_type || ''} ${entityTypeLabel(s.entity_type)}`),
       ].join(' ').toLowerCase();
@@ -680,7 +688,12 @@ const Approvals = () => {
               const resubmitNotes = latestResubmitNotes(allSteps);
               const activeSteps = [...timeline.issuanceSteps, ...timeline.postSteps];
               const run = resolveLinkedRun(runs, groupKey, activeSteps.length ? activeSteps : allSteps);
-              const cardTitle = documentCardTitle(run, activeSteps.length ? activeSteps : allSteps);
+              const cardTitle = approvalCardHeading({
+                entityType: (activeSteps[0] || allSteps[0])?.entity_type || (run ? 'assessment_run' : null),
+                entityId: run?.id || (activeSteps[0] || allSteps[0])?.entity_id,
+                periodLabel: run?.period_label,
+                titles: docTitles,
+              });
               const firstStep = (activeSteps[0] || allSteps[0]) as any;
               const docHref = firstStep?.entity_type && firstStep?.entity_id
                 ? ENTITY_LINK(firstStep.entity_type, firstStep.entity_id)
@@ -800,7 +813,7 @@ const Approvals = () => {
                               openDocPreview(
                                 previewType,
                                 previewId,
-                                run ? run.period_label : firstStep?.entity_title,
+                                cardTitle,
                               )
                             }
                           >

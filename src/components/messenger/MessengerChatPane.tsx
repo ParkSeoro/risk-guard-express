@@ -21,7 +21,6 @@ import {
   X,
   ShieldCheck,
   Paperclip,
-  Image as ImageIcon,
   Loader2,
   FileText,
 } from "lucide-react";
@@ -55,27 +54,34 @@ export function MessengerChatPane({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // onRoomUpdated 안정적 ref 관리 (리렌더링 루프 방지)
+  const onRoomUpdatedRef = useRef(onRoomUpdated);
+  useEffect(() => {
+    onRoomUpdatedRef.current = onRoomUpdated;
+  }, [onRoomUpdated]);
+
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
   }, []);
 
+  // 메시지 로딩: 로딩 시에는 부모의 onRoomUpdated를 호출하지 않음 (무한 깜박임 루프 방지)
   const loadMessages = useCallback(async () => {
+    if (!room.id) return;
     try {
       const msgs = await fetchRoomMessages(room.id);
       setMessages(msgs);
       setLoading(false);
       setTimeout(() => scrollToBottom(false), 50);
 
-      // 대화방 읽음 처리
+      // 대화방 읽음 처리 (DB만 업데이트, 부모 재조회는 유발하지 않음)
       if (msgs.length > 0) {
         await markChatRoomRead(room.id, msgs[msgs.length - 1].id);
-        onRoomUpdated?.();
       }
     } catch (err) {
       console.error("loadMessages error:", err);
       setLoading(false);
     }
-  }, [room.id, onRoomUpdated, scrollToBottom]);
+  }, [room.id, scrollToBottom]);
 
   useEffect(() => {
     setLoading(true);
@@ -125,10 +131,10 @@ export function MessengerChatPane({
             return [...prev, formattedMsg];
           });
 
-          // 내가 보낸 메시지가 아니면 읽음 처리
+          // 내가 보낸 메시지가 아니면 읽음 처리 및 부모 목록 갱신
           if (newMsg.sender_id !== user.id) {
             await markChatRoomRead(room.id, newMsg.id);
-            onRoomUpdated?.();
+            onRoomUpdatedRef.current?.();
           }
 
           setTimeout(() => scrollToBottom(true), 50);
@@ -154,7 +160,7 @@ export function MessengerChatPane({
       supabase.removeChannel(messageChannel);
       supabase.removeChannel(typingChannel);
     };
-  }, [room.id, user, onRoomUpdated, scrollToBottom]);
+  }, [room.id, user, scrollToBottom]);
 
   // 타이핑 전파 (400ms 디바운스)
   const handleTyping = () => {
@@ -232,7 +238,8 @@ export function MessengerChatPane({
         toast.error("메시지 전송에 실패했습니다.");
         setInputText(text);
       } else {
-        onRoomUpdated?.();
+        // 메시지 전송 성공 시에만 부모 목록 갱신
+        onRoomUpdatedRef.current?.();
       }
     } catch (err: any) {
       toast.error(err?.message || "오류가 발생했습니다.");
@@ -271,9 +278,9 @@ export function MessengerChatPane({
       : room.other_participant?.full_name || "1:1 대화방");
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden relative">
-      {/* 대화방 상단 헤더 */}
-      <header className="h-13 px-3 border-b bg-card flex items-center justify-between shrink-0 shadow-xs z-10">
+    <div className="flex flex-col h-full w-full bg-background overflow-hidden relative overscroll-contain">
+      {/* 대화방 상단 헤더 (모바일 노치 대응 safe-area-inset-top) */}
+      <header className="px-3 pt-[max(0.625rem,var(--sat))] pb-2.5 border-b bg-card flex items-center justify-between shrink-0 shadow-xs z-10">
         <div className="flex items-center gap-2 min-w-0">
           {onBack && (
             <Button
@@ -281,7 +288,8 @@ export function MessengerChatPane({
               size="icon"
               className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={onBack}
-              title="대화방 목록"
+              title="대화방 목록으로 돌아가기"
+              aria-label="뒤로가기"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -358,7 +366,7 @@ export function MessengerChatPane({
               </div>
             )}
             <div className="min-w-0">
-              <p className="font-semibold text-xs truncate max-w-[220px] sm:max-w-xs">
+              <p className="font-semibold text-xs truncate max-w-[200px] sm:max-w-xs">
                 {selectedFile.name}
               </p>
               <p className="text-[10px] text-muted-foreground">
@@ -401,8 +409,8 @@ export function MessengerChatPane({
         </div>
       )}
 
-      {/* 메시지 및 파일 입력창 */}
-      <div className="p-2.5 border-t bg-card shrink-0">
+      {/* 메시지 및 파일 입력창 (모바일 하단 가상키보드/홈바 대응 pb-[max(0.5rem,var(--sab))]) */}
+      <div className="p-2.5 pb-[max(0.625rem,var(--sab))] border-t bg-card shrink-0">
         <input
           type="file"
           ref={fileInputRef}
@@ -421,6 +429,7 @@ export function MessengerChatPane({
             disabled={sending}
             className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 mb-0.5 rounded-lg"
             title="사진 또는 파일 첨부"
+            aria-label="첨부파일"
           >
             <Paperclip className="h-4 w-4" />
           </Button>
@@ -445,7 +454,7 @@ export function MessengerChatPane({
             className="h-8 w-8 rounded-lg shrink-0 mb-0.5"
             title="전송"
           >
-            {sending ? (
+            {sending || uploadingFile ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Send className="h-4 w-4" />

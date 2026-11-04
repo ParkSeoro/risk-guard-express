@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "./MessengerRoomList";
 import { MessengerChatPane } from "./MessengerChatPane";
@@ -23,25 +23,21 @@ export function MessengerDrawer({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // loadRooms: 의존성 없는 완전한 불변 함수로 무한 리렌더링 제거
   const loadRooms = useCallback(async () => {
     try {
       const data = await fetchMyChatRooms();
       setRooms(data);
-      // 만약 선택된 방이 있다면 데이터 동기화
-      if (selectedRoom) {
-        const updated = data.find((r) => r.id === selectedRoom.id);
-        if (updated) setSelectedRoom(updated);
-      }
     } catch (err) {
       console.error("loadRooms error:", err);
     } finally {
       setLoading(false);
     }
-  }, [selectedRoom]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -49,7 +45,7 @@ export function MessengerDrawer({
     }
   }, [isOpen, loadRooms]);
 
-  // 실시간 대화방 갱신 구독 (새 메시지 도착 시 목록 상단 갱신)
+  // 실시간 대화방 갱신 구독
   useEffect(() => {
     if (!isOpen || !user) return;
 
@@ -73,24 +69,26 @@ export function MessengerDrawer({
     };
   }, [isOpen, user, loadRooms]);
 
+  const selectedRoom = useMemo(() => {
+    if (!selectedRoomId) return null;
+    return rooms.find((r) => r.id === selectedRoomId) || null;
+  }, [rooms, selectedRoomId]);
+
   const handleSelectRoom = (room: ChatRoom) => {
-    setSelectedRoom(room);
+    setSelectedRoomId(room.id);
   };
 
   const handleRoomCreated = async (roomId: string) => {
     await loadRooms();
-    const target = rooms.find((r) => r.id === roomId);
-    if (target) {
-      setSelectedRoom(target);
-    }
+    setSelectedRoomId(roomId);
   };
 
   const handleExpandToPage = () => {
     onClose();
-    if (selectedRoom) {
-      navigate(`/app/messenger?room=${selectedRoom.id}`);
+    if (selectedRoomId) {
+      navigate(`/app/admin/messenger?room=${selectedRoomId}`);
     } else {
-      navigate("/app/messenger");
+      navigate("/app/admin/messenger");
     }
   };
 
@@ -104,10 +102,10 @@ export function MessengerDrawer({
         className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-40 transition-opacity animate-in fade-in"
       />
 
-      {/* 우측 슬라이드 드로어 본체 */}
-      <div className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] md:w-[460px] bg-background border-l shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-250">
+      {/* 우측 슬라이드 드로어 본체 (모바일 safe-area 및 h-dvh 완벽 대응) */}
+      <div className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] md:w-[460px] h-dvh bg-background border-l shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-250 overscroll-contain">
         {/* 상단 통합 제어 바 */}
-        <div className="h-10 px-3 border-b bg-muted/40 flex items-center justify-between shrink-0">
+        <div className="h-11 px-3 pt-[max(0.25rem,var(--sat))] border-b bg-muted/40 flex items-center justify-between shrink-0">
           <span className="text-[11px] font-medium text-muted-foreground">
             SafeNex 실시간 비즈니스 메신저
           </span>
@@ -118,6 +116,7 @@ export function MessengerDrawer({
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={handleExpandToPage}
               title="전체화면으로 보기"
+              aria-label="전체화면"
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </Button>
@@ -127,6 +126,7 @@ export function MessengerDrawer({
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={onClose}
               title="닫기"
+              aria-label="닫기"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -139,7 +139,7 @@ export function MessengerDrawer({
             <MessengerChatPane
               room={selectedRoom}
               onBack={() => {
-                setSelectedRoom(null);
+                setSelectedRoomId(null);
                 loadRooms();
               }}
               onRoomUpdated={loadRooms}
@@ -147,7 +147,7 @@ export function MessengerDrawer({
           ) : (
             <MessengerRoomList
               rooms={rooms}
-              selectedRoomId={selectedRoom?.id}
+              selectedRoomId={selectedRoomId}
               onSelectRoom={handleSelectRoom}
               onOpenNewChat={() => setIsNewChatOpen(true)}
               loading={loading}

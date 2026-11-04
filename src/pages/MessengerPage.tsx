@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "@/components/messenger/MessengerRoomList";
@@ -16,32 +16,32 @@ export default function MessengerPage() {
   const projectAccess = useGlobalProjectAccessOptional();
 
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialRoomId);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // 불변 loadRooms 함수로 무한 깜박임 루프 제거
   const loadRooms = useCallback(async () => {
     try {
       const data = await fetchMyChatRooms();
       setRooms(data);
-
-      if (initialRoomId) {
-        const found = data.find((r) => r.id === initialRoomId);
-        if (found) setSelectedRoom(found);
-      } else if (selectedRoom) {
-        const updated = data.find((r) => r.id === selectedRoom.id);
-        if (updated) setSelectedRoom(updated);
-      }
     } catch (err) {
       console.error("loadRooms error:", err);
     } finally {
       setLoading(false);
     }
-  }, [initialRoomId, selectedRoom]);
+  }, []);
 
   useEffect(() => {
     loadRooms();
   }, [loadRooms]);
+
+  // URL query 파라미터 변경 시 선택된 방 동기화
+  useEffect(() => {
+    if (initialRoomId) {
+      setSelectedRoomId(initialRoomId);
+    }
+  }, [initialRoomId]);
 
   // 실시간 변경 감지
   useEffect(() => {
@@ -67,28 +67,33 @@ export default function MessengerPage() {
     };
   }, [user, loadRooms]);
 
+  const selectedRoom = useMemo(() => {
+    if (!selectedRoomId) return null;
+    return rooms.find((r) => r.id === selectedRoomId) || null;
+  }, [rooms, selectedRoomId]);
+
   const handleSelectRoom = (room: ChatRoom) => {
-    setSelectedRoom(room);
+    setSelectedRoomId(room.id);
     setSearchParams({ room: room.id }, { replace: true });
   };
 
   const handleBackToList = () => {
-    setSelectedRoom(null);
+    setSelectedRoomId(null);
     setSearchParams({}, { replace: true });
     loadRooms();
   };
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] w-full flex bg-background overflow-hidden">
-      {/* 대화방 목록 패널 (데스크톱에서는 좌측 360px 고정, 모바일에서는 선택된 방이 없을 때 전체 너비) */}
+    <div className="h-dvh md:h-[calc(100vh-3.5rem)] w-full flex bg-background overflow-hidden overscroll-contain">
+      {/* 대화방 목록 패널 (데스크톱 360px 고정, 모바일에서는 선택된 방이 없을 때 전체 너비) */}
       <div
         className={`w-full md:w-80 lg:w-96 border-r flex flex-col shrink-0 h-full ${
-          selectedRoom ? "hidden md:flex" : "flex"
+          selectedRoomId ? "hidden md:flex" : "flex"
         }`}
       >
         <MessengerRoomList
           rooms={rooms}
-          selectedRoomId={selectedRoom?.id}
+          selectedRoomId={selectedRoomId}
           onSelectRoom={handleSelectRoom}
           onOpenNewChat={() => setIsNewChatOpen(true)}
           loading={loading}
@@ -98,7 +103,7 @@ export default function MessengerPage() {
       {/* 대화창 본체 (선택된 방이 있을 때 표시, 없을 때 데스크톱 플레이스홀더) */}
       <div
         className={`flex-1 h-full min-w-0 ${
-          selectedRoom ? "flex" : "hidden md:flex"
+          selectedRoomId ? "flex" : "hidden md:flex"
         }`}
       >
         {selectedRoom ? (
@@ -126,6 +131,7 @@ export default function MessengerPage() {
         isOpen={isNewChatOpen}
         onClose={() => setIsNewChatOpen(false)}
         onRoomCreated={(id) => {
+          setSelectedRoomId(id);
           setSearchParams({ room: id });
           loadRooms();
         }}

@@ -9,6 +9,8 @@ import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { messengerHomePath } from "@/lib/messengerPath";
+import { subscribeToPush } from "@/lib/pushSubscription";
+import { Capacitor } from "@capacitor/core";
 
 interface MessengerButtonProps {
   currentProjectId?: string | null;
@@ -34,6 +36,13 @@ export function MessengerButton({ currentProjectId, className }: MessengerButton
   useEffect(() => {
     refreshUnread();
   }, [refreshUnread]);
+
+  // 웹은 숫자 뱃지만으로는 부족하다. 권한을 받아 Windows 알림(서비스워커 푸시)으로 보낸다.
+  useEffect(() => {
+    if (!user) return;
+    if (Capacitor?.isNativePlatform?.()) return;
+    void subscribeToPush(user.id);
+  }, [user]);
 
   // 실시간 메시지 변경 감지하여 미확인 카운트 즉시 갱신
   useEffect(() => {

@@ -136,7 +136,7 @@ export function MessengerDrawer({
         </div>
 
         {/* 본문 (목록 또는 채팅방) */}
-        <div className="flex-1 min-h-0 relative">
+        <div className="flex-1 min-h-0 flex flex-col">
           {selectedRoom ? (
             <MessengerChatPane
               room={selectedRoom}

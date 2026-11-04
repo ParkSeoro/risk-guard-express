@@ -38,6 +38,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const projectAccess = useProjectAccess();
   const showBackToMobile = isForceDesktop() && isLikelyPhoneDevice();
   const location = useLocation();
+  const isMessenger = location.pathname.includes("/messenger");
   const navigate = useNavigate();
   const structuralBack = adminBackTarget(location.pathname);
   const backTarget = structuralBack
@@ -63,9 +64,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <RemoteSupportHost>
       <SidebarProvider>
         {/* min-w-0 + overflow-x-hidden: prevent desktop-width children from forcing phone pinch-zoom layout */}
-        <div className="min-h-screen flex w-full max-w-[100vw] overflow-x-hidden print:block print:overflow-visible print:max-w-none print:h-auto">
+        <div className={`min-h-screen flex w-full max-w-[100vw] overflow-x-hidden print:block print:overflow-visible print:max-w-none print:h-auto ${isMessenger ? "h-dvh max-h-dvh overflow-hidden" : ""}`}>
           <AppSidebar />
-          <div className="flex-1 flex flex-col min-w-0 w-full max-w-full print:block print:w-full print:h-auto print:overflow-visible">
+          <div className={`flex-1 flex flex-col min-w-0 min-h-0 w-full max-w-full print:block print:w-full print:h-auto print:overflow-visible ${isMessenger ? "overflow-hidden" : ""}`}>
             <header className="h-14 flex items-center justify-between gap-2 border-b bg-card px-2 sm:px-4 shrink-0 print:hidden min-w-0">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <SidebarTrigger className="text-muted-foreground shrink-0" aria-label="메뉴 열기" />
@@ -150,9 +151,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <RemoteSupportBannerSlot />
             <TutorialOverlay />
             <ShellAssessmentShareAlert />
-            <main className="flex-1 overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 print:h-auto print:max-h-none">
+            <main className={`flex-1 min-h-0 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 print:h-auto print:max-h-none ${isMessenger ? "overflow-hidden p-0 flex flex-col" : "overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6"}`}>
               <AppErrorBoundary>
-                <div className="w-full max-w-full min-w-0 print:block print:w-full">{children}</div>
+                <div className={isMessenger ? "flex-1 min-h-0 flex flex-col h-full" : "w-full max-w-full min-w-0 print:block print:w-full"}>{children}</div>
               </AppErrorBoundary>
             </main>
 

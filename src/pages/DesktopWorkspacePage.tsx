@@ -244,7 +244,8 @@ export default function DesktopWorkspacePage() {
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
-  // 기존 GitHub 권한 정책(AppSidebar.tsx / RoleGuard.tsx / ContractorGate.tsx)과 100% 동일하게 적용
+  // 기존 GitHub 권한 정책(docs/access-policy.md / AppSidebar.tsx / RoleGuard.tsx / ContractorGate.tsx)과 100% 동일하게 적용
+  // "전역 역할은 마스터뿐이다 (user_roles.role). 그 외 역할은 현장마다 project_members.role_new다. A현장 권한이 B현장으로 넘어가지 않는다."
   const isMaster = hasRole("master");
   const isContractorCo =
     !!projectAccess &&
@@ -255,8 +256,13 @@ export default function DesktopWorkspacePage() {
     () => new Set(["contractor", "worker", "viewer", "user"]),
     [],
   );
+  const currentSiteRole =
+    projectAccess && !projectAccess.loading ? projectAccess.userRole : null;
   const isLowPriv =
-    !isMaster && (roles.length === 0 || roles.every((r) => LOW_ROLES.has(String(r))));
+    !isMaster &&
+    (currentSiteRole
+      ? LOW_ROLES.has(String(currentSiteRole))
+      : roles.length === 0 || roles.every((r) => LOW_ROLES.has(String(r))));
   const restrictToContractorUI = isContractorCo || isLowPriv;
 
   // 권한에 따라 좌측 레일에 노출할 아이콘 필터링
@@ -264,25 +270,28 @@ export default function DesktopWorkspacePage() {
     return RAIL_ICONS.filter((item) => {
       if (item.group !== "popup") return false;
       // 협력사/저권한 계정은 CONTRACTOR_ALLOWED_PREFIXES(contractorRouteAccess.ts)에 허용된 경로만 표시
-      // 단, 공지사항(/announcements)은 현장 공지 확인용으로 표시 허용
       if (restrictToContractorUI) {
         if (item.adminOnly) return false;
-        if (item.id === "announcements") return true;
         return isAllowedForContractor(item.path);
       }
       // RoleGuard 기본 허용 역할(['master', 'project_admin', 'safety_manager'])이 필요한 메뉴(안전관리비 등)
+      // 현재 선택된 현장(projectAccess.userRole) 기준으로 판정하여 A현장 권한이 B현장으로 넘어가지 않도록 보장
       if (item.adminOnly) {
+        if (isMaster) return true;
+        if (currentSiteRole) {
+          return (
+            currentSiteRole === "project_admin" ||
+            currentSiteRole === "safety_manager"
+          );
+        }
         return (
-          isMaster ||
           hasRole("project_admin" as any) ||
-          hasRole("safety_manager" as any) ||
-          projectAccess?.userRole === "project_admin" ||
-          projectAccess?.userRole === "safety_manager"
+          hasRole("safety_manager" as any)
         );
       }
       return true;
     });
-  }, [restrictToContractorUI, isMaster, hasRole, projectAccess?.userRole]);
+  }, [restrictToContractorUI, isMaster, currentSiteRole, hasRole]);
 
   // 대화방 목록 로드
   const loadRooms = useCallback(async () => {

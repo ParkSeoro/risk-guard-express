@@ -165,7 +165,7 @@ export function AppSidebar() {
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
   const CONTRACTOR_GROUP_KEYS = new Set(["today", "site", "docs", "incident", "location", "health", "ops"]);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
-    '/', '/approvals',
+    '/', '/desktop-workspace', '/messenger', '/announcements', '/approvals',
     '/work-plans', '/work-permits', '/tbm-logs',
     '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/alerts', '/work-stop',

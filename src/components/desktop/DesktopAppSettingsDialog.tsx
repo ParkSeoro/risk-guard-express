@@ -240,70 +240,14 @@ export function DesktopAppSettingsDialog({
                 onCheckedChange={(v) => updateSetting("minimizeToTrayOnClose", v)}
               />
             </div>
-          </div>
-
-          {/* 3. 화면 레이아웃 모드 선택 */}
-          <div className="rounded-xl border bg-card p-3.5 space-y-2.5">
-            <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-              <Columns2 className="h-3.5 w-3.5 text-primary" />
-              <span>기본 창 크기 및 레이아웃 모드</span>
-            </h4>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => updateSetting("defaultWindowMode", "compact")}
-                className={`p-2.5 rounded-lg border text-left transition-all ${
-                  settings.defaultWindowMode === "compact"
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "hover:bg-muted/50"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-bold flex items-center gap-1">
-                    <Smartphone className="h-3.5 w-3.5 text-primary" />
-                    카톡 미니모드
-                  </span>
-                  {settings.defaultWindowMode === "compact" && (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                  )}
-                </div>
-                <p className="text-[10px] text-muted-foreground leading-snug">
-                  폭 420px 슬림 창. 모니터 한쪽에 띄워두고 조직도·채팅·결재 확인
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => updateSetting("defaultWindowMode", "expanded")}
-                className={`p-2.5 rounded-lg border text-left transition-all ${
-                  settings.defaultWindowMode === "expanded"
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "hover:bg-muted/50"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-bold flex items-center gap-1">
-                    <Columns2 className="h-3.5 w-3.5 text-primary" />
-                    통합 워크스페이스
-                  </span>
-                  {settings.defaultWindowMode === "expanded" && (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                  )}
-                </div>
-                <p className="text-[10px] text-muted-foreground leading-snug">
-                  좌측 아이콘 레일 + 대화목록 + 우측 안전관리비·허가서·결재 동시 작업
-                </p>
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 pt-2 border-t">
+            <div className="flex items-center justify-between gap-3 py-1 border-t pt-2.5">
               <div className="space-y-0.5">
                 <Label className="text-xs font-medium cursor-pointer flex items-center gap-1.5">
                   <Pin className="h-3 w-3 text-primary" />
                   <span>창 항상 위에 고정 (Always on Top)</span>
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  엑셀·CAD 작업 중에도 메신저 창이 가려지지 않게 유지합니다.
+                  엑셀·CAD 작업 중에도 SafeNex 창이 가려지지 않게 유지합니다.
                 </p>
               </div>
               <Switch
@@ -313,7 +257,7 @@ export function DesktopAppSettingsDialog({
             </div>
           </div>
 
-          {/* 4. 알림 설정 */}
+          {/* 3. 알림 설정 */}
           <div className="rounded-xl border bg-card p-3.5 space-y-2.5">
             <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
               <BellRing className="h-3.5 w-3.5 text-primary" />

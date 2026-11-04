@@ -33,10 +33,19 @@ export function isLikelyPhoneDevice(): boolean {
   return false;
 }
 
-/** Opt-in desktop shell on a phone (set from MobileHome). */
+/** Opt-in desktop shell on a phone (set from MobileHome) or active Windows PC messenger shell. */
 export function isForceDesktop(): boolean {
   if (typeof window === "undefined") return false;
   try {
+    if ((window as unknown as { safenexDesktop?: { isDesktopApp?: boolean } }).safenexDesktop?.isDesktopApp) {
+      return true;
+    }
+    if (window.sessionStorage.getItem("safenex_pc_shell") === "1") {
+      return true;
+    }
+    if (window.location.pathname.includes("/desktop-workspace")) {
+      return true;
+    }
     return localStorage.getItem(FORCE_DESKTOP_KEY) === "1";
   } catch {
     return false;

@@ -66,6 +66,7 @@ declare global {
 const DESKTOP_SETTINGS_KEY = "safenex_desktop_settings_v1";
 const MANAGER_LOGIN_MEMORY_KEY = "safenex_manager_login_memory_v1";
 const PRESENCE_STATUS_KEY = "safenex_desktop_presence_v1";
+const DESKTOP_SHELL_SESSION_KEY = "safenex_pc_shell";
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopAppSettings = {
   autoStartOnBoot: true,
@@ -86,6 +87,121 @@ export function isWindowsDesktopApp(): boolean {
   if (window.safenexDesktop?.isDesktopApp) return true;
   const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
   return ua.includes("SafeNexDesktop") || ua.includes("Electron/");
+}
+
+/**
+ * Whether the unified PC Messenger & Groupware Shell (left hover-expanding icon rail + in-place content)
+ * is active in the current window.
+ */
+export function isDesktopShellActive(): boolean {
+  if (typeof window === "undefined") return false;
+  if (isWindowsDesktopApp()) return true;
+  try {
+    if (window.sessionStorage.getItem(DESKTOP_SHELL_SESSION_KEY) === "1") {
+      return true;
+    }
+    if (window.location.pathname.includes("/desktop-workspace")) {
+      window.sessionStorage.setItem(DESKTOP_SHELL_SESSION_KEY, "1");
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+export function setDesktopShellActive(active: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (active) {
+      window.sessionStorage.setItem(DESKTOP_SHELL_SESSION_KEY, "1");
+      window.localStorage.setItem("forceDesktopUI", "1");
+    } else {
+      window.sessionStorage.removeItem(DESKTOP_SHELL_SESSION_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Returns the recommended window dimensions for a given route inside the single-window PC shell.
+ * - Messenger (대화상대 / 대화목록): 420 × 680
+ * - Alerts / Announcements (알림 / 공지사항): 660 × 680
+ * - Feature screens (대시보드 / 결재 / 허가서 / 계획서 / 위험성평가 등): 960 × 700
+ */
+export function resolveDesktopRouteWindowSize(pathname: string): {
+  width: number;
+  height: number;
+  isMessengerView: boolean;
+} {
+  const p = pathname || "";
+  if (p.includes("/desktop-workspace") || p.includes("/messenger")) {
+    return { width: 420, height: 680, isMessengerView: true };
+  }
+  if (p.includes("/alerts") || p.includes("/announcements")) {
+    return { width: 660, height: 680, isMessengerView: false };
+  }
+  return { width: 960, height: 700, isMessengerView: false };
+}
+
+/**
+ * Smoothly resizes the current window in-place and keeps it within the monitor's working area.
+ * Uses both standard browser APIs and the local C# Win32 endpoint (`/__desktop/resize`) when running in SafeNexPC.exe.
+ */
+export function resizeDesktopWindow(width: number, height: number): void {
+  if (typeof window === "undefined") return;
+  const targetW = Math.max(360, Math.round(width));
+  const targetH = Math.max(520, Math.round(height));
+
+  try {
+    const availW = window.screen?.availWidth || 1920;
+    const availH = window.screen?.availHeight || 1040;
+    const availLeft = (window.screen as unknown as { availLeft?: number })?.availLeft || 0;
+    const availTop = (window.screen as unknown as { availTop?: number })?.availTop || 0;
+
+    // Anchor right edge near current right edge (or bottom-right corner) so expanding from 420->960
+    // shifts left instead of overflowing off the right edge of the monitor.
+    const curRight = window.screenX + window.outerWidth;
+    const curTop = window.screenY;
+
+    let nextX = curRight - targetW;
+    if (nextX + targetW > availLeft + availW - 12) {
+      nextX = availLeft + availW - targetW - 16;
+    }
+    if (nextX < availLeft + 12) {
+      nextX = availLeft + 16;
+    }
+
+    let nextY = curTop;
+    if (nextY + targetH > availTop + availH - 12) {
+      nextY = Math.max(availTop + 16, availTop + availH - targetH - 16);
+    }
+    if (nextY < availTop + 12) {
+      nextY = availTop + 16;
+    }
+
+    window.resizeTo(targetW, targetH);
+    window.moveTo(nextX, nextY);
+  } catch {
+    /* ignore if browser blocks window.resizeTo */
+  }
+
+  // Native Windows C# local server endpoint (`SafeNexPC.exe`)
+  if (
+    isWindowsDesktopApp() ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost"
+  ) {
+    try {
+      void fetch(`/__desktop/resize?w=${targetW}&h=${targetH}`, {
+        method: "GET",
+        cache: "no-store",
+      }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export function loadDesktopSettings(): DesktopAppSettings {

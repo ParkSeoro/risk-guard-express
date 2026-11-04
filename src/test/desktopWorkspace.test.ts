@@ -7,7 +7,11 @@ import {
   saveManagerLoginMemory,
   loadDesktopPresence,
   saveDesktopPresence,
+  resolveDesktopRouteWindowSize,
+  setDesktopShellActive,
 } from "@/lib/desktopBridge";
+import { DESKTOP_RAIL_ITEMS } from "@/components/desktop/DesktopRailSidebar";
+import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { postConsentHomePath } from "@/components/AuthGuard";
 
 describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => {
@@ -72,5 +76,35 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
 
     saveDesktopSettings({ launchMessengerWorkspaceOnLogin: true });
     expect(postConsentHomePath(["safety_manager"])).toBe("/app/admin/desktop-workspace");
+  });
+
+  it("never redirects narrow PC desktop shell windows to the mobile worker app", () => {
+    Object.defineProperty(window, "innerWidth", { value: 420, configurable: true });
+    setDesktopShellActive(true);
+    expect(prefersMobileAppShell()).toBe(false);
+    expect(postConsentHomePath(["safety_manager"])).not.toBe("/app/worker/today");
+  });
+
+  it("keeps rail menu labels clean without parentheses or pixel sizes and sizes routes appropriately", () => {
+    for (const item of DESKTOP_RAIL_ITEMS) {
+      expect(item.label).not.toContain("(");
+      expect(item.label).not.toContain(")");
+      expect(item.label).not.toMatch(/\d+×\d+/);
+    }
+    expect(resolveDesktopRouteWindowSize("/app/admin/desktop-workspace")).toEqual({
+      width: 420,
+      height: 680,
+      isMessengerView: true,
+    });
+    expect(resolveDesktopRouteWindowSize("/app/admin/alerts")).toEqual({
+      width: 660,
+      height: 680,
+      isMessengerView: false,
+    });
+    expect(resolveDesktopRouteWindowSize("/app/admin/work-permits")).toEqual({
+      width: 960,
+      height: 700,
+      isMessengerView: false,
+    });
   });
 });

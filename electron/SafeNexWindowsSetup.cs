@@ -15,11 +15,67 @@ using Microsoft.Win32;
 [assembly: AssemblyDescription("SafeNex Windows Desktop Messenger & Safety Workspace")]
 [assembly: AssemblyCompany("SafeNex")]
 [assembly: AssemblyProduct("SafeNex PC")]
-[assembly: AssemblyVersion("1.1.1.0")]
-[assembly: AssemblyFileVersion("1.1.1.0")]
+[assembly: AssemblyVersion("1.1.2.0")]
+[assembly: AssemblyFileVersion("1.1.2.0")]
 
 namespace SafeNexDesktop
 {
+    static class Win32WindowHelper
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+
+        public static void ResizeActiveAppWindow(int targetWidth, int targetHeight)
+        {
+            try
+            {
+                IntPtr hWnd = GetForegroundWindow();
+                if (hWnd == IntPtr.Zero) return;
+
+                RECT rect;
+                if (!GetWindowRect(hWnd, out rect)) return;
+
+                Screen scr = Screen.FromHandle(hWnd);
+                Rectangle work = scr.WorkingArea;
+
+                int w = Math.Min(Math.Max(360, targetWidth), work.Width - 20);
+                int h = Math.Min(Math.Max(520, targetHeight), work.Height - 20);
+
+                // Keep right edge anchored so expanding from 420 -> 960 shifts left cleanly
+                int curRight = rect.Right;
+                int nextX = curRight - w;
+                if (nextX + w > work.Right - 12)
+                    nextX = work.Right - w - 16;
+                if (nextX < work.Left + 12)
+                    nextX = work.Left + 16;
+
+                int nextY = rect.Top;
+                if (nextY + h > work.Bottom - 12)
+                    nextY = Math.Max(work.Top + 16, work.Bottom - h - 16);
+                if (nextY < work.Top + 12)
+                    nextY = work.Top + 16;
+
+                MoveWindow(hWnd, nextX, nextY, w, h, true);
+            }
+            catch { }
+        }
+    }
+
     static class Program
     {
         private static Mutex _mutex;
@@ -67,7 +123,6 @@ namespace SafeNexDesktop
                 return;
             }
 
-            // If launched as Setup installer OR not running from installDir and user double-clicked Setup
             bool isRunningFromInstallDir = string.Equals(
                 Path.GetFullPath(exePath).TrimEnd('\\'),
                 Path.GetFullPath(installedExe).TrimEnd('\\'),
@@ -85,11 +140,10 @@ namespace SafeNexDesktop
             _mutex = new Mutex(true, "Local\\SafeNexPC_SingleInstance_Mutex_v1", out createdNew);
             if (!createdNew)
             {
-                // Already running -> open the mini messenger window via local server port if active
                 int existingPort = ReadSavedPort(installDir);
                 if (existingPort > 0)
                 {
-                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, true);
+                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, 420, 680);
                 }
                 return;
             }
@@ -123,7 +177,7 @@ namespace SafeNexDesktop
             return 0;
         }
 
-        public static void LaunchAppWindow(string url, bool compactMode)
+        public static void LaunchAppWindow(string url, int width, int height)
         {
             try
             {
@@ -137,15 +191,9 @@ namespace SafeNexDesktop
 
                 if (!string.IsNullOrEmpty(browserExe))
                 {
-                    int width = compactMode ? 410 : 1360;
-                    int height = compactMode ? 740 : 880;
                     Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
-                    int posX = compactMode
-                        ? Math.Max(0, workArea.Right - width - 16)
-                        : Math.Max(0, workArea.Left + (workArea.Width - width) / 2);
-                    int posY = compactMode
-                        ? Math.Max(0, workArea.Bottom - height - 16)
-                        : Math.Max(0, workArea.Top + (workArea.Height - height) / 2);
+                    int posX = Math.Max(16, workArea.Right - width - 20);
+                    int posY = Math.Max(16, workArea.Bottom - height - 20);
 
                     string args = string.Format(
                         "--app=\"{0}\" --user-data-dir=\"{1}\" --window-size={2},{3} --window-position={4},{5} --disable-features=Translate",
@@ -224,7 +272,6 @@ namespace SafeNexDesktop
         private readonly string _installedExe;
         private CheckBox _chkAutoStart;
         private CheckBox _chkDesktopShortcut;
-        private CheckBox _chkCompactMode;
         private CheckBox _chkLaunchNow;
         private ProgressBar _progress;
         private Label _lblStatus;
@@ -236,8 +283,8 @@ namespace SafeNexDesktop
             _installDir = installDir;
             _installedExe = installedExe;
 
-            Text = "SafeNex PC 안전관리 메신저 설치 마법사 (v1.1.1)";
-            Size = new Size(500, 420);
+            Text = "SafeNex PC 안전관리 메신저 설치 마법사 (v1.1.2)";
+            Size = new Size(500, 390);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -259,7 +306,7 @@ namespace SafeNexDesktop
 
             Label title = new Label
             {
-                Text = "SafeNex PC 안전관리 통합 워크스페이스",
+                Text = "SafeNex PC 안전관리 메신저",
                 ForeColor = Color.White,
                 Font = new Font("Malgun Gothic", 13f, FontStyle.Bold),
                 AutoSize = true,
@@ -267,7 +314,7 @@ namespace SafeNexDesktop
             };
             Label subtitle = new Label
             {
-                Text = "카카오톡·네이버웍스 스타일 실시간 현장 메신저 & 안전관리 시스템",
+                Text = "실시간 현장 대화상대 · 채팅 · 전자결재 · 안전서류 통합 프로그램",
                 ForeColor = Color.FromArgb(251, 191, 36),
                 Font = new Font("Malgun Gothic", 9f, FontStyle.Regular),
                 AutoSize = true,
@@ -279,7 +326,7 @@ namespace SafeNexDesktop
 
             Label desc = new Label
             {
-                Text = "설치 옵션을 선택한 뒤 [설치 및 시작하기] 버튼을 눌러주세요.",
+                Text = "설치 옵션을 확인한 뒤 [설치 및 시작하기] 버튼을 눌러주세요.",
                 Location = new Point(24, 98),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(51, 65, 85),
@@ -289,42 +336,34 @@ namespace SafeNexDesktop
 
             _chkAutoStart = new CheckBox
             {
-                Text = "윈도우(Windows) 시작 시 SafeNex PC 자동 실행 (권장)",
+                Text = "윈도우(Windows) 시작 시 SafeNex PC 자동 실행 (로그인 유지)",
                 Checked = true,
-                Location = new Point(28, 132),
+                Location = new Point(28, 134),
                 AutoSize = true
             };
             _chkDesktopShortcut = new CheckBox
             {
                 Text = "바탕화면 및 시작 메뉴에 바로가기 아이콘 생성",
                 Checked = true,
-                Location = new Point(28, 162),
-                AutoSize = true
-            };
-            _chkCompactMode = new CheckBox
-            {
-                Text = "카카오톡처럼 화면 오른쪽 구석에 미니 메신저 창으로 띄우기 (권장)",
-                Checked = true,
-                Location = new Point(28, 192),
+                Location = new Point(28, 166),
                 AutoSize = true
             };
             _chkLaunchNow = new CheckBox
             {
-                Text = "설치 완료 후 즉시 SafeNex PC 메신저 실행",
+                Text = "설치 완료 후 즉시 SafeNex PC 실행",
                 Checked = true,
-                Location = new Point(28, 222),
+                Location = new Point(28, 198),
                 AutoSize = true
             };
 
             Controls.Add(_chkAutoStart);
             Controls.Add(_chkDesktopShortcut);
-            Controls.Add(_chkCompactMode);
             Controls.Add(_chkLaunchNow);
 
             Label pathLabel = new Label
             {
                 Text = "설치 경로: " + _installDir,
-                Location = new Point(28, 258),
+                Location = new Point(28, 234),
                 AutoSize = true,
                 ForeColor = Color.Gray,
                 Font = new Font("Malgun Gothic", 8.5f)
@@ -333,7 +372,7 @@ namespace SafeNexDesktop
 
             _progress = new ProgressBar
             {
-                Location = new Point(24, 286),
+                Location = new Point(24, 260),
                 Size = new Size(436, 20),
                 Style = ProgressBarStyle.Continuous
             };
@@ -342,7 +381,7 @@ namespace SafeNexDesktop
             _lblStatus = new Label
             {
                 Text = "설치 준비 완료",
-                Location = new Point(24, 312),
+                Location = new Point(24, 286),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(71, 85, 105),
                 Font = new Font("Malgun Gothic", 8.5f)
@@ -352,7 +391,7 @@ namespace SafeNexDesktop
             _btnInstall = new Button
             {
                 Text = "설치 및 시작하기",
-                Location = new Point(290, 336),
+                Location = new Point(290, 308),
                 Size = new Size(170, 36),
                 BackColor = Color.FromArgb(15, 23, 42),
                 ForeColor = Color.White,
@@ -369,13 +408,26 @@ namespace SafeNexDesktop
             _btnInstall.Enabled = false;
             try
             {
-                _lblStatus.Text = "기존 실행 중인 프로세스를 확인하는 중...";
+                _lblStatus.Text = "기존 실행 중인 프로세스를 종료하는 중...";
                 _progress.Value = 15;
                 Application.DoEvents();
 
+                // Stop any existing SafeNexPC instance so file copy succeeds
+                try
+                {
+                    int currentPid = Process.GetCurrentProcess().Id;
+                    foreach (Process p in Process.GetProcessesByName("SafeNexPC"))
+                    {
+                        if (p.Id != currentPid)
+                        {
+                            try { p.Kill(); p.WaitForExit(1500); } catch { }
+                        }
+                    }
+                }
+                catch { }
+
                 Directory.CreateDirectory(_installDir);
 
-                // Copy executable
                 _lblStatus.Text = "실행 파일을 복사하는 중...";
                 _progress.Value = 35;
                 Application.DoEvents();
@@ -384,22 +436,13 @@ namespace SafeNexDesktop
                     File.Copy(_sourceExe, _installedExe, true);
                 }
 
-                // Extract embedded or adjacent web bundle
-                _lblStatus.Text = "카톡형 워크스페이스 웹 번들을 설치하는 중...";
+                _lblStatus.Text = "프로그램 리소스를 설치하는 중...";
                 _progress.Value = 65;
                 Application.DoEvents();
 
                 string wwwDir = Path.Combine(_installDir, "www");
                 ExtractWebBundleTo(wwwDir);
 
-                // Save preferences
-                File.WriteAllText(
-                    Path.Combine(_installDir, "mode.cfg"),
-                    _chkCompactMode.Checked ? "compact" : "expanded",
-                    Encoding.UTF8
-                );
-
-                // Register Windows Startup
                 _lblStatus.Text = "윈도우 시작 프로그램 및 바로가기를 등록하는 중...";
                 _progress.Value = 85;
                 Application.DoEvents();
@@ -447,22 +490,23 @@ namespace SafeNexDesktop
             string tempZip = Path.Combine(Path.GetTempPath(), "safenex_webbundle_" + Guid.NewGuid().ToString("N") + ".zip");
             try
             {
-                using (Stream resStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("webbundle.zip"))
+                Assembly asm = Assembly.GetExecutingAssembly();
+                Stream resStream = asm.GetManifestResourceStream("SafeNex.webbundle.zip")
+                                ?? asm.GetManifestResourceStream("webbundle.zip");
+                if (resStream != null)
                 {
-                    if (resStream != null)
+                    using (resStream)
+                    using (FileStream fs = new FileStream(tempZip, FileMode.Create, FileAccess.Write))
                     {
-                        using (FileStream fs = new FileStream(tempZip, FileMode.Create, FileAccess.Write))
-                        {
-                            resStream.CopyTo(fs);
-                        }
+                        resStream.CopyTo(fs);
                     }
-                    else
+                }
+                else
+                {
+                    string localZip = Path.Combine(Path.GetDirectoryName(asm.Location), "webbundle.zip");
+                    if (File.Exists(localZip))
                     {
-                        string localZip = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "webbundle.zip");
-                        if (File.Exists(localZip))
-                        {
-                            File.Copy(localZip, tempZip, true);
-                        }
+                        File.Copy(localZip, tempZip, true);
                     }
                 }
 
@@ -559,10 +603,8 @@ namespace SafeNexDesktop
             Directory.CreateDirectory(_installDir);
 
             _wwwDir = Path.Combine(_installDir, "www");
-            if (!Directory.Exists(_wwwDir) || !File.Exists(Path.Combine(_wwwDir, "index.html")))
-            {
-                SetupInstallerForm.ExtractWebBundleTo(_wwwDir);
-            }
+            // Always refresh embedded web bundle on startup so installed app stays up to date
+            SetupInstallerForm.ExtractWebBundleTo(_wwwDir);
 
             StartLocalSpaServer();
 
@@ -583,45 +625,32 @@ namespace SafeNexDesktop
                 ContextMenuStrip = menu
             };
 
-            _trayIcon.DoubleClick += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", true);
+            _trayIcon.DoubleClick += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", 420, 680);
 
-            bool startCompact = true;
-            try
-            {
-                string cfg = Path.Combine(_installDir, "mode.cfg");
-                if (File.Exists(cfg) && File.ReadAllText(cfg).Trim() == "expanded")
-                    startCompact = false;
-            }
-            catch { }
-
-            OpenWorkspace(initialRoute, startCompact);
+            OpenWorkspace(initialRoute, 420, 680);
         }
 
         private ContextMenuStrip BuildContextMenu()
         {
             ContextMenuStrip menu = new ContextMenuStrip();
 
-            ToolStripMenuItem openMiniItem = new ToolStripMenuItem("💬 SafeNex 카톡형 미니 메신저 열기 (오른쪽 구석)");
-            openMiniItem.Font = new Font(menu.Font, FontStyle.Bold);
-            openMiniItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", true);
-            menu.Items.Add(openMiniItem);
-
-            ToolStripMenuItem openFullItem = new ToolStripMenuItem("🖥️ 넓은 분할 화면으로 열기");
-            openFullItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", false);
-            menu.Items.Add(openFullItem);
+            ToolStripMenuItem openMainItem = new ToolStripMenuItem("💬 SafeNex PC 메신저 열기");
+            openMainItem.Font = new Font(menu.Font, FontStyle.Bold);
+            openMainItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", 420, 680);
+            menu.Items.Add(openMainItem);
 
             menu.Items.Add(new ToolStripSeparator());
 
-            ToolStripMenuItem approvalsItem = new ToolStripMenuItem("✅ 전자결재함 바로가기");
-            approvalsItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace?module=approvals", false);
+            ToolStripMenuItem dashboardItem = new ToolStripMenuItem("📊 대시보드 열기");
+            dashboardItem.Click += (s, e) => OpenWorkspace("/app/admin", 960, 700);
+            menu.Items.Add(dashboardItem);
+
+            ToolStripMenuItem approvalsItem = new ToolStripMenuItem("✅ 전자결재 열기");
+            approvalsItem.Click += (s, e) => OpenWorkspace("/app/admin/approvals", 960, 700);
             menu.Items.Add(approvalsItem);
 
-            ToolStripMenuItem safetyCostItem = new ToolStripMenuItem("🧾 산업안전보건관리비 바로가기");
-            safetyCostItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace?module=safety-cost", false);
-            menu.Items.Add(safetyCostItem);
-
-            ToolStripMenuItem permitsItem = new ToolStripMenuItem("📝 작업허가서(PTW) 바로가기");
-            permitsItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace?module=work-permits", false);
+            ToolStripMenuItem permitsItem = new ToolStripMenuItem("📝 작업허가서 열기");
+            permitsItem.Click += (s, e) => OpenWorkspace("/app/admin/work-permits", 960, 700);
             menu.Items.Add(permitsItem);
 
             menu.Items.Add(new ToolStripSeparator());
@@ -646,10 +675,10 @@ namespace SafeNexDesktop
             return menu;
         }
 
-        private void OpenWorkspace(string route, bool compact)
+        private void OpenWorkspace(string route, int width, int height)
         {
             string url = "http://127.0.0.1:" + _port + route;
-            Program.LaunchAppWindow(url, compact);
+            Program.LaunchAppWindow(url, width, height);
         }
 
         private void StartLocalSpaServer()
@@ -702,6 +731,25 @@ namespace SafeNexDesktop
             try
             {
                 string rawPath = ctx.Request.Url.AbsolutePath;
+
+                // Native window resize endpoint called when switching between Messenger (420x680) and Features (660x680 / 960x700)
+                if (string.Equals(rawPath, "/__desktop/resize", StringComparison.OrdinalIgnoreCase))
+                {
+                    int w = 420;
+                    int h = 680;
+                    int.TryParse(ctx.Request.QueryString["w"], out w);
+                    int.TryParse(ctx.Request.QueryString["h"], out h);
+                    Win32WindowHelper.ResizeActiveAppWindow(w, h);
+
+                    byte[] okBytes = Encoding.UTF8.GetBytes("{\"ok\":true}");
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    ctx.Response.StatusCode = 200;
+                    ctx.Response.ContentLength64 = okBytes.Length;
+                    ctx.Response.OutputStream.Write(okBytes, 0, okBytes.Length);
+                    ctx.Response.OutputStream.Close();
+                    return;
+                }
+
                 if (string.IsNullOrEmpty(rawPath) || rawPath == "/")
                     rawPath = "/index.html";
 
@@ -727,9 +775,8 @@ namespace SafeNexDesktop
 
                 if (ext == ".html")
                 {
-                    // Inject window.safenexDesktop marker so the React UI knows it is running inside the native Windows .exe!
                     string html = File.ReadAllText(filePath, Encoding.UTF8);
-                    string bridgeScript = "<script>window.safenexDesktop={isDesktopApp:true,platform:'win32',appVersion:'1.1.1'};</script>";
+                    string bridgeScript = "<script>window.safenexDesktop={isDesktopApp:true,platform:'win32',appVersion:'1.1.2'};try{localStorage.setItem('forceDesktopUI','1');sessionStorage.setItem('safenex_pc_shell','1');}catch(e){}</script>";
                     html = html.Replace("<head>", "<head>" + bridgeScript);
                     byte[] bytes = Encoding.UTF8.GetBytes(html);
                     ctx.Response.ContentLength64 = bytes.Length;

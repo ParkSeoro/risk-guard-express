@@ -1,5 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { DesktopRailSidebar } from "@/components/desktop/DesktopRailSidebar";
 import { ArrowLeft, User, LogOut, Building2, Smartphone, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -19,10 +20,16 @@ import { RemoteSupportAgentPendingBadge } from "@/components/remote-support/Agen
 
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import type { ProjectAccess } from "@/hooks/useProjectAccess";
 import { isForceDesktop, isLikelyPhoneDevice, setForceDesktop } from "@/hooks/use-mobile";
 import { isPureWorkerUser, MOBILE_ADMIN_HOME } from "@/components/AuthGuard";
+import {
+  isDesktopShellActive,
+  resizeDesktopWindow,
+  resolveDesktopRouteWindowSize,
+  setDesktopShellActive,
+} from "@/lib/desktopBridge";
 
 export const ProjectAccessContext = createContext<ProjectAccess | null>(null);
 export const useGlobalProjectAccess = () => {
@@ -44,11 +51,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     location.pathname.includes("/messenger") ||
     location.pathname.includes("/desktop-workspace");
   const isDesktopWorkspace = location.pathname.includes("/desktop-workspace");
+  const isDesktopShell = !isPopoutWindow && (isDesktopWorkspace || isDesktopShellActive());
   const navigate = useNavigate();
   const structuralBack = adminBackTarget(location.pathname);
   const backTarget = structuralBack
     ? resolveAdminApprovalsReturnPath(new URLSearchParams(location.search).get("from")) || structuralBack
     : null;
+
+  useEffect(() => {
+    if (!isDesktopShell) return;
+    const { width, height } = resolveDesktopRouteWindowSize(location.pathname);
+    resizeDesktopWindow(width, height);
+  }, [isDesktopShell, location.pathname]);
 
   const ROLE_LABEL: Record<string, string> = {
     master: '마스터', project_admin: '프로젝트관리자', safety_manager: '안전관리자',
@@ -65,13 +79,78 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     window.location.assign(MOBILE_ADMIN_HOME);
   };
 
-  // 카톡형 PC 미니 메신저(/desktop-workspace)는 웹 관리자 사이드바·헤더 없이 순수 메신저 창으로 렌더링
-  if (isDesktopWorkspace) {
+  // PC 통합 워크스페이스 셸:
+  // - 좌측: 마우스 오버 시 메뉴명이 펼쳐지는 아이콘 레일 (DesktopRailSidebar)
+  // - 우측: 대화상대/대화목록 선택 시에는 메신저 표시(창 크기 420×680),
+  //         대시보드·알림·공지·결재·허가서·계획서 선택 시에는 메신저가 빠지고 해당 기능 화면이 같은 창 안에 맞춤 크기로 즉시 표시!
+  if (isDesktopShell) {
     return (
       <ProjectAccessContext.Provider value={projectAccess}>
         <RemoteSupportHost>
-          <div className="h-dvh w-screen overflow-hidden bg-background flex flex-col">
-            <AppErrorBoundary>{children}</AppErrorBoundary>
+          <div className="h-dvh w-screen overflow-hidden bg-background flex print:block print:h-auto print:overflow-visible">
+            <div className="print:hidden h-full flex">
+              <DesktopRailSidebar />
+            </div>
+            <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
+              {!isDesktopWorkspace && (
+                <header className="h-10 flex items-center justify-between gap-2 border-b bg-card px-3 shrink-0 print:hidden">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {backTarget && backTarget !== "/app/admin" && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                        aria-label="뒤로"
+                        onClick={() => navigate(backTarget)}
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {projectAccess.projects.length > 0 && (
+                      <div className="flex items-center gap-1.5 min-w-0 max-w-xs">
+                        <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <Select
+                          value={projectAccess.selectedProject}
+                          onValueChange={projectAccess.setSelectedProject}
+                        >
+                          <SelectTrigger className="h-7 text-xs font-semibold bg-muted/50 border-0 min-w-[160px] max-w-[240px] truncate shadow-none">
+                            <SelectValue placeholder="현장 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projectAccess.projects.map((p) => (
+                              <SelectItem key={p.id} value={p.id} className="text-xs">
+                                {p.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 text-[11px] text-muted-foreground">
+                    <span className="font-semibold text-foreground">
+                      {profile?.display_name || "관리자"}
+                    </span>
+                    <span>({roleLabel})</span>
+                  </div>
+                </header>
+              )}
+              <main
+                className={
+                  isDesktopWorkspace || location.pathname.includes("/messenger")
+                    ? "flex-1 min-h-0 flex flex-col overflow-hidden"
+                    : "flex-1 min-h-0 overflow-auto p-2.5 sm:p-3.5 print:block print:p-0 print:overflow-visible"
+                }
+                style={
+                  isDesktopWorkspace || location.pathname.includes("/messenger")
+                    ? undefined
+                    : { zoom: 0.88 }
+                }
+              >
+                <AppErrorBoundary>{children}</AppErrorBoundary>
+              </main>
+            </div>
           </div>
         </RemoteSupportHost>
       </ProjectAccessContext.Provider>

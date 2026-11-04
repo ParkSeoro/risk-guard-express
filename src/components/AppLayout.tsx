@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createContext, useContext } from "react";
 import type { ProjectAccess } from "@/hooks/useProjectAccess";
 import { isForceDesktop, isLikelyPhoneDevice, setForceDesktop } from "@/hooks/use-mobile";
-import { MOBILE_ADMIN_HOME } from "@/components/AuthGuard";
+import { isPureWorkerUser, MOBILE_ADMIN_HOME } from "@/components/AuthGuard";
 
 export const ProjectAccessContext = createContext<ProjectAccess | null>(null);
 export const useGlobalProjectAccess = () => {
@@ -128,7 +128,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="hidden md:block">
                   <AICreditBanner />
                 </div>
-                <MessengerButton currentProjectId={projectAccess.selectedProject} />
+                {!isPureWorkerUser(roles) && (
+                  <MessengerButton currentProjectId={projectAccess.selectedProject} />
+                )}
                 <NotificationBell />
                 <RemoteSupportAgentPendingBadge />
                 <RemoteSupportButton />

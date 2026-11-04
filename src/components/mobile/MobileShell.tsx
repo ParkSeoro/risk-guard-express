@@ -21,6 +21,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useEffect, type ReactNode } from "react";
 import { GpsStatusChip, useGpsUi } from "@/lib/tracking/gpsStatusUi";
+import { useAuth } from "@/contexts/AuthContext";
+import { isPureWorkerUser } from "@/components/AuthGuard";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { localeHtmlLang } from "@/lib/i18n/workerLocale";
 import { MessengerButton } from "@/components/messenger/MessengerButton";
@@ -36,6 +38,7 @@ const ICONS: Record<string, typeof Home> = {
 
 export default function MobileShell({ children }: { children: ReactNode }) {
   const { role, isMaster, projectId, loading } = useMobileAccess();
+  const { roles } = useAuth();
   const preview = usePreview();
   const location = useLocation();
   const navigate = useNavigate();
@@ -56,6 +59,8 @@ export default function MobileShell({ children }: { children: ReactNode }) {
     location.pathname.includes("/approvals/") ||
     location.pathname.includes("/risk-assessment/") ||
     location.pathname.includes("/work-plans/");
+  const isMessenger = location.pathname.includes("/messenger");
+  const showMessenger = bucket !== "worker" && !isPureWorkerUser(roles);
 
   // Legal CTA for field workers; managers process via Today / 현장
   const showWorkStopFab = !hideChrome && bucket === "worker";
@@ -90,7 +95,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
             block={gpsUi.block}
             accuracyM={gpsUi.accuracyM}
           />
-          {bucket !== "worker" && (
+          {showMessenger && (
             <MessengerButton
               currentProjectId={projectId}
               className="text-primary-foreground hover:text-primary-foreground/90 hover:bg-primary-foreground/10 h-8 w-8 shrink-0"
@@ -102,7 +107,16 @@ export default function MobileShell({ children }: { children: ReactNode }) {
         </header>
       )}
 
-      <div className={cn("flex-1", !hideChrome && contentPad)}>{children}</div>
+      <div
+        className={cn(
+          "flex-1 min-h-0",
+          isMessenger
+            ? "h-[calc(100dvh-3.75rem-4.25rem-var(--sat)-var(--sab))] overflow-hidden"
+            : !hideChrome && contentPad,
+        )}
+      >
+        {children}
+      </div>
 
       {showWorkStopFab && (
         <Button

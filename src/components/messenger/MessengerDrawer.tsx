@@ -6,6 +6,7 @@ import { NewChatDialog } from "./NewChatDialog";
 import { Button } from "@/components/ui/button";
 import { Maximize2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { messengerHomePath } from "@/lib/messengerPath";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -85,10 +86,11 @@ export function MessengerDrawer({
 
   const handleExpandToPage = () => {
     onClose();
+    const base = messengerHomePath();
     if (selectedRoomId) {
-      navigate(`/app/admin/messenger?room=${selectedRoomId}`);
+      navigate(`${base}?room=${selectedRoomId}`);
     } else {
-      navigate("/app/admin/messenger");
+      navigate(base);
     }
   };
 

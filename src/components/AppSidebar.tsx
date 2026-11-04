@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ADMIN_APP_BASE, toAdminUrl } from "@/lib/adminNav";
 import { VISION_VIEW_ROLES } from "@/lib/visionFleetApi";
 import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
+import { isPureWorkerUser } from "@/components/AuthGuard";
 
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
 
@@ -180,6 +181,9 @@ export function AppSidebar() {
     }
     if (g.key === "today" && !canViewOwnerSafety) {
       items = items.filter((i) => i.url !== "/owner-safety");
+    }
+    if (isPureWorkerUser(roles)) {
+      items = items.filter((i) => i.url !== "/messenger");
     }
     return { ...g, items };
   });

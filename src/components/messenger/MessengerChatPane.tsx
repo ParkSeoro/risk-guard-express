@@ -37,7 +37,7 @@ export function MessengerChatPane({
   onBack,
   onRoomUpdated,
 }: MessengerChatPaneProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [messages, setMessages] = useState<ChatRoomMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState("");
@@ -173,7 +173,7 @@ export function MessengerChatPane({
         event: "typing",
         payload: {
           userId: user.id,
-          userName: (user.user_metadata as any)?.display_name || "관리자",
+          userName: profile?.display_name || "관리자",
         },
       });
     }, 400);
@@ -238,7 +238,18 @@ export function MessengerChatPane({
         toast.error("메시지 전송에 실패했습니다.");
         setInputText(text);
       } else {
-        // 메시지 전송 성공 시에만 부모 목록 갱신
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === res.id)) return prev;
+          return [
+            ...prev,
+            {
+              ...res,
+              sender_name: profile?.display_name || "나",
+              sender_company: profile?.company || null,
+              sender_role: profile?.position || null,
+            },
+          ];
+        });
         onRoomUpdatedRef.current?.();
       }
     } catch (err: any) {

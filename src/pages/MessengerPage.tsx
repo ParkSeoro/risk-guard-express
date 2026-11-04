@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "@/components/messenger/MessengerRoomList";
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";
@@ -7,10 +7,13 @@ import { NewChatDialog } from "@/components/messenger/NewChatDialog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { isPureWorkerUser } from "@/components/AuthGuard";
 import { MessageSquare } from "lucide-react";
 
 export default function MessengerPage() {
-  const { user } = useAuth();
+  const { user, roles, rolesReady } = useAuth();
+  const location = useLocation();
+  const inMobileShell = location.pathname.startsWith("/app/worker/");
   const [searchParams, setSearchParams] = useSearchParams();
   const initialRoomId = searchParams.get("room");
   const projectAccess = useGlobalProjectAccessOptional();
@@ -83,8 +86,18 @@ export default function MessengerPage() {
     loadRooms();
   };
 
+  if (rolesReady && isPureWorkerUser(roles)) {
+    return <Navigate to="/app/worker/today" replace />;
+  }
+
   return (
-    <div className="h-dvh md:h-[calc(100vh-3.5rem)] w-full flex bg-background overflow-hidden overscroll-contain">
+    <div
+      className={
+        inMobileShell
+          ? "h-full w-full flex bg-background overflow-hidden overscroll-contain"
+          : "h-dvh md:h-[calc(100vh-3.5rem)] w-full flex bg-background overflow-hidden overscroll-contain"
+      }
+    >
       {/* 대화방 목록 패널 (데스크톱 360px 고정, 모바일에서는 선택된 방이 없을 때 전체 너비) */}
       <div
         className={`w-full md:w-80 lg:w-96 border-r flex flex-col shrink-0 h-full ${

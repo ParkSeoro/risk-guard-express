@@ -168,7 +168,7 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
   
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("user_id, display_name, company, position, phone")
+    .select("user_id, display_name, company, position")
     .in("user_id", participantUserIds);
 
   const profileMap = new Map((profiles || []).map((pr) => [pr.user_id, pr]));
@@ -210,7 +210,6 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
             full_name: pr?.display_name || "사용자",
             company_name: pr?.company || null,
             role: pr?.position || null,
-            phone: pr?.phone || null,
           };
         });
 
@@ -412,16 +411,8 @@ export async function sendChatMessage(
     }
   }
 
-  // 대화방 마지막 메시지 갱신 및 내 읽은 시각 갱신
-  await supabase
-    .from("chat_rooms" as any)
-    .update({
-      last_message_text: finalContent.slice(0, 100),
-      last_message_at: new Date().toISOString(),
-      last_message_sender_id: user.id,
-    })
-    .eq("id", roomId);
-
+  // last_message_* 는 메시지 INSERT 트리거가 갱신한다.
+  // chat_rooms 에는 참여자 UPDATE 정책이 없어 여기서 고치면 조용히 실패한다.
   await markChatRoomRead(roomId, (newMsg as any).id);
 
   return {

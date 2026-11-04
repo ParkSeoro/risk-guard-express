@@ -22,6 +22,7 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [showReceipts, setShowReceipts] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
@@ -109,6 +110,11 @@ export function MessageBubble({
                 ? "bg-primary text-primary-foreground rounded-br-xs"
                 : "bg-card border text-card-foreground rounded-bl-xs"
             )}
+            onClick={(event) => {
+              const target = event.target as HTMLElement;
+              if (target.closest("a, button, img")) return;
+              setActionsOpen((open) => !open);
+            }}
           >
             {/* 첨부파일 렌더링 */}
             {attachments.length > 0 && (
@@ -171,17 +177,22 @@ export function MessageBubble({
               <div className="whitespace-pre-wrap">{message.content}</div>
             )}
 
-            {/* 마우스 호버 시 답장/복사 퀵 액션 */}
+            {/* 데스크톱은 호버, 휴대폰은 말풍선을 눌러 답장/복사를 연다 */}
             <div
               className={cn(
-                "absolute -top-7 hidden group-hover:flex items-center gap-1 p-0.5 rounded-md bg-background border shadow-sm z-10",
+                "absolute -top-7 items-center gap-1 p-0.5 rounded-md bg-background border shadow-sm z-10",
+                actionsOpen ? "flex" : "hidden md:group-hover:flex",
                 isMe ? "right-0" : "left-0"
               )}
+              onClick={(event) => event.stopPropagation()}
             >
               {onReply && (
                 <button
                   type="button"
-                  onClick={() => onReply(message)}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onReply(message);
+                  }}
                   className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-muted"
                   title="답장하기"
                 >
@@ -190,7 +201,10 @@ export function MessageBubble({
               )}
               <button
                 type="button"
-                onClick={handleCopy}
+                onClick={() => {
+                  setActionsOpen(false);
+                  handleCopy();
+                }}
                 className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-muted"
                 title="복사하기"
               >
@@ -207,9 +221,11 @@ export function MessageBubble({
             type="button"
             onClick={() => setShowReceipts(true)}
             className="text-amber-500 hover:text-amber-600 font-bold hover:underline mb-0.5 cursor-pointer px-1"
-            title="클릭하여 읽은 사람/안 읽은 사람 명단 확인"
+            title="읽은 사람과 안 읽은 사람"
           >
-            {message.unread_count !== undefined && message.unread_count > 0 ? message.unread_count : ""}
+            {message.unread_count !== undefined && message.unread_count > 0
+              ? message.unread_count
+              : "읽음"}
           </button>
           <span className="text-muted-foreground/80 text-[9px] whitespace-nowrap">
             {formatTime(message.created_at)}

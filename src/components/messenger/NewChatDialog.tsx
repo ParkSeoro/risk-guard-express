@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { fetchChatContacts, createChatRoom, type ChatContact } from "@/lib/messengerApi";
+import { dedupeChatContacts } from "@/lib/chatMessages";
 import { Search, ShieldAlert, User, Users, Phone, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +31,7 @@ export function NewChatDialog({
 }: NewChatDialogProps) {
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [groupName, setGroupName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,13 +42,28 @@ export function NewChatDialog({
       setSelectedUserIds([]);
       setGroupName("");
       setSearchQuery("");
+      setDebouncedQuery("");
       return;
     }
+    const timer = window.setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, searchQuery]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
     setLoading(true);
-    fetchChatContacts(currentProjectId, searchQuery)
-      .then((res) => setContacts(res))
-      .finally(() => setLoading(false));
-  }, [isOpen, currentProjectId, searchQuery]);
+    fetchChatContacts(currentProjectId, debouncedQuery)
+      .then((res) => {
+        if (!cancelled) setContacts(dedupeChatContacts(res));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, currentProjectId, debouncedQuery]);
 
   const toggleSelect = (userId: string) => {
     setSelectedUserIds((prev) =>

@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import {
   fetchRoomMessages,
   sendChatMessage,
   uploadChatFile,
   markChatRoomRead,
+  setChatNotificationEnabled,
   type ChatRoom,
   type ChatRoomMessage,
 } from "@/lib/messengerApi";
+import { CHAT_HISTORY_JUMP_MAX_PAGES, mergeChatMessages } from "@/lib/chatMessages";
 import { formatBytes } from "@/lib/compressUploadFile";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
+  Bell,
+  BellOff,
   CornerDownLeft,
   Send,
   Users,
@@ -44,6 +48,13 @@ export function MessengerChatPane({
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatRoomMessage | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    room.notifications_enabled !== false,
+  );
+  const [muteSaving, setMuteSaving] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   // 파일 첨부 상태
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -52,7 +63,13 @@ export function MessengerChatPane({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasMoreRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const oldestRef = useRef<{ createdAt: string; id: string } | null>(null);
+  const stickToBottomRef = useRef(true);
+  const pendingScrollRestore = useRef<{ height: number; top: number } | null>(null);
 
   // onRoomUpdated 안정적 ref 관리 (리렌더링 루프 방지)
   const onRoomUpdatedRef = useRef(onRoomUpdated);
@@ -64,24 +81,102 @@ export function MessengerChatPane({
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
   }, []);
 
+  useEffect(() => {
+    setNotificationsEnabled(room.notifications_enabled !== false);
+  }, [room.id, room.notifications_enabled]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const apply = () => {
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardInset(inset > 80 ? Math.round(inset) : 0);
+    };
+    viewport.addEventListener("resize", apply);
+    viewport.addEventListener("scroll", apply);
+    apply();
+    return () => {
+      viewport.removeEventListener("resize", apply);
+      viewport.removeEventListener("scroll", apply);
+    };
+  }, []);
+
+  useEffect(() => {
+    const first = messages[0];
+    oldestRef.current = first ? { createdAt: first.created_at, id: first.id } : null;
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    const pending = pendingScrollRestore.current;
+    const node = listRef.current;
+    if (!pending || !node) return;
+    pendingScrollRestore.current = null;
+    node.scrollTop = pending.top + (node.scrollHeight - pending.height);
+  }, [messages]);
+
   // 메시지 로딩: 로딩 시에는 부모의 onRoomUpdated를 호출하지 않음 (무한 깜박임 루프 방지)
   const loadMessages = useCallback(async () => {
     if (!room.id) return;
     try {
-      const msgs = await fetchRoomMessages(room.id);
-      setMessages(msgs);
+      const page = await fetchRoomMessages(room.id);
+      hasMoreRef.current = page.hasMore;
+      setHasMore(page.hasMore);
+      setMessages(page.messages);
+      stickToBottomRef.current = true;
       setLoading(false);
       setTimeout(() => scrollToBottom(false), 50);
 
       // 대화방 읽음 처리 (DB만 업데이트, 부모 재조회는 유발하지 않음)
-      if (msgs.length > 0) {
-        await markChatRoomRead(room.id, msgs[msgs.length - 1].id);
+      const latest = page.messages[page.messages.length - 1];
+      if (latest) {
+        await markChatRoomRead(room.id, latest.id);
       }
     } catch (err) {
       console.error("loadMessages error:", err);
       setLoading(false);
     }
   }, [room.id, scrollToBottom]);
+
+  const loadOlder = useCallback(async (options?: { restoreScroll?: boolean }) => {
+    if (loadingOlderRef.current || !hasMoreRef.current) return false;
+    const before = oldestRef.current;
+    if (!before) return false;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    const node = listRef.current;
+    if (options?.restoreScroll !== false && node) {
+      pendingScrollRestore.current = { height: node.scrollHeight, top: node.scrollTop };
+    }
+
+    try {
+      const page = await fetchRoomMessages(room.id, { before });
+      if (page.messages.length === 0) {
+        hasMoreRef.current = false;
+        setHasMore(false);
+        pendingScrollRestore.current = null;
+        return false;
+      }
+      const oldestIncoming = page.messages[0];
+      if (oldestIncoming) {
+        oldestRef.current = {
+          createdAt: oldestIncoming.created_at,
+          id: oldestIncoming.id,
+        };
+      }
+      setMessages((prev) => mergeChatMessages(prev, page.messages));
+      hasMoreRef.current = page.hasMore;
+      setHasMore(page.hasMore);
+      return true;
+    } catch (err) {
+      console.error("loadOlder error:", err);
+      pendingScrollRestore.current = null;
+      return false;
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [room.id]);
 
   useEffect(() => {
     setLoading(true);
@@ -128,7 +223,20 @@ export function MessengerChatPane({
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === formattedMsg.id)) return prev;
-            return [...prev, formattedMsg];
+            const parent = newMsg.parent_id
+              ? prev.find((m) => m.id === newMsg.parent_id)
+              : null;
+            const withParent: ChatRoomMessage = parent
+              ? {
+                  ...formattedMsg,
+                  parent_message: {
+                    id: parent.id,
+                    sender_name: parent.sender_name ?? null,
+                    content: parent.content,
+                  },
+                }
+              : formattedMsg;
+            return mergeChatMessages(prev, [withParent]);
           });
 
           // 내가 보낸 메시지가 아니면 읽음 처리 및 부모 목록 갱신
@@ -137,7 +245,9 @@ export function MessengerChatPane({
             onRoomUpdatedRef.current?.();
           }
 
-          setTimeout(() => scrollToBottom(true), 50);
+          if (stickToBottomRef.current || newMsg.sender_id === user.id) {
+            setTimeout(() => scrollToBottom(true), 50);
+          }
         }
       )
       .subscribe();
@@ -208,7 +318,8 @@ export function MessengerChatPane({
     if ((!inputText.trim() && !selectedFile) || sending) return;
 
     const text = inputText;
-    const parentId = replyTarget?.id || null;
+    const parentSnapshot = replyTarget;
+    const parentId = parentSnapshot?.id || null;
     const file = selectedFile;
 
     setInputText("");
@@ -240,16 +351,23 @@ export function MessengerChatPane({
       } else {
         setMessages((prev) => {
           if (prev.some((m) => m.id === res.id)) return prev;
-          return [
-            ...prev,
+          return mergeChatMessages(prev, [
             {
               ...res,
               sender_name: profile?.display_name || "나",
               sender_company: profile?.company || null,
               sender_role: profile?.position || null,
+              parent_message: parentSnapshot
+                ? {
+                    id: parentSnapshot.id,
+                    sender_name: parentSnapshot.sender_name ?? null,
+                    content: parentSnapshot.content,
+                  }
+                : res.parent_message ?? null,
             },
-          ];
+          ]);
         });
+        stickToBottomRef.current = true;
         onRoomUpdatedRef.current?.();
       }
     } catch (err: any) {
@@ -269,17 +387,54 @@ export function MessengerChatPane({
     }
   };
 
-  const scrollToMessage = (messageId: string) => {
+  const highlightMessage = (messageId: string) => {
     const el = document.getElementById(`msg-${messageId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("bg-primary/10", "rounded-lg");
-      setTimeout(() => {
-        el.classList.remove("bg-primary/10", "rounded-lg");
-      }, 1500);
-    } else {
-      toast.info("이전 메시지입니다.");
+    if (!el) return false;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("bg-primary/10", "rounded-lg");
+    setTimeout(() => {
+      el.classList.remove("bg-primary/10", "rounded-lg");
+    }, 1500);
+    return true;
+  };
+
+  const scrollToMessage = async (messageId: string) => {
+    if (highlightMessage(messageId)) return;
+
+    for (let page = 0; page < CHAT_HISTORY_JUMP_MAX_PAGES; page += 1) {
+      const loaded = await loadOlder({ restoreScroll: false });
+      if (!loaded) break;
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      if (highlightMessage(messageId)) return;
     }
+    toast.info("이전 메시지를 찾지 못했습니다.");
+  };
+
+  const handleListScroll = () => {
+    const node = listRef.current;
+    if (!node || loading) return;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 80;
+    const canScroll = node.scrollHeight > node.clientHeight + 8;
+    if (canScroll && node.scrollTop < 48) void loadOlder();
+  };
+
+  const handleToggleNotifications = async () => {
+    if (muteSaving) return;
+    const next = !notificationsEnabled;
+    setNotificationsEnabled(next);
+    setMuteSaving(true);
+    const ok = await setChatNotificationEnabled(room.id, next);
+    setMuteSaving(false);
+    if (!ok) {
+      setNotificationsEnabled(!next);
+      toast.error("알림 설정을 바꾸지 못했습니다.");
+      return;
+    }
+    toast.success(next ? "이 방 알림을 켰습니다." : "이 방 알림을 껐습니다.");
+    onRoomUpdatedRef.current?.();
   };
 
   const roomTitle =
@@ -323,10 +478,25 @@ export function MessengerChatPane({
             </p>
           </div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => void handleToggleNotifications()}
+          disabled={muteSaving}
+          title={notificationsEnabled ? "이 방 알림 끄기" : "이 방 알림 켜기"}
+          aria-label={notificationsEnabled ? "이 방 알림 끄기" : "이 방 알림 켜기"}
+        >
+          {notificationsEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+        </Button>
       </header>
 
       {/* 메시지 리스트 뷰포트 */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2 space-y-1">
+      <div
+        ref={listRef}
+        onScroll={handleListScroll}
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2 space-y-1"
+      >
         {loading ? (
           <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
             메시지를 불러오는 중...
@@ -340,15 +510,31 @@ export function MessengerChatPane({
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
+          <>
+            {hasMore && (
+              <div className="flex justify-center py-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] text-muted-foreground"
+                  onClick={() => void loadOlder()}
+                  disabled={loadingOlder}
+                >
+                  {loadingOlder ? "이전 대화를 불러오는 중..." : "이전 대화 보기"}
+                </Button>
+              </div>
+            )}
+            {messages.map((msg) => (
             <MessageBubble
               key={msg.id}
               message={msg}
               isMe={msg.sender_id === user?.id}
               onReply={(m) => setReplyTarget(m)}
-              onScrollToMessage={scrollToMessage}
+              onScrollToMessage={(id) => void scrollToMessage(id)}
             />
-          ))
+          ))}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -421,7 +607,10 @@ export function MessengerChatPane({
       )}
 
       {/* 메시지 및 파일 입력창 (모바일 하단 가상키보드/홈바 대응 pb-[max(0.5rem,var(--sab))]) */}
-      <div className="p-2.5 pb-[max(0.625rem,var(--sab))] border-t bg-card shrink-0">
+      <div
+        className="p-2.5 pb-[max(0.625rem,var(--sab))] border-t bg-card shrink-0"
+        style={keyboardInset > 0 ? { paddingBottom: keyboardInset + 8 } : undefined}
+      >
         <input
           type="file"
           ref={fileInputRef}

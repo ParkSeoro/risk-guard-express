@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
+  CHAT_MESSAGE_PAGE_SIZE,
+  olderChatMessagesFilter,
+} from "@/lib/chatMessages";
+import {
   compressUploadFile,
   isCompressibleImage,
   sanitizeStorageFileName,
@@ -20,6 +24,8 @@ export interface ChatRoom {
   pinned_message_id: string | null;
   created_at: string;
   updated_at: string;
+  /** 이 방에서 내 알림이 켜져 있는지. 끄면 푸시만 멈추고 목록은 그대로다. */
+  notifications_enabled?: boolean;
   // Joins & derived
   unread_count?: number;
   participants?: ChatParticipant[];
@@ -197,12 +203,13 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
         .filter((p: any) => p.room_id === room.id)
         .map((p: any) => {
           const pr = profileMap.get(p.user_id);
+          const mine = p.user_id === user.id;
           return {
             id: p.id,
             room_id: p.room_id,
             user_id: p.user_id,
-            room_name_override: null,
-            is_notification_enabled: true,
+            room_name_override: mine ? myPart?.room_name_override ?? null : null,
+            is_notification_enabled: mine ? myPart?.is_notification_enabled !== false : true,
             last_read_at: p.last_read_at,
             last_read_message_id: null,
             joined_at: p.joined_at,
@@ -218,6 +225,7 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
       return {
         ...room,
         unread_count,
+        notifications_enabled: myPart?.is_notification_enabled !== false,
         participants: roomParticipants,
         other_participant: otherParticipant,
       };
@@ -227,36 +235,52 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
   return enrichedRooms;
 }
 
-/**
- * 특정 대화방의 메시지 내역 조회 (첨부파일 포함)
- */
-export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage[]> {
-  const { data: messages, error } = await supabase
-    .from("chat_room_messages" as any)
-    .select("*")
-    .eq("room_id", roomId)
-    .order("created_at", { ascending: true })
-    .limit(100);
+export interface ChatMessageCursor {
+  createdAt: string;
+  id: string;
+}
 
-  if (error || !messages || messages.length === 0) return [];
+export interface FetchRoomMessagesResult {
+  messages: ChatRoomMessage[];
+  hasMore: boolean;
+}
 
-  const messageIds = (messages as any[]).map((m) => m.id);
-  const senderIds = Array.from(new Set((messages as any[]).map((m) => m.sender_id)));
+async function hydrateChatMessages(rows: any[]): Promise<ChatRoomMessage[]> {
+  if (rows.length === 0) return [];
 
-  // 프로필 정보 조회
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, display_name, company, position")
-    .in("user_id", senderIds);
+  const messageIds = rows.map((m) => m.id);
+  const missingParentIds = Array.from(
+    new Set(
+      rows
+        .map((m) => m.parent_id as string | null)
+        .filter((id): id is string => Boolean(id) && !messageIds.includes(id)),
+    ),
+  );
+
+  let parentRows: any[] = [];
+  if (missingParentIds.length > 0) {
+    const { data } = await supabase
+      .from("chat_room_messages" as any)
+      .select("id, sender_id, content")
+      .in("id", missingParentIds);
+    parentRows = data || [];
+  }
+
+  const senderIds = Array.from(
+    new Set(
+      [...rows.map((m) => m.sender_id), ...parentRows.map((m) => m.sender_id)].filter(Boolean),
+    ),
+  );
+
+  const [{ data: profiles }, { data: attachments }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("user_id, display_name, company, position")
+      .in("user_id", senderIds),
+    supabase.from("chat_attachments" as any).select("*").in("message_id", messageIds),
+  ]);
 
   const profileMap = new Map((profiles || []).map((pr) => [pr.user_id, pr]));
-
-  // 첨부파일 조회
-  const { data: attachments } = await supabase
-    .from("chat_attachments" as any)
-    .select("*")
-    .in("message_id", messageIds);
-
   const attachmentMap = new Map<string, ChatAttachment[]>();
   (attachments || []).forEach((att: any) => {
     const list = attachmentMap.get(att.message_id) || [];
@@ -264,10 +288,13 @@ export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage
     attachmentMap.set(att.message_id, list);
   });
 
-  // 답장 부모 메시지 매핑
-  const msgMap = new Map((messages as any[]).map((m) => [m.id, m]));
+  const msgMap = new Map<string, any>();
+  rows.forEach((m) => msgMap.set(m.id, m));
+  parentRows.forEach((m) => {
+    if (!msgMap.has(m.id)) msgMap.set(m.id, m);
+  });
 
-  return (messages as any[]).map((m) => {
+  return rows.map((m) => {
     const pr = profileMap.get(m.sender_id);
     const parent = m.parent_id ? msgMap.get(m.parent_id) : null;
     const parentPr = parent ? profileMap.get(parent.sender_id) : null;
@@ -287,6 +314,39 @@ export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage
         : null,
     };
   });
+}
+
+/**
+ * 대화방 메시지. 최신 페이지부터 읽고, before 가 있으면 그 커서보다 이전만 가져온다.
+ * 한 번에 가져오는 양은 첫 화면용이며, 더 오래된 대화는 이어서 불러온다.
+ */
+export async function fetchRoomMessages(
+  roomId: string,
+  options?: { before?: ChatMessageCursor | null; limit?: number },
+): Promise<FetchRoomMessagesResult> {
+  const limit = options?.limit ?? CHAT_MESSAGE_PAGE_SIZE;
+  let query = supabase
+    .from("chat_room_messages" as any)
+    .select("*")
+    .eq("room_id", roomId)
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
+
+  if (options?.before) {
+    query = query.or(olderChatMessagesFilter(options.before.createdAt, options.before.id));
+  }
+
+  const { data: messages, error } = await query;
+  if (error || !messages) return { messages: [], hasMore: false };
+  if (messages.length === 0) return { messages: [], hasMore: false };
+
+  const chronological = [...(messages as any[])].reverse();
+  return {
+    messages: await hydrateChatMessages(chronological),
+    hasMore: messages.length === limit,
+  };
 }
 
 /**
@@ -479,6 +539,25 @@ export async function fetchChatMessageReadReceipts(
     return null;
   }
   return data as ChatReadReceiptsResult;
+}
+
+/**
+ * 이 방 알림만 켜거나 끈다. 참여자 행은 본인 것만 바뀐다.
+ */
+export async function setChatNotificationEnabled(
+  roomId: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("set_chat_notification_enabled", {
+    p_room_id: roomId,
+    p_enabled: enabled,
+  });
+
+  if (error) {
+    console.error("setChatNotificationEnabled error:", error);
+    return false;
+  }
+  return data === true;
 }
 
 /**

@@ -81,6 +81,26 @@ describe("approval reject notification routes", () => {
     ).toBe("/app/worker/permits?id=permit-9");
   });
 
+  it("opens the messenger room for a chat alarm", () => {
+    expect(
+      resolveNotificationRoute(
+        {
+          type: "chat_message",
+          related_type: "chat_room",
+          related_id: "room-1",
+          link: "/app/admin/messenger?room=room-1",
+        },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/messenger?room=room-1");
+    expect(
+      resolveNotificationRoute(
+        { type: "chat_message", related_type: "chat_room", related_id: "room-1" },
+        { mobileShell: false },
+      ),
+    ).toBe("/app/admin/messenger?room=room-1");
+  });
+
   it("opens the risk assessment document for feedback approval alerts", () => {
     expect(
       resolveNotificationRoute(

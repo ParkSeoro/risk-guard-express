@@ -498,6 +498,7 @@ export const MANUAL_SIDEBAR_EXCEPTIONS: string[] = [
   "위험성평가 공지",
   "공지사항",
   "건설안전팀",
+  "실시간 메신저",
 ];
 
 export function manualTextMatches(query: string, ...fields: string[]): boolean {

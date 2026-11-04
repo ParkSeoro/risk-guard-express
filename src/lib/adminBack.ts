@@ -25,6 +25,7 @@ export const ADMIN_BACK_PARENTS: Record<string, string | null> = {
   "permission-test": "/",
   manual: "/",
   profile: "/",
+  messenger: "/",
   settings: "/",
   "settings/account": "/settings",
   "settings/permissions": "/settings",

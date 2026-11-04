@@ -109,6 +109,8 @@ export interface ChatContact {
   avatar_url: string | null;
   is_same_company: boolean;
   project_id: string | null;
+  /** 마스터 명단에서만. 그 사람이 프로젝트 관리자인 현장 이름. */
+  project_label?: string | null;
 }
 
 export interface ChatMessageReader {
@@ -815,6 +817,32 @@ export async function inviteChatParticipants(
 /**
  * 대화방 나가기
  */
+export async function touchChatRoomPresence(roomId: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)("touch_chat_room_presence", {
+    p_room_id: roomId,
+  });
+  if (error) console.warn("touchChatRoomPresence error:", error.message);
+}
+
+export async function clearChatRoomPresence(roomId: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)("clear_chat_room_presence", {
+    p_room_id: roomId,
+  });
+  if (error) console.warn("clearChatRoomPresence error:", error.message);
+}
+
+/** 그룹방을 만든 사람만. 참여자 전체 목록에서 방과 메시지가 사라진다. */
+export async function deleteChatRoom(roomId: string): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)("delete_chat_room", {
+    p_room_id: roomId,
+  });
+  if (error) {
+    console.error("deleteChatRoom error:", error);
+    return false;
+  }
+  return data === true;
+}
+
 export async function leaveChatRoom(roomId: string): Promise<boolean> {
   const { data, error } = await (supabase.rpc as any)("leave_chat_room", {
     p_room_id: roomId,

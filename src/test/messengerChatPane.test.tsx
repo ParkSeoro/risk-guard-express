@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 
-const { fetchRoomMessages, markChatRoomRead, setChatNotificationEnabled } = vi.hoisted(() => ({
+const { fetchRoomMessages, markChatRoomRead, setChatNotificationEnabled, touchChatRoomPresence, clearChatRoomPresence } = vi.hoisted(() => ({
   fetchRoomMessages: vi.fn(),
   markChatRoomRead: vi.fn(async () => undefined),
   setChatNotificationEnabled: vi.fn(async () => true),
+  touchChatRoomPresence: vi.fn(async () => undefined),
+  clearChatRoomPresence: vi.fn(async () => undefined),
 }));
 
 vi.mock("sonner", () => ({
@@ -42,6 +44,8 @@ vi.mock("@/lib/messengerApi", () => ({
   uploadChatFile: vi.fn(),
   markChatRoomRead: (...args: unknown[]) => markChatRoomRead(...args),
   setChatNotificationEnabled: (...args: unknown[]) => setChatNotificationEnabled(...args),
+  touchChatRoomPresence: (...args: unknown[]) => touchChatRoomPresence(...args),
+  clearChatRoomPresence: (...args: unknown[]) => clearChatRoomPresence(...args),
 }));
 
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";

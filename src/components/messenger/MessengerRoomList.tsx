@@ -496,6 +496,11 @@ export function MessengerRoomList({
                               </span>
                             )}
                           </div>
+                          {member.project_label && (
+                            <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                              {member.project_label}
+                            </div>
+                          )}
                           {member.phone && (
                             <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
                               <Phone className="h-2.5 w-2.5 text-primary" />

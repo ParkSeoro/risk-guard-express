@@ -5,6 +5,8 @@ import {
   uploadChatFile,
   markChatRoomRead,
   setChatNotificationEnabled,
+  touchChatRoomPresence,
+  clearChatRoomPresence,
   toggleChatReaction,
   setChatPinnedMessage,
   fetchPinnedMessagePreview,
@@ -22,6 +24,10 @@ import {
   parseSafetyDocMessage,
   type SafetyDocCardPayload,
 } from "@/lib/chatMessages";
+import {
+  keyboardCoveredPixels,
+  messengerComposerPlaceholder,
+} from "@/lib/messengerComposer";
 import { formatBytes } from "@/lib/compressUploadFile";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,7 +82,10 @@ export function MessengerChatPane({
     room.notifications_enabled !== false,
   );
   const [muteSaving, setMuteSaving] = useState(false);
-  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [compactComposer, setCompactComposer] = useState(false);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // 상단 공지 고정 상태
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(
@@ -166,11 +175,34 @@ export function MessengerChatPane({
   }, [room.id, room.notifications_enabled]);
 
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 767px)");
+    const apply = () => setCompactComposer(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
     const viewport = window.visualViewport;
-    if (!viewport) return;
+    const pane = paneRef.current;
+    if (!viewport || !pane) return;
     const apply = () => {
-      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-      setKeyboardInset(inset > 80 ? Math.round(inset) : 0);
+      const parent = pane.parentElement;
+      const rect = parent?.getBoundingClientRect();
+      if (!rect) return;
+      const covered = keyboardCoveredPixels({
+        parentTop: rect.top,
+        parentHeight: rect.height,
+        viewportOffsetTop: viewport.offsetTop,
+        viewportHeight: viewport.height,
+      });
+      const open = covered > 40;
+      setKeyboardOpen(open);
+      pane.style.height = open ? `${Math.max(180, Math.round(rect.height - covered))}px` : "";
+      if (open && stickToBottomRef.current) {
+        requestAnimationFrame(() => scrollToBottom(false));
+      }
     };
     viewport.addEventListener("resize", apply);
     viewport.addEventListener("scroll", apply);
@@ -178,8 +210,36 @@ export function MessengerChatPane({
     return () => {
       viewport.removeEventListener("resize", apply);
       viewport.removeEventListener("scroll", apply);
+      pane.style.height = "";
     };
-  }, []);
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    if (!room.id || !user) return;
+    let cancelled = false;
+    const beat = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      void touchChatRoomPresence(room.id);
+    };
+    beat();
+    const timer = window.setInterval(beat, 10_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") void clearChatRoomPresence(room.id);
+      else beat();
+    };
+    const onPageHide = () => {
+      void clearChatRoomPresence(room.id);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      void clearChatRoomPresence(room.id);
+    };
+  }, [room.id, user]);
 
   useEffect(() => {
     const first = messages[0];
@@ -549,6 +609,7 @@ export function MessengerChatPane({
     } finally {
       setSending(false);
       setUploadingFile(false);
+      inputRef.current?.focus();
       setTimeout(() => scrollToBottom(true), 50);
     }
   };
@@ -720,6 +781,7 @@ export function MessengerChatPane({
 
   return (
     <div
+      ref={paneRef}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -999,8 +1061,9 @@ export function MessengerChatPane({
 
       {/* 메시지 및 파일/안전문서 입력창 */}
       <div
-        className="p-2.5 pb-[max(0.625rem,var(--sab))] border-t bg-card shrink-0"
-        style={keyboardInset > 0 ? { paddingBottom: keyboardInset + 8 } : undefined}
+        className={`p-2.5 border-t bg-card shrink-0 ${
+          keyboardOpen ? "pb-2.5" : "pb-[max(0.625rem,var(--sab))]"
+        }`}
       >
         <input
           type="file"
@@ -1040,6 +1103,7 @@ export function MessengerChatPane({
           </Button>
 
           <Textarea
+            ref={inputRef}
             value={inputText}
             onChange={(e) => {
               setInputText(e.target.value);
@@ -1047,18 +1111,29 @@ export function MessengerChatPane({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onFocus={() => {
+              window.setTimeout(() => {
+                window.visualViewport?.dispatchEvent(new Event("resize"));
+              }, 60);
+            }}
             placeholder={
               selectedFile
                 ? "설명 메시지를 입력하세요 (선택)..."
-                : "메시지 입력 (Enter: 전송, Shift+Enter: 줄바꿈, Ctrl+V: 캡처 첨부)"
+                : messengerComposerPlaceholder(compactComposer)
             }
-            className="min-h-[38px] max-h-24 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-relaxed"
+            className="min-h-[38px] max-h-24 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-normal overflow-hidden"
             rows={1}
           />
 
           <Button
             type="button"
             size="icon"
+            onPointerDown={(event) => {
+              if (inputText.trim() || selectedFile) event.preventDefault();
+            }}
+            onMouseDown={(event) => {
+              if (inputText.trim() || selectedFile) event.preventDefault();
+            }}
             onClick={() => void handleSend()}
             disabled={(!inputText.trim() && !selectedFile) || sending}
             className="h-8 w-8 rounded-lg shrink-0 mb-0.5"

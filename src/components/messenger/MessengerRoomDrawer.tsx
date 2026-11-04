@@ -119,7 +119,7 @@ export function MessengerRoomDrawer({
         setSelectedInviteIds([]);
         onRoomUpdated?.();
       } else {
-        toast.error("같은 현장의 관리자만 초대할 수 있습니다. 이미 참여 중이거나 권한이 없는 사람은 빠집니다.");
+        toast.error("같은 현장의 관리자만 초대할 수 있습니다. 발주처는 같은 회사 사람도 초대됩니다. 이미 참여 중이거나 권한이 없는 사람은 빠집니다.");
       }
     } finally {
       setInviting(false);

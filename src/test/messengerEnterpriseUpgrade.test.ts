@@ -7,10 +7,12 @@ const sql = readFileSync(
 );
 
 describe("messenger enterprise upgrade guards", () => {
-  it("invites only staff who share the room project", () => {
+  it("invites staff who share the room project, or the same client company", () => {
     expect(sql).toContain("IF NOT public.can_use_messenger(v_my_user_id)");
     expect(sql).toContain("JOIN public.project_members theirs");
     expect(sql).toContain("v_room_project_id IS NULL OR mine.project_id = v_room_project_id");
+    expect(sql).toContain("messenger_shares_client_company(v_my_user_id, v_uid)");
+    expect(sql).toContain("'client', '발주처', 'owner'");
   });
 
   it("lets only a room lead rename for everyone or pin a notice", () => {

@@ -230,6 +230,7 @@ export function NewChatDialog({
                                   </div>
                                   <div className="text-[11px] text-muted-foreground truncate">
                                     {c.company_name || "소속 미지정"}
+                                    {c.project_label ? ` · ${c.project_label}` : ""}
                                   </div>
                                 </div>
                               </div>

@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   CHAT_HISTORY_JUMP_MAX_PAGES,
   CHAT_MESSAGE_PAGE_SIZE,
+  annotateTimelineMessages,
+  computeMessageUnreadCount,
   dedupeChatContacts,
+  encodeSafetyDocMessage,
+  formatCleanRoomPreview,
+  groupContactsByCompany,
   mergeChatMessages,
   olderChatMessagesFilter,
+  parseSafetyDocMessage,
 } from "@/lib/chatMessages";
 
 describe("mergeChatMessages", () => {
@@ -54,5 +60,76 @@ describe("olderChatMessagesFilter", () => {
       );
     expect(CHAT_MESSAGE_PAGE_SIZE).toBeLessThan(100);
     expect(CHAT_HISTORY_JUMP_MAX_PAGES * CHAT_MESSAGE_PAGE_SIZE).toBeGreaterThan(100);
+  });
+});
+
+describe("computeMessageUnreadCount", () => {
+  it("counts active participants excluding sender whose last_read_at is older than message", () => {
+    const participants = [
+      { user_id: "me", last_read_at: "2026-11-04T01:00:00.000Z", left_at: null },
+      { user_id: "u2", last_read_at: "2026-11-04T01:30:00.000Z", left_at: null },
+      { user_id: "u3", last_read_at: "2026-11-04T03:00:00.000Z", left_at: null },
+      { user_id: "u4", last_read_at: "2026-11-04T00:30:00.000Z", left_at: "2026-11-04T01:00:00.000Z" },
+    ];
+    const msg = {
+      sender_id: "me",
+      created_at: "2026-11-04T02:00:00.000Z",
+      message_type: "TEXT",
+    };
+
+    expect(computeMessageUnreadCount(msg, participants)).toBe(1);
+  });
+});
+
+describe("annotateTimelineMessages", () => {
+  it("marks date dividers and merges consecutive messages from same sender in the same minute", () => {
+    const rows = [
+      { id: "1", sender_id: "u1", created_at: "2026-11-03T01:10:05.000Z", message_type: "TEXT" },
+      { id: "2", sender_id: "u1", created_at: "2026-11-03T01:10:40.000Z", message_type: "TEXT" },
+      { id: "3", sender_id: "u1", created_at: "2026-11-04T01:10:05.000Z", message_type: "TEXT" },
+    ];
+    const annotated = annotateTimelineMessages(rows);
+
+    expect(annotated[0]?.showDateDivider).toBe(true);
+    expect(annotated[0]?.isFirstInGroup).toBe(true);
+    expect(annotated[0]?.isLastInGroup).toBe(false);
+
+    expect(annotated[1]?.showDateDivider).toBe(false);
+    expect(annotated[1]?.isFirstInGroup).toBe(false);
+    expect(annotated[1]?.isLastInGroup).toBe(true);
+
+    expect(annotated[2]?.showDateDivider).toBe(true);
+    expect(annotated[2]?.isFirstInGroup).toBe(true);
+    expect(annotated[2]?.isLastInGroup).toBe(true);
+  });
+});
+
+describe("SafetyDocCard encoding & parsing", () => {
+  it("round-trips a safety document card and cleans room preview text", () => {
+    const encoded = encodeSafetyDocMessage({
+      kind: "work_permit",
+      id: "permit-1",
+      title: "타워크레인 인양 작업허가서",
+      subtitle: "2026-11-04 · 103동 옥상",
+      statusLabel: "승인완료",
+      url: "/app/admin/work-permits/permit-1",
+      note: "오후 작업 전 확인 바랍니다.",
+    });
+
+    const parsed = parseSafetyDocMessage(encoded);
+    expect(parsed.card?.id).toBe("permit-1");
+    expect(parsed.card?.title).toBe("타워크레인 인양 작업허가서");
+    expect(formatCleanRoomPreview(encoded)).toContain("[작업허가서] 타워크레인 인양 작업허가서");
+  });
+});
+
+describe("groupContactsByCompany", () => {
+  it("places same-company contacts first and sorts other companies alphabetically", () => {
+    const grouped = groupContactsByCompany([
+      { user_id: "1", full_name: "박소장", company_name: "대림전력", is_same_company: false },
+      { user_id: "2", full_name: "김안전", company_name: "세이프넥스건설", is_same_company: true },
+    ]);
+    expect(grouped[0]?.companyName).toBe("세이프넥스건설");
+    expect(grouped[1]?.companyName).toBe("대림전력");
   });
 });

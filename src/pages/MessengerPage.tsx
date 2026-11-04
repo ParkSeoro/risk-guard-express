@@ -103,6 +103,12 @@ export default function MessengerPage() {
           selectedRoomId={selectedRoomId}
           onSelectRoom={handleSelectRoom}
           onOpenNewChat={() => setIsNewChatOpen(true)}
+          onRoomCreated={(id) => {
+            setSelectedRoomId(id);
+            setSearchParams({ room: id });
+            loadRooms();
+          }}
+          currentProjectId={projectAccess?.selectedProject}
           loading={loading}
         />
       </div>

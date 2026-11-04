@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { fetchChatContacts, createChatRoom, type ChatContact } from "@/lib/messengerApi";
-import { dedupeChatContacts } from "@/lib/chatMessages";
+import { dedupeChatContacts, groupContactsByCompany } from "@/lib/chatMessages";
 import { Search, ShieldAlert, User, Users, Phone, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -65,10 +65,22 @@ export function NewChatDialog({
     };
   }, [isOpen, currentProjectId, debouncedQuery]);
 
+  const companyGroups = useMemo(() => groupContactsByCompany(contacts), [contacts]);
+
   const toggleSelect = (userId: string) => {
     setSelectedUserIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
     );
+  };
+
+  const toggleSelectCompany = (members: ChatContact[]) => {
+    const memberIds = members.map((m) => m.user_id);
+    const allSelected = memberIds.every((id) => selectedUserIds.includes(id));
+    if (allSelected) {
+      setSelectedUserIds((prev) => prev.filter((id) => !memberIds.includes(id)));
+    } else {
+      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...memberIds])));
+    }
   };
 
   const handleCreate = async () => {
@@ -109,10 +121,10 @@ export function NewChatDialog({
         <DialogHeader className="p-4 border-b bg-muted/40">
           <DialogTitle className="text-sm font-semibold flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
-            새 대화방 시작
+            새 대화방 시작 (소속 업체별 선택)
           </DialogTitle>
           <DialogDescription className="text-xs">
-            대화 상대를 선택해 1:1 대화 또는 그룹 채팅방을 개설합니다.
+            대화 상대를 선택해 1:1 대화 또는 공종·업체별 그룹 채팅방을 개설합니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -141,7 +153,7 @@ export function NewChatDialog({
             <div className="space-y-1.5 p-3 rounded-lg border bg-muted/30 animate-in fade-in">
               <Label className="text-xs font-medium">그룹 대화방 이름 (선택)</Label>
               <Input
-                placeholder="예: 3공구 안전관리단 회의방"
+                placeholder="예: 3공구 안전관리단 회의방 / 전기·설비 공종 협의방"
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
                 className="text-xs h-8"
@@ -150,62 +162,89 @@ export function NewChatDialog({
             </div>
           )}
 
-          {/* 대화 상대 목록 */}
+          {/* 소속 회사별 대화 상대 목록 */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
               <span>관리자 목록 ({contacts.length}명)</span>
-              <span>{selectedUserIds.length}명 선택됨</span>
+              <span className="font-semibold text-primary">{selectedUserIds.length}명 선택됨</span>
             </div>
 
-            <div className="border rounded-md divide-y max-h-60 overflow-y-auto bg-card">
+            <div className="border rounded-md max-h-64 overflow-y-auto bg-card divide-y">
               {loading ? (
                 <div className="py-8 text-center text-xs text-muted-foreground">
                   대화 상대를 검색하는 중...
                 </div>
-              ) : contacts.length === 0 ? (
+              ) : companyGroups.length === 0 ? (
                 <div className="py-8 text-center text-xs text-muted-foreground">
                   검색 결과가 없습니다.
                 </div>
               ) : (
-                contacts.map((c) => {
-                  const isChecked = selectedUserIds.includes(c.user_id);
+                companyGroups.map((group) => {
+                  const allSelected = group.members.every((m) =>
+                    selectedUserIds.includes(m.user_id),
+                  );
                   return (
-                    <label
-                      key={c.user_id}
-                      className="flex items-center justify-between p-2.5 hover:bg-muted/50 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Checkbox
-                          checked={isChecked}
-                          onCheckedChange={() => toggleSelect(c.user_id)}
-                          className="data-[state=checked]:bg-primary"
-                        />
-                        <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
-                          {c.full_name?.slice(0, 1) || <User className="h-3.5 w-3.5" />}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium truncate">{c.full_name || "사용자"}</span>
-                            {c.role && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground shrink-0">
-                                {c.role}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
-                            <Building2 className="h-3 w-3 shrink-0" />
-                            {c.company_name || "소속 미지정"}
-                          </div>
-                        </div>
-                      </div>
-
-                      {c.phone && (
-                        <span className="text-[10px] text-primary flex items-center gap-0.5 shrink-0 pl-2">
-                          <Phone className="h-2.5 w-2.5" />
-                          {c.phone}
+                    <div key={group.companyName}>
+                      <div className="px-2.5 py-1.5 bg-muted/40 flex items-center justify-between text-[11px]">
+                        <span className="font-semibold flex items-center gap-1 text-foreground">
+                          <Building2 className="h-3 w-3 text-primary" />
+                          {group.companyName} ({group.members.length})
                         </span>
-                      )}
-                    </label>
+                        {group.members.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleSelectCompany(group.members)}
+                            className="text-[10px] text-primary hover:underline font-medium"
+                          >
+                            {allSelected ? "업체 선택 해제" : "업체 전체 선택"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="divide-y">
+                        {group.members.map((c) => {
+                          const isChecked = selectedUserIds.includes(c.user_id);
+                          return (
+                            <label
+                              key={c.user_id}
+                              className="flex items-center justify-between p-2.5 hover:bg-muted/50 cursor-pointer transition-colors"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={() => toggleSelect(c.user_id)}
+                                  className="data-[state=checked]:bg-primary"
+                                />
+                                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+                                  {c.full_name?.slice(0, 1) || <User className="h-3.5 w-3.5" />}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-medium truncate">
+                                      {c.full_name || "사용자"}
+                                    </span>
+                                    {c.role && (
+                                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground shrink-0">
+                                        {c.role}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground truncate">
+                                    {c.company_name || "소속 미지정"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {c.phone && (
+                                <span className="text-[10px] text-primary flex items-center gap-0.5 shrink-0 pl-2">
+                                  <Phone className="h-2.5 w-2.5" />
+                                  {c.phone}
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })
               )}
@@ -223,7 +262,11 @@ export function NewChatDialog({
             disabled={submitting || selectedUserIds.length === 0}
             className="text-xs"
           >
-            {submitting ? "생성 중..." : isGroup ? `그룹 대화방 개설 (${selectedUserIds.length}명)` : "대화 시작하기"}
+            {submitting
+              ? "생성 중..."
+              : isGroup
+                ? `그룹 대화방 개설 (${selectedUserIds.length}명)`
+                : "대화 시작하기"}
           </Button>
         </DialogFooter>
       </DialogContent>

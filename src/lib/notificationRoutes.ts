@@ -235,6 +235,10 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/vision-pair")) return `${WORKER}${p}`;
   if (p.startsWith("/zone-events")) return `${WORKER}/alerts`;
   if (p.startsWith("/settings")) return `${WORKER}/account`;
+  if (p === "/messenger" || p.startsWith("/messenger/") || p.startsWith("/messenger?")) {
+    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
+    return `${WORKER}/messenger${q}`;
+  }
   if (p === "/" || p === "") return `${WORKER}/menu`;
 
   // Unknown admin feature — stay in mobile shell rather than flipping to desktop

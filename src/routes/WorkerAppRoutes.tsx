@@ -21,6 +21,13 @@ function Fallback() {
   );
 }
 
+function ManagerMessengerRoute() {
+  const { roles, rolesReady } = useAuth();
+  if (!rolesReady) return <Fallback />;
+  if (isPureWorkerUser(roles)) return <Navigate to="/app/worker/today" replace />;
+  return <P.LazyMessengerPage />;
+}
+
 function WorkerGpsGate() {
   const { profile, roles } = useAuth();
   // Pure worker without location consent: do not mount GPS tracker — badge only.
@@ -92,6 +99,7 @@ export default function WorkerAppRoutes() {
               <Route path="site-weather" element={<P.LazyMobileSiteWeather />} />
               <Route path="ppe-receipt" element={<P.LazyMobilePpeReceipt />} />
               <Route path="manual" element={<P.LazyMobileManual />} />
+              <Route path="messenger" element={<ManagerMessengerRoute />} />
               <Route path="*" element={<Navigate to="today" replace />} />
             </Routes>
             </Suspense>

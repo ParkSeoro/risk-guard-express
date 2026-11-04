@@ -7,6 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { prefersMobileAppShell } from "@/hooks/use-mobile";
+import { messengerHomePath } from "@/lib/messengerPath";
 
 interface MessengerButtonProps {
   currentProjectId?: string | null;
@@ -70,13 +72,12 @@ export function MessengerButton({ currentProjectId, className }: MessengerButton
   }, [user, refreshUnread]);
 
   const handleClick = () => {
-    // 모바일 스마트폰 화면에서는 서랍 패널 대신 전체화면 페이지로 바로 연결하여 화면 깨짐 방지
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    if (isMobile) {
-      navigate("/app/admin/messenger");
-    } else {
-      setIsDrawerOpen(true);
+    // 폰은 /app/admin 으로 가면 MobileRedirectGuard 가 오늘 화면으로 되돌린다.
+    if (prefersMobileAppShell()) {
+      navigate(messengerHomePath({ mobileShell: true }));
+      return;
     }
+    setIsDrawerOpen(true);
   };
 
   return (

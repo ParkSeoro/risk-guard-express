@@ -122,6 +122,14 @@ describe("notification + entity mobile routes", () => {
     expect(toMobileShellPath("/app/admin/work-plan/p1")).toBe("/app/worker/work-plans/p1");
   });
 
+  it("keeps messenger inside the phone shell instead of bouncing to today", () => {
+    expect(toMobileShellPath("/app/admin/messenger")).toBe("/app/worker/messenger");
+    expect(toMobileShellPath("/app/admin/messenger?room=room-1")).toBe(
+      "/app/worker/messenger?room=room-1",
+    );
+    expect(toMobileShellPath("/messenger")).toBe("/app/worker/messenger");
+  });
+
   it("toMobileShellPath maps zone-events and settings to worker pages", () => {
     expect(toMobileShellPath("/app/admin/zone-events")).toBe("/app/worker/alerts");
     expect(toMobileShellPath("/app/admin/settings/account")).toBe("/app/worker/account");

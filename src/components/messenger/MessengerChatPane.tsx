@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   fetchRoomMessages,
   sendChatMessage,
+  uploadChatFile,
   markChatRoomRead,
   type ChatRoom,
   type ChatRoomMessage,
 } from "@/lib/messengerApi";
+import { formatBytes } from "@/lib/compressUploadFile";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { MessageBubble } from "./MessageBubble";
@@ -18,6 +20,10 @@ import {
   Users,
   X,
   ShieldCheck,
+  Paperclip,
+  Image as ImageIcon,
+  Loader2,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,6 +45,12 @@ export function MessengerChatPane({
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatRoomMessage | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+
+  // 파일 첨부 상태
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -74,7 +86,6 @@ export function MessengerChatPane({
   useEffect(() => {
     if (!room.id || !user) return;
 
-    // 1. 메시지 실시간 변경 구독
     const messageChannel = supabase
       .channel(`chat_room_messages:${room.id}`)
       .on(
@@ -88,22 +99,28 @@ export function MessengerChatPane({
         async (payload) => {
           const newMsg = payload.new as any;
           
-          // 작성자 프로필 정보 조회
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("display_name, company, position")
-            .eq("user_id", newMsg.sender_id)
-            .maybeSingle();
+          // 작성자 프로필 및 첨부파일 조회
+          const [profileRes, attRes] = await Promise.all([
+            supabase
+              .from("profiles")
+              .select("display_name, company, position")
+              .eq("user_id", newMsg.sender_id)
+              .maybeSingle(),
+            supabase
+              .from("chat_attachments" as any)
+              .select("*")
+              .eq("message_id", newMsg.id),
+          ]);
 
           const formattedMsg: ChatRoomMessage = {
             ...newMsg,
-            sender_name: profile?.display_name || "사용자",
-            sender_company: profile?.company || null,
-            sender_role: profile?.position || null,
+            sender_name: profileRes.data?.display_name || "사용자",
+            sender_company: profileRes.data?.company || null,
+            sender_role: profileRes.data?.position || null,
+            attachments: (attRes.data as any) || [],
           };
 
           setMessages((prev) => {
-            // 중복 방지
             if (prev.some((m) => m.id === formattedMsg.id)) return prev;
             return [...prev, formattedMsg];
           });
@@ -119,7 +136,7 @@ export function MessengerChatPane({
       )
       .subscribe();
 
-    // 2. 타이핑 인디케이터 Broadcast 채널 (DB 부하 0)
+    // 타이핑 인디케이터 Broadcast 채널 (DB 부하 0)
     const typingChannel = supabase
       .channel(`typing:${room.id}`)
       .on("broadcast", { event: "typing" }, (payload) => {
@@ -139,7 +156,7 @@ export function MessengerChatPane({
     };
   }, [room.id, user, onRoomUpdated, scrollToBottom]);
 
-  // 타이핑 전파 (500ms 디바운스)
+  // 타이핑 전파 (400ms 디바운스)
   const handleTyping = () => {
     if (!user) return;
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -156,21 +173,64 @@ export function MessengerChatPane({
     }, 400);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("50MB 이하의 파일만 전송할 수 있습니다.");
+      return;
+    }
+
+    setSelectedFile(file);
+    if (file.type.startsWith("image/")) {
+      const url = URL.createObjectURL(file);
+      setFilePreviewUrl(url);
+    } else {
+      setFilePreviewUrl(null);
+    }
+  };
+
+  const handleClearFile = () => {
+    setSelectedFile(null);
+    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+    setFilePreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSend = async () => {
-    if (!inputText.trim() || sending) return;
+    if ((!inputText.trim() && !selectedFile) || sending) return;
 
     const text = inputText;
     const parentId = replyTarget?.id || null;
+    const file = selectedFile;
 
     setInputText("");
     setReplyTarget(null);
+    handleClearFile();
     setSending(true);
 
     try {
-      const res = await sendChatMessage(room.id, text, parentId);
+      let uploadedAttachment: any = null;
+
+      if (file) {
+        setUploadingFile(true);
+        uploadedAttachment = await uploadChatFile(file, room.id);
+        setUploadingFile(false);
+
+        if (!uploadedAttachment) {
+          toast.error("파일 업로드에 실패했습니다.");
+          setInputText(text);
+          setSelectedFile(file);
+          setSending(false);
+          return;
+        }
+      }
+
+      const res = await sendChatMessage(room.id, text, parentId, uploadedAttachment);
       if (!res) {
         toast.error("메시지 전송에 실패했습니다.");
-        setInputText(text); // 복구
+        setInputText(text);
       } else {
         onRoomUpdated?.();
       }
@@ -179,6 +239,7 @@ export function MessengerChatPane({
       setInputText(text);
     } finally {
       setSending(false);
+      setUploadingFile(false);
       setTimeout(() => scrollToBottom(true), 50);
     }
   };
@@ -256,7 +317,7 @@ export function MessengerChatPane({
             <Users className="h-10 w-10 stroke-1 mb-2 text-muted-foreground/60" />
             <p className="text-xs font-medium">대화가 시작되었습니다.</p>
             <p className="text-[11px] mt-1 text-muted-foreground/80">
-              첫 메시지를 보내 안전 관리 업무를 공유해 보세요.
+              첫 메시지나 현장 사진을 보내 안전 관리 업무를 공유해 보세요.
             </p>
           </div>
         ) : (
@@ -278,6 +339,41 @@ export function MessengerChatPane({
         <div className="px-3 py-1 bg-muted/40 text-[10px] text-muted-foreground italic flex items-center gap-1.5 shrink-0 border-t border-dashed">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-ping" />
           {typingUsers.join(", ")}님이 입력 중입니다...
+        </div>
+      )}
+
+      {/* 첨부할 파일 미리보기 바 */}
+      {selectedFile && (
+        <div className="px-3 py-2 bg-muted/90 border-t flex items-center justify-between text-xs animate-in slide-in-from-bottom-2 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {filePreviewUrl ? (
+              <img
+                src={filePreviewUrl}
+                alt="미리보기"
+                className="h-10 w-10 object-cover rounded border shrink-0"
+              />
+            ) : (
+              <div className="h-10 w-10 rounded border bg-background flex items-center justify-center shrink-0">
+                <FileText className="h-5 w-5 text-primary" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="font-semibold text-xs truncate max-w-[220px] sm:max-w-xs">
+                {selectedFile.name}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                {formatBytes(selectedFile.size)} · 전송 준비 완료
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleClearFile}
+            className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground shrink-0"
+            title="첨부 취소"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
@@ -305,9 +401,30 @@ export function MessengerChatPane({
         </div>
       )}
 
-      {/* 메시지 입력창 */}
+      {/* 메시지 및 파일 입력창 */}
       <div className="p-2.5 border-t bg-card shrink-0">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp,.zip"
+          className="hidden"
+        />
+
         <div className="flex items-end gap-1.5 bg-background border rounded-xl p-1.5 shadow-2xs focus-within:ring-1 focus-within:ring-primary">
+          {/* 사진 및 파일 첨부 버튼 */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 mb-0.5 rounded-lg"
+            title="사진 또는 파일 첨부"
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
+
           <Textarea
             value={inputText}
             onChange={(e) => {
@@ -315,19 +432,24 @@ export function MessengerChatPane({
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
-            placeholder="메시지를 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)"
+            placeholder={selectedFile ? "설명 메시지를 입력하세요 (선택)..." : "메시지를 입력하세요 (Enter: 전송)"}
             className="min-h-[38px] max-h-24 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-relaxed"
             rows={1}
           />
+
           <Button
             type="button"
             size="icon"
             onClick={handleSend}
-            disabled={!inputText.trim() || sending}
+            disabled={(!inputText.trim() && !selectedFile) || sending}
             className="h-8 w-8 rounded-lg shrink-0 mb-0.5"
             title="전송"
           >
-            <Send className="h-4 w-4" />
+            {sending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </div>

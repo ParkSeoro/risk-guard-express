@@ -1,4 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  compressUploadFile,
+  isCompressibleImage,
+  sanitizeStorageFileName,
+} from "@/lib/compressUploadFile";
 
 export type ChatMessageType = "TEXT" | "IMAGE" | "VIDEO" | "FILE" | "SYSTEM";
 export type ChatStorageProvider = "GCS" | "SUPABASE";
@@ -224,7 +229,7 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
 }
 
 /**
- * 특정 대화방의 메시지 내역 조회
+ * 특정 대화방의 메시지 내역 조회 (첨부파일 포함)
  */
 export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage[]> {
   const { data: messages, error } = await supabase
@@ -234,15 +239,31 @@ export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage
     .order("created_at", { ascending: true })
     .limit(100);
 
-  if (error || !messages) return [];
+  if (error || !messages || messages.length === 0) return [];
 
+  const messageIds = (messages as any[]).map((m) => m.id);
   const senderIds = Array.from(new Set((messages as any[]).map((m) => m.sender_id)));
+
+  // 프로필 정보 조회
   const { data: profiles } = await supabase
     .from("profiles")
     .select("user_id, display_name, company, position")
     .in("user_id", senderIds);
 
   const profileMap = new Map((profiles || []).map((pr) => [pr.user_id, pr]));
+
+  // 첨부파일 조회
+  const { data: attachments } = await supabase
+    .from("chat_attachments" as any)
+    .select("*")
+    .in("message_id", messageIds);
+
+  const attachmentMap = new Map<string, ChatAttachment[]>();
+  (attachments || []).forEach((att: any) => {
+    const list = attachmentMap.get(att.message_id) || [];
+    list.push(att);
+    attachmentMap.set(att.message_id, list);
+  });
 
   // 답장 부모 메시지 매핑
   const msgMap = new Map((messages as any[]).map((m) => [m.id, m]));
@@ -257,6 +278,7 @@ export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage
       sender_name: pr?.display_name || "사용자",
       sender_company: pr?.company || null,
       sender_role: pr?.position || null,
+      attachments: attachmentMap.get(m.id) || [],
       parent_message: parent
         ? {
             id: parent.id,
@@ -269,23 +291,92 @@ export async function fetchRoomMessages(roomId: string): Promise<ChatRoomMessage
 }
 
 /**
- * 새 메시지 전송
+ * 대화방 파일 업로드 (스마트폰 사진 자동 압축 및 안전한 Storage 저장)
+ */
+export async function uploadChatFile(
+  file: File,
+  roomId: string,
+): Promise<{
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  publicUrl: string;
+  isImage: boolean;
+} | null> {
+  const isImage = isCompressibleImage(file);
+  let fileToUpload = file;
+
+  if (isImage) {
+    try {
+      const compressed = await compressUploadFile(file);
+      fileToUpload = compressed.file;
+    } catch {
+      fileToUpload = file;
+    }
+  }
+
+  const safeName = sanitizeStorageFileName(file.name);
+  const objectPath = `chat/${roomId}/${Date.now()}_${safeName}`;
+
+  const { error: upErr } = await supabase.storage
+    .from("attachments")
+    .upload(objectPath, fileToUpload, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (upErr) {
+    console.error("uploadChatFile error:", upErr);
+    return null;
+  }
+
+  const { data: pubData } = supabase.storage
+    .from("attachments")
+    .getPublicUrl(objectPath);
+
+  return {
+    fileName: file.name,
+    fileSize: fileToUpload.size,
+    mimeType: file.type || (isImage ? "image/jpeg" : "application/octet-stream"),
+    publicUrl: pubData.publicUrl,
+    isImage,
+  };
+}
+
+/**
+ * 새 메시지 전송 (파일/사진 첨부 지원)
  */
 export async function sendChatMessage(
   roomId: string,
   content: string,
   parentId?: string | null,
-  messageType: ChatMessageType = "TEXT",
+  attachment?: {
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    publicUrl: string;
+    isImage: boolean;
+  } | null,
 ): Promise<ChatRoomMessage | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+
+  let messageType: ChatMessageType = "TEXT";
+  let finalContent = content.trim();
+
+  if (attachment) {
+    messageType = attachment.isImage ? "IMAGE" : "FILE";
+    if (!finalContent) {
+      finalContent = attachment.isImage ? "사진을 보냈습니다." : `${attachment.fileName} 파일을 보냈습니다.`;
+    }
+  }
 
   const { data: newMsg, error } = await supabase
     .from("chat_room_messages" as any)
     .insert({
       room_id: roomId,
       sender_id: user.id,
-      content: content.trim(),
+      content: finalContent,
       parent_id: parentId || null,
       message_type: messageType,
     })
@@ -297,11 +388,35 @@ export async function sendChatMessage(
     return null;
   }
 
+  // 첨부파일 레코드 등록
+  let savedAttachments: ChatAttachment[] = [];
+  if (attachment) {
+    const { data: attData, error: attErr } = await supabase
+      .from("chat_attachments" as any)
+      .insert({
+        message_id: (newMsg as any).id,
+        file_name: attachment.fileName,
+        file_size: attachment.fileSize,
+        mime_type: attachment.mimeType,
+        storage_provider: "SUPABASE",
+        gcs_bucket: "attachments",
+        gcs_blob_name: attachment.publicUrl,
+        public_url: attachment.publicUrl,
+        thumbnail_url: attachment.isImage ? attachment.publicUrl : null,
+      })
+      .select("*")
+      .single();
+
+    if (!attErr && attData) {
+      savedAttachments = [attData as ChatAttachment];
+    }
+  }
+
   // 대화방 마지막 메시지 갱신 및 내 읽은 시각 갱신
   await supabase
     .from("chat_rooms" as any)
     .update({
-      last_message_text: content.trim().slice(0, 100),
+      last_message_text: finalContent.slice(0, 100),
       last_message_at: new Date().toISOString(),
       last_message_sender_id: user.id,
     })
@@ -309,11 +424,14 @@ export async function sendChatMessage(
 
   await markChatRoomRead(roomId, (newMsg as any).id);
 
-  return newMsg as ChatRoomMessage;
+  return {
+    ...(newMsg as any),
+    attachments: savedAttachments,
+  } as ChatRoomMessage;
 }
 
 /**
- * 새 대화방 개설 (1:1 또는 그룹 대화방)
+ * 새 대화방 개설 (원자적 RPC 함수 호출로 42501 오류 원천 차단)
  */
 export async function createChatRoom(params: {
   name?: string | null;
@@ -321,92 +439,19 @@ export async function createChatRoom(params: {
   projectId?: string | null;
   inviteUserIds: string[];
 }): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { data, error } = await (supabase.rpc as any)("create_chat_room", {
+    p_name: params.name || null,
+    p_is_group: params.isGroup,
+    p_project_id: params.projectId || null,
+    p_invite_user_ids: params.inviteUserIds,
+  });
 
-  // 1:1 대화방인 경우 기존에 둘 사이에 열린 1:1 방이 있는지 확인
-  if (!params.isGroup && params.inviteUserIds.length === 1) {
-    const targetUserId = params.inviteUserIds[0];
-
-    const { data: myRooms } = await supabase
-      .from("chat_participants" as any)
-      .select("room_id")
-      .eq("user_id", user.id)
-      .is("left_at", null);
-
-    if (myRooms && myRooms.length > 0) {
-      const roomIds = (myRooms as any[]).map((r) => r.room_id);
-      const { data: commonRooms } = await supabase
-        .from("chat_participants" as any)
-        .select("room_id")
-        .eq("user_id", targetUserId)
-        .in("room_id", roomIds)
-        .is("left_at", null);
-
-      if (commonRooms && commonRooms.length > 0) {
-        // 이미 존재하는 방 중 1:1 방 확인
-        const { data: existingGroup } = await supabase
-          .from("chat_rooms" as any)
-          .select("id, is_group")
-          .in("id", (commonRooms as any[]).map((c) => c.room_id))
-          .eq("is_group", false)
-          .limit(1)
-          .maybeSingle();
-
-        if (existingGroup) {
-          return (existingGroup as any).id;
-        }
-      }
-    }
-  }
-
-  // 1. 방 생성
-  const { data: newRoom, error: roomErr } = await supabase
-    .from("chat_rooms" as any)
-    .insert({
-      name: params.name || null,
-      is_group: params.isGroup,
-      project_id: params.projectId || null,
-      created_by: user.id,
-      last_message_text: "대화방이 생성되었습니다.",
-      last_message_at: new Date().toISOString(),
-      last_message_sender_id: user.id,
-    })
-    .select("id")
-    .single();
-
-  if (roomErr || !newRoom) {
-    console.error("createChatRoom error:", roomErr);
+  if (error) {
+    console.error("createChatRoom RPC error:", error);
     return null;
   }
 
-  const roomId = (newRoom as any).id;
-
-  // 2. 참여자 추가 (나 + 초대된 사용자들)
-  const allUserIds = Array.from(new Set([user.id, ...params.inviteUserIds]));
-  const participantsData = allUserIds.map((uid) => ({
-    room_id: roomId,
-    user_id: uid,
-    last_read_at: new Date().toISOString(),
-  }));
-
-  const { error: partErr } = await supabase
-    .from("chat_participants" as any)
-    .insert(participantsData);
-
-  if (partErr) {
-    console.error("addParticipants error:", partErr);
-  }
-
-  // 3. 시스템 첫 메시지 기록
-  await supabase.from("chat_room_messages" as any).insert({
-    room_id: roomId,
-    sender_id: user.id,
-    message_type: "SYSTEM",
-    content: "대화방이 개설되었습니다.",
-  });
-
-  return roomId;
+  return data as string;
 }
 
 /**

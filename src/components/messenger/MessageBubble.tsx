@@ -1,8 +1,10 @@
 import { useState } from "react";
-import type { ChatRoomMessage } from "@/lib/messengerApi";
-import { CornerDownLeft, Copy, User } from "lucide-react";
+import type { ChatRoomMessage, ChatAttachment } from "@/lib/messengerApi";
+import { formatBytes } from "@/lib/compressUploadFile";
+import { CornerDownLeft, Copy, User, FileText, Download, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { ReadReceiptModal } from "./ReadReceiptModal";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 interface MessageBubbleProps {
@@ -19,6 +21,7 @@ export function MessageBubble({
   onScrollToMessage,
 }: MessageBubbleProps) {
   const [showReceipts, setShowReceipts] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
@@ -45,6 +48,8 @@ export function MessageBubble({
       </div>
     );
   }
+
+  const attachments: ChatAttachment[] = message.attachments || [];
 
   return (
     <>
@@ -105,7 +110,66 @@ export function MessageBubble({
                 : "bg-card border text-card-foreground rounded-bl-xs"
             )}
           >
-            {message.content}
+            {/* 첨부파일 렌더링 */}
+            {attachments.length > 0 && (
+              <div className="space-y-2 mb-2">
+                {attachments.map((att) => {
+                  const isImage = att.mime_type.startsWith("image/");
+                  return isImage ? (
+                    <div
+                      key={att.id}
+                      className="rounded-lg overflow-hidden border bg-background/50 cursor-pointer max-w-[280px]"
+                      onClick={() => att.public_url && setLightboxUrl(att.public_url)}
+                    >
+                      <img
+                        src={att.thumbnail_url || att.public_url || ""}
+                        alt={att.file_name}
+                        className="w-full max-h-56 object-cover hover:opacity-95 transition-opacity"
+                        loading="lazy"
+                      />
+                      <div className="p-1 px-2 text-[10px] text-muted-foreground flex items-center justify-between bg-background/80">
+                        <span className="truncate max-w-[180px]">{att.file_name}</span>
+                        <span className="shrink-0">{formatBytes(att.file_size)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={att.id}
+                      className={cn(
+                        "flex items-center gap-2 p-2.5 rounded-lg border max-w-[260px]",
+                        isMe ? "bg-primary-foreground/10 text-primary-foreground border-white/20" : "bg-muted/40 text-foreground"
+                      )}
+                    >
+                      <FileText className="h-7 w-7 shrink-0 text-primary" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{att.file_name}</p>
+                        <p className="text-[10px] opacity-75">{formatBytes(att.file_size)}</p>
+                      </div>
+                      {att.public_url && (
+                        <a
+                          href={att.public_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download={att.file_name}
+                          className={cn(
+                            "p-1.5 rounded-md hover:bg-black/10 transition-colors shrink-0",
+                            isMe ? "text-primary-foreground" : "text-foreground"
+                          )}
+                          title="다운로드"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 텍스트 내용 */}
+            {message.content && (
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            )}
 
             {/* 마우스 호버 시 답장/복사 퀵 액션 */}
             <div
@@ -159,6 +223,31 @@ export function MessageBubble({
         isOpen={showReceipts}
         onClose={() => setShowReceipts(false)}
       />
+
+      {/* 이미지 라이트박스 팝업 */}
+      {lightboxUrl && (
+        <Dialog open={!!lightboxUrl} onOpenChange={(open) => !open && setLightboxUrl(null)}>
+          <DialogContent className="max-w-3xl p-1 bg-black/95 border-0 flex flex-col items-center justify-center">
+            <img
+              src={lightboxUrl}
+              alt="확대 이미지"
+              className="max-h-[85vh] max-w-full object-contain rounded"
+            />
+            <div className="py-2 flex items-center justify-between w-full px-4 text-white/80 text-xs">
+              <span>현장 첨부 사진</span>
+              <a
+                href={lightboxUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 hover:text-white"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                원본 열기
+              </a>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

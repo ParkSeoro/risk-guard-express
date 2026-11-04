@@ -219,13 +219,23 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
   const profileMap = new Map((profiles || []).map((pr) => [pr.user_id, pr]));
   const myPartMap = new Map((myParticipations as any[]).map((p) => [p.room_id, p]));
 
-  // 3. 각 방의 미확인 메시지 수 집계
+  const { data: unreadRows, error: unreadErr } = await (supabase.rpc as any)("count_my_chat_unreads", {
+    p_room_ids: roomIds,
+  });
+  const unreadMap = new Map<string, number>();
+  if (!unreadErr && Array.isArray(unreadRows)) {
+    for (const row of unreadRows as { room_id: string; unread_count: number }[]) {
+      unreadMap.set(row.room_id, Number(row.unread_count) || 0);
+    }
+  }
+
+  // 3. 각 방의 미확인 메시지 수. RPC가 있으면 한 번만 묻고, 아직 함수가 없으면 방마다 센다.
   const enrichedRooms: ChatRoom[] = await Promise.all(
     (rooms as any[]).map(async (room) => {
       const myPart = myPartMap.get(room.id);
-      let unread_count = 0;
+      let unread_count = unreadMap.get(room.id) || 0;
 
-      if (myPart?.last_read_at) {
+      if (unreadErr && myPart?.last_read_at) {
         const { count } = await supabase
           .from("chat_room_messages" as any)
           .select("id", { count: "exact", head: true })

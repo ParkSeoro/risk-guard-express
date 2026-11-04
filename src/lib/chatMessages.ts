@@ -31,6 +31,24 @@ export interface SafetyDocCardPayload {
 }
 
 const SAFETY_DOC_PREFIX = "[[SAFENEX_DOC]]";
+const SAFETY_DOC_KINDS = ["work_permit", "assessment_run", "work_plan", "tbm_session"] as const;
+const SAFETY_DOC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Open a shared card only by kind and document id. The url stored in the message is ignored. */
+export function safetyDocAppPath(card: { kind?: string | null; id?: string | null }): string | null {
+  const id = String(card.id || "");
+  if (!SAFETY_DOC_UUID.test(id)) return null;
+  switch (card.kind) {
+    case "work_permit":
+      return `/app/admin/work-permits/${id}`;
+    case "assessment_run":
+      return `/app/admin/assessment-run/${id}`;
+    case "work_plan":
+      return `/app/admin/work-plan/${id}`;
+    default:
+      return null;
+  }
+}
 
 export const QUICK_CHAT_REACTIONS = [
   { emoji: "✅", label: "확인" },
@@ -198,9 +216,26 @@ export function parseSafetyDocMessage(content: string): {
   const summaryText = content.slice(0, idx).trim();
   const rawJson = content.slice(idx + SAFETY_DOC_PREFIX.length).trim();
   try {
-    const parsed = JSON.parse(rawJson) as SafetyDocCardPayload;
-    if (parsed && parsed.kind && parsed.id && parsed.title && parsed.url) {
-      return { summaryText, card: parsed };
+    const parsed = JSON.parse(rawJson) as Partial<SafetyDocCardPayload>;
+    if (
+      parsed
+      && typeof parsed.kind === "string"
+      && (SAFETY_DOC_KINDS as readonly string[]).includes(parsed.kind)
+      && typeof parsed.id === "string"
+      && typeof parsed.title === "string"
+    ) {
+      return {
+        summaryText,
+        card: {
+          kind: parsed.kind as SafetyDocCardPayload["kind"],
+          id: parsed.id,
+          title: parsed.title.slice(0, 200),
+          subtitle: parsed.subtitle ? String(parsed.subtitle).slice(0, 200) : null,
+          statusLabel: parsed.statusLabel ? String(parsed.statusLabel).slice(0, 40) : null,
+          note: parsed.note ? String(parsed.note).slice(0, 200) : null,
+          url: safetyDocAppPath(parsed) ?? "",
+        },
+      };
     }
   } catch {
     // Ignore malformed payload

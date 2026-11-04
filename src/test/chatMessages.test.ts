@@ -8,6 +8,7 @@ import {
   encodeSafetyDocMessage,
   formatCleanRoomPreview,
   groupContactsByCompany,
+  safetyDocAppPath,
   mergeChatMessages,
   olderChatMessagesFilter,
   parseSafetyDocMessage,
@@ -120,6 +121,22 @@ describe("SafetyDocCard encoding & parsing", () => {
     expect(parsed.card?.id).toBe("permit-1");
     expect(parsed.card?.title).toBe("타워크레인 인양 작업허가서");
     expect(formatCleanRoomPreview(encoded)).toContain("[작업허가서] 타워크레인 인양 작업허가서");
+    expect(parsed.card?.url).toBe("");
+  });
+
+  it("opens a card from kind and id, and drops a url written in the message", () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const encoded = encodeSafetyDocMessage({
+      kind: "work_permit",
+      id,
+      title: "안전블럭",
+      url: "https://example.invalid/phish",
+    });
+    const parsed = parseSafetyDocMessage(encoded);
+    expect(parsed.card?.url).toBe(`/app/admin/work-permits/${id}`);
+    expect(safetyDocAppPath(parsed.card || { kind: "work_permit", id })).toBe(`/app/admin/work-permits/${id}`);
+    expect(safetyDocAppPath({ kind: "work_permit", id: "not-a-uuid" })).toBeNull();
+    expect(safetyDocAppPath({ kind: "tbm_session", id })).toBeNull();
   });
 });
 

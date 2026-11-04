@@ -3,6 +3,7 @@ import type { ChatRoomMessage, ChatAttachment } from "@/lib/messengerApi";
 import {
   parseSafetyDocMessage,
   QUICK_CHAT_REACTIONS,
+  safetyDocAppPath,
   type SafetyDocCardPayload,
 } from "@/lib/chatMessages";
 import { canonicalizeAppPath } from "@/lib/notificationRoutes";
@@ -307,6 +308,7 @@ export function MessageBubble({
                     {(() => {
                       const meta = DOC_KIND_META[parsedDoc.card.kind] || DOC_KIND_META.work_permit;
                       const Icon = meta.Icon;
+                      const docPath = safetyDocAppPath(parsedDoc.card);
                       return (
                         <>
                           <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -333,13 +335,15 @@ export function MessageBubble({
                               {parsedDoc.card.subtitle}
                             </p>
                           )}
-                          <a
-                            href={canonicalizeAppPath(parsedDoc.card.url)}
-                            className="mt-2.5 w-full inline-flex items-center justify-center gap-1 text-[11px] font-semibold py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
-                          >
-                            <span>안전문서 바로 열기</span>
-                            <ArrowUpRight className="h-3.5 w-3.5" />
-                          </a>
+                          {docPath ? (
+                            <a
+                              href={canonicalizeAppPath(docPath)}
+                              className="mt-2.5 w-full inline-flex items-center justify-center gap-1 text-[11px] font-semibold py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+                            >
+                              <span>안전문서 바로 열기</span>
+                              <ArrowUpRight className="h-3.5 w-3.5" />
+                            </a>
+                          ) : null}
                         </>
                       );
                     })()}

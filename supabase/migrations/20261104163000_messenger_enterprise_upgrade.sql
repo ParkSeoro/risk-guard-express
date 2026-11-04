@@ -26,14 +26,31 @@ DECLARE
   v_added integer := 0;
   v_names text[] := ARRAY[]::text[];
   v_display_name text;
+  v_room_project_id uuid;
+  v_is_master boolean := false;
 BEGIN
   IF v_my_user_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
+  IF NOT public.can_use_messenger(v_my_user_id) THEN
+    RAISE EXCEPTION 'Messenger is not available for this account';
+  END IF;
+
   IF NOT public.is_chat_room_participant(p_room_id, v_my_user_id) THEN
     RAISE EXCEPTION 'Not a participant of this room';
   END IF;
+
+  SELECT project_id INTO v_room_project_id
+  FROM public.chat_rooms
+  WHERE id = p_room_id;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_roles
+    WHERE user_id = v_my_user_id
+      AND role = 'master'::public.global_role
+  ) INTO v_is_master;
 
   IF p_user_ids IS NULL OR array_length(p_user_ids, 1) IS NULL THEN
     RETURN 0;
@@ -46,6 +63,18 @@ BEGIN
     END IF;
 
     IF NOT public.can_use_messenger(v_uid) THEN
+      CONTINUE;
+    END IF;
+
+    -- Same project gate as create_chat_room. A room member cannot pull staff from another site.
+    IF NOT v_is_master AND NOT EXISTS (
+      SELECT 1
+      FROM public.project_members mine
+      JOIN public.project_members theirs ON theirs.project_id = mine.project_id
+      WHERE mine.user_id = v_my_user_id
+        AND theirs.user_id = v_uid
+        AND (v_room_project_id IS NULL OR mine.project_id = v_room_project_id)
+    ) THEN
       CONTINUE;
     END IF;
 
@@ -151,6 +180,10 @@ BEGIN
   END IF;
 
   IF p_for_everyone THEN
+    IF NOT public.can_manage_chat_room(p_room_id, v_my_user_id) THEN
+      RAISE EXCEPTION 'Only the room owner can rename this room for everyone';
+    END IF;
+
     UPDATE public.chat_rooms
     SET name = left(v_clean_name, 150),
         updated_at = NOW()
@@ -186,6 +219,10 @@ BEGIN
 
   IF NOT public.is_chat_room_participant(p_room_id, v_my_user_id) THEN
     RAISE EXCEPTION 'Not a participant of this room';
+  END IF;
+
+  IF NOT public.can_manage_chat_room(p_room_id, v_my_user_id) THEN
+    RAISE EXCEPTION 'Only the room owner can pin a notice';
   END IF;
 
   IF p_message_id IS NOT NULL AND NOT EXISTS (
@@ -247,17 +284,22 @@ DECLARE
   v_room_id uuid;
   v_project_id uuid;
   v_msg_created_at timestamptz;
-  v_msg_content text;
+  v_sender_id uuid;
   v_sender_name text;
   v_link text;
   v_count integer := 0;
+  v_allowed integer := 0;
 BEGIN
   IF v_my_user_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  SELECT m.room_id, m.created_at, m.content, r.project_id
-    INTO v_room_id, v_msg_created_at, v_msg_content, v_project_id
+  IF NOT public.can_use_messenger(v_my_user_id) THEN
+    RAISE EXCEPTION 'Messenger is not available for this account';
+  END IF;
+
+  SELECT m.room_id, m.created_at, m.sender_id, r.project_id
+    INTO v_room_id, v_msg_created_at, v_sender_id, v_project_id
   FROM public.chat_room_messages m
   JOIN public.chat_rooms r ON r.id = m.room_id
   WHERE m.id = p_message_id
@@ -269,6 +311,18 @@ BEGIN
 
   IF NOT public.is_chat_room_participant(v_room_id, v_my_user_id) THEN
     RAISE EXCEPTION 'Not a participant of this room';
+  END IF;
+
+  -- One nudge per person per message each 10 minutes. -1 tells the client to wait.
+  INSERT INTO public.chat_message_reminders (message_id, reminded_by, reminded_at)
+  VALUES (p_message_id, v_my_user_id, now())
+  ON CONFLICT (message_id, reminded_by)
+  DO UPDATE SET reminded_at = now()
+  WHERE public.chat_message_reminders.reminded_at < now() - interval '10 minutes';
+
+  GET DIAGNOSTICS v_allowed = ROW_COUNT;
+  IF v_allowed = 0 THEN
+    RETURN -1;
   END IF;
 
   SELECT COALESCE(NULLIF(btrim(display_name), ''), '관리자')
@@ -295,8 +349,8 @@ BEGIN
     v_project_id,
     'chat_message',
     '[미확인 재알림] ' || COALESCE(v_sender_name, '관리자'),
-    left(COALESCE(NULLIF(btrim(v_msg_content), ''), '중요 메시지를 확인해 주세요.'), 80),
-    left(COALESCE(NULLIF(btrim(v_msg_content), ''), '중요 메시지를 확인해 주세요.'), 80),
+    '확인하지 않은 메시지가 있습니다.',
+    '확인하지 않은 메시지가 있습니다.',
     'chat_room',
     v_room_id::text,
     v_link,
@@ -305,7 +359,8 @@ BEGIN
   WHERE p.room_id = v_room_id
     AND p.left_at IS NULL
     AND p.user_id <> v_my_user_id
-    AND p.last_read_at < v_msg_created_at
+    AND p.user_id IS DISTINCT FROM v_sender_id
+    AND (p.last_read_at IS NULL OR p.last_read_at < v_msg_created_at)
     AND p.is_notification_enabled = TRUE
     AND public.can_use_messenger(p.user_id);
 
@@ -313,6 +368,81 @@ BEGIN
   RETURN v_count;
 END;
 $$;
+
+-- Room-wide rename and pin stay with the creator, a master, or the site's lead roles.
+CREATE OR REPLACE FUNCTION public.can_manage_chat_room(p_room_id uuid, p_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p_user_id IS NOT NULL
+    AND public.is_chat_room_participant(p_room_id, p_user_id)
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM public.user_roles ur
+        WHERE ur.user_id = p_user_id
+          AND ur.role = 'master'::public.global_role
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.chat_rooms r
+        WHERE r.id = p_room_id
+          AND r.created_by = p_user_id
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.chat_rooms r
+        JOIN public.project_members pm
+          ON pm.project_id = r.project_id
+         AND pm.user_id = p_user_id
+        WHERE r.id = p_room_id
+          AND pm.role_new IN (
+            'project_admin'::public.project_role,
+            'safety_manager'::public.project_role,
+            'site_manager'::public.project_role
+          )
+      )
+    );
+$$;
+
+-- One unread count query for the room list. Matches the old per-room count:
+-- only messages after last_read_at, not sent by me, not deleted.
+CREATE OR REPLACE FUNCTION public.count_my_chat_unreads(p_room_ids uuid[])
+RETURNS TABLE(room_id uuid, unread_count integer)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p.room_id,
+    COUNT(m.id)::integer AS unread_count
+  FROM public.chat_participants p
+  LEFT JOIN public.chat_room_messages m
+    ON m.room_id = p.room_id
+   AND COALESCE(m.is_deleted, false) = false
+   AND m.sender_id <> p.user_id
+   AND p.last_read_at IS NOT NULL
+   AND m.created_at > p.last_read_at
+  WHERE p.user_id = auth.uid()
+    AND p.left_at IS NULL
+    AND p.room_id = ANY(COALESCE(p_room_ids, ARRAY[]::uuid[]))
+  GROUP BY p.room_id;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.chat_message_reminders (
+  message_id uuid NOT NULL REFERENCES public.chat_room_messages(id) ON DELETE CASCADE,
+  reminded_by uuid NOT NULL,
+  reminded_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (message_id, reminded_by)
+);
+
+ALTER TABLE public.chat_message_reminders ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.chat_message_reminders FROM PUBLIC, anon, authenticated;
 
 REVOKE ALL ON FUNCTION public.invite_chat_participants(uuid, uuid[]) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.leave_chat_room(uuid) FROM PUBLIC, anon;
@@ -327,6 +457,12 @@ GRANT EXECUTE ON FUNCTION public.set_chat_room_name(uuid, text, boolean) TO auth
 GRANT EXECUTE ON FUNCTION public.set_chat_pinned_message(uuid, uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.delete_my_chat_message(uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.remind_unread_chat_participants(uuid) TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.can_manage_chat_room(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.can_manage_chat_room(uuid, uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.count_my_chat_unreads(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.count_my_chat_unreads(uuid[]) TO authenticated, service_role;
 
 ALTER TABLE public.chat_reactions REPLICA IDENTITY FULL;
 ALTER TABLE public.chat_rooms REPLICA IDENTITY FULL;

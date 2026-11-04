@@ -61,6 +61,8 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
       const count = await remindUnreadChatParticipants(messageId);
       if (count === null) {
         toast.error("재알림 발송에 실패했습니다.");
+      } else if (count < 0) {
+        toast.info("같은 메시지는 10분에 한 번만 다시 알릴 수 있습니다.");
       } else if (count === 0) {
         toast.info("알림을 켠 미확인 참여자가 없습니다.");
       } else {

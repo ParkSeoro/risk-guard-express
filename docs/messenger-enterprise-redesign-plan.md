@@ -1,7 +1,7 @@
 # SafeNex 엔터프라이즈 메신저 전면 개편 기획 및 아키텍처 제안서 (RFC)
 
-> **목적**: AI Studio에서 1차 구현된 현재 메신저(`src/pages/MessengerPage.tsx`, `src/components/messenger/*`, `src/lib/messengerApi.ts`)의 구조적 결함과 UX 한계를 진단하고, 타사 엔터프라이즈·건설현장 협업 메신저 벤치마킹을 바탕으로 **SafeNex 맞춤형 메신저 개편안**을 정의하여 다중 AI 교차 검토를 수행한다.
-> **주의**: 본 PR은 **코드 수정 없이 설계 및 개편 방향성 검토용 문서만 포함**한다.
+> **목적**: 메신저 개편의 방향과, 검토 뒤에 코드에 넣은 제한을 같이 적는다.
+> **범위**: 이 PR은 기획서와 메신저 화면, `supabase/migrations/20261104163000_messenger_enterprise_upgrade.sql` 을 함께 바꾼다. SQL은 이 파일에만 있고, 리뷰 전에 라이브 데이터베이스에는 올리지 않는다.
 
 ---
 
@@ -119,13 +119,15 @@ flowchart LR
 
 기존 테이블(`chat_rooms`, `chat_participants`, `chat_room_messages`, `chat_attachments`, `chat_reactions`) 스키마를 그대로 활용하면서 아래 보안 RPC(`SECURITY DEFINER`, `can_use_messenger` 및 `is_chat_room_participant` 검증 포함)를 추가한다:
 
-1. `invite_chat_participants(p_room_id uuid, p_user_ids uuid[])`: 기존 대화방에 신규 참여자 초대 및 시스템 메시지 기록
+1. `invite_chat_participants(p_room_id uuid, p_user_ids uuid[])`: 기존 대화방에 신규 참여자 초대 및 시스템 메시지 기록. 초대한 사람과 초대받는 사람 모두 `can_use_messenger` 여야 하고, 방의 현장 소속이 아니면 넣지 않는다. 새 방 생성(`create_chat_room`)과 같은 현장 확인이다. 근로자 계정은 여기서 빠진다.
 2. `leave_chat_room(p_room_id uuid)`: `left_at = NOW()` 처리 및 퇴장 시스템 메시지 기록
-3. `set_chat_room_name(p_room_id uuid, p_name text, p_for_everyone boolean)`: 개인 오버라이드 또는 그룹 공용 방 제목 변경
-4. `set_chat_pinned_message(p_room_id uuid, p_message_id uuid)`: 대화방 상단 필독 공지 지정/해제
+3. `set_chat_room_name(p_room_id uuid, p_name text, p_for_everyone boolean)`: 내 화면 이름은 참여자 누구나. 전원에게 보이는 이름은 방 만든 사람, 마스터, 또는 그 현장의 관리자·안전관리자·현장소장만.
+4. `set_chat_pinned_message(p_room_id uuid, p_message_id uuid)`: 공지 고정과 해제도 같은 사람만.
 5. `delete_my_chat_message(p_message_id uuid)`: 본인 발송 메시지 소프트 삭제(`is_deleted = true`)
-6. `remind_unread_chat_participants(p_message_id uuid)`: 미확인 참여자에게만 재알림(`notifications` INSERT) 발송
-7. `supabase_realtime` Publication에 `chat_reactions`, `chat_rooms` 추가
+6. `remind_unread_chat_participants(p_message_id uuid)`: 한 번도 안 연 사람(`last_read_at` 없음)을 포함하고, 작성자 본인과 알림을 끈 사람은 뺀다. 같은 사람이 같은 메시지를 10분에 한 번만 다시 알릴 수 있다. 푸시 본문은 `확인하지 않은 메시지가 있습니다.` 로 고정하고 메시지 원문은 넣지 않는다. 반환 `-1` 은 아직 10분이 안 됐다는 뜻이다.
+7. `count_my_chat_unreads(p_room_ids uuid[])`: 방 목록의 미확인 수를 한 번에 센다. 함수가 아직 없으면 화면은 예전처럼 방마다 센다.
+8. `supabase_realtime` Publication에 `chat_reactions`, `chat_rooms` 추가
+9. 안전문서 카드의 열기 주소는 메시지에 적힌 url을 쓰지 않는다. 종류와 문서 id로 `/app/admin/work-permits|assessment-run|work-plan/{uuid}` 만 만든다.
 
 ---
 
@@ -137,13 +139,13 @@ flowchart LR
 
 | 구분 | 배포 파이프라인 | 적용 대상 변경 사항 | 메신저 개편 해당 여부 |
 | :--- | :--- | :--- | :--- |
-| **Track 1: 무선 OTA 즉시 배포** | `.github/workflows/mobile-release.yml`<br>(`main` 머지 시 `publish-ota-release` Edge Function으로 자동 배포, 5초 `appReadyTimeout` 롤백 보호) | • React/TypeScript UI 컴포넌트 개편<br>• Supabase RPC / Realtime 연동 로직<br>• 라우팅 및 스타일(Tailwind) 변경 | ✅ **100% OTA 배포 가능**<br>(스토어 심사 대기 없이 현장 스마트폰에 즉시 반영) |
+| **Track 1: 무선 OTA** | `.github/workflows/mobile-release.yml`<br>(`main` 머지 시 번들을 올린다. 로그인 화면에서는 받지 않는다. 앱 안(`/app`)에 들어온 뒤에 내려받고, 앱을 내린 뒤에 적용한다.) | • React/TypeScript UI 컴포넌트 개편<br>• Supabase RPC / Realtime 연동 로직<br>• 라우팅 및 스타일(Tailwind) 변경 | ✅ **스토어 심사 없이 배포 가능**<br>(폰이 로그인 화면에 있는 동안에는 적용되지 않는다. 이 PR을 main에 넣으면 화면이 바뀐 업데이트가 나간다.) |
 | **Track 2: Google Play AAB 빌드** | `.github/workflows/android-aab.yml`<br>(`build/android-aab` 브랜치 푸시 또는 `android-v*` 태그 푸시 → 서명된 `.aab` + R8/NDK 심볼 생성) | • Capacitor 네이티브 플러그인 추가/버전 변경<br>• `AndroidManifest.xml` 권한 변경<br>• FCM 알림 채널/사운드(`siren.wav`) 또는 네이티브 백그라운드 서비스 변경<br>• Play 스토어 신규 설치자용 베이스 번들 최신화 | 🔄 **주기적 베이스 번들 갱신 시 함께 생성**<br>(네이티브 권한 추가가 없을 때는 OTA만으로 즉시 도달하며, 스토어 버전 갱신이 필요할 때 `build/android-aab`로 AAB 패키지 동시 생성) |
 
 ### 4.2 모바일(Android/iOS) 쉘 및 푸시 딥링크 설계 고려사항
 1. **모바일 전용 라우트(`/app/worker/messenger`) 및 리다이렉트 보호**
    - 스마트폰 앱에서는 `/app/admin/messenger` 진입 시 `MobileRedirectGuard`와 `notificationRoutes.ts`(`toMobileShellPath`)가 `/app/worker/messenger?room=<id>`로 매핑함.
-   - 따라서 메신저 내부에서 공유되는 **안전문서 카드 링크(작업허가서·위험성평가·작업계획서)** 클릭 시에도 `canonicalizeAppPath(url)`을 거쳐 **PC에서는 `/app/admin/*`, 모바일 앱에서는 `/app/worker/*` 뷰어로 자동 분기**되도록 설계해야 함.
+   - 안전문서 카드는 종류와 문서 id로 만든 `/app/admin/...` 주소만 `canonicalizeAppPath`에 넘긴다. 휴대폰에서는 기존 규칙대로 `/app/worker/...` 로 열린다. 메시지 본문에 적힌 주소는 열지 않는다.
 2. **모바일 뷰포트 · 가상 키보드 · Safe Area 대응**
    - Android Edge-to-Edge(`SystemBars` CSS 변수 `--sat`, `--sab`) 및 `window.visualViewport` 기반 소프트 키보드 높이 보정을 유지.
    - 신규 추가되는 **우측 대화방 서랍(`MessengerRoomDrawer`)**은 데스크톱에서는 우측 슬라이드 패널(`w-80`)로, 모바일 앱에서는 전체화면 오버레이(`w-full`)로 동작하고 Android 하드웨어 뒤로가기(`NativeAndroidBack`)와 충돌하지 않도록 구성.

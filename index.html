@@ -6,6 +6,16 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <script>
+      (function () {
+        try {
+          if (typeof window !== "undefined" && window.location.hostname === "risk-guard-express.vercel.app") {
+            var target = "https://safenex.org" + window.location.pathname + window.location.search + window.location.hash;
+            window.location.replace(target);
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script>
       /* Keep in sync with src/lib/iosShareableGuard.ts — must run before the hashed bundle. */
       (function () {
         var RE = /Can't find variable:\s*Shareable|Shareable is not defined|ReferenceError:\s*Shareable/i;

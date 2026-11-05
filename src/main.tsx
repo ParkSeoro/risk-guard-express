@@ -1,5 +1,10 @@
 import { createRoot } from "react-dom/client";
 import "./index.css";
+
+// Canonical domain redirect: Always redirect default Vercel domain to safenex.org
+if (typeof window !== "undefined" && window.location.hostname === "risk-guard-express.vercel.app") {
+  window.location.replace("https://safenex.org" + window.location.pathname + window.location.search + window.location.hash);
+}
 import { registerSWSafely } from "./lib/registerServiceWorker";
 import { initOtaUpdater } from "./lib/native/otaUpdater";
 import { runBootOtaGate } from "./lib/native/bootOtaGate";

@@ -228,14 +228,15 @@ function createTray() {
 
 function resizeWindowSmart(reqWidth, reqHeight) {
   if (!mainWindow) return;
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const workArea = primaryDisplay.workArea;
+  const curBounds = mainWindow.getBounds();
+  // 듀얼/트리플 모니터 지원: 창이 현재 위치해 있는 모니터를 정확히 감지
+  const currentDisplay = screen.getDisplayMatching(curBounds);
+  const workArea = currentDisplay ? currentDisplay.workArea : screen.getPrimaryDisplay().workArea;
 
-  // Constrain requested size to fit comfortably within the monitor work area
+  // Constrain requested size to fit comfortably within the current monitor work area
   const targetW = Math.min(Math.max(360, reqWidth), workArea.width - 20);
   const targetH = Math.min(Math.max(520, reqHeight), workArea.height - 20);
 
-  const curBounds = mainWindow.getBounds();
   const curRight = curBounds.x + curBounds.width;
   let nextX = curRight - targetW;
   if (nextX + targetW > workArea.x + workArea.width - 12) {

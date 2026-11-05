@@ -158,4 +158,75 @@ describe("MessengerChatPane history and mute", () => {
     });
     expect(setChatNotificationEnabled).toHaveBeenCalledWith("room-1", false);
   });
+
+  it("draws the read line before the first unread message and opens a labeled menu", async () => {
+    fetchRoomMessages.mockResolvedValue({
+      messages: [
+        {
+          id: "old",
+          room_id: "room-1",
+          sender_id: "other",
+          parent_id: null,
+          message_type: "TEXT",
+          content: "어제 메시지",
+          is_deleted: false,
+          created_at: "2026-11-05T00:00:00.000Z",
+          updated_at: "2026-11-05T00:00:00.000Z",
+        },
+        {
+          id: "fresh",
+          room_id: "room-1",
+          sender_id: "other",
+          parent_id: null,
+          message_type: "TEXT",
+          content: "오늘 메시지",
+          is_deleted: false,
+          created_at: "2026-11-06T00:00:00.000Z",
+          updated_at: "2026-11-06T00:00:00.000Z",
+        },
+      ],
+      hasMore: false,
+    });
+
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const roomWithRead = {
+      ...room,
+      participants: [
+        {
+          id: "p-me",
+          room_id: "room-1",
+          user_id: "me",
+          room_name_override: null,
+          is_notification_enabled: true,
+          last_read_at: "2026-11-05T12:00:00.000Z",
+          last_read_message_id: null,
+          joined_at: "2026-11-01T00:00:00.000Z",
+          left_at: null,
+        },
+      ],
+    };
+    await act(async () => {
+      root!.render(<MessengerChatPane room={roomWithRead} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const text = document.body.textContent || "";
+    const marker = text.indexOf("여기까지 읽었습니다");
+    expect(text.indexOf("어제 메시지")).toBeLessThan(marker);
+    expect(marker).toBeLessThan(text.indexOf("오늘 메시지"));
+
+    const bubble = Array.from(document.querySelectorAll("div")).find((node) =>
+      node.textContent === "오늘 메시지",
+    );
+    await act(async () => {
+      bubble?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(document.body.textContent).toContain("답장");
+    expect(document.body.textContent).toContain("복사");
+    expect(document.body.textContent).toContain("전달");
+  });
 });

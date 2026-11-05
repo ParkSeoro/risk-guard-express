@@ -130,10 +130,10 @@ export default function MessengerPage() {
             <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-3">
               <MessageSquare className="h-8 w-8 stroke-1 text-muted-foreground/60" />
             </div>
-            <h3 className="text-sm font-semibold text-foreground">
+            <h3 className="text-base font-semibold text-foreground">
               대화방을 선택하세요
             </h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
               왼쪽 목록에서 대화방을 선택하거나 새 대화를 시작하여 안전 관리 업무를 실시간으로 공유하세요.
             </p>
           </div>

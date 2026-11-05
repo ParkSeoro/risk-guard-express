@@ -108,7 +108,7 @@ export function MessengerDrawer({
       <div className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] md:w-[460px] h-dvh bg-background border-l shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-250 overscroll-contain">
         {/* 상단 통합 제어 바 */}
         <div className="h-11 px-3 pt-[max(0.25rem,var(--sat))] border-b bg-muted/40 flex items-center justify-between shrink-0">
-          <span className="text-[11px] font-medium text-muted-foreground">
+          <span className="text-sm font-medium text-muted-foreground">
             SafeNex 실시간 비즈니스 메신저
           </span>
           <div className="flex items-center gap-1">

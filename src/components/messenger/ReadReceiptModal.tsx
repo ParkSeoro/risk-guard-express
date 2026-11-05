@@ -78,7 +78,7 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="p-4 border-b bg-muted/40">
-          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+          <DialogTitle className="text-base font-semibold flex items-center gap-2">
             <CheckCheck className="h-4 w-4 text-primary" />
             메시지 수신·읽음 확인 현황
           </DialogTitle>
@@ -124,32 +124,32 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-medium truncate">{r.name || "사용자"}</span>
                           {r.role && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
                               {r.role}
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-muted-foreground truncate">
+                        <div className="text-xs text-muted-foreground truncate">
                           {r.company || "소속 미지정"}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex flex-col items-end shrink-0 pl-2">
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         {formatReadTime(r.read_at)}
                       </span>
                       {r.phone ? (
                         <a
                           href={`tel:${r.phone}`}
-                          className="text-[10px] text-primary hover:underline flex items-center gap-0.5 mt-0.5"
+                          className="text-xs text-primary hover:underline flex items-center gap-0.5 mt-0.5"
                         >
                           <Phone className="h-2.5 w-2.5" />
                           {r.phone}
                         </a>
                       ) : (
-                        <span className="text-[9px] text-muted-foreground/60 flex items-center gap-0.5 mt-0.5" title="개인정보 보호를 위해 타사 전화번호는 은닉됩니다">
+                        <span className="text-xs text-muted-foreground/60 flex items-center gap-0.5 mt-0.5" title="개인정보 보호를 위해 타사 전화번호는 은닉됩니다">
                           <ShieldCheck className="h-2.5 w-2.5 text-muted-foreground/60" />
                           타사 연락처 보호
                         </span>
@@ -168,9 +168,9 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
               ) : (
                 <>
                   <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-2">
-                    <div className="text-[11px] text-amber-800 dark:text-amber-300 leading-tight">
+                    <div className="text-xs text-amber-800 dark:text-amber-300 leading-tight">
                       <p className="font-semibold">아직 {unreaders.length}명이 확인하지 않았습니다.</p>
-                      <p className="text-[10px] opacity-80 mt-0.5">미확인 참여자에게만 즉시 푸시 알림을 다시 보낼 수 있습니다.</p>
+                      <p className="text-xs opacity-80 mt-0.5">미확인 참여자에게만 즉시 푸시 알림을 다시 보낼 수 있습니다.</p>
                     </div>
                     <Button
                       type="button"
@@ -178,7 +178,7 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
                       variant="default"
                       disabled={reminding || remindedOnce}
                       onClick={() => void handleRemindUnreaders()}
-                      className="h-7 px-2.5 text-[11px] gap-1 shrink-0 bg-amber-600 hover:bg-amber-500 text-white"
+                      className="h-7 px-2.5 text-xs gap-1 shrink-0 bg-amber-600 hover:bg-amber-500 text-white"
                     >
                       {reminding ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -202,17 +202,17 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-medium truncate">{u.name || "사용자"}</span>
                             {u.role && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
                                 {u.role}
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] text-muted-foreground truncate">
+                          <div className="text-xs text-muted-foreground truncate">
                             {u.company || "소속 미지정"}
                           </div>
                         </div>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium shrink-0">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium shrink-0">
                         미확인
                       </span>
                     </div>

@@ -28,6 +28,7 @@ import {
   Phone,
   MessageCirclePlus,
 } from "lucide-react";
+import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -208,12 +209,12 @@ export function MessengerRoomList({
         <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">SafeNex 메신저</h2>
+            <h2 className={messengerType.title}>SafeNex 메신저</h2>
           </div>
           <Button
             size="sm"
             onClick={onOpenNewChat}
-            className="h-7 px-2.5 text-xs gap-1 shadow-2xs"
+            className={cn("h-8 px-2.5 gap-1 shadow-2xs", messengerType.preview)}
           >
             <Plus className="h-3.5 w-3.5" />
             <span>새 대화</span>
@@ -228,7 +229,8 @@ export function MessengerRoomList({
             type="button"
             onClick={() => setActiveTab("rooms")}
             className={cn(
-              "py-1.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors",
+              "py-2 rounded-md flex items-center justify-center gap-1.5 transition-colors",
+              messengerType.preview,
               activeTab === "rooms"
                 ? "bg-background text-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground",
@@ -237,7 +239,7 @@ export function MessengerRoomList({
             <MessageSquare className="h-3.5 w-3.5" />
             <span>대화방</span>
             {unreadRoomsCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[10px] font-bold">
+              <span className={cn("px-1.5 py-0.2 rounded-full bg-red-500 text-white font-bold", messengerType.meta)}>
                 {unreadRoomsCount}
               </span>
             )}
@@ -246,7 +248,8 @@ export function MessengerRoomList({
             type="button"
             onClick={() => setActiveTab("directory")}
             className={cn(
-              "py-1.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors",
+              "py-2 rounded-md flex items-center justify-center gap-1.5 transition-colors",
+              messengerType.preview,
               activeTab === "directory"
                 ? "bg-background text-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground",
@@ -270,7 +273,7 @@ export function MessengerRoomList({
             }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 text-xs h-8 bg-background"
+            className={cn("pl-8 h-10 bg-background", messengerType.preview)}
           />
         </div>
 
@@ -293,7 +296,8 @@ export function MessengerRoomList({
                 type="button"
                 onClick={() => setFilter(item.key)}
                 className={cn(
-                  "text-[11px] px-2.5 py-1 rounded-full font-medium transition-colors shrink-0",
+                  "px-2.5 py-1 rounded-full font-medium transition-colors shrink-0",
+                  messengerType.meta,
                   filter === item.key
                     ? "bg-primary text-primary-foreground shadow-2xs"
                     : "text-muted-foreground hover:bg-muted",
@@ -316,7 +320,7 @@ export function MessengerRoomList({
           ) : filteredRooms.length === 0 ? (
             <div className="py-16 text-center text-xs text-muted-foreground px-4">
               <p className="font-medium text-foreground mb-1">대화방이 없습니다.</p>
-              <p className="text-[11px] text-muted-foreground/80 mb-3">
+              <p className={cn("text-muted-foreground/80 mb-3", messengerType.meta)}>
                 우측 상단의 [+ 새 대화] 버튼이나 [현장 조직도] 탭에서 대화를 시작해 보세요.
               </p>
             </div>
@@ -367,11 +371,11 @@ export function MessengerRoomList({
                         {isFavorite && (
                           <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0" />
                         )}
-                        <span className="text-xs font-semibold truncate text-foreground">
+                        <span className={cn("truncate text-foreground", messengerType.title)}>
                           {title}
                         </span>
                         {room.is_group && (
-                          <span className="text-[10px] text-muted-foreground shrink-0 font-normal">
+                          <span className={cn("text-muted-foreground shrink-0 font-normal", messengerType.meta)}>
                             {room.participants?.length || 0}
                           </span>
                         )}
@@ -404,7 +408,7 @@ export function MessengerRoomList({
                             className={cn("h-3 w-3", isFavorite && "fill-amber-400")}
                           />
                         </button>
-                        <span className="text-[10px] text-muted-foreground/80">
+                        <span className={cn("text-muted-foreground/80", messengerType.meta)}>
                           {formatLastTime(room.last_message_at)}
                         </span>
                       </div>
@@ -413,7 +417,8 @@ export function MessengerRoomList({
                     <div className="flex items-center justify-between gap-2">
                       <p
                         className={cn(
-                          "text-xs truncate",
+                          "truncate",
+                          messengerType.preview,
                           room.unread_count && room.unread_count > 0
                             ? "text-foreground font-medium"
                             : "text-muted-foreground",
@@ -423,13 +428,13 @@ export function MessengerRoomList({
                       </p>
                       {/* 미확인 뱃지 */}
                       {room.unread_count !== undefined && room.unread_count > 0 && (
-                        <span className="h-4.5 min-w-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0 shadow-xs">
+                        <span className={cn("h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white font-bold flex items-center justify-center shrink-0 shadow-xs", messengerType.meta)}>
                           {room.unread_count > 99 ? "99+" : room.unread_count}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-muted-foreground/70">
+                    <div className={cn("flex items-center gap-1.5 mt-1 text-muted-foreground/70", messengerType.meta)}>
                       <span className="flex items-center gap-0.5">
                         <ShieldCheck className="h-2.5 w-2.5 text-primary" />
                         {room.project_id ? "현장" : "전사"}
@@ -467,15 +472,15 @@ export function MessengerRoomList({
                 <div className="px-3 py-2 bg-muted/40 border-b flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
-                    <span className="text-xs font-bold truncate text-foreground">
+                    <span className={cn("truncate text-foreground", messengerType.title)}>
                       {group.companyName}
                     </span>
                     {group.isSameCompany && (
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-primary/10 text-primary font-semibold shrink-0">
+                      <span className={cn("px-1.5 py-0.2 rounded-full bg-primary/10 text-primary font-semibold shrink-0", messengerType.meta)}>
                         내 소속
                       </span>
                     )}
-                    <span className="text-[10px] text-muted-foreground shrink-0">
+                    <span className={cn("text-muted-foreground shrink-0", messengerType.meta)}>
                       ({group.members.length}명)
                     </span>
                   </div>
@@ -488,7 +493,7 @@ export function MessengerRoomList({
                       onClick={() =>
                         void handleStartCompanyGroupChat(group.companyName, group.members)
                       }
-                      className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary"
+                      className={cn("h-8 px-2 gap-1 text-primary hover:text-primary", messengerType.meta)}
                     >
                       <Users className="h-3 w-3" />
                       <span>업체 단체방</span>
@@ -508,22 +513,22 @@ export function MessengerRoomList({
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-foreground truncate">
+                            <span className={cn("text-foreground truncate", messengerType.title)}>
                               {member.full_name || "관리자"}
                             </span>
                             {member.role && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground shrink-0">
+                              <span className={cn("px-1.5 py-0.2 rounded bg-muted text-muted-foreground shrink-0", messengerType.meta)}>
                                 {member.role}
                               </span>
                             )}
                           </div>
                           {member.project_label && (
-                            <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            <div className={cn("text-muted-foreground truncate mt-0.5", messengerType.meta)}>
                               {member.project_label}
                             </div>
                           )}
                           {member.phone && (
-                            <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <div className={cn("text-muted-foreground flex items-center gap-1 mt-0.5", messengerType.meta)}>
                               <Phone className="h-2.5 w-2.5 text-primary" />
                               <span>{member.phone}</span>
                             </div>
@@ -537,7 +542,7 @@ export function MessengerRoomList({
                         variant="outline"
                         disabled={startingChatId !== null}
                         onClick={() => void handleStartDirectChat(member)}
-                        className="h-7 px-2.5 text-[11px] gap-1 shrink-0"
+                        className={cn("h-8 px-2.5 gap-1 shrink-0", messengerType.meta)}
                       >
                         <MessageCirclePlus className="h-3 w-3" />
                         <span>1:1 대화</span>

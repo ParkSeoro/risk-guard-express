@@ -29,9 +29,18 @@ import {
   messengerComposerPlaceholder,
 } from "@/lib/messengerComposer";
 import { formatBytes } from "@/lib/compressUploadFile";
+import {
+  chatImageIndex,
+  collectChatImages,
+  messengerType,
+  readMarkerMessageId,
+} from "@/lib/messengerType";
+import { cn } from "@/lib/utils";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { MessageBubble } from "./MessageBubble";
+import { MessengerForwardDialog } from "./MessengerForwardDialog";
 import { MessengerRoomDrawer } from "./MessengerRoomDrawer";
 import { ShareSafetyDocModal } from "./ShareSafetyDocModal";
 import { Button } from "@/components/ui/button";
@@ -55,6 +64,8 @@ import {
   FileCheck2,
   UploadCloud,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isDesktopShellActive, openDesktopPopoutWindow } from "@/lib/desktopBridge";
@@ -106,6 +117,9 @@ export function MessengerChatPane({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isShareDocOpen, setIsShareDocOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState<ChatRoomMessage | null>(null);
+  const [galleryUrl, setGalleryUrl] = useState<string | null>(null);
+  const [readMarkerAt, setReadMarkerAt] = useState<string | null>(null);
 
   // 파일 첨부 상태
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -135,6 +149,14 @@ export function MessengerChatPane({
   useEffect(() => {
     setPinnedMessageId(room.pinned_message_id || null);
   }, [room.id, room.pinned_message_id]);
+
+  useEffect(() => {
+    // 방에 들어온 순간의 읽음 시각만 남긴다. 이후 읽음 처리로 참여자 시각이 바뀌어도 줄은 그 자리에 둔다.
+    const mine = (room.participants || []).find((p) => p.user_id === user?.id);
+    setReadMarkerAt(mine?.last_read_at || null);
+    setForwardMessage(null);
+    setGalleryUrl(null);
+  }, [room.id, user?.id]);
 
   // 고정 공지 메시지 로드
   useEffect(() => {
@@ -750,6 +772,13 @@ export function MessengerChatPane({
     return annotateTimelineMessages(withUnread);
   }, [messages, participants]);
 
+  const readMarkerId = useMemo(
+    () => readMarkerMessageId(messages, readMarkerAt, user?.id),
+    [messages, readMarkerAt, user?.id],
+  );
+  const gallery = useMemo(() => collectChatImages(messages), [messages]);
+  const galleryAt = chatImageIndex(gallery, galleryUrl);
+
   const searchMatches = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.trim().toLowerCase();
@@ -795,8 +824,8 @@ export function MessengerChatPane({
       {isDragOver && (
         <div className="absolute inset-2 rounded-2xl border-2 border-dashed border-primary bg-primary/10 backdrop-blur-xs z-40 flex flex-col items-center justify-center pointer-events-none">
           <UploadCloud className="h-10 w-10 text-primary mb-2 animate-bounce" />
-          <p className="text-sm font-bold text-primary">여기에 사진이나 파일을 놓아 전송하세요</p>
-          <p className="text-xs text-muted-foreground mt-0.5">최대 50MB · 이미지 자동 압축 지원</p>
+          <p className={cn("font-bold text-primary", messengerType.title)}>여기에 사진이나 파일을 놓아 전송하세요</p>
+          <p className={cn("text-muted-foreground mt-0.5", messengerType.meta)}>최대 50MB · 이미지 자동 압축 지원</p>
         </div>
       )}
 
@@ -817,17 +846,17 @@ export function MessengerChatPane({
           )}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <h2 className="text-xs sm:text-sm font-semibold truncate text-foreground">
+              <h2 className={cn("truncate text-foreground", messengerType.title)}>
                 {roomTitle}
               </h2>
               {room.is_group && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-muted text-muted-foreground flex items-center gap-0.5 shrink-0">
+                <span className={cn("px-1.5 py-0.2 rounded-full bg-muted text-muted-foreground flex items-center gap-0.5 shrink-0", messengerType.meta)}>
                   <Users className="h-3 w-3" />
                   {participants.length || room.participants?.length || 0}
                 </span>
               )}
             </div>
-            <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
+            <p className={cn("text-muted-foreground truncate flex items-center gap-1", messengerType.meta)}>
               <ShieldCheck className="h-2.5 w-2.5 text-primary" />
               <span>{participantCompanySummary}</span>
             </p>
@@ -904,10 +933,10 @@ export function MessengerChatPane({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="이 대화방에서 메시지 검색..."
-            className="h-7 text-xs bg-background flex-1"
+            className={cn("h-9 bg-background flex-1", messengerType.preview)}
           />
           {searchQuery.trim() && (
-            <span className="text-[11px] text-muted-foreground shrink-0">
+            <span className={cn("text-muted-foreground shrink-0", messengerType.meta)}>
               {searchMatches.length}건
             </span>
           )}
@@ -938,11 +967,11 @@ export function MessengerChatPane({
               <Megaphone className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+              <div className={cn("flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300", messengerType.meta)}>
                 <span>필독 공지</span>
                 <span className="font-normal opacity-80">· {pinnedPreview.sender_name}</span>
               </div>
-              <p className="text-xs text-foreground truncate font-medium">
+              <p className={cn("text-foreground truncate font-medium", messengerType.preview)}>
                 {pinnedPreview.content}
               </p>
             </div>
@@ -965,14 +994,14 @@ export function MessengerChatPane({
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2"
       >
         {loading ? (
-          <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+          <div className={cn("h-full flex items-center justify-center text-muted-foreground", messengerType.preview)}>
             메시지를 불러오는 중...
           </div>
         ) : annotatedMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
             <Users className="h-10 w-10 stroke-1 mb-2 text-muted-foreground/60" />
-            <p className="text-xs font-medium">대화가 시작되었습니다.</p>
-            <p className="text-[11px] mt-1 text-muted-foreground/80">
+            <p className={cn("font-medium", messengerType.preview)}>대화가 시작되었습니다.</p>
+            <p className={cn("mt-1 text-muted-foreground/80", messengerType.meta)}>
               첫 메시지나 안전문서 카드, 현장 사진을 보내 안전 관리 업무를 공유해 보세요.
             </p>
           </div>
@@ -984,7 +1013,7 @@ export function MessengerChatPane({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-[11px] text-muted-foreground"
+                  className={cn("h-8 text-muted-foreground", messengerType.meta)}
                   onClick={() => void loadOlder()}
                   disabled={loadingOlder}
                 >
@@ -993,23 +1022,33 @@ export function MessengerChatPane({
               </div>
             )}
             {annotatedMessages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                isMe={msg.sender_id === user?.id}
-                currentUserId={user?.id}
-                showDateDivider={msg.showDateDivider}
-                dateLabel={msg.dateLabel}
-                isFirstInGroup={msg.isFirstInGroup}
-                isLastInGroup={msg.isLastInGroup}
-                isPinned={pinnedMessageId === msg.id}
-                highlightQuery={searchQuery}
-                onReply={(m) => setReplyTarget(m)}
-                onScrollToMessage={(id) => void scrollToMessage(id)}
-                onToggleReaction={(id, emoji) => void handleToggleReaction(id, emoji)}
-                onPinMessage={(m) => void handlePinMessage(m)}
-                onDeleteMessage={(m) => void handleDeleteMessage(m)}
-              />
+              <div key={msg.id}>
+                {readMarkerId === msg.id && (
+                  <div className="flex items-center justify-center my-3 select-none">
+                    <span className={cn("px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20", messengerType.meta)}>
+                      여기까지 읽었습니다
+                    </span>
+                  </div>
+                )}
+                <MessageBubble
+                  message={msg}
+                  isMe={msg.sender_id === user?.id}
+                  currentUserId={user?.id}
+                  showDateDivider={msg.showDateDivider}
+                  dateLabel={msg.dateLabel}
+                  isFirstInGroup={msg.isFirstInGroup}
+                  isLastInGroup={msg.isLastInGroup}
+                  isPinned={pinnedMessageId === msg.id}
+                  highlightQuery={searchQuery}
+                  onReply={(m) => setReplyTarget(m)}
+                  onScrollToMessage={(id) => void scrollToMessage(id)}
+                  onToggleReaction={(id, emoji) => void handleToggleReaction(id, emoji)}
+                  onPinMessage={(m) => void handlePinMessage(m)}
+                  onDeleteMessage={(m) => void handleDeleteMessage(m)}
+                  onForward={setForwardMessage}
+                  onOpenImage={setGalleryUrl}
+                />
+              </div>
             ))}
           </>
         )}
@@ -1018,7 +1057,7 @@ export function MessengerChatPane({
 
       {/* 상대방 입력 중 표시 (Supabase Broadcast) */}
       {typingUsers.length > 0 && (
-        <div className="px-3 py-1 bg-muted/40 text-[10px] text-muted-foreground italic flex items-center gap-1.5 shrink-0 border-t border-dashed">
+        <div className={cn("px-3 py-1 bg-muted/40 text-muted-foreground italic flex items-center gap-1.5 shrink-0 border-t border-dashed", messengerType.meta)}>
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-ping" />
           {typingUsers.join(", ")}님이 입력 중입니다...
         </div>
@@ -1026,7 +1065,7 @@ export function MessengerChatPane({
 
       {/* 첨부할 파일 미리보기 바 */}
       {selectedFile && (
-        <div className="px-3 py-2 bg-muted/90 border-t flex items-center justify-between text-xs animate-in slide-in-from-bottom-2 shrink-0">
+        <div className={cn("px-3 py-2 bg-muted/90 border-t flex items-center justify-between animate-in slide-in-from-bottom-2 shrink-0", messengerType.preview)}>
           <div className="flex items-center gap-2.5 min-w-0">
             {filePreviewUrl ? (
               <img
@@ -1040,10 +1079,10 @@ export function MessengerChatPane({
               </div>
             )}
             <div className="min-w-0">
-              <p className="font-semibold text-xs truncate max-w-[200px] sm:max-w-xs">
+              <p className={cn("font-semibold truncate max-w-[200px] sm:max-w-xs", messengerType.preview)}>
                 {selectedFile.name}
               </p>
-              <p className="text-[10px] text-muted-foreground">
+              <p className={cn("text-muted-foreground", messengerType.meta)}>
                 {formatBytes(selectedFile.size)} · 전송 준비 완료
               </p>
             </div>
@@ -1061,14 +1100,14 @@ export function MessengerChatPane({
 
       {/* 인용 답장 미리보기 배너 */}
       {replyTarget && (
-        <div className="px-3 py-1.5 bg-muted/80 border-t flex items-center justify-between text-xs animate-in slide-in-from-bottom-2 shrink-0">
+        <div className={cn("px-3 py-1.5 bg-muted/80 border-t flex items-center justify-between animate-in slide-in-from-bottom-2 shrink-0", messengerType.preview)}>
           <div className="flex items-center gap-2 min-w-0">
             <CornerDownLeft className="h-3.5 w-3.5 text-primary shrink-0" />
             <div className="min-w-0">
-              <span className="font-semibold text-[11px] text-foreground mr-1.5">
+              <span className={cn("font-semibold text-foreground mr-1.5", messengerType.meta)}>
                 {replyTarget.sender_name}님에게 답장:
               </span>
-              <span className="text-[11px] text-muted-foreground truncate">
+              <span className={cn("text-muted-foreground truncate", messengerType.meta)}>
                 {parseSafetyDocMessage(replyTarget.content).summaryText}
               </span>
             </div>
@@ -1145,7 +1184,7 @@ export function MessengerChatPane({
                 ? "설명 메시지를 입력하세요 (선택)..."
                 : messengerComposerPlaceholder(compactComposer)
             }
-            className="min-h-[38px] max-h-24 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-normal overflow-hidden"
+            className={cn("min-h-[44px] max-h-32 resize-none border-0 shadow-none focus-visible:ring-0 p-1.5 overflow-hidden", messengerType.input)}
             rows={1}
           />
 
@@ -1183,6 +1222,50 @@ export function MessengerChatPane({
           onBack?.();
         }}
       />
+
+      <MessengerForwardDialog
+        message={forwardMessage}
+        currentRoomId={room.id}
+        open={!!forwardMessage}
+        onClose={() => setForwardMessage(null)}
+      />
+
+      <Dialog open={galleryAt >= 0} onOpenChange={(open) => !open && setGalleryUrl(null)}>
+        <DialogContent className="max-w-3xl p-2 bg-black/95 border-0 text-white">
+          {galleryAt >= 0 && (
+            <div className="flex flex-col items-center gap-3">
+              <img
+                src={gallery[galleryAt].url}
+                alt={gallery[galleryAt].name}
+                className="max-h-[75vh] max-w-full object-contain rounded"
+              />
+              <div className="flex items-center justify-between w-full gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={galleryAt <= 0}
+                  aria-label="이전 사진"
+                  onClick={() => setGalleryUrl(gallery[galleryAt - 1].url)}
+                >
+                  <ChevronLeft className="h-4 w-4" /> 이전
+                </Button>
+                <span className={messengerType.meta}>
+                  {galleryAt + 1} / {gallery.length}
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={galleryAt >= gallery.length - 1}
+                  aria-label="다음 사진"
+                  onClick={() => setGalleryUrl(gallery[galleryAt + 1].url)}
+                >
+                  다음 <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* SafeNex 안전문서 카드 공유 모달 */}
       <ShareSafetyDocModal

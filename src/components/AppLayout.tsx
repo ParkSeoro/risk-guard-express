@@ -80,20 +80,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   // PC 통합 워크스페이스 셸:
-  // - 좌측: 마우스 오버 시 메뉴명이 펼쳐지는 아이콘 레일 (DesktopRailSidebar)
+  // - 좌측: 메신저 모드에서는 마우스 오버 시 열리는 아이콘 레일(54px→168px), 업무 모드에서는 아이콘+메뉴명 고정(168px)
   // - 우측: 대화상대/대화목록 선택 시에는 메신저 표시(창 크기 420×680),
-  //         대시보드·알림·공지·결재·허가서·계획서 선택 시에는 메신저가 빠지고 해당 기능 화면이 같은 창 안에 맞춤 크기로 즉시 표시!
+  //         알림 이하 업무 메뉴 선택 시에는 메신저가 빠지고 해당 기능 화면이 같은 창(1260×820 단일 사이즈) 안에 즉시 표시!
   if (isDesktopShell) {
     return (
       <ProjectAccessContext.Provider value={projectAccess}>
         <RemoteSupportHost>
-          <div className="h-dvh w-screen overflow-hidden bg-background flex print:block print:h-auto print:overflow-visible">
-            <div className="print:hidden h-full flex">
+          <div className="h-dvh w-full overflow-hidden bg-background flex print:block print:h-auto print:overflow-visible">
+            <div className="print:hidden h-full flex shrink-0">
               <DesktopRailSidebar />
             </div>
             <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
               {!isDesktopWorkspace && (
-                <header className="h-10 flex items-center justify-between gap-2 border-b bg-card px-3 shrink-0 print:hidden">
+                <header className="h-11 flex items-center justify-between gap-3 border-b bg-card px-4 shrink-0 print:hidden">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     {backTarget && backTarget !== "/app/admin" && (
                       <Button
@@ -114,7 +114,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                           value={projectAccess.selectedProject}
                           onValueChange={projectAccess.setSelectedProject}
                         >
-                          <SelectTrigger className="h-7 text-xs font-semibold bg-muted/50 border-0 min-w-[160px] max-w-[240px] truncate shadow-none">
+                          <SelectTrigger className="h-7 text-xs font-semibold bg-muted/50 border-0 min-w-[160px] max-w-[260px] truncate shadow-none">
                             <SelectValue placeholder="현장 선택" />
                           </SelectTrigger>
                           <SelectContent>
@@ -128,7 +128,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-1.5 shrink-0 pr-1 text-xs text-muted-foreground whitespace-nowrap">
                     <span className="font-semibold text-foreground">
                       {profile?.display_name || "관리자"}
                     </span>
@@ -140,12 +140,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 className={
                   isDesktopWorkspace || location.pathname.includes("/messenger")
                     ? "flex-1 min-h-0 flex flex-col overflow-hidden"
-                    : "flex-1 min-h-0 overflow-auto p-2.5 sm:p-3.5 print:block print:p-0 print:overflow-visible"
-                }
-                style={
-                  isDesktopWorkspace || location.pathname.includes("/messenger")
-                    ? undefined
-                    : { zoom: 0.88 }
+                    : "flex-1 min-h-0 overflow-auto p-3.5 sm:p-4 print:block print:p-0 print:overflow-visible"
                 }
               >
                 <AppErrorBoundary>{children}</AppErrorBoundary>

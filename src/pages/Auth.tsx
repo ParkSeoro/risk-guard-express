@@ -1097,38 +1097,21 @@ const Auth = () => {
                     minLength={8}
                   />
                 </div>
-                <div className="rounded-md border border-border/80 bg-muted/30 px-3 py-2.5 space-y-2">
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <Checkbox
-                      className="mt-0.5"
-                      checked={rememberManagerEmail}
-                      onCheckedChange={(v) => setRememberManagerEmail(v === true)}
-                    />
-                    <span className="text-xs leading-snug">
-                      자동 로그인 및 이메일 저장
-                      <span className="block text-[10px] text-muted-foreground mt-0.5">
-                        카카오톡 PC버전처럼 다음 실행 시 로그인 상태를 유지합니다.
+                {isWindowsDesktopApp() && (
+                  <div className="rounded-md border border-border/80 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <Checkbox
+                        className="mt-0.5"
+                        checked={rememberManagerEmail}
+                        onCheckedChange={(v) => setRememberManagerEmail(v === true)}
+                      />
+                      <span className="text-xs leading-snug">
+                        자동 로그인 및 이메일 저장
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">
+                          카카오톡 PC버전처럼 다음 실행 시 로그인 상태를 유지합니다.
+                        </span>
                       </span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 cursor-pointer pt-1.5 border-t border-border/50">
-                    <Checkbox
-                      className="mt-0.5"
-                      checked={launchDesktopWorkspaceOnLogin}
-                      onCheckedChange={(v) => {
-                        const on = v === true;
-                        setLaunchDesktopWorkspaceOnLogin(on);
-                        saveDesktopSettings({ launchMessengerWorkspaceOnLogin: on });
-                      }}
-                    />
-                    <span className="text-xs leading-snug">
-                      로그인 후 <span className="font-semibold text-foreground">카톡형 PC 통합 워크스페이스</span>로 시작
-                      <span className="block text-[10px] text-muted-foreground mt-0.5">
-                        대화목록·조직도와 전자결재·안전관리비·작업허가서를 한 화면에서 사용합니다.
-                      </span>
-                    </span>
-                  </label>
-                  {isWindowsDesktopApp() && (
+                    </label>
                     <label className="flex items-start gap-2 cursor-pointer pt-1.5 border-t border-border/50">
                       <Checkbox
                         className="mt-0.5"
@@ -1143,8 +1126,8 @@ const Auth = () => {
                         윈도우 시작 시 SafeNex PC 자동 실행
                       </span>
                     </label>
-                  )}
-                </div>
+                  </div>
+                )}
               </>
             )}
 

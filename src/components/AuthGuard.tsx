@@ -15,7 +15,7 @@ import {
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 import { needsWorkerLocaleChoice, WORKER_LANGUAGE_PATH } from "@/lib/i18n/workerLocale";
 import { AuthErrorScreen } from "@/components/AuthErrorScreen";
-import { loadDesktopSettings } from "@/lib/desktopBridge";
+import { isWindowsDesktopApp, loadDesktopSettings } from "@/lib/desktopBridge";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -149,7 +149,7 @@ export function postConsentHomePath(
   if (shell === "worker") return WORKER_HOME;
   // Admin/manager roles: on phone → mobile app shell (role state unchanged)
   if (prefersMobileAppShell()) return MOBILE_ADMIN_HOME;
-  if (loadDesktopSettings().launchMessengerWorkspaceOnLogin) {
+  if (isWindowsDesktopApp() && loadDesktopSettings().launchMessengerWorkspaceOnLogin) {
     return "/app/admin/desktop-workspace";
   }
   return DESKTOP_ADMIN_HOME;

@@ -15,11 +15,19 @@ using Microsoft.Win32;
 [assembly: AssemblyDescription("SafeNex Windows Desktop Messenger & Safety Workspace")]
 [assembly: AssemblyCompany("SafeNex")]
 [assembly: AssemblyProduct("SafeNex PC")]
-[assembly: AssemblyVersion("1.1.2.0")]
-[assembly: AssemblyFileVersion("1.1.2.0")]
+[assembly: AssemblyVersion("1.1.3.0")]
+[assembly: AssemblyFileVersion("1.1.3.0")]
 
 namespace SafeNexDesktop
 {
+    static class AppConstants
+    {
+        public const string APP_VERSION = "1.1.3";
+        public const int MESSENGER_WIDTH = 420;
+        public const int MESSENGER_HEIGHT = 680;
+        public const int WORK_WIDTH = 1260;
+        public const int WORK_HEIGHT = 820;
+    }
     static class Win32WindowHelper
     {
         [StructLayout(LayoutKind.Sequential)]
@@ -83,6 +91,13 @@ namespace SafeNexDesktop
         [STAThread]
         static void Main(string[] args)
         {
+            try
+            {
+                // Enable TLS 1.2 for HTTPS OTA bundle downloads from Supabase Storage / GitHub
+                ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+            }
+            catch { }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
@@ -283,7 +298,7 @@ namespace SafeNexDesktop
             _installDir = installDir;
             _installedExe = installedExe;
 
-            Text = "SafeNex PC 안전관리 메신저 설치 마법사 (v1.1.2)";
+            Text = "SafeNex PC 안전관리 메신저 설치 마법사 (v" + AppConstants.APP_VERSION + ")";
             Size = new Size(500, 390);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -442,6 +457,12 @@ namespace SafeNexDesktop
 
                 string wwwDir = Path.Combine(_installDir, "www");
                 ExtractWebBundleTo(wwwDir);
+                try
+                {
+                    File.WriteAllText(Path.Combine(_installDir, "exe-version.txt"), AppConstants.APP_VERSION, Encoding.UTF8);
+                    File.WriteAllText(Path.Combine(wwwDir, "bundle-version.txt"), AppConstants.APP_VERSION, Encoding.UTF8);
+                }
+                catch { }
 
                 _lblStatus.Text = "윈도우 시작 프로그램 및 바로가기를 등록하는 중...";
                 _progress.Value = 85;
@@ -603,8 +624,7 @@ namespace SafeNexDesktop
             Directory.CreateDirectory(_installDir);
 
             _wwwDir = Path.Combine(_installDir, "www");
-            // Always refresh embedded web bundle on startup so installed app stays up to date
-            SetupInstallerForm.ExtractWebBundleTo(_wwwDir);
+            EnsureWebBundleInitialized();
 
             StartLocalSpaServer();
 
@@ -625,9 +645,125 @@ namespace SafeNexDesktop
                 ContextMenuStrip = menu
             };
 
-            _trayIcon.DoubleClick += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", 420, 680);
+            _trayIcon.DoubleClick += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", AppConstants.MESSENGER_WIDTH, AppConstants.MESSENGER_HEIGHT);
 
-            OpenWorkspace(initialRoute, 420, 680);
+            OpenWorkspace(initialRoute, AppConstants.MESSENGER_WIDTH, AppConstants.MESSENGER_HEIGHT);
+        }
+
+        private void EnsureWebBundleInitialized()
+        {
+            try
+            {
+                string exeVerFile = Path.Combine(_installDir, "exe-version.txt");
+                string indexFile = Path.Combine(_wwwDir, "index.html");
+                string bundleVerFile = Path.Combine(_wwwDir, "bundle-version.txt");
+
+                string installedExeVer = File.Exists(exeVerFile) ? File.ReadAllText(exeVerFile, Encoding.UTF8).Trim() : "";
+
+                // Extract built-in bundle only if www/index.html is missing OR the .exe binary itself was upgraded.
+                // This preserves any newer OTA web bundles downloaded automatically in the background!
+                if (!File.Exists(indexFile) || !string.Equals(installedExeVer, AppConstants.APP_VERSION, StringComparison.OrdinalIgnoreCase))
+                {
+                    SetupInstallerForm.ExtractWebBundleTo(_wwwDir);
+                    File.WriteAllText(exeVerFile, AppConstants.APP_VERSION, Encoding.UTF8);
+                    if (!File.Exists(bundleVerFile))
+                    {
+                        File.WriteAllText(bundleVerFile, AppConstants.APP_VERSION, Encoding.UTF8);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private string GetCurrentBundleVersion()
+        {
+            try
+            {
+                string bundleVerFile = Path.Combine(_wwwDir, "bundle-version.txt");
+                if (File.Exists(bundleVerFile))
+                {
+                    string v = File.ReadAllText(bundleVerFile, Encoding.UTF8).Trim();
+                    if (!string.IsNullOrEmpty(v)) return v;
+                }
+            }
+            catch { }
+            return AppConstants.APP_VERSION;
+        }
+
+        private bool ApplyOtaWebBundle(string newVersion, string downloadUrl, out string errorMsg)
+        {
+            errorMsg = null;
+            string tempZip = Path.Combine(Path.GetTempPath(), "safenex_ota_" + Guid.NewGuid().ToString("N") + ".zip");
+            string stagingDir = Path.Combine(_installDir, "www_staging_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "SafeNexDesktop/" + AppConstants.APP_VERSION);
+                    wc.DownloadFile(downloadUrl, tempZip);
+                }
+
+                if (!File.Exists(tempZip) || new FileInfo(tempZip).Length < 512)
+                {
+                    errorMsg = "다운로드된 업데이트 파일이 유효하지 않습니다.";
+                    return false;
+                }
+
+                Directory.CreateDirectory(stagingDir);
+                ZipFile.ExtractToDirectory(tempZip, stagingDir);
+
+                // Handle case where zip has a single top-level folder (e.g., dist/)
+                string effectiveSourceDir = stagingDir;
+                if (!File.Exists(Path.Combine(effectiveSourceDir, "index.html")))
+                {
+                    string[] subDirs = Directory.GetDirectories(stagingDir);
+                    if (subDirs.Length == 1 && File.Exists(Path.Combine(subDirs[0], "index.html")))
+                    {
+                        effectiveSourceDir = subDirs[0];
+                    }
+                }
+
+                if (!File.Exists(Path.Combine(effectiveSourceDir, "index.html")))
+                {
+                    errorMsg = "업데이트 번들에 index.html이 포함되어 있지 않습니다.";
+                    return false;
+                }
+
+                File.WriteAllText(Path.Combine(effectiveSourceDir, "bundle-version.txt"), newVersion, Encoding.UTF8);
+
+                if (Directory.Exists(_wwwDir))
+                {
+                    try { Directory.Delete(_wwwDir, true); } catch { }
+                }
+
+                CopyDirectoryRecursive(effectiveSourceDir, _wwwDir);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMsg = ex.Message;
+                return false;
+            }
+            finally
+            {
+                try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+                try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true); } catch { }
+            }
+        }
+
+        private static void CopyDirectoryRecursive(string sourceDir, string targetDir)
+        {
+            Directory.CreateDirectory(targetDir);
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string destFile = Path.Combine(targetDir, Path.GetFileName(file));
+                File.Copy(file, destFile, true);
+            }
+            foreach (string subDir in Directory.GetDirectories(sourceDir))
+            {
+                string destSubDir = Path.Combine(targetDir, Path.GetFileName(subDir));
+                CopyDirectoryRecursive(subDir, destSubDir);
+            }
         }
 
         private ContextMenuStrip BuildContextMenu()
@@ -636,21 +772,21 @@ namespace SafeNexDesktop
 
             ToolStripMenuItem openMainItem = new ToolStripMenuItem("💬 SafeNex PC 메신저 열기");
             openMainItem.Font = new Font(menu.Font, FontStyle.Bold);
-            openMainItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", 420, 680);
+            openMainItem.Click += (s, e) => OpenWorkspace("/app/admin/desktop-workspace", AppConstants.MESSENGER_WIDTH, AppConstants.MESSENGER_HEIGHT);
             menu.Items.Add(openMainItem);
 
             menu.Items.Add(new ToolStripSeparator());
 
             ToolStripMenuItem dashboardItem = new ToolStripMenuItem("📊 대시보드 열기");
-            dashboardItem.Click += (s, e) => OpenWorkspace("/app/admin", 960, 700);
+            dashboardItem.Click += (s, e) => OpenWorkspace("/app/admin", AppConstants.WORK_WIDTH, AppConstants.WORK_HEIGHT);
             menu.Items.Add(dashboardItem);
 
             ToolStripMenuItem approvalsItem = new ToolStripMenuItem("✅ 전자결재 열기");
-            approvalsItem.Click += (s, e) => OpenWorkspace("/app/admin/approvals", 960, 700);
+            approvalsItem.Click += (s, e) => OpenWorkspace("/app/admin/approvals", AppConstants.WORK_WIDTH, AppConstants.WORK_HEIGHT);
             menu.Items.Add(approvalsItem);
 
             ToolStripMenuItem permitsItem = new ToolStripMenuItem("📝 작업허가서 열기");
-            permitsItem.Click += (s, e) => OpenWorkspace("/app/admin/work-permits", 960, 700);
+            permitsItem.Click += (s, e) => OpenWorkspace("/app/admin/work-permits", AppConstants.WORK_WIDTH, AppConstants.WORK_HEIGHT);
             menu.Items.Add(permitsItem);
 
             menu.Items.Add(new ToolStripSeparator());
@@ -732,11 +868,11 @@ namespace SafeNexDesktop
             {
                 string rawPath = ctx.Request.Url.AbsolutePath;
 
-                // Native window resize endpoint called when switching between Messenger (420x680) and Features (660x680 / 960x700)
+                // Native window resize endpoint called when switching between Messenger (420x680) and Work Mode (1260x820)
                 if (string.Equals(rawPath, "/__desktop/resize", StringComparison.OrdinalIgnoreCase))
                 {
-                    int w = 420;
-                    int h = 680;
+                    int w = AppConstants.MESSENGER_WIDTH;
+                    int h = AppConstants.MESSENGER_HEIGHT;
                     int.TryParse(ctx.Request.QueryString["w"], out w);
                     int.TryParse(ctx.Request.QueryString["h"], out h);
                     Win32WindowHelper.ResizeActiveAppWindow(w, h);
@@ -746,6 +882,49 @@ namespace SafeNexDesktop
                     ctx.Response.StatusCode = 200;
                     ctx.Response.ContentLength64 = okBytes.Length;
                     ctx.Response.OutputStream.Write(okBytes, 0, okBytes.Length);
+                    ctx.Response.OutputStream.Close();
+                    return;
+                }
+
+                // Version inquiry endpoint for OTA Auto-Updater
+                if (string.Equals(rawPath, "/__desktop/version", StringComparison.OrdinalIgnoreCase))
+                {
+                    string bundleVer = GetCurrentBundleVersion().Replace("\"", "");
+                    string json = "{\"ok\":true,\"appVersion\":\"" + AppConstants.APP_VERSION + "\",\"bundleVersion\":\"" + bundleVer + "\"}";
+                    byte[] verBytes = Encoding.UTF8.GetBytes(json);
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    ctx.Response.StatusCode = 200;
+                    ctx.Response.ContentLength64 = verBytes.Length;
+                    ctx.Response.OutputStream.Write(verBytes, 0, verBytes.Length);
+                    ctx.Response.OutputStream.Close();
+                    return;
+                }
+
+                // Zero-reinstall OTA hot-swap endpoint: downloads latest zip from Supabase Storage and updates %LOCALAPPDATA%\SafeNexPC\www
+                if (string.Equals(rawPath, "/__desktop/apply-ota", StringComparison.OrdinalIgnoreCase))
+                {
+                    string newVer = ctx.Request.QueryString["version"] ?? "";
+                    string downloadUrl = ctx.Request.QueryString["url"] ?? "";
+                    string err;
+                    bool ok = false;
+                    if (!string.IsNullOrEmpty(newVer) && !string.IsNullOrEmpty(downloadUrl))
+                    {
+                        ok = ApplyOtaWebBundle(newVer, downloadUrl, out err);
+                    }
+                    else
+                    {
+                        err = "version 또는 url 파라미터가 누락되었습니다.";
+                    }
+
+                    string safeErr = (err ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    string respJson = ok
+                        ? "{\"ok\":true,\"version\":\"" + newVer.Replace("\"", "") + "\"}"
+                        : "{\"ok\":false,\"error\":\"" + safeErr + "\"}";
+                    byte[] respBytes = Encoding.UTF8.GetBytes(respJson);
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    ctx.Response.StatusCode = 200;
+                    ctx.Response.ContentLength64 = respBytes.Length;
+                    ctx.Response.OutputStream.Write(respBytes, 0, respBytes.Length);
                     ctx.Response.OutputStream.Close();
                     return;
                 }
@@ -776,7 +955,8 @@ namespace SafeNexDesktop
                 if (ext == ".html")
                 {
                     string html = File.ReadAllText(filePath, Encoding.UTF8);
-                    string bridgeScript = "<script>window.safenexDesktop={isDesktopApp:true,platform:'win32',appVersion:'1.1.2'};try{localStorage.setItem('forceDesktopUI','1');sessionStorage.setItem('safenex_pc_shell','1');}catch(e){}</script>";
+                    string curBundleVer = GetCurrentBundleVersion().Replace("'", "");
+                    string bridgeScript = "<script>window.safenexDesktop={isDesktopApp:true,platform:'win32',appVersion:'" + curBundleVer + "'};try{localStorage.setItem('forceDesktopUI','1');sessionStorage.setItem('safenex_pc_shell','1');}catch(e){}</script>";
                     html = html.Replace("<head>", "<head>" + bridgeScript);
                     byte[] bytes = Encoding.UTF8.GetBytes(html);
                     ctx.Response.ContentLength64 = bytes.Length;

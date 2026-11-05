@@ -499,7 +499,6 @@ export const MANUAL_SIDEBAR_EXCEPTIONS: string[] = [
   "공지사항",
   "건설안전팀",
   "실시간 메신저",
-  "PC 카톡형 워크스페이스",
 ];
 
 export function manualTextMatches(query: string, ...fields: string[]): boolean {

@@ -4,7 +4,7 @@ import { Bell, LayoutDashboard, FolderKanban, ShieldAlert, Database,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
-  Building2, FolderOpen, Video, MessageSquare, Monitor,
+  Building2, FolderOpen, Video, MessageSquare,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -40,10 +40,9 @@ const groups: Group[] = [
   {
     label: "오늘", key: "today",
     items: [
-      { title: "PC 카톡형 워크스페이스", url: "/desktop-workspace", icon: Monitor },
-      { title: "실시간 메신저", url: "/messenger", icon: MessageSquare },
       { title: "공지사항", url: "/announcements", icon: Megaphone },
       { title: "알림", url: "/alerts", icon: Bell },
+      { title: "실시간 메신저", url: "/messenger", icon: MessageSquare },
       { title: "대시보드", url: "/", icon: LayoutDashboard },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: "approvals" },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
@@ -165,7 +164,7 @@ export function AppSidebar() {
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
   const CONTRACTOR_GROUP_KEYS = new Set(["today", "site", "docs", "incident", "location", "health", "ops"]);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
-    '/', '/desktop-workspace', '/messenger', '/announcements', '/approvals',
+    '/', '/approvals',
     '/work-plans', '/work-permits', '/tbm-logs',
     '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/alerts', '/work-stop',

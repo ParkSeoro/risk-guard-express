@@ -24,8 +24,11 @@ import {
   ShieldCheck,
   Sparkles,
   Laptop,
+  RefreshCw,
 } from "lucide-react";
 import {
+  checkAndApplyDesktopOtaUpdate,
+  getDesktopVersionInfo,
   isWindowsDesktopApp,
   loadDesktopSettings,
   saveDesktopSettings,
@@ -55,12 +58,37 @@ export function DesktopAppSettingsDialog({
     loadDesktopSettings(),
   );
   const [deferredPwaPrompt, setDeferredPwaPrompt] = useState<any>(null);
+  const [versionInfo, setVersionInfo] = useState<{
+    appVersion: string;
+    bundleVersion: string;
+  }>({ appVersion: "1.1.3", bundleVersion: "1.1.3" });
+  const [checkingOta, setCheckingOta] = useState(false);
 
   useEffect(() => {
     if (open) {
       setSettings(loadDesktopSettings());
+      void getDesktopVersionInfo().then(setVersionInfo);
     }
   }, [open]);
+
+  const handleManualOtaCheck = async () => {
+    setCheckingOta(true);
+    try {
+      const res = await checkAndApplyDesktopOtaUpdate();
+      const updatedInfo = await getDesktopVersionInfo();
+      setVersionInfo(updatedInfo);
+      if (res.applied && res.latestVersion) {
+        toast.success(`새 버전(v${res.latestVersion}) 다운로드 완료! 화면을 새로고침합니다.`);
+        window.setTimeout(() => window.location.reload(), 900);
+      } else if (res.ok) {
+        toast.info(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } finally {
+      setCheckingOta(false);
+    }
+  };
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -278,6 +306,43 @@ export function DesktopAppSettingsDialog({
                   updateSetting("desktopNotificationBanner", v)
                 }
               />
+            </div>
+          </div>
+
+          {/* 4. 무설치 자동 업데이트 (OTA) */}
+          <div className="rounded-xl border bg-card p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <RefreshCw className="h-3.5 w-3.5 text-primary" />
+                  <span>무설치 자동 업데이트 (OTA)</span>
+                </h4>
+                <p className="text-[11px] text-muted-foreground">
+                  시스템 업데이트 배포 시 설치 파일(.exe)을 다시 받을 필요 없이 백그라운드에서 자동으로 최신 버전을 내려받아 적용합니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1 border-t">
+              <span className="text-[11px] text-muted-foreground">
+                현재 버전:{" "}
+                <strong className="text-foreground font-mono">
+                  v{versionInfo.bundleVersion}
+                </strong>{" "}
+                (런처 v{versionInfo.appVersion})
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={checkingOta}
+                onClick={() => void handleManualOtaCheck()}
+                className="h-7 text-xs gap-1.5"
+              >
+                <RefreshCw
+                  className={`h-3 w-3 ${checkingOta ? "animate-spin" : ""}`}
+                />
+                <span>{checkingOta ? "확인 중..." : "최신 업데이트 확인"}</span>
+              </Button>
             </div>
           </div>
 

@@ -126,10 +126,12 @@ export function setDesktopShellActive(active: boolean): void {
 
 /**
  * Returns the recommended window dimensions for a given route inside the single-window PC shell.
- * - Messenger (대화상대 / 대화목록): 420 × 680
- * - Alerts / Announcements (알림 / 공지사항): 660 × 680
- * - Feature screens (대시보드 / 결재 / 허가서 / 계획서 / 위험성평가 등): 960 × 700
+ * - Messenger (대화상대 / 대화목록): 420 × 680 (콤팩트 메신저 창, 사이드바 마우스 오버 열림)
+ * - Work Mode (알림 / 공지사항 이하 모든 업무 화면): 1260 × 820 단일 크기 통일 (좌측 168px 고정 사이드바 + 우측 1092px 데스크톱 레이아웃 보장)
  */
+export const DESKTOP_MESSENGER_WINDOW_SIZE = { width: 420, height: 680 } as const;
+export const DESKTOP_WORK_WINDOW_SIZE = { width: 1260, height: 820 } as const;
+
 export function resolveDesktopRouteWindowSize(pathname: string): {
   width: number;
   height: number;
@@ -137,12 +139,17 @@ export function resolveDesktopRouteWindowSize(pathname: string): {
 } {
   const p = pathname || "";
   if (p.includes("/desktop-workspace") || p.includes("/messenger")) {
-    return { width: 420, height: 680, isMessengerView: true };
+    return {
+      width: DESKTOP_MESSENGER_WINDOW_SIZE.width,
+      height: DESKTOP_MESSENGER_WINDOW_SIZE.height,
+      isMessengerView: true,
+    };
   }
-  if (p.includes("/alerts") || p.includes("/announcements")) {
-    return { width: 660, height: 680, isMessengerView: false };
-  }
-  return { width: 960, height: 700, isMessengerView: false };
+  return {
+    width: DESKTOP_WORK_WINDOW_SIZE.width,
+    height: DESKTOP_WORK_WINDOW_SIZE.height,
+    isMessengerView: false,
+  };
 }
 
 /**
@@ -440,5 +447,222 @@ export function updateDesktopTaskbarBadge(
     } else if (typeof (navigator as any).clearAppBadge === "function") {
       void (navigator as any).clearAppBadge().catch(() => {});
     }
+  }
+}
+
+export interface DesktopOtaCheckResult {
+  ok: boolean;
+  hasUpdate: boolean;
+  applied: boolean;
+  currentVersion: string;
+  latestVersion: string | null;
+  mandatory?: boolean;
+  notes?: string | null;
+  message: string;
+}
+
+const DESKTOP_BUNDLE_VERSION_KEY = "safenex_pc_bundle_version";
+
+function cmpDesktopVersion(a: string, b: string): number {
+  const parts = (v: string) => {
+    const nums = String(v || "").match(/\d+/g);
+    return nums ? nums.map((n) => Number(n)) : [0];
+  };
+  const pa = parts(a);
+  const pb = parts(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
+/**
+ * Queries the local SafeNexPC.exe HTTP server for its current bundle version.
+ */
+export async function getDesktopVersionInfo(): Promise<{
+  appVersion: string;
+  bundleVersion: string;
+}> {
+  const fallbackAppVersion =
+    (typeof window !== "undefined" && window.safenexDesktop?.appVersion) || "1.1.3";
+  let savedBundle = fallbackAppVersion;
+  if (typeof window !== "undefined") {
+    try {
+      savedBundle =
+        window.localStorage.getItem(DESKTOP_BUNDLE_VERSION_KEY) || fallbackAppVersion;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (
+    typeof window !== "undefined" &&
+    (isWindowsDesktopApp() ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname === "localhost")
+  ) {
+    try {
+      const res = await fetch("/__desktop/version", { cache: "no-store" });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          appVersion?: string;
+          bundleVersion?: string;
+        };
+        const bundleVersion = json.bundleVersion || savedBundle;
+        try {
+          window.localStorage.setItem(DESKTOP_BUNDLE_VERSION_KEY, bundleVersion);
+        } catch {
+          /* ignore */
+        }
+        return {
+          appVersion: json.appVersion || fallbackAppVersion,
+          bundleVersion,
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return {
+    appVersion: fallbackAppVersion,
+    bundleVersion: savedBundle,
+  };
+}
+
+/**
+ * Zero-Reinstall OTA Auto-Updater for SafeNex PC:
+ * Checks Supabase `app_releases` (published automatically by GitHub Actions on every push to `main`
+ * or via `/app/admin/settings/mobile-releases`) and instructs the local `SafeNexPC.exe` server
+ * (`/__desktop/apply-ota`) to download and hot-swap `%LOCALAPPDATA%\SafeNexPC\www` in place.
+ * Users NEVER need to receive or run a new `.exe` installer for web/UI/feature updates.
+ */
+export async function checkAndApplyDesktopOtaUpdate(opts?: {
+  channel?: "stable" | "beta";
+}): Promise<DesktopOtaCheckResult> {
+  const channel = opts?.channel || "stable";
+  const { bundleVersion: currentVersion } = await getDesktopVersionInfo();
+
+  try {
+    const { getOtaAnonClient } = await import("@/lib/native/otaAnonClient");
+    const ota = getOtaAnonClient();
+    const { data, error } = await ota.rpc("get_latest_app_release", {
+      _channel: channel,
+    } as any);
+
+    if (error) {
+      return {
+        ok: false,
+        hasUpdate: false,
+        applied: false,
+        currentVersion,
+        latestVersion: null,
+        message: `업데이트 서버 조회 실패: ${error.message}`,
+      };
+    }
+
+    const release: any = Array.isArray(data) ? data[0] : data;
+    if (!release?.version || !release?.bundle_url) {
+      return {
+        ok: true,
+        hasUpdate: false,
+        applied: false,
+        currentVersion,
+        latestVersion: null,
+        message: `현재 최신 버전(${currentVersion})을 사용 중입니다.`,
+      };
+    }
+
+    const latestVersion = String(release.version);
+    const hasUpdate = cmpDesktopVersion(latestVersion, currentVersion) > 0;
+    if (!hasUpdate) {
+      return {
+        ok: true,
+        hasUpdate: false,
+        applied: false,
+        currentVersion,
+        latestVersion,
+        message: `현재 최신 버전(${currentVersion})입니다.`,
+      };
+    }
+
+    let downloadUrl = String(release.bundle_url);
+    if (downloadUrl.startsWith("storage:")) {
+      const storagePath = downloadUrl.replace(/^storage:/, "");
+      const { data: signed, error: signErr } = await ota.storage
+        .from("app-updates")
+        .createSignedUrl(storagePath, 60 * 60);
+      if (signErr || !signed?.signedUrl) {
+        return {
+          ok: false,
+          hasUpdate: true,
+          applied: false,
+          currentVersion,
+          latestVersion,
+          message: "업데이트 패키지 서명 URL 생성에 실패했습니다.",
+        };
+      }
+      downloadUrl = signed.signedUrl;
+    }
+
+    // Instruct local SafeNexPC.exe resident server to download & extract the new bundle into %LOCALAPPDATA%\SafeNexPC\www
+    const applyRes = await fetch(
+      `/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
+      {
+        method: "POST",
+        cache: "no-store",
+      },
+    );
+
+    if (!applyRes.ok) {
+      return {
+        ok: false,
+        hasUpdate: true,
+        applied: false,
+        currentVersion,
+        latestVersion,
+        message: `로컬 업데이트 적용 실패 (HTTP ${applyRes.status})`,
+      };
+    }
+
+    const applyJson = (await applyRes.json()) as { ok?: boolean; error?: string };
+    if (!applyJson.ok) {
+      return {
+        ok: false,
+        hasUpdate: true,
+        applied: false,
+        currentVersion,
+        latestVersion,
+        message: applyJson.error || "로컬 업데이트 교체 중 오류가 발생했습니다.",
+      };
+    }
+
+    try {
+      window.localStorage.setItem(DESKTOP_BUNDLE_VERSION_KEY, latestVersion);
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      ok: true,
+      hasUpdate: true,
+      applied: true,
+      currentVersion,
+      latestVersion,
+      mandatory: Boolean(release.mandatory),
+      notes: release.notes || null,
+      message: `새 버전(v${latestVersion}) 다운로드 및 설치가 완료되었습니다.`,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      hasUpdate: false,
+      applied: false,
+      currentVersion,
+      latestVersion: null,
+      message: err?.message || "업데이트 확인 중 오류가 발생했습니다.",
+    };
   }
 }

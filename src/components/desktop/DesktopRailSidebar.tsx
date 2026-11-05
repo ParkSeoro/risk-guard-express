@@ -7,6 +7,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isAllowedForContractor } from "@/lib/contractorRouteAccess";
 import {
+  checkAndApplyDesktopOtaUpdate,
+  DESKTOP_MESSENGER_WINDOW_SIZE,
+  DESKTOP_WORK_WINDOW_SIZE,
+  isWindowsDesktopApp,
   loadDesktopPresence,
   loadDesktopSettings,
   resizeDesktopWindow,
@@ -32,6 +36,7 @@ import {
   Pin,
   LogOut,
   ClipboardCheck,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -72,8 +77,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/desktop-workspace?tab=directory",
     icon: Users,
     group: "comm",
-    windowWidth: 420,
-    windowHeight: 680,
+    windowWidth: DESKTOP_MESSENGER_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_MESSENGER_WINDOW_SIZE.height,
   },
   {
     id: "rooms",
@@ -81,8 +86,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/desktop-workspace?tab=rooms",
     icon: MessageSquare,
     group: "comm",
-    windowWidth: 420,
-    windowHeight: 680,
+    windowWidth: DESKTOP_MESSENGER_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_MESSENGER_WINDOW_SIZE.height,
   },
   {
     id: "alerts",
@@ -90,8 +95,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/alerts",
     icon: Bell,
     group: "feature",
-    windowWidth: 660,
-    windowHeight: 680,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "announcements",
@@ -99,8 +104,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/announcements",
     icon: Megaphone,
     group: "feature",
-    windowWidth: 680,
-    windowHeight: 680,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "approvals",
@@ -108,8 +113,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/approvals",
     icon: CheckSquare,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "dashboard",
@@ -117,8 +122,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin",
     icon: LayoutDashboard,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "work-permits",
@@ -126,8 +131,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/work-permits",
     icon: FileCheck2,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "work-plans",
@@ -135,8 +140,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/work-plans",
     icon: ClipboardList,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "risk-assessment",
@@ -144,8 +149,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/risk-assessment",
     icon: ShieldAlert,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "tbm-logs",
@@ -153,8 +158,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/tbm-logs",
     icon: HardHat,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "safety-inspections",
@@ -162,8 +167,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/safety-inspections",
     icon: ClipboardCheck,
     group: "feature",
-    windowWidth: 960,
-    windowHeight: 700,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
   {
     id: "safety-cost",
@@ -171,8 +176,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/safety-cost",
     icon: Receipt,
     group: "feature",
-    windowWidth: 980,
-    windowHeight: 720,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
     adminOnly: true,
   },
   {
@@ -181,8 +186,8 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     path: "/app/admin/site-control-map",
     icon: MapPin,
     group: "feature",
-    windowWidth: 980,
-    windowHeight: 720,
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
 ];
 
@@ -214,6 +219,14 @@ export function DesktopRailSidebar() {
   const [totalUnreadChats, setTotalUnreadChats] = useState(0);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [stagedUpdateVersion, setStagedUpdateVersion] = useState<string | null>(null);
+
+  // 메신저 모드(대화상대/대화목록)에서는 54px 아이콘 레일 + 마우스 오버 시 열림(오버레이),
+  // 업무 모드(알림 이하 모든 메뉴)에서는 처음부터 168px 아이콘+글자 고정 표시!
+  const isMessengerMode =
+    location.pathname.includes("/desktop-workspace") ||
+    location.pathname.includes("/messenger");
+  const isExpanded = !isMessengerMode || isRailHovered;
 
   // docs/access-policy.md 원칙:
   // "전역 역할은 마스터뿐이다 (user_roles.role). 그 외 역할은 현장마다 project_members.role_new다. A현장 권한이 B현장으로 넘어가지 않는다."
@@ -275,7 +288,7 @@ export function DesktopRailSidebar() {
             .from("notifications")
             .select("id", { count: "exact", head: true })
             .eq("user_id", user.id)
-            .eq("read", false),
+            .eq("is_read", false),
         ]);
       setTotalUnreadChats(chatUnread || 0);
       setPendingApprovalsCount(approvalCount || 0);
@@ -329,6 +342,44 @@ export function DesktopRailSidebar() {
     updateDesktopTaskbarBadge(totalUnreadChats + pendingApprovalsCount);
   }, [totalUnreadChats, pendingApprovalsCount]);
 
+  // 무설치 원격 자동 업데이트(OTA):
+  // 실행 시 및 10분 주기로 Supabase app_releases의 최신 빌드를 확인해 백그라운드에서 자동 다운로드·교체
+  useEffect(() => {
+    if (
+      !isWindowsDesktopApp() &&
+      window.location.hostname !== "127.0.0.1" &&
+      window.location.hostname !== "localhost"
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const runAutoUpdateCheck = async () => {
+      const res = await checkAndApplyDesktopOtaUpdate();
+      if (!cancelled && res.applied && res.latestVersion) {
+        setStagedUpdateVersion(res.latestVersion);
+        if (res.mandatory) {
+          toast.info(`필수 업데이트(v${res.latestVersion})가 설치되어 화면을 갱신합니다.`);
+          window.setTimeout(() => window.location.reload(), 1200);
+        } else {
+          toast.success(`새 버전(v${res.latestVersion}) 준비 완료`, {
+            description: "재설치 없이 지금 새로고침하면 최신 버전이 즉시 적용됩니다.",
+            action: {
+              label: "지금 적용",
+              onClick: () => window.location.reload(),
+            },
+          });
+        }
+      }
+    };
+    const initTimer = window.setTimeout(() => void runAutoUpdateCheck(), 4000);
+    const interval = window.setInterval(() => void runAutoUpdateCheck(), 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const isItemActive = (item: RailMenuItem): boolean => {
     const pathname = location.pathname;
     const searchParams = new URLSearchParams(location.search);
@@ -365,6 +416,7 @@ export function DesktopRailSidebar() {
   };
 
   const handleSelectItem = (item: RailMenuItem) => {
+    setIsRailHovered(false);
     resizeDesktopWindow(item.windowWidth, item.windowHeight);
     navigate(item.path);
   };
@@ -385,199 +437,233 @@ export function DesktopRailSidebar() {
 
   return (
     <>
-      <aside
-        onMouseEnter={() => setIsRailHovered(true)}
-        onMouseLeave={() => setIsRailHovered(false)}
+      <div
         className={cn(
-          "bg-[#1e2229] text-slate-300 flex flex-col justify-between py-2.5 shrink-0 z-40 select-none transition-[width] duration-200 ease-out border-r border-white/10 overflow-hidden",
-          isRailHovered ? "w-[172px] px-2 shadow-xl" : "w-[54px] px-1.5 items-center",
+          "relative h-full shrink-0 select-none z-40",
+          isMessengerMode ? "w-[54px]" : "w-[168px]",
         )}
       >
-        <div className="flex flex-col gap-1 w-full overflow-y-auto no-scrollbar">
-          {/* 상단 내 상태 아바타 */}
-          <button
-            type="button"
-            onClick={handleCyclePresence}
-            title={`${profile?.display_name || "관리자"} (${currentPresenceMeta.label})`}
-            className={cn(
-              "flex items-center gap-2.5 rounded-xl p-1.5 mb-1 hover:bg-white/10 transition-colors text-left",
-              !isRailHovered && "justify-center",
-            )}
-          >
-            <div className="relative shrink-0">
-              <div className="h-8 w-8 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center shadow-xs">
-                {profile?.display_name?.slice(0, 1) || "S"}
+        <aside
+          onMouseEnter={() => {
+            if (isMessengerMode) setIsRailHovered(true);
+          }}
+          onMouseLeave={() => {
+            if (isMessengerMode) setIsRailHovered(false);
+          }}
+          className={cn(
+            "bg-[#1e2229] text-slate-300 h-full flex flex-col justify-between py-2.5 transition-[width] duration-150 ease-out border-r border-white/10 overflow-hidden",
+            isMessengerMode
+              ? isExpanded
+                ? "absolute inset-y-0 left-0 w-[168px] px-2 shadow-2xl z-50"
+                : "w-[54px] px-1.5 items-center"
+              : "w-[168px] px-2",
+          )}
+        >
+          <div className="flex flex-col gap-0.5 w-full overflow-y-auto no-scrollbar">
+            {/* 상단 내 상태 아바타 */}
+            <button
+              type="button"
+              onClick={handleCyclePresence}
+              title={`${profile?.display_name || "관리자"} (${currentPresenceMeta.label})`}
+              className={cn(
+                "flex items-center gap-2.5 rounded-xl p-1.5 mb-1 hover:bg-white/10 transition-colors text-left",
+                !isExpanded && "justify-center",
+              )}
+            >
+              <div className="relative shrink-0">
+                <div className="h-8 w-8 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center shadow-xs">
+                  {profile?.display_name?.slice(0, 1) || "S"}
+                </div>
+                <span
+                  className={cn(
+                    "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#1e2229]",
+                    currentPresenceMeta.dotClass,
+                  )}
+                />
               </div>
-              <span
-                className={cn(
-                  "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#1e2229]",
-                  currentPresenceMeta.dotClass,
-                )}
-              />
-            </div>
-            {isRailHovered && (
-              <div className="min-w-0 flex-1 overflow-hidden">
-                <p className="text-xs font-bold text-white truncate">
-                  {profile?.display_name || "관리자"}
-                </p>
-                <p className="text-[10px] text-slate-400 truncate">
-                  {currentPresenceMeta.label}
-                </p>
-              </div>
-            )}
-          </button>
+              {isExpanded && (
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <p className="text-xs font-bold text-white truncate">
+                    {profile?.display_name || "관리자"}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {currentPresenceMeta.label}
+                  </p>
+                </div>
+              )}
+            </button>
 
-          {/* 1. 대화상대 / 대화목록 */}
-          {commItems.map((item) => {
-            const Icon = item.icon;
-            const active = isItemActive(item);
-            const badge = item.id === "rooms" ? totalUnreadChats : 0;
+            {/* 1. 대화상대 / 대화목록 */}
+            {commItems.map((item) => {
+              const Icon = item.icon;
+              const active = isItemActive(item);
+              const badge = item.id === "rooms" ? totalUnreadChats : 0;
 
-            return (
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectItem(item)}
+                  title={item.label}
+                  aria-label={item.label}
+                  className={cn(
+                    "relative h-8 rounded-lg flex items-center gap-2.5 transition-all",
+                    isExpanded ? "w-full px-2.5 justify-start" : "w-9 justify-center mx-auto",
+                    active
+                      ? "bg-amber-400 text-slate-950 font-bold shadow-xs"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {isExpanded && (
+                    <span className="text-xs whitespace-nowrap truncate flex-1 text-left">
+                      {item.label}
+                    </span>
+                  )}
+                  {badge > 0 && (
+                    <span
+                      className={cn(
+                        "min-w-[16px] h-4 px-1 rounded-full bg-[#ff3b30] text-white text-[9px] font-extrabold flex items-center justify-center",
+                        !isExpanded && "absolute -top-0.5 -right-0.5",
+                      )}
+                    >
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <div className="w-full h-px bg-white/10 my-1" />
+
+            {/* 2. 주요 시스템 메뉴 (알림 이하 모든 업무 화면은 1260×820 동일 크기 + 아이콘 옆 글자 고정 표시) */}
+            {featureItems.map((item) => {
+              const Icon = item.icon;
+              const active = isItemActive(item);
+              const badge =
+                item.id === "alerts"
+                  ? unreadNotificationsCount
+                  : item.id === "approvals"
+                    ? pendingApprovalsCount
+                    : 0;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectItem(item)}
+                  title={item.label}
+                  aria-label={item.label}
+                  className={cn(
+                    "relative h-8 rounded-lg flex items-center gap-2.5 transition-all",
+                    isExpanded ? "w-full px-2.5 justify-start" : "w-9 justify-center mx-auto",
+                    active
+                      ? "bg-amber-400 text-slate-950 font-bold shadow-xs"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {isExpanded && (
+                    <span className="text-xs whitespace-nowrap truncate flex-1 text-left">
+                      {item.label}
+                    </span>
+                  )}
+                  {badge > 0 && (
+                    <span
+                      className={cn(
+                        "min-w-[15px] h-3.5 px-1 rounded-full text-[9px] font-black flex items-center justify-center",
+                        !isExpanded && "absolute -top-0.5 -right-0.5",
+                        item.id === "alerts"
+                          ? "bg-[#ff3b30] text-white"
+                          : active
+                            ? "bg-slate-950 text-amber-400"
+                            : "bg-amber-400 text-slate-950",
+                      )}
+                    >
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 하단 고정 액션: 무설치 업데이트 알림 / 항상 위 고정 / 환경설정 / 로그아웃 */}
+          <div className="flex flex-col gap-0.5 w-full pt-2 border-t border-white/10">
+            {stagedUpdateVersion && (
               <button
-                key={item.id}
                 type="button"
-                onClick={() => handleSelectItem(item)}
-                title={item.label}
-                aria-label={item.label}
+                onClick={() => window.location.reload()}
+                title={`새 버전(v${stagedUpdateVersion}) 지금 적용`}
                 className={cn(
-                  "relative h-9 rounded-xl flex items-center gap-2.5 transition-all",
-                  isRailHovered ? "w-full px-2.5 justify-start" : "w-9 justify-center mx-auto",
-                  active
-                    ? "bg-amber-400 text-slate-950 font-bold shadow-xs"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white",
+                  "h-8 rounded-lg flex items-center gap-2 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-semibold transition-colors mb-0.5",
+                  isExpanded ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
                 )}
               >
-                <Icon className="h-[18px] w-[18px] shrink-0" />
-                {isRailHovered && (
-                  <span className="text-xs whitespace-nowrap truncate flex-1 text-left">
-                    {item.label}
-                  </span>
-                )}
-                {badge > 0 && (
-                  <span
-                    className={cn(
-                      "min-w-[16px] h-4 px-1 rounded-full bg-[#ff3b30] text-white text-[9px] font-extrabold flex items-center justify-center",
-                      !isRailHovered && "absolute -top-0.5 -right-0.5",
-                    )}
-                  >
-                    {badge > 99 ? "99+" : badge}
+                <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                {isExpanded && (
+                  <span className="text-[11px] whitespace-nowrap truncate">
+                    업데이트 적용 (v{stagedUpdateVersion})
                   </span>
                 )}
               </button>
-            );
-          })}
-
-          <div className="w-full h-px bg-white/10 my-1" />
-
-          {/* 2. 주요 시스템 메뉴 (클릭 시 메신저 대신 해당 화면으로 즉시 전환 + 창 크기 자동 맞춤) */}
-          {featureItems.map((item) => {
-            const Icon = item.icon;
-            const active = isItemActive(item);
-            const badge =
-              item.id === "alerts"
-                ? unreadNotificationsCount
-                : item.id === "approvals"
-                  ? pendingApprovalsCount
-                  : 0;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleSelectItem(item)}
-                title={item.label}
-                aria-label={item.label}
-                className={cn(
-                  "relative h-9 rounded-xl flex items-center gap-2.5 transition-all",
-                  isRailHovered ? "w-full px-2.5 justify-start" : "w-9 justify-center mx-auto",
-                  active
-                    ? "bg-amber-400 text-slate-950 font-bold shadow-xs"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white",
-                )}
-              >
-                <Icon className="h-[17px] w-[17px] shrink-0" />
-                {isRailHovered && (
-                  <span className="text-xs whitespace-nowrap truncate flex-1 text-left">
-                    {item.label}
-                  </span>
-                )}
-                {badge > 0 && (
-                  <span
-                    className={cn(
-                      "min-w-[15px] h-3.5 px-1 rounded-full text-[9px] font-black flex items-center justify-center",
-                      !isRailHovered && "absolute -top-0.5 -right-0.5",
-                      item.id === "alerts"
-                        ? "bg-[#ff3b30] text-white"
-                        : active
-                          ? "bg-slate-950 text-amber-400"
-                          : "bg-amber-400 text-slate-950",
-                    )}
-                  >
-                    {badge > 99 ? "99+" : badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 하단 고정 액션: 항상 위 고정 / 환경설정 / 로그아웃 */}
-        <div className="flex flex-col gap-1 w-full pt-2 border-t border-white/10">
-          <button
-            type="button"
-            onClick={() => {
-              const next = !desktopSettings.alwaysOnTop;
-              const updated = saveDesktopSettings({ alwaysOnTop: next });
-              setDesktopSettings(updated);
-              toast.success(next ? "창 항상 위 고정 켜짐" : "창 항상 위 고정 꺼짐");
-            }}
-            title="항상 위에 고정"
-            className={cn(
-              "h-8 rounded-lg flex items-center gap-2.5 transition-colors",
-              isRailHovered ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
-              desktopSettings.alwaysOnTop
-                ? "text-amber-400 bg-white/10 font-semibold"
-                : "text-slate-400 hover:text-white hover:bg-white/10",
             )}
-          >
-            <Pin className="h-4 w-4 shrink-0" />
-            {isRailHovered && (
-              <span className="text-xs whitespace-nowrap">항상 위 고정</span>
-            )}
-          </button>
 
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            title="환경설정"
-            className={cn(
-              "h-8 rounded-lg flex items-center gap-2.5 text-slate-400 hover:text-white hover:bg-white/10 transition-colors",
-              isRailHovered ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
-            )}
-          >
-            <Settings className="h-4 w-4 shrink-0" />
-            {isRailHovered && (
-              <span className="text-xs whitespace-nowrap">환경설정</span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !desktopSettings.alwaysOnTop;
+                const updated = saveDesktopSettings({ alwaysOnTop: next });
+                setDesktopSettings(updated);
+                toast.success(next ? "창 항상 위 고정 켜짐" : "창 항상 위 고정 꺼짐");
+              }}
+              title="항상 위에 고정"
+              className={cn(
+                "h-8 rounded-lg flex items-center gap-2.5 transition-colors",
+                isExpanded ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
+                desktopSettings.alwaysOnTop
+                  ? "text-amber-400 bg-white/10 font-semibold"
+                  : "text-slate-400 hover:text-white hover:bg-white/10",
+              )}
+            >
+              <Pin className="h-4 w-4 shrink-0" />
+              {isExpanded && (
+                <span className="text-xs whitespace-nowrap">항상 위 고정</span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            title="로그아웃"
-            className={cn(
-              "h-8 rounded-lg flex items-center gap-2.5 text-slate-400 hover:text-red-400 hover:bg-white/10 transition-colors",
-              isRailHovered ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
-            )}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {isRailHovered && (
-              <span className="text-xs whitespace-nowrap">로그아웃</span>
-            )}
-          </button>
-        </div>
-      </aside>
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              title="환경설정 및 업데이트"
+              className={cn(
+                "h-8 rounded-lg flex items-center gap-2.5 text-slate-400 hover:text-white hover:bg-white/10 transition-colors",
+                isExpanded ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
+              )}
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+              {isExpanded && (
+                <span className="text-xs whitespace-nowrap">환경설정</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              title="로그아웃"
+              className={cn(
+                "h-8 rounded-lg flex items-center gap-2.5 text-slate-400 hover:text-red-400 hover:bg-white/10 transition-colors",
+                isExpanded ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
+              )}
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              {isExpanded && (
+                <span className="text-xs whitespace-nowrap">로그아웃</span>
+              )}
+            </button>
+          </div>
+        </aside>
+      </div>
 
       <DesktopAppSettingsDialog
         open={isSettingsOpen}

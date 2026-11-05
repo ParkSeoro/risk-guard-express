@@ -26,3 +26,8 @@ verify_jwt = false
 # Gateway QR start / kit claim are device calls without a user JWT. Auth is inside the function.
 [functions.vision-fleet]
 verify_jwt = false
+
+# PC app → safenex.org login handoff. Verifies the caller JWT inside, then mints a one-time
+# magic link for that same user only (service role Admin API).
+[functions.desktop-web-handoff]
+verify_jwt = false

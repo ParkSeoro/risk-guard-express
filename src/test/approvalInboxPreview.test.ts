@@ -22,6 +22,12 @@ describe("approval inbox preview paths", () => {
     expect(desktopApprovalEntityPath("safety_inspection", "ins-1")).toBe(
       "/safety-inspections?id=ins-1",
     );
+    expect(desktopApprovalEntityPath("safety_cost", "rep-1")).toBe(
+      "/app/admin/safety-cost?reportId=rep-1",
+    );
+    expect(desktopApprovalEntityPathFromInbox("safety_cost", "rep-1")).toBe(
+      "/app/admin/safety-cost?reportId=rep-1&from=approvals",
+    );
   });
 
   it("keeps feedback entity type when a run is linked", () => {
@@ -61,6 +67,7 @@ describe("approval inbox preview paths", () => {
     expect(canInlineApprovalPreview("assessment_run")).toBe(true);
     expect(canInlineApprovalPreview("assessment_run_feedback")).toBe(true);
     expect(canInlineApprovalPreview("safety_inspection")).toBe(true);
+    expect(canInlineApprovalPreview("safety_cost")).toBe(true);
     expect(canInlineApprovalPreview("tbm")).toBe(false);
   });
 });

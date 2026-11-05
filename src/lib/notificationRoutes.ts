@@ -28,7 +28,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   assessment_run: (id) => (id ? `${ADMIN}/assessment-run/${id}` : `${ADMIN}/risk-assessment`),
   assessment_run_feedback: (id) => (id ? `${ADMIN}/assessment-run/${id}?tab=feedback` : `${ADMIN}/risk-assessment`),
   approval: () => `${ADMIN}/approvals`,
-  safety_cost: () => `${ADMIN}/safety-cost`,
+  safety_cost: (id) => (id ? `${ADMIN}/safety-cost?reportId=${id}` : `${ADMIN}/safety-cost`),
   safety_inspection: (id) =>
     id ? `${ADMIN}/safety-inspections?id=${id}` : `${ADMIN}/safety-inspections`,
   incident: () => `${ADMIN}/incidents`,
@@ -39,7 +39,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   todo: () => `${ADMIN}/todo`,
   work_stop: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
   work_stop_request: (id) => (id ? `${ADMIN}/work-stop?id=${id}` : `${ADMIN}/work-stop`),
-  safety_cost_report: () => `${ADMIN}/safety-cost`,
+  safety_cost_report: (id) => (id ? `${ADMIN}/safety-cost?reportId=${id}` : `${ADMIN}/safety-cost`),
   education: () => `${ADMIN}/worker-education`,
   worker: () => `${ADMIN}/workers`,
   chemical: () => `${ADMIN}/health/chemicals`,

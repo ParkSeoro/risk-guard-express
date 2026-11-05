@@ -20,6 +20,9 @@ import {
 } from "@/lib/approvalDocPreview";
 import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
 import { fetchOfficialInspectionPrintHtml } from "@/lib/safetyInspectionPrint";
+import { loadSafetyCostDocument } from "@/lib/safetyCostDocumentLoad";
+import { buildSafetyCostDocument, defaultSafetyCostPrintScope, type SafetyCostDocFile } from "@/lib/safetyCostDocumentBuilder";
+import SafetyCostFileList from "@/components/safety-cost/SafetyCostFileList";
 import { supabase } from "@/integrations/supabase/client";
 import { entityTypeLabel } from "@/lib/approvalRules";
 import {
@@ -48,6 +51,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
     permitType?: string | null;
     permitKinds?: unknown;
   }>({});
+  const [safetyFiles, setSafetyFiles] = useState<SafetyCostDocFile[]>([]);
 
   const entityType = target?.entityType || "";
   const entityId = target?.entityId || "";
@@ -56,6 +60,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
   const isAssessment =
     entityType === "assessment_run" || entityType === "assessment_run_feedback";
   const isSafetyInspection = entityType === "safety_inspection";
+  const isSafetyCost = entityType === "safety_cost";
   const inlineOk = canInlineApprovalPreview(entityType);
   const fullPath = desktopApprovalEntityPathFromInbox(entityType, entityId);
   const title =
@@ -75,6 +80,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
       setLoading(true);
       setError(null);
       setHtml(null);
+      setSafetyFiles([]);
       try {
         if (entityType === "work_permit") {
           const { data: p, error: pe } = await supabase
@@ -118,6 +124,14 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           if (cancelled) return;
           if ("error" in res) throw new Error(res.error);
           setHtml(res.html);
+        } else if (entityType === "safety_cost") {
+          setPageWidth(A4_PORTRAIT_PX);
+          setLoadHint("사용내역서를 불러오는 중…");
+          const input = await loadSafetyCostDocument(entityId);
+          if (cancelled) return;
+          const built = buildSafetyCostDocument(input, defaultSafetyCostPrintScope(input.report.source === "legacy_import"));
+          setSafetyFiles(built.files);
+          setHtml(built.html);
         }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || String(e) || "문서를 불러오지 못했습니다.");
@@ -238,6 +252,25 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
               className="h-full min-h-[60vh]"
               emptyHint="표시할 문서가 없습니다"
             />
+          )}
+
+          {inlineOk && !loading && !error && isSafetyCost && (
+            <div className="h-full min-h-[60vh] flex flex-col">
+              <div className="flex-1 min-h-[40vh]">
+                <ZoomableDocumentPreview
+                  html={html}
+                  loading={false}
+                  error={null}
+                  pageWidth={pageWidth}
+                  active={open}
+                  className="h-full min-h-[40vh]"
+                  emptyHint="표시할 문서가 없습니다"
+                />
+              </div>
+              <div className="p-3 border-t bg-background">
+                <SafetyCostFileList files={safetyFiles} />
+              </div>
+            </div>
           )}
         </div>
 

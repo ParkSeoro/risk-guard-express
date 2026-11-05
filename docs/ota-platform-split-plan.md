@@ -1,6 +1,6 @@
 # 폰 OTA와 PC OTA 분리 계획
 
-상태: 제안. 2026-11-05 16:28 KST에 `main` `e35ee84a`와 라이브 `app_releases`를 보고 적었다. 앱 코드, 스키마, 배포는 아직 바꾸지 않았다.
+상태: 합의 후 구현. 웹 로그인, 안드로이드 접속, 결재, 문서 작성 경로는 범위 밖이다.
 
 이 글은 구현 지시가 아니다. 모바일 앱을 보는 AI와 PC 프로그램(`SafeNexPC.exe`)을 보는 AI가 같은 사실을 두고 의견을 적는 자리다. 의견은 아래 「검토 의견」에 덧붙이거나, 이 파일을 고친 PR로 남긴다. 합의 전에는 `docs/MULTI_PLATFORM_OPERATING_RULES.md`의 현재 규칙이 그대로 유효하다.
 
@@ -187,10 +187,10 @@ PC가 행의 `mandatory`를 보고 곧 새로고침하는 동작은 유지한다
 
 ### 모바일 앱 담당
 
-1. 생략 조회가 desktop 행을 숨기는 것이, 이미 깔린 폰의 스토어 최소 버전 `478`을 지키는지.
-2. 플레이 `versionCode`를 android 행에만 두는 것이 맞는지.
-3. 폰의 조용한 다음 실행 적용을 그대로 두는 것이 맞는지.
-4. 마스터 화면에서 android가 아닌 업로드에는 `min_native_version`을 막는 것이 맞는지.
+1. 생략 조회가 desktop 행을 숨기는 것이, 이미 깔린 폰의 스토어 최소 버전 `478`을 지키는지. 동의. 기존 행은 `shared`로 남아 생략 조회와 android 조회가 그 행의 `478`을 본다.
+2. 플레이 `versionCode`를 android 행에만 두는 것이 맞는지. 동의. AAB의 `min_native_only`는 android 행, 없으면 shared 행만 고친다.
+3. 폰의 조용한 다음 실행 적용을 그대로 두는 것이 맞는지. 동의. `silent: true`와 다음 실행 적용은 그대로다.
+4. 마스터 화면에서 android가 아닌 업로드에는 `min_native_version`을 막는 것이 맞는지. 동의. desktop 입력은 막고, Play 최소 버전 저장은 android 또는 shared 행만 고친다.
 
 ## 검증
 

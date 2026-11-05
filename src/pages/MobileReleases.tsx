@@ -12,8 +12,21 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navigate } from "react-router-dom";
 
+function androidRelease(rows: Release[]): Release | null {
+  return rows.find((r) => r.channel === "stable" && (r.platform || "shared") === "android")
+    || rows.find((r) => r.channel === "stable" && (r.platform || "shared") === "shared")
+    || rows.find((r) => (r.platform || "shared") === "android")
+    || rows.find((r) => (r.platform || "shared") === "shared")
+    || null;
+}
+
+function inheritedAndroidMin(rows: Release[], channel: string): string | null {
+  const same = rows.filter((r) => r.channel === channel);
+  return androidRelease(same)?.min_native_version || null;
+}
+
 type Release = {
-  id: string; version: string; channel: string; bundle_url: string;
+  id: string; version: string; channel: string; platform?: string; bundle_url: string;
   checksum: string | null; mandatory: boolean; min_native_version: string | null;
   notes: string | null; released_at: string; is_deleted: boolean;
 };
@@ -25,7 +38,7 @@ export default function MobileReleases() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({
-    version: "", channel: "stable", mandatory: false,
+    version: "", channel: "stable", platform: "android", mandatory: false,
     min_native_version: "", notes: "",
   });
   const [file, setFile] = useState<File | null>(null);
@@ -42,13 +55,13 @@ export default function MobileReleases() {
     if (error) toast.error(error.message);
     const rows = ((data as any) || []) as Release[];
     setList(rows);
-    const latest = rows.find((r) => r.channel === "stable") || rows[0];
+    const latest = androidRelease(rows);
     if (latest) setMinDraft(latest.min_native_version || "");
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
-  const latestRelease = list.find((r) => r.channel === "stable") || list[0] || null;
+  const latestRelease = androidRelease(list);
 
   if (!isMaster) return <Navigate to="/" replace />;
 
@@ -71,18 +84,28 @@ export default function MobileReleases() {
       const checksum = Array.from(new Uint8Array(hashBuf))
         .map(b => b.toString(16).padStart(2, "0")).join("");
 
-      const { error } = await supabase.from("app_releases" as any).insert({
-        version: form.version.trim(),
-        channel: form.channel,
-        bundle_url: bundleUrl,
-        checksum,
-        mandatory: form.mandatory,
-        min_native_version: form.min_native_version.trim() || null,
-        notes: form.notes.trim() || null,
-      });
-      if (error) throw error;
+      const platforms = form.platform === "both" ? ["android", "desktop"] : [form.platform];
+      if (form.platform !== "android" && form.min_native_version.trim()) {
+        throw new Error("최소 네이티브 버전은 android 행에만 저장합니다.");
+      }
+      const inheritedMin = inheritedAndroidMin(list, form.channel);
+      for (const platform of platforms) {
+        const { error } = await supabase.from("app_releases" as any).insert({
+          version: form.version.trim(),
+          channel: form.channel,
+          platform,
+          bundle_url: bundleUrl,
+          checksum,
+          mandatory: form.mandatory,
+          min_native_version: platform === "android"
+            ? (form.min_native_version.trim() || inheritedMin)
+            : null,
+          notes: form.notes.trim() || null,
+        });
+        if (error) throw error;
+      }
       toast.success("릴리스가 게시되었습니다");
-      setForm({ version: "", channel: "stable", mandatory: false, min_native_version: "", notes: "" });
+      setForm({ version: "", channel: "stable", platform: "android", mandatory: false, min_native_version: "", notes: "" });
       setFile(null);
       load();
     } catch (e: any) {
@@ -131,7 +154,8 @@ export default function MobileReleases() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              최신 OTA <span className="font-mono">{latestRelease.version}</span> ({latestRelease.channel})에 저장합니다.
+              최신 android OTA <span className="font-mono">{latestRelease.version}</span> ({latestRelease.channel})에 저장합니다.
+              desktop 행은 바꾸지 않습니다.
               폰 <b>더보기 → 앱 버전</b> 괄호 숫자보다 <b>큰</b> Play versionCode를 넣으세요. 예: 설치됨 468이면 새 AAB가 470이면 <span className="font-mono">470</span>.
             </p>
             <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
@@ -173,13 +197,35 @@ export default function MobileReleases() {
               </SelectContent>
             </Select>
           </div>
+          <div><Label>플랫폼</Label>
+            <Select
+              value={form.platform}
+              onValueChange={v => setForm({
+                ...form,
+                platform: v,
+                min_native_version: v === "android" ? form.min_native_version : "",
+              })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="android">android (폰)</SelectItem>
+                <SelectItem value="desktop">desktop (PC)</SelectItem>
+                <SelectItem value="both">android + desktop (같은 zip)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div><Label>번들 zip ( dist/ 폴더 압축 )</Label>
             <Input type="file" accept=".zip" onChange={e => setFile(e.target.files?.[0] || null)} />
           </div>
           <div><Label>최소 네이티브 버전 (Play 스토어 안내)</Label>
-            <Input value={form.min_native_version} onChange={e => setForm({ ...form, min_native_version: e.target.value })} placeholder="1.1.1 또는 versionCode 470" />
+            <Input
+              value={form.min_native_version}
+              disabled={form.platform !== "android"}
+              onChange={e => setForm({ ...form, min_native_version: e.target.value })}
+              placeholder={form.platform === "android" ? "versionCode 478" : "android 행만 입력"}
+            />
             <p className="text-[11px] text-muted-foreground mt-1">
-              폰의 versionName 또는 versionCode가 이 값보다 낮으면 Play 스토어로 보냅니다. 비우면 안내 없음.
+              android가 아니면 저장하지 않습니다. 비우면 직전 android 또는 shared 값을 잇습니다.
             </p>
           </div>
           <div className="md:col-span-2 flex items-center gap-2">
@@ -205,13 +251,14 @@ export default function MobileReleases() {
             list.length === 0 ? <div className="text-sm text-muted-foreground">아직 릴리스가 없습니다.</div> :
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-muted-foreground">
-                <tr><th className="py-2">버전</th><th>채널</th><th>필수</th><th>네이티브 최소</th><th>게시일</th><th>노트</th><th></th></tr>
+                <tr><th className="py-2">버전</th><th>채널</th><th>플랫폼</th><th>필수</th><th>네이티브 최소</th><th>게시일</th><th>노트</th><th></th></tr>
               </thead>
               <tbody>
                 {list.map(r => (
                   <tr key={r.id} className="border-t">
                     <td className="py-2 font-mono">{r.version}</td>
                     <td><Badge variant={r.channel === "stable" ? "default" : "secondary"}>{r.channel}</Badge></td>
+                    <td className="font-mono text-xs">{r.platform || "shared"}</td>
                     <td>{r.mandatory ? <Badge variant="destructive">필수</Badge> : "-"}</td>
                     <td className="font-mono text-xs">{r.min_native_version || "미설정"}</td>
                     <td>{new Date(r.released_at).toLocaleString("ko-KR")}</td>

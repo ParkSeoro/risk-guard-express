@@ -12,6 +12,7 @@ import {
   setDesktopShellActive,
   isDesktopUpdateAvailable,
   cmpDesktopVersion,
+  desktopShellEndpoints,
 } from "@/lib/desktopBridge";
 import { DESKTOP_RAIL_ITEMS } from "@/components/desktop/DesktopRailSidebar";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
@@ -129,9 +130,11 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
   });
 
   it("accurately detects updates for CI timestamped and launcher releases", () => {
-    // 1. Critical bug fix: Server has timestamped release 1.1.1-202611050225, but local app had 1.1.4
-    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.4")).toBe(true);
-    expect(cmpDesktopVersion("1.1.1-202611050225", "1.1.4")).toBe(1);
+    // A lower number does not replace a higher install, even with a newer timestamp.
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.4")).toBe(false);
+    expect(cmpDesktopVersion("1.1.1-202611050225", "1.1.4")).toBe(-1);
+    expect(isDesktopUpdateAvailable("1.1.4-202611059999", "1.1.5")).toBe(false);
+    expect(isDesktopUpdateAvailable("1.1.5-202611050559", "1.1.5")).toBe(true);
 
     // 2. Server has newer timestamp
     expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.1-202611050215")).toBe(true);
@@ -155,5 +158,15 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
     expect(isDesktopUpdateAvailable("1.1.1-202611050225", "내장")).toBe(true);
     expect(isDesktopUpdateAvailable("1.1.1-202611050225", "0.0.0")).toBe(true);
     expect(isDesktopUpdateAvailable(null, "1.1.4")).toBe(false);
+  });
+
+  it("calls the desktop shell on its current local origin", () => {
+    expect(desktopShellEndpoints("/__desktop/version", "http://127.0.0.1:54321")).toEqual([
+      "http://127.0.0.1:54321/__desktop/version",
+      "/__desktop/version",
+    ]);
+    expect(desktopShellEndpoints("/__desktop/apply-ota?version=1", "https://safenex.org")).toEqual([
+      "/__desktop/apply-ota?version=1",
+    ]);
   });
 });

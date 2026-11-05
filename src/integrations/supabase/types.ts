@@ -479,6 +479,7 @@ export type Database = {
           mandatory: boolean
           min_native_version: string | null
           notes: string | null
+          platform: string
           released_at: string
           updated_at: string
           version: string
@@ -494,6 +495,7 @@ export type Database = {
           mandatory?: boolean
           min_native_version?: string | null
           notes?: string | null
+          platform?: string
           released_at?: string
           updated_at?: string
           version: string
@@ -509,6 +511,7 @@ export type Database = {
           mandatory?: boolean
           min_native_version?: string | null
           notes?: string | null
+          platform?: string
           released_at?: string
           updated_at?: string
           version?: string
@@ -10080,7 +10083,7 @@ export type Database = {
       }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
       get_latest_app_release: {
-        Args: { _channel?: string }
+        Args: { _channel?: string; _platform?: string }
         Returns: {
           bundle_url: string
           channel: string

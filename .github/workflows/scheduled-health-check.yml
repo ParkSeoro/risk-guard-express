@@ -114,11 +114,16 @@ jobs:
               warningIssues.push(`데이터 정합성 결함 발견: 총 ${consistencyRes.data.total_issues}건`);
             }
 
-            // 3. OTA Release Check
+            // 3. OTA Release Check — phone and PC rows stay separate
             let latestRelease = null;
-            const releaseRes = await callRpc("get_latest_app_release", { _channel: "stable" });
+            let desktopRelease = null;
+            const releaseRes = await callRpc("get_latest_app_release", { _channel: "stable", _platform: "android" });
             if (releaseRes.ok && Array.isArray(releaseRes.data) && releaseRes.data.length > 0) {
               latestRelease = releaseRes.data[0];
+            }
+            const desktopRes = await callRpc("get_latest_app_release", { _channel: "stable", _platform: "desktop" });
+            if (desktopRes.ok && Array.isArray(desktopRes.data) && desktopRes.data.length > 0) {
+              desktopRelease = desktopRes.data[0];
             }
 
             // Status determination
@@ -136,7 +141,10 @@ jobs:
             msg += `• <b>상태 판정</b>: ${statusBadge}\n`;
             msg += `• <b>원격 DB 연결</b>: ${integrityRes.ok ? "✅ 정상" : "❌ 연결 실패"}\n`;
             if (latestRelease) {
-              msg += `• <b>현재 배포본(OTA)</b>: <code>${latestRelease.version}</code> (${latestRelease.mandatory ? "필수" : "선택"})\n`;
+              msg += `• <b>폰 OTA</b>: <code>${latestRelease.version}</code> (${latestRelease.mandatory ? "필수" : "선택"})\n`;
+            }
+            if (desktopRelease) {
+              msg += `• <b>PC OTA</b>: <code>${desktopRelease.version}</code> (${desktopRelease.mandatory ? "필수" : "선택"})\n`;
             }
             msg += `───────────────────────\n`;
 

@@ -6,6 +6,8 @@
  *   Multi-Window Pop-out Chat / Work Modules, and Taskbar Unread Badge & FlashFrame.
  */
 
+import { isOtaUpdateAvailable } from "@/lib/otaVersion";
+
 export type DesktopWindowMode = "compact" | "expanded";
 export type DesktopPresenceStatus = "online" | "busy" | "away" | "inspecting";
 
@@ -472,73 +474,25 @@ const DESKTOP_BUNDLE_VERSION_KEY = "safenex_pc_bundle_version";
 export const DESKTOP_DEFAULT_VERSION = "1.1.5";
 
 /**
- * Robust version comparison for SafeNex PC OTA Auto-Updater:
- * Handles semantic versions (1.1.5), CI timestamped releases (1.1.1-202611050225),
- * and un-timestamped launcher builds (1.1.4 / 1.1.1).
+ * Same numeric compare as the phone. A lower release number does not replace
+ * a higher installed build just because the server row has a timestamp.
  */
 export function isDesktopUpdateAvailable(
   latestVersion: string | null | undefined,
   currentVersion: string | null | undefined,
 ): boolean {
-  const latest = (latestVersion || "").trim();
-  const current = (currentVersion || "").trim();
-  if (!latest) return false;
-  if (!current || current === "내장" || current === "0.0.0" || current.startsWith("test-")) {
-    return true;
+  return isOtaUpdateAvailable(latestVersion, currentVersion);
+}
+
+/** Local shell endpoints. Uses the page origin when it is already the desktop server. */
+export function desktopShellEndpoints(pathAndQuery: string, origin?: string | null): string[] {
+  const path = pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`;
+  const urls: string[] = [];
+  if (origin && /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin)) {
+    urls.push(`${origin}${path}`);
   }
-  if (latest === current) return false;
-
-  const parseVersion = (v: string) => {
-    const match = v.match(/^(\d+(?:\.\d+)*)(?:[-._](\d{8,14}))?$/);
-    if (!match) {
-      const nums = v.match(/\d+/g) || [];
-      const hasTimestamp =
-        nums.length > 3 || (nums[nums.length - 1] && nums[nums.length - 1].length >= 8);
-      return {
-        semver: nums.slice(0, 3).map(Number),
-        timestamp: hasTimestamp ? Number(nums[nums.length - 1]) : 0,
-      };
-    }
-    const semverParts = match[1].split(".").map(Number);
-    const timestamp = match[2] ? Number(match[2]) : 0;
-    return { semver: semverParts, timestamp };
-  };
-
-  const pLatest = parseVersion(latest);
-  const pCurrent = parseVersion(current);
-
-  const maxSemverLen = Math.max(pLatest.semver.length, pCurrent.semver.length);
-  let semverDiff = 0;
-  for (let i = 0; i < maxSemverLen; i++) {
-    const l = pLatest.semver[i] || 0;
-    const c = pCurrent.semver[i] || 0;
-    if (l !== c) {
-      semverDiff = l - c;
-      break;
-    }
-  }
-
-  // 1) Higher semver -> update available
-  if (semverDiff > 0) return true;
-
-  // 2) Identical semver -> compare timestamp
-  if (semverDiff === 0) {
-    if (pLatest.timestamp && pCurrent.timestamp) {
-      return pLatest.timestamp > pCurrent.timestamp;
-    }
-    if (pLatest.timestamp && !pCurrent.timestamp) {
-      return true;
-    }
-  }
-
-  // 3) Resilient fallback: If latest is an official timestamped CI production release (e.g. 1.1.1-202611050225)
-  // from Supabase app_releases, but current is an un-timestamped launcher or dev build (e.g. 1.1.4 / 1.1.1),
-  // and they differ, apply the production release!
-  if (pLatest.timestamp && !pCurrent.timestamp) {
-    return true;
-  }
-
-  return false;
+  urls.push(path);
+  return [...new Set(urls)];
 }
 
 export function cmpDesktopVersion(a: string, b: string): number {
@@ -567,7 +521,10 @@ export async function getDesktopVersionInfo(): Promise<{
     }
   }
 
-  const endpoints = ["/__desktop/version", "http://127.0.0.1:45780/__desktop/version"];
+  const endpoints = desktopShellEndpoints(
+    "/__desktop/version",
+    typeof window !== "undefined" ? window.location.origin : null,
+  );
   for (const url of endpoints) {
     try {
       const res = await fetch(url, { cache: "no-store" });
@@ -616,6 +573,7 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
     const ota = getOtaAnonClient();
     const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: channel,
+      _platform: "desktop",
     } as any);
 
     if (error) {
@@ -673,11 +631,10 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
       downloadUrl = signed.signedUrl;
     }
 
-    // Instruct local SafeNexPC.exe resident server to download & extract the new bundle into %LOCALAPPDATA%\SafeNexPC\www
-    const applyEndpoints = [
+    const applyEndpoints = desktopShellEndpoints(
       `/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
-      `http://127.0.0.1:45780/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
-    ];
+      typeof window !== "undefined" ? window.location.origin : null,
+    );
 
     let applyRes: Response | null = null;
     let lastStatus = 0;
@@ -706,7 +663,7 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
         currentVersion,
         latestVersion,
         message: isPc
-          ? `로컬 업데이트 적용 실패 (포트 45780 연결 불가 또는 HTTP ${lastStatus || "통신 오류"})`
+          ? `로컬 업데이트 적용 실패 (HTTP ${lastStatus || "통신 오류"})`
           : "무설치 자동 업데이트는 SafeNex PC 설치 버전에서 동작합니다.",
       };
     }

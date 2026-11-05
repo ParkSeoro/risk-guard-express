@@ -17,10 +17,16 @@ describe("AAB CI auto-saves min_native_version", () => {
     expect(fn).toContain("min_native_only");
     expect(fn).toContain("missing_min_native");
     expect(fn).toContain("Keep the Play floor across OTA publishes");
+    expect(fn).toContain("X-OTA-Platform");
+    expect(fn).toContain("min_native_desktop");
+    expect(fn).toContain("desktop rows keep min_native_version empty");
+    expect(fn).toContain('platform === "android"');
   });
 
   it("AAB workflow posts JSON and fails the job if save fails", () => {
     expect(aab).toContain("X-OTA-Set-Min-Native-Only: 1");
+    expect(aab).toContain("X-OTA-Platform: android");
+    expect(aab).toContain('platform\\":\\"android\\"');
     expect(aab).toContain("min_native_only");
     expect(aab).toContain("min_native_version");
     expect(aab).toContain("::error::min_native_version");

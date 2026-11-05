@@ -148,6 +148,7 @@ jobs:
             -H "Content-Type: application/zip" \
             -H "X-OTA-Version: $VERSION" \
             -H "X-OTA-Channel: $CHANNEL" \
+            -H "X-OTA-Platform: both" \
             -H "X-OTA-Mandatory: $MANDATORY" \
             -H "X-OTA-Notes: CI publish from ${COMMIT:0:7}" \
             --data-binary "@$ZIP")

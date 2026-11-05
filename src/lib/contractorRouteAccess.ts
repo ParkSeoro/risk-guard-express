@@ -10,6 +10,9 @@ export const ADMIN_APP_BASE = "/app/admin";
  */
 export const CONTRACTOR_ALLOWED_PREFIXES = [
   "/",
+  "/desktop-workspace",
+  "/messenger",
+  "/announcements",
   "/work-plans",
   "/work-plan/",
   "/work-permits",

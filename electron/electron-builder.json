@@ -1,0 +1,35 @@
+{
+  "appId": "kr.safenex.desktop",
+  "productName": "SafeNex PC",
+  "directories": {
+    "output": "release-desktop"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*"
+  ],
+  "extraMetadata": {
+    "main": "electron/main.cjs"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/favicon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "SafeNex PC 안전관리 메신저",
+    "runAfterFinish": true
+  }
+}

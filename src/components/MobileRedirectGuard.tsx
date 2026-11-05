@@ -17,6 +17,7 @@ export { setForceDesktop, isForceDesktop };
 // Public / worker-native paths — never auto-bounce
 const MOBILE_EXCLUDE = [
   /^\/app\/worker(\/|$)/,
+  /^\/app\/admin\/desktop-workspace(\/|$)/,
   /^\/m(\/|$)/,
   /^\/auth/,
   /^\/login/,

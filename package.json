@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "typecheck:undeclared": "node scripts/check-undeclared-names.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "desktop:dev": "electron electron/main.cjs",
+    "desktop:build:win": "vite build && npx --yes electron-builder --config electron/electron-builder.json --win --x64"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

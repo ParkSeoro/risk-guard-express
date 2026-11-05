@@ -31,6 +31,13 @@ import {
   workerPhoneSchema,
 } from '@/lib/workerAuth';
 import { rememberWorkerLoginOnDevice, workerLoginPrefill, loadWorkerLoginMemory } from '@/lib/workerLoginMemory';
+import {
+  isWindowsDesktopApp,
+  loadDesktopSettings,
+  loadManagerLoginMemory,
+  saveDesktopSettings,
+  saveManagerLoginMemory,
+} from '@/lib/desktopBridge';
 import { initialLoginAudience } from '@/lib/loginAudience';
 import { Checkbox } from '@/components/ui/checkbox';
 import { writeLoginIntent } from '@/components/AuthGuard';
@@ -105,8 +112,17 @@ const Auth = () => {
   );
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => loadManagerLoginMemory().email);
   const [password, setPassword] = useState('');
+  const [rememberManagerEmail, setRememberManagerEmail] = useState(
+    () => loadManagerLoginMemory().rememberEmail,
+  );
+  const [autoStartDesktopOnBoot, setAutoStartDesktopOnBoot] = useState(
+    () => loadDesktopSettings().autoStartOnBoot,
+  );
+  const [launchDesktopWorkspaceOnLogin, setLaunchDesktopWorkspaceOnLogin] = useState(
+    () => loadDesktopSettings().launchMessengerWorkspaceOnLogin,
+  );
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState(() => workerLoginPrefill().phone);
   const [pin, setPin] = useState(() => workerLoginPrefill().pin);
@@ -378,6 +394,16 @@ const Auth = () => {
           title: '로그인 실패',
           description: authBannedErrorMessage(loginResult.error.message) || loginResult.error.message,
           variant: 'destructive',
+        });
+      } else {
+        saveManagerLoginMemory({
+          email,
+          rememberEmail: rememberManagerEmail,
+          autoLoginEnabled: rememberManagerEmail,
+        });
+        saveDesktopSettings({
+          autoStartOnBoot: autoStartDesktopOnBoot,
+          launchMessengerWorkspaceOnLogin: launchDesktopWorkspaceOnLogin,
         });
       }
       // AuthRoute → postLoginPath → /consent 또는 모바일=/app/worker/menu · 데스크톱=/app/admin
@@ -1071,6 +1097,37 @@ const Auth = () => {
                     minLength={8}
                   />
                 </div>
+                {isWindowsDesktopApp() && (
+                  <div className="rounded-md border border-border/80 bg-muted/30 px-3 py-2.5 space-y-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <Checkbox
+                        className="mt-0.5"
+                        checked={rememberManagerEmail}
+                        onCheckedChange={(v) => setRememberManagerEmail(v === true)}
+                      />
+                      <span className="text-xs leading-snug">
+                        자동 로그인 및 이메일 저장
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">
+                          카카오톡 PC버전처럼 다음 실행 시 로그인 상태를 유지합니다.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer pt-1.5 border-t border-border/50">
+                      <Checkbox
+                        className="mt-0.5"
+                        checked={autoStartDesktopOnBoot}
+                        onCheckedChange={(v) => {
+                          const on = v === true;
+                          setAutoStartDesktopOnBoot(on);
+                          saveDesktopSettings({ autoStartOnBoot: on });
+                        }}
+                      />
+                      <span className="text-xs leading-snug">
+                        윈도우 시작 시 SafeNex PC 자동 실행
+                      </span>
+                    </label>
+                  </div>
+                )}
               </>
             )}
 

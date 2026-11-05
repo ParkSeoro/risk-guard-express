@@ -1,15 +1,4 @@
-// SafeNex PC 프로그램 → 공식 웹사이트(safenex.org) 로그인 이어가기.
-//
-// PC 앱의 세션 토큰을 URL로 넘기지 않는다. 같은 refresh token을 두 곳에서 쓰면
-// 한쪽이 갱신할 때 다른 쪽이 로그아웃되거나 세션 전체가 폐기될 수 있다.
-// 대신 로그인한 본인에게만 1회용 매직링크를 새로 만들어 돌려준다.
-// 브라우저가 그 링크를 열면 Supabase Auth가 웹 전용 새 세션을 만들어 safenex.org로 보낸다.
-//
-// - 호출자 JWT를 직접 검증한다 (verify_jwt = false, config.toml 참고).
-// - 이메일은 요청 본문이 아니라 검증된 JWT의 사용자에서만 가져온다. 다른 사람 링크는 만들 수 없다.
-// - 이동 주소는 safenex.org 계열 https 주소만 허용한다.
-// - 실패는 HTTP 200 + { ok: false } 로 돌려준다. PC 앱은 실패 시 로그인 없는 일반 주소로 연다.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +42,7 @@ Deno.serve(async (req) => {
     if (!token) return json({ ok: false, error: "unauthorized" });
 
     const userClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
+      global: { headers: { Authorization: "Bearer " + token } },
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { data: userData, error: userErr } = await userClient.auth.getUser(token);
@@ -82,7 +71,16 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "link_failed", detail: linkErr?.message ?? "no link" });
     }
 
-    return json({ ok: true, url: actionLink, target: redirectTo });
+    let finalUrl = actionLink;
+    try {
+      const parsedUrl = new URL(actionLink);
+      parsedUrl.searchParams.set("redirect_to", redirectTo);
+      finalUrl = parsedUrl.toString();
+    } catch {
+      finalUrl = actionLink;
+    }
+
+    return json({ ok: true, url: finalUrl, target: redirectTo });
   } catch (e) {
     return json({ ok: false, error: "internal", detail: e instanceof Error ? e.message : String(e) });
   }

@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { playMessengerChime } from "@/lib/messengerSound";
 
 export type RailTargetId =
   | "directory"
@@ -279,22 +280,20 @@ export function DesktopRailSidebar() {
   const loadBadges = useCallback(async () => {
     if (!user) return;
     try {
-      const [chatUnread, { count: approvalCount }, { count: notifCount }] =
+      const [chatUnread, approvalRes, { count: notifCount }] =
         await Promise.all([
           fetchChatUnreadTotal(),
-          supabase
-            .from("approvals")
-            .select("id", { count: "exact", head: true })
-            .eq("approver_id", user.id)
-            .eq("status", "pending"),
+          supabase.rpc("count_my_pending_entity_approvals"),
           supabase
             .from("notifications")
             .select("id", { count: "exact", head: true })
             .eq("user_id", user.id)
             .eq("is_read", false),
         ]);
+      const approvalCount =
+        typeof approvalRes?.data === "number" ? approvalRes.data : 0;
       setTotalUnreadChats(chatUnread || 0);
-      setPendingApprovalsCount(approvalCount || 0);
+      setPendingApprovalsCount(approvalCount);
       setUnreadNotificationsCount(notifCount || 0);
     } catch {
       /* ignore */
@@ -312,17 +311,35 @@ export function DesktopRailSidebar() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_room_messages" },
-        () => void loadBadges(),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "approvals",
-          filter: `approver_id=eq.${user.id}`,
+        (payload: any) => {
+          void loadBadges();
+          if (payload.eventType === "INSERT") {
+            const newMsg = payload.new;
+            if (newMsg && newMsg.sender_id !== user.id) {
+              if (desktopSettings.soundNotification !== false) {
+                playMessengerChime();
+              }
+              if (desktopSettings.desktopNotificationBanner !== false) {
+                const preview =
+                  newMsg.content && typeof newMsg.content === "string"
+                    ? newMsg.content.slice(0, 50)
+                    : "새 메시지가 도착했습니다.";
+                toast("새 메시지", {
+                  description: preview,
+                  action: {
+                    label: "대화방 보기",
+                    onClick: () => {
+                      navigate(
+                        `/app/admin/desktop-workspace?tab=rooms&room=${newMsg.room_id}`,
+                      );
+                    },
+                  },
+                });
+              }
+              updateDesktopTaskbarBadge(totalUnreadChats + 1, { flash: true });
+            }
+          }
         },
-        () => void loadBadges(),
       )
       .on(
         "postgres_changes",
@@ -332,14 +349,41 @@ export function DesktopRailSidebar() {
           table: "notifications",
           filter: `user_id=eq.${user.id}`,
         },
-        () => void loadBadges(),
+        (payload: any) => {
+          void loadBadges();
+          if (payload.eventType === "INSERT") {
+            const newNotif = payload.new;
+            if (newNotif) {
+              if (desktopSettings.soundNotification !== false) {
+                playMessengerChime();
+              }
+              if (desktopSettings.desktopNotificationBanner !== false) {
+                toast(newNotif.title || "새 알림", {
+                  description: newNotif.message || newNotif.body || "",
+                  action: newNotif.link
+                    ? {
+                        label: "확인",
+                        onClick: () => {
+                          if (newNotif.link.startsWith("http")) {
+                            window.open(newNotif.link, "_blank");
+                          } else {
+                            navigate(newNotif.link);
+                          }
+                        },
+                      }
+                    : undefined,
+                });
+              }
+            }
+          }
+        },
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, loadBadges]);
+  }, [user, loadBadges, desktopSettings, totalUnreadChats, navigate]);
 
   useEffect(() => {
     updateDesktopTaskbarBadge(totalUnreadChats + pendingApprovalsCount);

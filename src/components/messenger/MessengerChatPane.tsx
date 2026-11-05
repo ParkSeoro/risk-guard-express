@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { isDesktopShellActive, openDesktopPopoutWindow } from "@/lib/desktopBridge";
+import { playMessengerChime } from "@/lib/messengerSound";
 
 interface MessengerChatPaneProps {
   room: ChatRoom;
@@ -388,6 +389,7 @@ export function MessengerChatPane({
           });
 
           if (newMsg.sender_id !== user.id) {
+            playMessengerChime();
             await markChatRoomRead(room.id, newMsg.id);
             onRoomUpdatedRef.current?.();
           }

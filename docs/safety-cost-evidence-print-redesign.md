@@ -1,38 +1,33 @@
-# [RFC] 산업안전보건관리비 사용내역서 결재 미리보기 · PDF 저장 · 인쇄 양식 및 증빙 편철 전면 개편 설계안
+# [RFC] 산업안전보건관리비 사용내역서 결재 미리보기 · 인쇄 편철 설계안
 
-> **문서 목적**: 본 문서는 공개 자료실의 **`안전관리비 증빙 예시` (`(GSC 여수 H2,LCO2 PJT) 기계설치, 배관 및 철골공사_산업안전보건관리비사용내역서(7,8월).pdf` 및 원본 `.xlsx`)** 를 전수 분석하여, 현재 시스템에서 **① 전자결재 상신/결재 시 첨부 증빙이 보이지 않는 문제**와 **② PDF 저장/인쇄 시 거래명세서·세금계산서·현장 사진대지·인증서·지급대장이 누락되는 문제**를 해결하고, 예시 파일과 **100% 동일한 양식 구성 및 편철 순서**로 출력·미리보기 되도록 구성하기 위한 아키텍처 및 상세 설계 제안서입니다.
+> **문서 목적**: 결재 화면과 인쇄가 같은 사용내역서를 보게 한다. 공개 자료실 예시 `(GSC 여수 H2,LCO2 PJT) …사용내역서(7,8월).pdf`의 편철 순서와 사진대지·세금계산서 대지 모양을 따른다.
 >
-> *(주의: 사용자 요청에 따라 코드 수정 및 머지 없이 설계안만 먼저 PR로 제출합니다.)*
+> 2026-11-05 수정: 이전 안의 표 이름, 비목 번호, 없는 칸, “예시와 100% 동일” 주장을 코드에 맞게 고쳤다. 저장돼 있지 않은 도장·금액·검수 구분은 만들지 않는다. 이 문서는 설계만 다룬다. 화면 코드와 SQL은 별도 승인 뒤에 고친다.
 
 ---
 
-## 1. 현행 시스템의 문제점 및 원인 진단 (Root Cause Analysis)
+## 1. 지금 화면이 이렇게 나오는 이유
 
-### 1.1 전자결재(결재함/모바일 결재)에서 안전관리비 내역 및 첨부 증빙이 안 보이는 원인
-1. **인라인 미리보기 대상에서 `safety_cost` 제외 (`src/lib/approvalInboxPreview.ts` L72-80)**
-   - `canInlineApprovalPreview(entityType)` 함수가 `"assessment_run"`, `"assessment_run_feedback"`, `"work_plan"`, `"work_permit"`, `"safety_inspection"` 5개 유형만 허용하고 **`"safety_cost"`를 제외**하고 있습니다.
-   - 이 때문에 결재자(소장/안전차장 등)가 전자결재 목록(`src/pages/Approvals.tsx`)에서 안전관리비 결재 건의 **[미리보기]** 버튼을 누르면 `ApprovalDocPreviewDialog.tsx`에서 *"이 유형은 미리보기를 지원하지 않습니다. 전체 화면에서 열어 주세요."* 라는 안내만 표시됩니다.
-2. **전체 화면 이동 시 딥링크(`reportId`) 누락 (`src/lib/approvalInboxPreview.ts` L82-98, `src/pages/SafetyCost.tsx`)**
-   - `getApprovalEntityPath("safety_cost", entityId)`가 `/safety-cost?from=approvals` 만 반환하고 `reportId=${entityId}` 파라미터를 전달하지 않으며, `SafetyCost.tsx`에서도 URL 쿼리(`reportId`)를 읽어 해당 공사(`selectedConstructionId`)와 해당 월 보고서(`selectedReportId`)를 자동 선택하는 로직이 없습니다.
-3. **모바일 결재 상세(`src/pages/MobileApprovalDetail.tsx`) 미리보기 부재**
-   - 모바일 결재 상세 화면에는 `work_permit`(작업허가서)만 전용 프리뷰 카드가 구현되어 있고, `safety_cost`는 총괄 금액, 항목별 내역, 첨부 증빙(사진/거래명세서/세금계산서)을 확인할 수 있는 UI가 전혀 없습니다.
+### 1.1 결재함에서 안전관리비 증빙이 안 보임
 
-### 1.2 PDF 저장 / 인쇄 시 증빙 사진·거래명세서·세금계산서가 안 나오는 원인
-1. **`exportPDF()`가 2페이지 분량의 텍스트 요약표만 생성함 (`src/pages/SafetyCost.tsx` L964-989)**
-   - 현재 `exportPDF()`는 아래와 같이 단순 텍스트 테이블 2페이지만 렌더링합니다:
-     - **Page 1**: 기본 메타 테이블(대표자·소재지·발주처·공사기간·공정율 빈칸) + `1. 산업안전보건관리비 사용내역서 총괄`
-     - **Page 2**: `2. 항목별 사용내역` 테이블 + 텍스트 체크리스트(`비목별 필수 증빙: 완료 N / 전체 M`, `보호구 지급대장: 서명 N/M건`)
-   - 즉, `safety_cost_evidence_files` 테이블에 업로드된 **현장/검수 사진(`site_photo`), 거래명세서(`transaction`), 세금계산서(`tax_invoice`), 영수증/카드전표(`receipt`), 안전인증서(`certificate`), 급여명세서(`payroll`), 교육이수증(`education_log`)** 실제 이미지·PDF 파일과 `safety_cost_ppe_ledger_entries`의 **실제 근로자 자필 서명(`signature_data`)** 을 출력 HTML에 아예 포함하지 않고 있습니다.
-2. **이미지/PDF 로딩 대기 없이 300ms 후 즉시 `window.print()` 호출 (`SafetyCost.tsx` L985)**
-   - `<script>window.onload=()=>setTimeout(()=>window.print(),300)</script>` 방식으로 인쇄 창을 띄우기 때문에, 고해상도 증빙 이미지나 서명 이미지가 로드되기 전에 빈 화면으로 인쇄/PDF 저장이 실행될 위험이 있습니다.
-3. **PDF 원본 증빙 파일(`application/pdf`)의 인쇄 렌더링 미지원**
-   - 세금계산서, 안전인증서(KCs/CE), 건강진단 결과표, 자격증/선임보고서 등은 이미지(`jpg/png`)뿐만 아니라 **PDF 파일(`application/pdf`)** 로도 첨부됩니다. 브라우저 인쇄 시 `<img src="...pdf">`나 `<iframe>` 내부의 PDF는 인쇄 페이지에 정상 출력되지 않으므로, `pdfjs-dist`를 사용해 A4 고해상도 캔버스/이미지로 변환(Rasterize)하여 인쇄 페이지에 삽입해야 합니다.
+1. `canInlineApprovalPreview` (`src/lib/approvalInboxPreview.ts`)는 `assessment_run`, `assessment_run_feedback`, `work_plan`, `work_permit`, `safety_inspection`만 미리보기를 연다. `safety_cost`는 빠진다. 결재함의 미리보기는 “이 유형은 미리보기를 지원하지 않습니다”만 보여 준다.
+2. 전체 화면 경로는 `desktopApprovalEntityPath("safety_cost", entityId)`가 `/safety-cost`만 돌려준다. 보고서 id는 빠진다. `desktopApprovalEntityPathFromInbox`가 `?from=approvals`만 붙인다. `SafetyCost.tsx`는 주소에서 `tab`만 읽고 `reportId`는 읽지 않는다. 결재의 `entity_id`는 `safety_cost_monthly_reports.id`이다. 상신이 `SubmitApprovalDialog`에 `entityId={selectedReport.id}`를 넘긴다.
+3. 실제 화면 경로는 `/app/admin/safety-cost`이다. `/safety-cost`는 옛 주소라 `/app/admin`으로 넘어가며 쿼리는 유지된다. 알림 경로 `notificationRoutes`의 `safety_cost`, `safety_cost_report`도 보고서 id 없이 `/app/admin/safety-cost`만 연다.
+4. `MobileApprovalDetail.tsx`는 `work_permit` 카드만 있다. 안전관리비 총괄·항목·첨부는 없다.
+
+### 1.2 인쇄에 사진·거래명세서·세금계산서·서명이 없음
+
+1. `SafetyCost.tsx`의 `exportPDF()`는 가로 A4 두 장이다. 1장은 총괄표다. 대표자, 소재지, 발주처, 공사기간, 공정율, 사용기준금액은 빈칸이다. 2장은 항목 표, `완료/누락 (건수)`, 지급대장 `서명 N건 / 해당 없거나 미작성`이다. `safety_cost_evidence_files`의 파일과 `safety_cost_ppe_ledger_entries.signature_data`는 HTML에 없다.
+2. 인쇄 HTML 안에 `setTimeout(() => window.print(), 300)`이 있다. 그림이 오기 전에 인쇄가 나간다. `window.open`은 막힐 수 있다. 다른 문서는 `src/lib/printHtmlDocument.ts`의 `printHtmlDocument`와 `waitForDocumentImages`를 쓴다. 그 대기는 20초가 지나면 실패한 그림이 있어도 인쇄를 진행한다.
+3. PDF 첨부를 `<img>`나 `<iframe>`에 넣으면 인쇄 페이지에 내용이 안 나온다. `pdfjs-dist`는 이미 설치돼 있다. 긴 PDF를 전부 이미지로 바꾸는 일은 결재 화면을 열 때가 아니라, 사용자가 “원본 전체” 인쇄를 골랐을 때만 한다.
+
+엑셀 `buildSafetyCostWorkbook`은 별지 숫자 양식이다. 증빙 시트는 파일명을 쓰지 않는다. 이번 설계는 엑셀에 사진을 넣지 않는다. 사진이 들어가는 쪽은 결재 미리보기와 인쇄다.
 
 ---
 
 ## 2. 공개 자료실 「안전관리비 증빙 예시」 정밀 분석 결과
 
-공개 자료실(`project_library_files` ID: `c44e1480-90b4-44e4-9182-426861ddad8b`)에 등록된 **`(GSC 여수 H2,LCO2 PJT) 기계설치, 배관 및 철골공사_산업안전보건관리비사용내역서(7,8월).pdf` (총 239페이지)** 및 원본 엑셀(`sample_gsc_7_8.xlsx`)을 전수 분석한 결과, 실제 현장에서 발주처/감리단/고용노동부 감독관에게 제출·승인받는 **표준 양식 구조**는 다음과 같습니다.
+아래는 공개 자료실의 `(GSC 여수 H2,LCO2 PJT) 기계설치, 배관 및 철골공사_산업안전보건관리비사용내역서(7,8월).pdf`(239쪽, `project_library_files` `c44e1480-90b4-44e4-9182-426861ddad8b`)와 원본 엑셀에서 읽은 편철이다. 쪽 번호는 그 파일의 쪽이다. 1~14번은 철 순서이고, 법정 비목 코드 `'1'`~`'9'`와 같지 않다. 대조는 2.3에 있다.
 
 ### 2.1 전체 문서 편철 순서 (Standard 14-Section Binding Order)
 
@@ -57,7 +52,9 @@
 
 ---
 
-### 2.2 예시 파일의 핵심 레이아웃 디테일 3가지 (반드시 재현해야 할 포인트)
+### 2.2 예시 파일의 레이아웃
+
+아래는 예시 PDF에 그려진 모양이다. 시스템 출력은 이 칸 배치를 따르되, 저장되지 않은 값은 3장 규칙대로 빈칸이거나 메모 원문이다.
 
 1. **표준 2단 「사진대지」 양식 (`#5 증빙` 시트 및 PDF p.25~83)**
    - **A4 1페이지에 상·하 2개의 `사 진 대 지` 블록**이 들어가며, **1개 사용항목(품목)의 거래 증빙(상단)과 현장 사진 증빙(하단)이 한 페이지에 한눈에 보이도록 구성**되어 있습니다.
@@ -103,280 +100,181 @@
        `구 분 | 결정일 (위험성평가 | 노사협의체) | 수량 | 단위 | 단가 | 사용금액 | 비고`
    - 해당 월에 지출이 없는 비목(예: 12번 기술지도비, 13번 본사전담조직)도 생략하지 않고, 빈 양식 테이블 상단 중앙에 **`당 월 사 용 내 역 없 음`** 박스를 찍어서 편철 누락이 아님을 증명합니다.
 
----
 
-## 3. 해결 방안 및 시스템 아키텍처 설계
+### 2.3 예시 편철 번호와 시스템 비목 코드
 
-### 3.1 아키텍처 개요 (단일 렌더러 기반 결재 미리보기 & PDF 인쇄 통합)
+예시 PDF의 1~14번은 철하는 순서다. 법정 비목 코드는 `safety_cost_items.category_code`의 `'1'`~`'9'`다. `C1`~`C9`라는 값은 저장되지 않는다. 사진 내용 문구와 금액 집계는 법정 코드만 쓴다.
 
-결재자가 보는 화면(전자결재 미리보기)과 실제 출력물(PDF 저장 / 인쇄)이 100% 일치하도록, **단일 문서 빌더 모듈(`src/lib/safetyCostDocumentBuilder.ts`)** 을 신설합니다.
+| 법정 코드 | 비목 | 예시 편철 |
+| --- | --- | --- |
+| (표지·목차) |  | 표지, 목차 |
+| (총괄·항목) | 별지 총괄, 항목별 명세 | 1, 2 |
+| `1` | 안전·보건관리자 임금 등 | 3 |
+| `2` | 안전시설비 등 | 4 |
+| `3` | 보호구 등 | 5 |
+| (수불) | 개인보호구 사용 현황. 법정 비목이 아니다 | 6 |
+| (지급대장) | 개인보호구 지급대장. 법정 비목이 아니다 | 7 |
+| (인증서) | 안전인증서 원본. 법정 비목이 아니다 | 8 |
+| `4` | 안전보건진단비 등 | 9 |
+| `5` | 안전보건교육비 등 | 10 |
+| `6` | 근로자 건강장해예방비 등 | 11 |
+| `7` | 건설재해예방 전문지도기관 기술지도비 | 12 |
+| `8` | 본사 전담조직 근로자 임금 등 | 13 |
+| `9` | 위험성평가 등에 따른 소요비용 | 14 |
 
-```mermaid
-flowchart TD
-    subgraph Data["데이터 및 증빙 로더 (loadSafetyCostFullBundle)"]
-        R["safety_cost_monthly_reports<br/>+ safety_cost_constructions"]
-        I["safety_cost_report_items<br/>(비목 C1~C9 사용내역)"]
-        E["safety_cost_evidence_files<br/>(사진/거래명세서/세금계산서/인증서/급여/검진)"]
-        P["safety_cost_ppe_ledgers<br/>+ safety_cost_ppe_ledger_entries (자필서명)"]
-        A["approval_requests + approval_steps<br/>(작성자/제출자/승인자 결재선 및 서명)"]
-    end
-
-    subgraph Normalizer["증빙 정규화 및 PDF 페이지 변환기"]
-        IMG["이미지 증빙 (JPG/PNG/WEBP)<br/>Signed/Public URL 프리로드"]
-        PDF["PDF 원본 증빙 (세금계산서/인증서/검진표)<br/>pdfjs-dist 로 페이지별 고해상도 이미지 변환"]
-    end
-
-    subgraph Builder["표준 양식 빌더 (buildSafetyCostStandardBookHtml)"]
-        P0["표지 (결재란 포함) + 14개 목차"]
-        P1["1. 산업안전보건관리비 사용내역서 총괄 (별지 제1호)"]
-        P2["2. 항목별 사용내역 (비목 병합 + 소계/비율 + 비고)"]
-        P3_14["3~14. 비목별 간지 → 사용항목 표 → 2단 사진대지(거래명세서+검수/설치사진) → 세금계산서 대지(파란 요약박스) → 보호구 수불/지급대장/안전인증서"]
-    end
-
-    subgraph Output["출력 및 결재 채널"]
-        PREVIEW["전자결재 인라인 미리보기<br/>(ApprovalDocPreviewDialog + 첨부 증빙 탭)"]
-        MOBILE["모바일 결재 상세 뷰어<br/>(MobileApprovalDetail)"]
-        PRINT["A4 PDF 저장 / 인쇄<br/>(모든 이미지 로드 완료 후 window.print)"]
-    end
-
-    R & I & E & P & A --> Normalizer
-    Normalizer --> IMG & PDF
-    IMG & PDF --> Builder
-    Builder --> P0 & P1 & P2 & P3_14
-    P0 & P1 & P2 & P3_14 --> PREVIEW & MOBILE & PRINT
-```
+화면의 증빙 패키지 게이트(`CATEGORY_EVIDENCE_PACK`)는 그대로 둔다. 상신을 막는 규칙과 인쇄 목차는 다른 일이다. 지금 인쇄 목차에만 있는 “월별 집계표”, “업체별 집계표”는 예시 14개 안에 없다. 이번 인쇄 목차는 그 두 줄을 넣지 않는다.
 
 ---
 
-### 3.2 데이터 모델 보강 (기존 테이블 호환 + 메타데이터 확장)
+## 3. 출력과 결재가 같이 쓸 문서
 
-현재 DB 스키마(`safety_cost_constructions`, `safety_cost_monthly_reports`, `safety_cost_report_items`, `safety_cost_evidence_files`, `safety_cost_ppe_ledgers`, `safety_cost_ppe_ledger_entries`)를 깨뜨리지 않고 **100% 하위 호환**되면서 예시 파일의 모든 칸을 채울 수 있도록 구성합니다.
+결재 미리보기와 인쇄는 `src/lib/safetyCostDocumentBuilder.ts` 한 곳에서 HTML을 만든다. 결재 화면이 열릴 때 만드는 묶음과, 인쇄 대화상자에서 “원본 전체”를 골랐을 때의 묶음은 다르다.
 
-1. **공사 일반사항 메타데이터 (`safety_cost_constructions` 또는 `report.note` JSON 확장)**
-   - 현재 `SafetyCostConstruction`에는 `construction_name`, `Touch/contract_amount`, `recognized_rate_pct`, `budget_amount`, `started_on`, `ended_on`이 있습니다.
-   - `1. 총괄` 표의 일반사항을 완벽히 채우기 위해 다음 필드를 지원합니다 (컬럼 추가 또는 `metadata` JSONB 활용, 미입력 시 테넌트/현장 기본값 자동 매핑):
-     - `contractor_name`: 건설업체명 (예: `청원산기(주)`)
-     - `representative_name`: 대표자 (예: `김길태`)
-     - `site_address`: 소재지 (예: `전남 여수시 망양로 1169`)
-     - `client_name`: 발주처 (예: `AIRLIQUIDE KOREA`)
-     - `progress_rate_pct`: 당월 공정율 (`safety_cost_monthly_reports`에 저장, 예: `13.72%`)
-   - **공사진척에 따른 사용기준금액 자동 계산**:
-     $$\text{사용기준금액} = \text{계상된 안전관리비}(\text{budget\_amount}) \times \frac{\text{공정율}(\text{progress\_rate\_pct})}{100}$$
-2. **사용항목(`safety_cost_report_items`)과 증빙 파일(`safety_cost_evidence_files`)의 정밀 매칭**
-   - 현재 `safety_cost_evidence_files`에는 이미 `report_item_id` (개별 사용항목 FK), `category_code` (`C1`~`C9`), `evidence_kind` (`transaction`, `tax_invoice`, `site_photo`, `receipt`, `certificate`, `ppe_ledger`, `payroll`, `education_log`, `report`), `vendor_name`, `evidence_date`, `amount`, `note` 컬럼이 모두 존재합니다!
-   - **품목별 2단 사진대지 자동 조립 규칙**:
-     - 각 `SafetyCostReportItem` (`item`)에 연결된 증빙(`report_item_id === item.id` 또는 동일 비목·동일 일자·동일 품목명 매칭)을 분류합니다:
-       - **상단 사진대지 (구매·검수 증빙)**:
-         - 좌측 이미지: `transaction`(거래명세서) 또는 `receipt`(영수증/카드전표/입금확인증) 또는 `report`(공문)
-         - 우측 이미지: `site_photo` 중 반입/검수 사진(첫 번째 사진 또는 `note`에 `'검수'`/`'반입'` 포함 사진)
-         - 우측 하단 `내용` 자동 표기: 거래명세서+검수사진이면 `"거래명세표/검수"`, 거래명세서 단독이면 `"거래명세표"`, 영수증이면 `"영수증"`
-       - **하단 사진대지 (설치·사용·결과 증빙)**:
-         - 이미지: `site_photo` 중 현장 설치/사용 사진(1~2장 나란히), 또는 `education_log`(교육 수료증/이수증), 또는 `C9` 비목의 `report`(위험성평가표) + 검수사진
-         - 우측 하단 `내용` 자동 표기:
-           - `C2`(안전시설비): `"안전시설물 설치"` (도면 포함 시 `"안전시설물 설치/위치도면"`)
-           - `C3`(보호구): `"보호구 검수"`
-           - `C4`(진단비): `"안전보건진단"`
-           - `C5`(교육비): 수료증이면 `"이수증"`, 행사/물품이면 `"안전보건교육비 등"` 또는 `"검수/설치"`
-           - `C6`(건강장해예방비): `"검수"` 또는 `"결과지"`
-           - `C9`(위험성평가): `"위험성평가표/검수"`
-   - **세금계산서(`tax_invoice`) 대지 및 파란색 금액 배분 박스 자동 생성 규칙**:
-     - 해당 비목(`category_code`)에 속한 `tax_invoice` 증빙들을 거래처(`vendor_name`) + 월별로 그룹핑합니다.
-     - 동일 거래처의 월간 세금계산서 총액(`evidence.amount` 또는 전체 비목 중 해당 거래처 합산액)과 **현재 비목에서 해당 거래처가 차지하는 사용금액 합계**를 계산하여 예시 파일과 동일한 파란색 요약 박스를 렌더링합니다:
-       > **세금계산서 총 액 `11,224,800`원 중**
-       > **`안전 시설비 등` 사용 금액**
-       > **`6,222,500`원**
+### 3.1 읽는 표
 
----
+| 내용 | 표 | 쓰는 칸 |
+| --- | --- | --- |
+| 월 보고서 | `safety_cost_monthly_reports` | `id`, `construction_id`, `report_month`, `status`, `report_total`, `source` |
+| 공사 | `safety_cost_constructions` | `construction_name`, `construction_type`, `construction_amount`, `safety_cost_total`, `company_id`, `notes` |
+| 사용 항목 | `safety_cost_items` | `category_code`, `item_name`, `specification`, `quantity`, `unit`, `unit_price`, `amount`, `supplier_name`, `usage_date`, `transaction_date` |
+| 증빙 | `safety_cost_evidence_files` | `item_id`, `category_code`, `evidence_kind`, `file_name`, `file_path`, `file_url`, `mime_type`, `note` |
+| 지급대장 | `safety_cost_ppe_ledgers`, `safety_cost_ppe_ledger_entries` | 대장 머리, 행의 `signature_data` |
+| 수불 | `safety_cost_ppe_skus`, `safety_cost_ppe_stock_movements` | `item_name`, `movement_type`, `quantity`, `movement_date` |
 
-### 3.3 PDF 원본 증빙(`application/pdf`)의 인쇄/미리보기 렌더링 처리
+없는 이름: `safety_cost_report_items`, `report_item_id`, `vendor_name`, `evidence_date`, `evidence.amount`, `budget_amount`, `recognized_rate_pct`, `started_on`, `ended_on`, `contract_amount`. 증빙 종류에 `receipt`는 없다. 종류는 `transaction`, `tax_invoice`, `site_photo`, `certificate`, `ppe_ledger`, `payroll`, `appointment`, `education_log`, `report`, `other`다. 영수증·카드전표·입금확인증은 지금 `transaction` 또는 `other`로 들어간다.
 
-현장 실무자는 전자세금계산서, KCs 안전인증서, 특수건강진단 결과표, 자격증/선임보고서를 이미지(`jpg/png`)로 캡처해서 올리기도 하지만 **원본 PDF 파일(`.pdf`)** 그대로 업로드하는 경우가 많습니다.
+항목과 파일의 연결은 `item_id`다. 세금계산서는 항목 없이 비목만 있는 행(`item_id`가 비어 있음)이 많고, 같은 `file_path`가 비목마다 한 행으로 복제된다 (`cloneEvidenceToCategories`).
 
-- **문제**: HTML 인쇄 시 `<img src="file.pdf">`는 깨진 이미지 아이콘이 나오고, `<iframe src="file.pdf">`는 브라우저 인쇄 시 첫 페이지 일부만 나오거나 백지로 출력됩니다.
-- **해결 설계 (`src/lib/pdfPageRasterizer.ts`)**:
-  1. 프로젝트에 이미 설치된 `pdfjs-dist` (또는 경량 워커)를 사용해, `mime_type === "application/pdf"` 또는 확장자가 `.pdf`인 증빙 파일을 Signed/Public URL로 `fetch`합니다.
-  2. 각 PDF 페이지를 `scale: 2.0` (약 150~200 DPI, A4 인쇄 시 글씨가 선명한 수준) `<canvas>`에 렌더링한 뒤 `canvas.toDataURL("image/jpeg", 0.88)`로 변환합니다.
-  3. 변환된 페이지 이미지들을 용도에 맞게 배치합니다:
-     - **단일 페이지 PDF (전자세금계산서, 거래명세서, 수료증 등)**: 해당 `사진대지` 또는 `세금계산서 대지` 프레임 안에 이미지처럼 깔끔하게 삽입!
-     - **다중 페이지 PDF (안전인증서 6페이지, 배치전 건강진단 결과표 12페이지, 근로계약서 2페이지 등)**: 예시 PDF(p.97~140, p.188~224)와 동일하게 **각 페이지를 독립된 A4 인쇄 페이지(`<section class="page full-bleed-doc">`)** 로 연속 편철!
+### 3.2 총괄표 칸을 채우는 순서
 
----
+새 칸을 만들기 전에 있는 값을 쓴다.
 
-### 3.4 예시 파일과 100% 동일한 A4 인쇄/PDF HTML·CSS 레이아웃 명세
+- 건설업체명: 그 공사의 `company_id`에 해당하는 `companies.name`
+- 소재지: `companies.address`. 없으면 빈칸
+- 대표자: 회사 표에 대표자 칸이 없다. 빈칸으로 둔다
+- 발주처: 그 프로젝트에 연결된 발주처 회사가 하나면 그 이름. 없거나 둘 이상이면 빈칸
+- 공사명: `construction_name`
+- 계약금액: `construction_amount`
+- 계상된 안전관리비: `safety_cost_total`
+- 공사기간, 공정율: 저장된 값이 없다. 빈칸
+- 공사진척에 따른 사용기준금액: 공정율이 없으면 빈칸. 0을 곱해 0원으로 찍지 않는다
+- 잔여금액, 누계집행율: 화면이 이미 쓰는 승인 누계와 `safety_cost_total`
 
-`buildSafetyCostStandardBookHtml()`이 생성하는 A4 페이지(`210mm × 297mm`, 가로형 집계표는 `297mm × 210mm`)의 세부 CSS 규격입니다.
+표지 결재란은 도장 이미지가 없다. 안전관리비 결재 단계는 작성자(`contractor_supervisor` 또는 `contractor_pic`), 현장소장(`contractor_site_director` 또는 `site_director`), 발주처 안전(`owner_sm` 또는 `sm`)이다. 각 칸에는 이름, 직책, 회사, 상태, 승인 시각만 적는다.
 
-#### (1) 공통 A4 페이지 및 인쇄 제어 CSS
+### 3.3 사진대지
+
+한 항목에 `item_id`로 붙은 파일을 한 페이지의 위·아래로 놓는다. `note`에 `검수` 또는 `반입`이 있는 `site_photo`만 검수 사진이다. 그 문구가 없으면 검수라고 이름 붙이지 않는다.
+
+- 위 왼쪽: `transaction`. 없으면 `other` 또는 `report`
+- 위 오른쪽: `note`에 `검수` 또는 `반입`이 있는 `site_photo`
+- 아래: 나머지 `site_photo`, `education_log`, `report`
+- 위 내용 문구: 거래명세서와 검수 사진이 같이 있으면 `거래명세표/검수`. 거래명세서만 있으면 `거래명세표`. 그 외에는 파일 종류 이름
+- 아래 내용 문구는 법정 코드로만 고른다
+  - `2`: `안전시설물 설치`. `note`에 `도면`이 있으면 `안전시설물 설치/위치도면`
+  - `3`: 검수 문구가 있으면 `보호구 검수`, 없으면 `보호구 사진`
+  - `4`: `안전보건진단`
+  - `5`: `education_log`이면 `이수증`, 아니면 `교육 사진`
+  - `6`: `report`이면 `결과지`. 검수 문구가 있는 사진이면 `검수`, 다른 사진이면 `사진`
+  - `9`: `report`와 검수 사진이 같이 있으면 `위험성평가표/검수`. 아니면 있는 쪽 이름
+- `1` 임금 서류는 자격증·계약서·재직증명서로 나누는 칸이 없다. `appointment`, `payroll`, `other` 순으로 파일명을 붙여 편철한다
+
+금액이 0인 비목은, 이관 월이 아니면 집계표만 두고 가운데에 `당월 사용내역 없음`을 찍는다. 빈 사진 페이지는 만들지 않는다.
+
+### 3.4 세금계산서 대지
+
+비목 맨 뒤에 둔다. 같은 `file_path`인 행은 한 장이다. 업체 칸은 그 비목 항목의 `supplier_name`이 하나일 때 그 이름이다. 여러 개이거나 없으면 `거래처 미상`이다.
+
+파란 상자에는 `note`에 적어 둔 배분 문장을 그대로 쓴다. `categoryTaxAllocationNotes`가 이미 이 문장을 모은다. `note`가 비어 있으면 `배분 메모 없음`과 파일명만 보여 준다. 총액과 비목 금액을 계산해서 채우지 않는다. 그 금액 칸은 표에 없다.
+
+글자가 있는 PDF(세금계산서, 인증서, 건강진단)를 결재 화면에서 JPEG로 바꾸지 않는다. 미리보기에서는 원본을 연다. “원본 전체” 인쇄에서만 `pdfjs-dist`로 페이지를 만들고, 글자 문서는 PNG로 둔다.
+
+### 3.5 보호구 수불과 지급대장
+
+수불 그리드는 `safety_cost_ppe_stock_movements`로 만든다. `in`은 입고, `out`은 출고, `return`은 입고(반납), `dispose`는 출고(폐기)다. `adjust`는 수량이 항상 양수라 잔고에 넣지 않고, 표 아래 비고로 날짜와 수량만 적는다. 이동이 없는 날은 0이다.
+
+지급대장은 행과 `signature_data` 이미지를 찍는다. 비목 `3` 금액이 0이면 `해당 없음`. 금액이 있는데 서명이 없으면 `미작성`. 서명이 있으면 그 행을 보여 준다. 두 경우를 한 문장으로 합치지 않는다.
+
+### 3.6 이관 월
+
+`source`가 `legacy_import`인 달은 증빙 패키지가 면제다. 인쇄는 표지, 총괄, 항목별 금액만 낸다. 빈 사진대지와 `당월 사용내역 없음`을 비목마다 붙이지 않는다. 표지에 `이관 월. 항목별 증빙은 이 출력에 없습니다.`를 한 줄 적는다.
+
+### 3.7 상신 스냅샷
+
+`snapshot_approval_document`의 `safety_cost`는 보고서와 항목만 저장한다. 승인본을 다시 만들려면 같은 스냅샷에 증빙의 `id`, `file_name`, `file_path`, `mime_type`, `evidence_kind`, `category_code`, `item_id`, `note`와 지급대장 행 id, 서명 유무를 넣는다. 이미지 바이트는 넣지 않는다. 상신·승인 뒤 `reportLocked`가 항목과 첨부를 막으므로, 미리보기는 읽기만 한다. 딥링크로 들어가도 편집 화면으로 풀지 않는다.
+
+### 3.8 인쇄 범위의 기본값
+
+인쇄 버튼을 누르면 범위를 고른다. 기본으로 켜지는 것:
+
+- 표지와 목차
+- 편철 1 총괄
+- 편철 2 항목별
+- 금액이 있는 비목의 사용항목 표, 사진대지, 세금계산서 대지
+- 편철 7 지급대장
+
+기본으로 꺼지는 것:
+
+- 편철 6 수불 전체
+- 편철 8 인증서 원본 전체
+- 건강진단처럼 여러 쪽인 PDF 원본 전체
+
+이관 월은 표지·총괄·항목별만 켜지고 나머지는 고를 수 없다.
+
+인쇄는 `printHtmlDocument`를 쓴다. 그림 대기가 끝난 뒤 인쇄한다. 20초 안에 못 연 파일은 인쇄를 막지 않고, 끝에 `열리지 않은 파일` 목록으로 남긴다. 한 HTML 문자열에 인증서 전체를 JPEG로 넣지 않는다. 그러면 휴대폰 결재가 멈춘다.
+
+가로 수불표만 가로 용지다. 그 구역에 `page: landscape-page`를 준다. 이름만 있는 `@page`는 적용되지 않는다. 쪽 높이는 `height`가 아니라 `min-height`다. 고정 높이는 표를 잘라 먹는다.
+
 ```css
-@page {
-  size: A4 portrait;
-  margin: 10mm;
-}
-@page landscape-page {
-  size: A4 landscape;
-  margin: 10mm;
-}
+@page { size: A4 portrait; margin: 10mm; }
+@page landscape-page { size: A4 landscape; margin: 10mm; }
 .sc-page {
   width: 190mm;
-  height: 277mm;
-  margin: 0 auto;
-  box-sizing: border-box;
+  min-height: 277mm;
   page-break-after: always;
   break-after: page;
-  font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
-  color: #000;
-  position: relative;
 }
+.sc-page.landscape { page: landscape-page; min-height: 190mm; }
 ```
 
-#### (2) 표준 2단 「사진대지」 컴포넌트 구조 (예시 PDF p.25~50, 57~83 재현)
-```html
-<section class="sc-page sc-photo-mount-2up">
-  <!-- 상단 사진대지 (거래명세서 + 반입/검수 사진) -->
-  <div class="mount-half">
-    <div class="mount-title">사 &nbsp;&nbsp; 진 &nbsp;&nbsp; 대 &nbsp;&nbsp; 지</div>
-    <div class="mount-canvas">
-      <!-- 1장일 때 중앙 정렬, 2장(거래명세서+검수사진)일 때 좌우 분할 -->
-      <img src="..." class="mount-img" alt="거래명세서" />
-      <img src="..." class="mount-img" alt="검수사진" />
-    </div>
-    <table class="mount-meta">
-      <colgroup>
-        <col style="width: 15%" />
-        <col style="width: 35%" />
-        <col style="width: 15%" />
-        <col style="width: 35%" />
-      </colgroup>
-      <tr>
-        <th>날 짜</th>
-        <td>2026년 7월 3일</td>
-        <th>내 용</th>
-        <td>거래명세표/검수</td>
-      </tr>
-      <tr>
-        <th>품 목</th>
-        <td>소화기함 재떨이 [290*300*800]</td>
-        <th>수량 / 규격</th>
-        <td><span class="qty">2</span><span class="unit">EA</span></td>
-      </tr>
-    </table>
-  </div>
+### 3.9 결재 화면
 
-  <!-- 하단 사진대지 (현장 설치 / 보호구 검수 / 교육 이수증 / 위험성평가표) -->
-  <div class="mount-half">
-    <div class="mount-title">사 &nbsp;&nbsp; 진 &nbsp;&nbsp; 대 &nbsp;&nbsp; 지</div>
-    <div class="mount-canvas">
-      <img src="..." class="mount-img" alt="현장설치사진" />
-    </div>
-    <table class="mount-meta">
-      <colgroup>
-        <col style="width: 15%" />
-        <col style="width: 35%" />
-        <col style="width: 15%" />
-        <col style="width: 35%" />
-      </colgroup>
-      <tr>
-        <th>날 짜</th>
-        <td>2026년 7월 3일</td>
-        <th>내 용</th>
-        <td>안전시설물 설치</td>
-      </tr>
-      <tr>
-        <th>품 목</th>
-        <td>소화기함 재떨이 [290*300*800]</td>
-        <th>수량 / 규격</th>
-        <td><span class="qty">2</span><span class="unit">EA</span></td>
-      </tr>
-    </table>
-  </div>
-</section>
-```
-
-#### (3) 표준 1단 「세금계산서 대지」 컴포넌트 구조 (예시 PDF p.51~53, 84~86 재현)
-```html
-<section class="sc-page sc-tax-invoice-mount">
-  <div class="mount-full">
-    <div class="mount-title">사 &nbsp;&nbsp; 진 &nbsp;&nbsp; 대 &nbsp;&nbsp; 지</div>
-    <div class="tax-canvas">
-      <img src="..." class="tax-img" alt="전자세금계산서" />
-      <!-- 예시 파일과 동일한 좌측 하단 파란색 금액 배분 요약 박스 -->
-      <div class="tax-allocation-box">
-        <div>세금계산서 총 액 11,224,800원</div>
-        <div>중</div>
-        <div>안전 시설비 등 사용 금액</div>
-        <div class="tax-alloc-amount">6,222,500원</div>
-      </div>
-    </div>
-    <table class="mount-meta-single">
-      <colgroup>
-        <col style="width: 12%" />
-        <col style="width: 38%" />
-        <col style="width: 12%" />
-        <col style="width: 38%" />
-      </colgroup>
-      <tr>
-        <th>업 체</th>
-        <td>주식회사 홍익</td>
-        <th>내 용</th>
-        <td>세금계산서(7월)</td>
-      </tr>
-    </table>
-  </div>
-</section>
-```
-
-#### (4) 출력 옵션 모달 (실무자 맞춤형 출력 범위 선택 지원)
-현장에서 **전체 증빙 통합본(수십~200페이지)** 이 필요한 경우와 **갑지/내역서만(표지+총괄+항목별)** 필요한 경우를 모두 지원하기 위해, `[PDF 저장 / 인쇄]` 클릭 시 출력 옵션을 제공합니다 (기본값: **`전체 편철 (예시 양식 1~14번 전체 + 모든 증빙 포함)`**):
-- `[v] 표지 및 목차 (결재란 포함)`
-- `[v] 1. 산업안전보건관리비 사용내역서 총괄 (별지 제1호)`
-- `[v] 2. 항목별 사용내역`
-- `[v] 3~14. 비목별 사용항목 표 + 사진대지(거래명세서/검수·설치사진) + 세금계산서 대지`
-- `[v] 6~7. 개인보호구 월간 수불집계표 및 지급대장(자필서명 포함)`
-- `[v] 8. 안전인증서 및 첨부 성적서 원본 전체`
-
-또한 인쇄 실행 전 **진행률 표시(`증빙 이미지 및 PDF 페이지 변환 중... 18 / 42`)** 를 보여주고, 모든 `<img>`의 `decode()`가 100% 완료된 후에만 `window.print()`를 호출하여 **사진 누락 현상을 원천 차단**합니다.
+1. `canInlineApprovalPreview`에 `safety_cost`를 넣는다. `ApprovalDocPreviewDialog`가 연다.
+2. 가운데는 이미 있는 `ZoomableDocumentPreview`다. HTML은 3.8의 기본 묶음이다. 인증서 원본 전체는 넣지 않는다.
+3. 아래 목록은 종류별로 거른다. `전체`, `거래명세서`, `세금계산서`, `현장 사진`, `인증서`, `지급대장`, `급여·선임·교육`. 행을 누르면 원본을 연다. 작업계획서의 `AttachmentReviewPanel`은 작업계획서 id만 받으므로 그대로 재사용하지 않는다.
+4. 전체 화면과 알림은 `/app/admin/safety-cost?from=approvals&reportId=<보고서 id>`다. `SafetyCost.tsx`는 `reportId`로 그 보고서와 `construction_id`를 고른다. `notificationRoutes`의 `safety_cost`, `safety_cost_report`도 관련 id가 있으면 같은 쿼리를 붙인다.
+5. 모바일 결재 상세에는 총괄 카드, 비목별 항목, 첨부 썸네일, `기본 사용내역서 보기`를 둔다. 열자마자 PDF를 이미지로 바꾸지 않는다. 사용기준금액은 공정율이 없을 때 카드에서도 빈칸이다.
 
 ---
 
-### 3.5 전자결재(결재함 · 모바일 결재) 미리보기 및 첨부 증빙 뷰어 설계
+## 4. 구현할 때 건드릴 파일
 
-1. **`canInlineApprovalPreview`에 `"safety_cost"` 추가 (`src/lib/approvalInboxPreview.ts`)**
-   - 결재함(`Approvals.tsx`)에서 안전관리비 결재 요청의 **[미리보기]** 클릭 시 `ApprovalDocPreviewDialog`가 즉시 열립니다.
-2. **`ApprovalDocPreviewDialog.tsx` 내 안전관리비 전용 프리뷰 + 증빙 원본 검토 패널 구현**
-   - **상단/중앙 문서 뷰어 (`ZoomableDocumentPreview`)**:
-     - 위 `buildSafetyCostStandardBookHtml()`로 생성된 **표지 + 총괄표 + 항목별 사용내역 + 비목별 사진대지(거래명세서·검수사진·설치사진) + 세금계산서 대지 + 보호구 지급대장** 전체 문서를 확대/축소하며 종이 문서 그대로 검토할 수 있습니다.
-   - **하단 접이식 「첨부 증빙 파일 빠른 검토 패널 (`SafetyCostAttachmentReviewPanel`)」**:
-     - 기존 `work_plan`(작업계획서) 미리보기의 `AttachmentReviewPanel` 패턴을 확장하여, 결재자가 특정 증빙만 빠르게 필터링(`전체` / `거래명세서` / `세금계산서` / `현장·검수사진` / `안전인증서` / `지급대장` / `급여·교육`)해서 고화질 원본 이미지·PDF를 즉시 열어보거나 다운로드할 수 있게 구성합니다.
-3. **전체 화면 딥링크 연동 (`getApprovalEntityPath` & `SafetyCost.tsx`)**
-   - `getApprovalEntityPath("safety_cost", entityId)` → `/safety-cost?from=approvals&reportId=${entityId}` 로 이동합니다.
-   - `SafetyCost.tsx` 마운트 시 `searchParams.get("reportId")`가 있으면 해당 보고서의 `construction_id`와 `reportId`를 자동으로 선택하여 결재자가 헤매지 않고 즉시 해당 월 내역과 증빙을 확인하도록 개선합니다.
-4. **모바일 결재 상세(`MobileApprovalDetail.tsx`) 안전관리비 프리뷰 카드 추가**
-   - 모바일에서도 결재자가 한눈에 결재할 수 있도록:
-     - **총괄 요약 카드** (공사명, 대상월, 전월/금월/누계 집행액, 계상액 대비 집행율, 사용기준금액)
-     - **비목별 지출 내역 아코디언** (품목명, 수량, 단가, 금액, 거래처)
-     - **첨부 증빙 갤러리 탭** (사진대지 썸네일 그리드, 거래명세서, 세금계산서 터치 시 전체화면 줌 뷰어)
-     - **[전체 사용내역서(증빙 포함) PDF 미리보기]** 버튼을 제공합니다.
+승인 뒤에 고친다. 이번 변경은 이 문서뿐이다.
 
----
-
-## 4. 구현 대상 파일 목록 (승인 후 작업 예정 범위)
-
-| 구분 | 대상 파일 경로 | 주요 변경 내용 |
-| :---: | :--- | :--- |
-| **신규** | `src/lib/safetyCostDocumentBuilder.ts` | 공개 자료실 예시 파일(`GSC 여수 7,8월`)과 동일한 14개 섹션(표지·목차·총괄·항목별·비목별 사용항목·2단 사진대지·세금계산서 파란 요약박스·보호구 수불/지급대장·인증서) HTML/CSS 렌더러 |
-| **신규** | `src/lib/pdfPageRasterizer.ts` | `pdfjs-dist` 기반으로 PDF 증빙 파일(`application/pdf`)을 고해상도 이미지 배열로 변환하여 사진대지 및 별첨 페이지에 삽입하는 유틸리티 |
-| **수정** | `src/pages/SafetyCost.tsx` | • `exportPDF()`를 `safetyCostDocumentBuilder` 기반으로 전면 교체 (모든 이미지·PDF 변환 대기 후 인쇄)<br>• URL 쿼리 `?reportId=...` 자동 선택 딥링크 연동<br>• 공사 일반사항(대표자/소재지/발주처/공정율) 입력·표시 보강 |
-| **수정** | `src/lib/approvalInboxPreview.ts` | • `canInlineApprovalPreview`에 `"safety_cost"` 추가<br>• `getApprovalEntityPath("safety_cost", entityId)`에 `reportId` 파라미터 추가 |
-| **수정** | `src/components/approval/ApprovalDocPreviewDialog.tsx` | • `safety_cost` 인라인 문서 미리보기(`ZoomableDocumentPreview`) 및 하단 증빙 종류별 빠른 필터/원본 뷰어 패널 추가 |
-| **수정** | `src/pages/MobileApprovalDetail.tsx` | • 모바일 결재 화면에서 안전관리비 총괄·항목별 내역·첨부 증빙(사진/거래명세서/세금계산서) 미리보기 카드 추가 |
+| 구분 | 파일 | 내용 |
+| --- | --- | --- |
+| 신규 | `src/lib/safetyCostDocumentBuilder.ts` | 3장의 규칙으로 HTML을 만든다 |
+| 신규 | `src/lib/pdfPageRasterizer.ts` | “원본 전체” 인쇄에서만 PDF 페이지를 PNG로 만든다 |
+| 수정 | `src/pages/SafetyCost.tsx` | `exportPDF()`가 빌더와 `printHtmlDocument`를 쓴다. `reportId`로 보고서를 고른다 |
+| 수정 | `src/lib/approvalInboxPreview.ts` | `safety_cost` 미리보기. 경로는 `/app/admin/safety-cost?from=approvals&reportId=` |
+| 수정 | `src/lib/notificationRoutes.ts` | 같은 보고서 id |
+| 수정 | `src/components/approval/ApprovalDocPreviewDialog.tsx` | 기본 묶음 HTML과 원본을 여는 목록 |
+| 수정 | `src/pages/MobileApprovalDetail.tsx` | 총괄·항목·첨부 카드 |
+| 유지 | `src/lib/safetyCostEvidencePack.ts` | 상신 게이트는 그대로. 인쇄 목차만 2.3을 따른다 |
+| 재사용 | `src/lib/safetyCostItemEvidence.ts` | `note`, `categoryTaxAllocationNotes`, `cloneEvidenceToCategories` |
+| 재사용 | `src/lib/printHtmlDocument.ts` | 그림 대기 후 인쇄 |
+| 재사용 | `PpeLedgerPanel.tsx`, `PpeStockPanel.tsx` | 이미 읽는 대장·수불 |
+| 나중 SQL | `snapshot_approval_document` | 3.7의 파일 식별을 스냅샷에 추가. 이 문서 PR에서는 적용하지 않는다 |
+| 유지 | `src/lib/safetyCostExport.ts` | 엑셀은 숫자 별지 그대로 |
 
 ---
 
-## 5. 기대 효과 및 검증 계획
+## 5. 이렇게 확인한다
 
-1. **공개 자료실 `안전관리비 증빙 예시` 양식과 100% 동일한 품질 달성**
-   - 표지(3단 결재란), 14개 고정 목차, 별지 제1호 총괄표, 항목별 내역서, 비목별 간지 및 사용항목 표, **상·하 2단 사진대지(거래명세서+검수사진 / 현장설치사진)**, **세금계산서 대지(파란색 비목별 금액 배분 박스)**, **보호구 수불집계표 및 자필서명 지급대장**, **안전인증서 연속 편철**이 한 번의 클릭으로 자동 생성됩니다.
-2. **결재자(현장소장·본사·발주처/감리)의 결재 편의성 극대화**
-   - 결재함(PC/모바일)에서 다른 화면으로 이동할 필요 없이, 인쇄될 최종 안전관리비 사용내역서 및 모든 첨부 증빙(사진, 거래명세서, 세금계산서)을 즉시 확인하고 승인/반려할 수 있습니다.
-3. **이미지·PDF 증빙 누락 제로화**
-   - 이미지 프리로드(`img.decode()`) 및 PDF 래스터라이징 완료 후 인쇄가 실행되므로 빈 칸이나 깨진 이미지 없이 깔끔한 PDF 저장 및 인쇄가 보장됩니다.
+1. 당월 보고서 인쇄 기본값에 총괄, 항목, 금액이 있는 비목의 사진대지와 세금계산서, 지급대장이 들어 있다. 인증서 원본 전체는 빠져 있다.
+2. `note`가 비어 있는 세금계산서에는 `배분 메모 없음`이 나오고, 11,224,800 같은 금액은 생기지 않는다.
+3. `note`에 검수가 없는 사진은 `보호구 검수`나 `거래명세표/검수`로 이름 붙지 않는다.
+4. 비목 코드 `'2'` 시설 사진이 예시 편철 4번에 가고, `'4'` 진단이 편철 9번에 간다.
+5. 이관 월은 총괄과 항목만 나오고 빈 사진대지가 없다. 비목 `3` 금액이 0이면 지급대장은 `해당 없음`, 금액만 있고 서명이 없으면 `미작성`이다.
+6. 결재함 미리보기와 모바일 상세에서 같은 기본 묶음과 원본 파일이 열린다. `/app/admin/safety-cost?reportId=`가 그 달을 고른다. 상신된 보고서는 편집되지 않는다.
+7. 공정율 칸이 비어 있으면 사용기준금액도 비어 있다.

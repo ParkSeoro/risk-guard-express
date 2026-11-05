@@ -1,10 +1,13 @@
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
+$baseDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+if (-not $baseDir) { $baseDir = (Get-Item .).FullName }
+Set-Location $baseDir
+[System.IO.Directory]::SetCurrentDirectory($baseDir)
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zipPath = "release-desktop\webbundle.zip"
+$zipPath = Join-Path $baseDir "release-desktop\webbundle.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-$distDir = (Resolve-Path "dist").Path
+$distDir = Join-Path $baseDir "dist"
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
     $distDir,
     $zipPath,
@@ -13,8 +16,9 @@ $distDir = (Resolve-Path "dist").Path
 )
 
 $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-$outExe = "release-desktop\SafeNex_PC_Setup_1.1.1.exe"
-$icoPath = "release-desktop\safenex.ico"
+$outExe = Join-Path $baseDir "release-desktop\SafeNex_PC_Setup_1.1.1.exe"
+$icoPath = Join-Path $baseDir "release-desktop\safenex.ico"
+$csPath = Join-Path $baseDir "electron\SafeNexWindowsSetup.cs"
 $resArg = "/resource:$zipPath,webbundle.zip"
 
 & $csc /nologo /utf8output /target:winexe /out:$outExe `
@@ -26,7 +30,7 @@ $resArg = "/resource:$zipPath,webbundle.zip"
     /r:System.IO.Compression.FileSystem.dll `
     /r:Microsoft.CSharp.dll `
     $resArg `
-    "electron\SafeNexWindowsSetup.cs"
+    $csPath
 
 $desktopDir = [Environment]::GetFolderPath("Desktop")
 $desktopExe = Join-Path $desktopDir "SafeNex_PC_Setup_1.1.1.exe"

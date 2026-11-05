@@ -1,7 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DesktopRailSidebar } from "@/components/desktop/DesktopRailSidebar";
-import { ArrowLeft, User, LogOut, Building2, Smartphone, Monitor } from "lucide-react";
+import { ArrowLeft, User, LogOut, Building2, Smartphone, Monitor, Globe, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,6 +26,7 @@ import { isForceDesktop, isLikelyPhoneDevice, setForceDesktop } from "@/hooks/us
 import { isPureWorkerUser, MOBILE_ADMIN_HOME } from "@/components/AuthGuard";
 import {
   isDesktopShellActive,
+  openSafeNexWebSite,
   resizeDesktopWindow,
   resolveDesktopRouteWindowSize,
   setDesktopShellActive,
@@ -128,11 +129,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0 pr-1 text-xs text-muted-foreground whitespace-nowrap">
-                    <span className="font-semibold text-foreground">
-                      {profile?.display_name || "관리자"}
-                    </span>
-                    <span>({roleLabel})</span>
+                  <div className="flex items-center gap-2.5 shrink-0 pr-1 text-xs text-muted-foreground whitespace-nowrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-[11px] gap-1.5 font-semibold text-primary border-primary/30 hover:bg-primary/10"
+                      onClick={() => openSafeNexWebSite(location.pathname, location.search)}
+                      title="현재 화면을 기본 웹 브라우저(전체 사이트)로 열기"
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                      <span>사이트 바로가기</span>
+                      <ExternalLink className="h-3 w-3 opacity-70" />
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      <span className="font-semibold text-foreground">
+                        {profile?.display_name || "관리자"}
+                      </span>
+                      <span>({roleLabel})</span>
+                    </div>
                   </div>
                 </header>
               )}

@@ -22,7 +22,8 @@ namespace SafeNexDesktop
 {
     static class AppConstants
     {
-        public const string APP_VERSION = "1.1.3";
+        public const string APP_VERSION = "1.1.4";
+        public const string PUBLIC_SITE_URL = "https://safenex.org/app/admin";
         public const int MESSENGER_WIDTH = 420;
         public const int MESSENGER_HEIGHT = 680;
         public const int WORK_WIDTH = 1260;
@@ -791,6 +792,12 @@ namespace SafeNexDesktop
 
             menu.Items.Add(new ToolStripSeparator());
 
+            ToolStripMenuItem webSiteItem = new ToolStripMenuItem("🌐 SafeNex 웹사이트 바로가기 (safenex.org)");
+            webSiteItem.Click += (s, e) => OpenExternalBrowser(AppConstants.PUBLIC_SITE_URL);
+            menu.Items.Add(webSiteItem);
+
+            menu.Items.Add(new ToolStripSeparator());
+
             ToolStripMenuItem autoStartItem = new ToolStripMenuItem("윈도우 시작 시 자동 실행")
             {
                 Checked = SetupInstallerForm.GetAutoStartRegistry(),
@@ -815,6 +822,25 @@ namespace SafeNexDesktop
         {
             string url = "http://127.0.0.1:" + _port + route;
             Program.LaunchAppWindow(url, width, height);
+        }
+
+        private static void OpenExternalBrowser(string targetUrl)
+        {
+            try
+            {
+                string url = string.IsNullOrEmpty(targetUrl) ? AppConstants.PUBLIC_SITE_URL : targetUrl.Trim();
+                if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                    !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                {
+                    url = AppConstants.PUBLIC_SITE_URL;
+                }
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch { }
         }
 
         private void StartLocalSpaServer()
@@ -882,6 +908,21 @@ namespace SafeNexDesktop
                     ctx.Response.StatusCode = 200;
                     ctx.Response.ContentLength64 = okBytes.Length;
                     ctx.Response.OutputStream.Write(okBytes, 0, okBytes.Length);
+                    ctx.Response.OutputStream.Close();
+                    return;
+                }
+
+                // Open official SafeNex web site in the user's default full browser tab
+                if (string.Equals(rawPath, "/__desktop/open-external", StringComparison.OrdinalIgnoreCase))
+                {
+                    string targetUrl = ctx.Request.QueryString["url"] ?? AppConstants.PUBLIC_SITE_URL;
+                    OpenExternalBrowser(targetUrl);
+
+                    byte[] extBytes = Encoding.UTF8.GetBytes("{\"ok\":true}");
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    ctx.Response.StatusCode = 200;
+                    ctx.Response.ContentLength64 = extBytes.Length;
+                    ctx.Response.OutputStream.Write(extBytes, 0, extBytes.Length);
                     ctx.Response.OutputStream.Close();
                     return;
                 }

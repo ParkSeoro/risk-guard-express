@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import {
   openDesktopPopoutWindow,
+  openSafeNexWebSite,
   resizeDesktopWindow,
   setDesktopShellActive,
 } from "@/lib/desktopBridge";
@@ -21,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Users, Plus } from "lucide-react";
+import { MessageSquare, Users, Plus, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function DesktopWorkspacePage() {
@@ -156,6 +157,17 @@ export default function DesktopWorkspacePage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => openSafeNexWebSite("/app/admin")}
+              className="h-7 px-2 text-[11px] gap-1 rounded-lg text-primary border-primary/30 hover:bg-primary/10"
+              title="SafeNex 전체 웹 사이트 바로가기 (기본 브라우저 열기)"
+            >
+              <Globe className="h-3.5 w-3.5" />
+              <span>사이트</span>
+            </Button>
             <Button
               size="sm"
               onClick={() => setIsNewChatOpen(true)}

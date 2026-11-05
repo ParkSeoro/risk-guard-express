@@ -8,6 +8,7 @@ import {
   loadDesktopPresence,
   saveDesktopPresence,
   resolveDesktopRouteWindowSize,
+  resolveSafeNexWebSiteUrl,
   setDesktopShellActive,
 } from "@/lib/desktopBridge";
 import { DESKTOP_RAIL_ITEMS } from "@/components/desktop/DesktopRailSidebar";
@@ -114,5 +115,14 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
       height: 820,
       isMessengerView: false,
     });
+  });
+
+  it("resolves official SafeNex website URLs for current routes", () => {
+    expect(resolveSafeNexWebSiteUrl("/app/admin/desktop-workspace", "?tab=rooms")).toBe(
+      "https://safenex.org/app/admin",
+    );
+    expect(resolveSafeNexWebSiteUrl("/app/admin/work-permits", "?status=issued")).toBe(
+      "https://safenex.org/app/admin/work-permits?status=issued",
+    );
   });
 });

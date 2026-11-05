@@ -13,6 +13,7 @@ import {
   isWindowsDesktopApp,
   loadDesktopPresence,
   loadDesktopSettings,
+  openSafeNexWebSite,
   resizeDesktopWindow,
   saveDesktopPresence,
   saveDesktopSettings,
@@ -37,6 +38,8 @@ import {
   LogOut,
   ClipboardCheck,
   RefreshCw,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -588,7 +591,7 @@ export function DesktopRailSidebar() {
             })}
           </div>
 
-          {/* 하단 고정 액션: 무설치 업데이트 알림 / 항상 위 고정 / 환경설정 / 로그아웃 */}
+          {/* 하단 고정 액션: 무설치 업데이트 알림 / 웹 사이트 바로가기 / 항상 위 고정 / 환경설정 / 로그아웃 */}
           <div className="flex flex-col gap-0.5 w-full pt-2 border-t border-white/10">
             {stagedUpdateVersion && (
               <button
@@ -608,6 +611,30 @@ export function DesktopRailSidebar() {
                 )}
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                openSafeNexWebSite(location.pathname, location.search);
+                toast.info("기본 웹 브라우저에서 SafeNex 사이트를 엽니다.");
+              }}
+              title="SafeNex 웹 사이트 바로가기 (기본 브라우저 전체 화면으로 열기)"
+              aria-label="웹 사이트 바로가기"
+              className={cn(
+                "h-8 rounded-lg flex items-center gap-2.5 text-sky-300 hover:text-white hover:bg-sky-500/20 transition-colors",
+                isExpanded ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
+              )}
+            >
+              <Globe className="h-4 w-4 shrink-0" />
+              {isExpanded && (
+                <>
+                  <span className="text-xs whitespace-nowrap flex-1 text-left font-medium">
+                    웹 사이트 바로가기
+                  </span>
+                  <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                </>
+              )}
+            </button>
 
             <button
               type="button"

@@ -666,3 +666,56 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
     };
   }
 }
+
+export const SAFENEX_PUBLIC_SITE_ORIGIN = "https://safenex.org";
+
+/**
+ * Resolves the full public website URL for the current route inside the PC program.
+ * - If currently on the messenger view (`/desktop-workspace` or `/messenger`), opens `/app/admin` (the full web dashboard).
+ * - If currently on a work view (e.g., `/app/admin/work-permits`), opens that exact path on `https://safenex.org`.
+ */
+export function resolveSafeNexWebSiteUrl(
+  pathname?: string,
+  search?: string,
+): string {
+  const p = (pathname || "").trim();
+  if (!p || p === "/" || p.includes("/desktop-workspace") || p.includes("/messenger")) {
+    return `${SAFENEX_PUBLIC_SITE_ORIGIN}/app/admin`;
+  }
+  const cleanPath = p.startsWith("/") ? p : `/${p}`;
+  const cleanSearch = search && search.startsWith("?") ? search : "";
+  return `${SAFENEX_PUBLIC_SITE_ORIGIN}${cleanPath}${cleanSearch}`;
+}
+
+/**
+ * Opens the SafeNex official website (`https://safenex.org`) in the user's default desktop browser (Chrome/Edge normal tab).
+ */
+export function openSafeNexWebSite(pathname?: string, search?: string): void {
+  if (typeof window === "undefined") return;
+  const targetUrl = resolveSafeNexWebSiteUrl(
+    pathname ?? window.location.pathname,
+    search ?? window.location.search,
+  );
+
+  if (
+    isWindowsDesktopApp() ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost"
+  ) {
+    fetch(`/__desktop/open-external?url=${encodeURIComponent(targetUrl)}`, {
+      method: "GET",
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (!res.ok) {
+          window.open(targetUrl, "_blank", "noopener,noreferrer");
+        }
+      })
+      .catch(() => {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+      });
+    return;
+  }
+
+  window.open(targetUrl, "_blank", "noopener,noreferrer");
+}

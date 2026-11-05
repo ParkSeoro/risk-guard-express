@@ -462,19 +462,82 @@ export interface DesktopOtaCheckResult {
 }
 
 const DESKTOP_BUNDLE_VERSION_KEY = "safenex_pc_bundle_version";
+export const DESKTOP_DEFAULT_VERSION = "1.1.5";
 
-function cmpDesktopVersion(a: string, b: string): number {
-  const parts = (v: string) => {
-    const nums = String(v || "").match(/\d+/g);
-    return nums ? nums.map((n) => Number(n)) : [0];
-  };
-  const pa = parts(a);
-  const pb = parts(b);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] || 0;
-    const y = pb[i] || 0;
-    if (x !== y) return x - y;
+/**
+ * Robust version comparison for SafeNex PC OTA Auto-Updater:
+ * Handles semantic versions (1.1.5), CI timestamped releases (1.1.1-202611050225),
+ * and un-timestamped launcher builds (1.1.4 / 1.1.1).
+ */
+export function isDesktopUpdateAvailable(
+  latestVersion: string | null | undefined,
+  currentVersion: string | null | undefined,
+): boolean {
+  const latest = (latestVersion || "").trim();
+  const current = (currentVersion || "").trim();
+  if (!latest) return false;
+  if (!current || current === "내장" || current === "0.0.0" || current.startsWith("test-")) {
+    return true;
   }
+  if (latest === current) return false;
+
+  const parseVersion = (v: string) => {
+    const match = v.match(/^(\d+(?:\.\d+)*)(?:[-._](\d{8,14}))?$/);
+    if (!match) {
+      const nums = v.match(/\d+/g) || [];
+      const hasTimestamp =
+        nums.length > 3 || (nums[nums.length - 1] && nums[nums.length - 1].length >= 8);
+      return {
+        semver: nums.slice(0, 3).map(Number),
+        timestamp: hasTimestamp ? Number(nums[nums.length - 1]) : 0,
+      };
+    }
+    const semverParts = match[1].split(".").map(Number);
+    const timestamp = match[2] ? Number(match[2]) : 0;
+    return { semver: semverParts, timestamp };
+  };
+
+  const pLatest = parseVersion(latest);
+  const pCurrent = parseVersion(current);
+
+  const maxSemverLen = Math.max(pLatest.semver.length, pCurrent.semver.length);
+  let semverDiff = 0;
+  for (let i = 0; i < maxSemverLen; i++) {
+    const l = pLatest.semver[i] || 0;
+    const c = pCurrent.semver[i] || 0;
+    if (l !== c) {
+      semverDiff = l - c;
+      break;
+    }
+  }
+
+  // 1) Higher semver -> update available
+  if (semverDiff > 0) return true;
+
+  // 2) Identical semver -> compare timestamp
+  if (semverDiff === 0) {
+    if (pLatest.timestamp && pCurrent.timestamp) {
+      return pLatest.timestamp > pCurrent.timestamp;
+    }
+    if (pLatest.timestamp && !pCurrent.timestamp) {
+      return true;
+    }
+  }
+
+  // 3) Resilient fallback: If latest is an official timestamped CI production release (e.g. 1.1.1-202611050225)
+  // from Supabase app_releases, but current is an un-timestamped launcher or dev build (e.g. 1.1.4 / 1.1.1),
+  // and they differ, apply the production release!
+  if (pLatest.timestamp && !pCurrent.timestamp) {
+    return true;
+  }
+
+  return false;
+}
+
+export function cmpDesktopVersion(a: string, b: string): number {
+  if (a === b) return 0;
+  if (isDesktopUpdateAvailable(a, b)) return 1;
+  if (isDesktopUpdateAvailable(b, a)) return -1;
   return 0;
 }
 
@@ -486,7 +549,7 @@ export async function getDesktopVersionInfo(): Promise<{
   bundleVersion: string;
 }> {
   const fallbackAppVersion =
-    (typeof window !== "undefined" && window.safenexDesktop?.appVersion) || "1.1.3";
+    (typeof window !== "undefined" && window.safenexDesktop?.appVersion) || DESKTOP_DEFAULT_VERSION;
   let savedBundle = fallbackAppVersion;
   if (typeof window !== "undefined") {
     try {
@@ -497,14 +560,10 @@ export async function getDesktopVersionInfo(): Promise<{
     }
   }
 
-  if (
-    typeof window !== "undefined" &&
-    (isWindowsDesktopApp() ||
-      window.location.hostname === "127.0.0.1" ||
-      window.location.hostname === "localhost")
-  ) {
+  const endpoints = ["/__desktop/version", "http://127.0.0.1:45780/__desktop/version"];
+  for (const url of endpoints) {
     try {
-      const res = await fetch("/__desktop/version", { cache: "no-store" });
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
         const json = (await res.json()) as {
           appVersion?: string;
@@ -522,7 +581,7 @@ export async function getDesktopVersionInfo(): Promise<{
         };
       }
     } catch {
-      /* ignore */
+      /* try next */
     }
   }
 
@@ -576,7 +635,7 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
     }
 
     const latestVersion = String(release.version);
-    const hasUpdate = cmpDesktopVersion(latestVersion, currentVersion) > 0;
+    const hasUpdate = isDesktopUpdateAvailable(latestVersion, currentVersion);
     if (!hasUpdate) {
       return {
         ok: true,
@@ -608,22 +667,40 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
     }
 
     // Instruct local SafeNexPC.exe resident server to download & extract the new bundle into %LOCALAPPDATA%\SafeNexPC\www
-    const applyRes = await fetch(
+    const applyEndpoints = [
       `/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
-      {
-        method: "POST",
-        cache: "no-store",
-      },
-    );
+      `http://127.0.0.1:45780/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
+    ];
 
-    if (!applyRes.ok) {
+    let applyRes: Response | null = null;
+    let lastStatus = 0;
+    for (const ep of applyEndpoints) {
+      try {
+        const r = await fetch(ep, { method: "POST", cache: "no-store" });
+        if (r.ok) {
+          applyRes = r;
+          break;
+        }
+        lastStatus = r.status;
+      } catch {
+        /* try next */
+      }
+    }
+
+    if (!applyRes) {
+      const isPc =
+        isWindowsDesktopApp() ||
+        (typeof window !== "undefined" &&
+          (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"));
       return {
         ok: false,
         hasUpdate: true,
         applied: false,
         currentVersion,
         latestVersion,
-        message: `로컬 업데이트 적용 실패 (HTTP ${applyRes.status})`,
+        message: isPc
+          ? `로컬 업데이트 적용 실패 (포트 45780 연결 불가 또는 HTTP ${lastStatus || "통신 오류"})`
+          : "무설치 자동 업데이트는 SafeNex PC 설치 버전에서 동작합니다.",
       };
     }
 

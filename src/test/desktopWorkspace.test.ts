@@ -10,6 +10,8 @@ import {
   resolveDesktopRouteWindowSize,
   resolveSafeNexWebSiteUrl,
   setDesktopShellActive,
+  isDesktopUpdateAvailable,
+  cmpDesktopVersion,
 } from "@/lib/desktopBridge";
 import { DESKTOP_RAIL_ITEMS } from "@/components/desktop/DesktopRailSidebar";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
@@ -124,5 +126,34 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
     expect(resolveSafeNexWebSiteUrl("/app/admin/work-permits", "?status=issued")).toBe(
       "https://safenex.org/app/admin/work-permits?status=issued",
     );
+  });
+
+  it("accurately detects updates for CI timestamped and launcher releases", () => {
+    // 1. Critical bug fix: Server has timestamped release 1.1.1-202611050225, but local app had 1.1.4
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.4")).toBe(true);
+    expect(cmpDesktopVersion("1.1.1-202611050225", "1.1.4")).toBe(1);
+
+    // 2. Server has newer timestamp
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.1-202611050215")).toBe(true);
+    expect(cmpDesktopVersion("1.1.1-202611050225", "1.1.1-202611050215")).toBe(1);
+
+    // 3. Same version -> no update
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.1-202611050225")).toBe(false);
+    expect(cmpDesktopVersion("1.1.1-202611050225", "1.1.1-202611050225")).toBe(0);
+
+    // 4. Server has older timestamp -> no update
+    expect(isDesktopUpdateAvailable("1.1.1-202611050215", "1.1.1-202611050225")).toBe(false);
+    expect(cmpDesktopVersion("1.1.1-202611050215", "1.1.1-202611050225")).toBe(-1);
+
+    // 5. Bare semver update
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "1.1.1")).toBe(true);
+    expect(isDesktopUpdateAvailable("1.1.5-202611050300", "1.1.4")).toBe(true);
+    expect(isDesktopUpdateAvailable("1.2.0", "1.1.5")).toBe(true);
+
+    // 6. Test/fallback versions
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "test-1.0")).toBe(true);
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "내장")).toBe(true);
+    expect(isDesktopUpdateAvailable("1.1.1-202611050225", "0.0.0")).toBe(true);
+    expect(isDesktopUpdateAvailable(null, "1.1.4")).toBe(false);
   });
 });

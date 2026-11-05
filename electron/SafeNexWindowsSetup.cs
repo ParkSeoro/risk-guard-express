@@ -15,14 +15,14 @@ using Microsoft.Win32;
 [assembly: AssemblyDescription("SafeNex Windows Desktop Messenger & Safety Workspace")]
 [assembly: AssemblyCompany("SafeNex")]
 [assembly: AssemblyProduct("SafeNex PC")]
-[assembly: AssemblyVersion("1.1.3.0")]
-[assembly: AssemblyFileVersion("1.1.3.0")]
+[assembly: AssemblyVersion("1.1.5.0")]
+[assembly: AssemblyFileVersion("1.1.5.0")]
 
 namespace SafeNexDesktop
 {
     static class AppConstants
     {
-        public const string APP_VERSION = "1.1.4";
+        public const string APP_VERSION = "1.1.5";
         public const string PUBLIC_SITE_URL = "https://safenex.org/app/admin";
         public const int MESSENGER_WIDTH = 420;
         public const int MESSENGER_HEIGHT = 680;
@@ -892,6 +892,17 @@ namespace SafeNexDesktop
         {
             try
             {
+                ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+                ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+                ctx.Response.Headers.Add("Access-Control-Allow-Headers", "*");
+
+                if (string.Equals(ctx.Request.HttpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Response.StatusCode = 204;
+                    ctx.Response.Close();
+                    return;
+                }
+
                 string rawPath = ctx.Request.Url.AbsolutePath;
 
                 // Native window resize endpoint called when switching between Messenger (420x680) and Work Mode (1260x820)

@@ -61,7 +61,7 @@ export function DesktopAppSettingsDialog({
   const [versionInfo, setVersionInfo] = useState<{
     appVersion: string;
     bundleVersion: string;
-  }>({ appVersion: "1.1.3", bundleVersion: "1.1.3" });
+  }>({ appVersion: "1.1.5", bundleVersion: "1.1.5" });
   const [checkingOta, setCheckingOta] = useState(false);
 
   useEffect(() => {

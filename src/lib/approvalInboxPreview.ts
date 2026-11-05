@@ -28,7 +28,7 @@ export function desktopApprovalEntityPath(
     case "work_permit":
       return `/work-permits/${entityId}`;
     case "safety_cost":
-      return `/safety-cost`;
+      return `/app/admin/safety-cost?reportId=${entityId}`;
     case "incident":
       return `/incidents`;
     case "emergency_drill":
@@ -75,6 +75,7 @@ export function canInlineApprovalPreview(entityType?: string | null): boolean {
     entityType === "assessment_run_feedback" ||
     entityType === "work_plan" ||
     entityType === "work_permit" ||
+    entityType === "safety_cost" ||
     entityType === "safety_inspection"
   );
 }

@@ -26,6 +26,15 @@ import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
 import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
 import RejectionReasonBanner from "@/components/approval/RejectionReasonBanner";
 import { latestResubmitNotes, priorRejectionNotes, type RejectionNote } from "@/lib/priorRejectionReason";
+import { loadSafetyCostDocument } from "@/lib/safetyCostDocumentLoad";
+import {
+  buildSafetyCostDocument,
+  defaultSafetyCostPrintScope,
+  type SafetyCostDocFile,
+  type SafetyCostDocItem,
+} from "@/lib/safetyCostDocumentBuilder";
+import { SAFETY_COST_CATEGORIES, formatKRW, sumSafetyCostByCategory } from "@/lib/safetyCost";
+import SafetyCostFileList from "@/components/safety-cost/SafetyCostFileList";
 
 /**
  * Mobile approval detail — decide on the same screen as the document.
@@ -49,6 +58,14 @@ export default function MobileApprovalDetail() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [priorRejects, setPriorRejects] = useState<RejectionNote[]>([]);
   const [resubmitNotes, setResubmitNotes] = useState<RejectionNote[]>([]);
+  const [safetyDoc, setSafetyDoc] = useState<{
+    html: string;
+    files: SafetyCostDocFile[];
+    items: SafetyCostDocItem[];
+    month: string;
+    construction: string;
+  } | null>(null);
+  const [showSafetyBundle, setShowSafetyBundle] = useState(false);
 
   const stepKind = permitPostStepKind(row?.step_position);
   const badge = permitPostStepBadge(stepKind);
@@ -100,10 +117,36 @@ export default function MobileApprovalDetail() {
           setBriefing(null);
         }
         setPreviewLoading(false);
+        setSafetyDoc(null);
+      } else if (found?.entity_type === "safety_cost" && found.entity_id) {
+        setPermitRow(null);
+        setFormData({});
+        setSignatures({});
+        setPreviewLoading(true);
+        setShowSafetyBundle(false);
+        try {
+          const input = await loadSafetyCostDocument(found.entity_id);
+          const built = buildSafetyCostDocument(
+            input,
+            defaultSafetyCostPrintScope(input.report.source === "legacy_import"),
+          );
+          setSafetyDoc({
+            html: built.html,
+            files: built.files,
+            items: input.items,
+            month: input.report.year_month || "",
+            construction: input.report.construction_name || "",
+          });
+        } catch (e: any) {
+          setSafetyDoc(null);
+          toast.error(e?.message || "사용내역서를 불러오지 못했습니다.");
+        }
+        setPreviewLoading(false);
       } else {
         setPermitRow(null);
         setFormData({});
         setSignatures({});
+        setSafetyDoc(null);
       }
       setLoading(false);
       if (found?.entity_type && found?.entity_id) {
@@ -197,6 +240,7 @@ export default function MobileApprovalDetail() {
     : (row?.entity_date || "-");
   const summaryPersonnel = permitRow?.personnel_count || form.personnel_count || 0;
   const closureName = permitRow?.signatures?.closure_approver?.name;
+  const safetyAmounts = safetyDoc ? sumSafetyCostByCategory(safetyDoc.items) : null;
 
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
@@ -272,10 +316,46 @@ export default function MobileApprovalDetail() {
               />
             )}
 
+            {row.entity_type === "safety_cost" && (
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="font-semibold text-sm">산업안전보건관리비</div>
+                  <div className="text-xs text-muted-foreground">
+                    {safetyDoc ? `${safetyDoc.month} · ${safetyDoc.construction}` : "사용내역서"}
+                  </div>
+                  {safetyDoc && safetyAmounts && (
+                    <div className="text-xs space-y-0.5">
+                      {SAFETY_COST_CATEGORIES.map((cat) => {
+                        const amount = safetyAmounts[cat.code] || 0;
+                        if (!amount) return null;
+                        return <div key={cat.code}>{cat.code}. {cat.name} {formatKRW(amount)}</div>;
+                      })}
+                    </div>
+                  )}
+                  {safetyDoc && (
+                    <div className="flex gap-2 overflow-x-auto">
+                      {safetyDoc.files.filter((file) => String(file.mime_type || "").startsWith("image/") && file.file_url).map((file) => (
+                        <a key={file.id} href={file.file_url || undefined} target="_blank" rel="noreferrer">
+                          <img src={file.file_url || ""} alt={file.file_name || ""} className="h-16 w-16 object-cover rounded border" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <Button variant="outline" className="w-full" disabled={!safetyDoc} onClick={() => setShowSafetyBundle((v) => !v)}>
+                    기본 사용내역서 보기
+                  </Button>
+                  {showSafetyBundle && safetyDoc && (
+                    <iframe title="사용내역서" className="w-full h-96 border rounded" srcDoc={safetyDoc.html} />
+                  )}
+                  {safetyDoc && <SafetyCostFileList files={safetyDoc.files} />}
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardContent className="pt-4 space-y-3">
                 <div className="flex flex-wrap gap-1.5">
-                  <Badge variant="secondary">작업허가서</Badge>
+                  <Badge variant="secondary">{row.entity_type === "safety_cost" ? "산업안전보건관리비" : "작업허가서"}</Badge>
                   {badge && (
                     <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30" variant="outline">
                       {badge}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ChatRoomMessage, ChatAttachment } from "@/lib/messengerApi";
 import {
   parseSafetyDocMessage,
@@ -21,10 +21,13 @@ import {
   ShieldAlert,
   FileCheck2,
   ArrowUpRight,
+  Forward,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ReadReceiptModal } from "./ReadReceiptModal";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
 
 interface MessageBubbleProps {
@@ -42,6 +45,8 @@ interface MessageBubbleProps {
   onToggleReaction?: (messageId: string, emoji: string) => void;
   onPinMessage?: (message: ChatRoomMessage) => void;
   onDeleteMessage?: (message: ChatRoomMessage) => void;
+  onForward?: (message: ChatRoomMessage) => void;
+  onOpenImage?: (url: string) => void;
 }
 
 const DOC_KIND_META: Record<
@@ -85,10 +90,33 @@ export function MessageBubble({
   onToggleReaction,
   onPinMessage,
   onDeleteMessage,
+  onForward,
+  onOpenImage,
 }: MessageBubbleProps) {
   const [showReceipts, setShowReceipts] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const longPressed = useRef(false);
+
+  const openImage = (url: string) => {
+    if (onOpenImage) onOpenImage(url);
+    else setLightboxUrl(url);
+  };
+
+  const startPress = () => {
+    longPressed.current = false;
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = window.setTimeout(() => {
+      longPressed.current = true;
+      setActionsOpen(true);
+    }, 450);
+  };
+
+  const endPress = () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
@@ -140,7 +168,7 @@ export function MessageBubble({
       {showDateDivider && dateLabel && (
         <div className="flex items-center justify-center my-4 select-none">
           <div className="h-px flex-1 bg-border/60" />
-          <span className="mx-3 text-[10px] font-medium px-3 py-0.5 rounded-full bg-muted/70 text-muted-foreground border border-border/60">
+          <span className={cn("mx-3 font-medium px-3 py-0.5 rounded-full bg-muted/70 text-muted-foreground border border-border/60", messengerType.meta)}>
             {dateLabel}
           </span>
           <div className="h-px flex-1 bg-border/60" />
@@ -150,7 +178,7 @@ export function MessageBubble({
       {/* 시스템 메시지인 경우 중앙 정렬 배너 */}
       {message.message_type === "SYSTEM" ? (
         <div className="flex justify-center my-2.5">
-          <span className="text-[11px] px-3 py-1 rounded-full bg-muted/80 text-muted-foreground border">
+          <span className={cn("px-3 py-1 rounded-full bg-muted/80 text-muted-foreground border", messengerType.meta)}>
             {message.content}
           </span>
         </div>
@@ -167,13 +195,13 @@ export function MessageBubble({
         >
           {/* 상대방 프로필 아바타 (연속 메시지의 첫 줄에만 표시, 나머지는 여백 유지) */}
           {!isMe && (
-            <div className="w-7 shrink-0 flex flex-col items-center self-start mt-0.5">
+            <div className="w-8 shrink-0 flex flex-col items-center self-start mt-0.5">
               {isFirstInGroup ? (
-                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-bold border border-primary/20 shadow-2xs">
+                <div className={cn("h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold border border-primary/20 shadow-2xs", messengerType.meta)}>
                   {message.sender_name?.slice(0, 1) || <User className="h-3.5 w-3.5" />}
                 </div>
               ) : (
-                <div className="h-1 w-7" />
+                <div className="h-1 w-8" />
               )}
             </div>
           )}
@@ -182,17 +210,17 @@ export function MessageBubble({
           <div className={cn("flex flex-col min-w-0", isMe ? "items-end" : "items-start")}>
             {/* 상대방 이름 및 소속 회사 (연속 메시지의 첫 줄에만 표시) */}
             {!isMe && isFirstInGroup && (
-              <div className="flex items-center gap-1.5 mb-1 px-0.5 text-[11px] flex-wrap">
+              <div className={cn("flex items-center gap-1.5 mb-1 px-0.5 flex-wrap", messengerType.preview)}>
                 <span className="font-semibold text-foreground">
                   {message.sender_name || "사용자"}
                 </span>
                 {message.sender_company && (
-                  <span className="text-[10px] text-muted-foreground font-medium">
+                  <span className={cn("text-muted-foreground font-medium", messengerType.meta)}>
                     · {message.sender_company}
                   </span>
                 )}
                 {message.sender_role && (
-                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-medium border border-border/50">
+                  <span className={cn("px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-medium border border-border/50", messengerType.meta)}>
                     {message.sender_role}
                   </span>
                 )}
@@ -204,7 +232,8 @@ export function MessageBubble({
               <div
                 onClick={() => message.parent_id && onScrollToMessage?.(message.parent_id)}
                 className={cn(
-                  "cursor-pointer text-[11px] px-2.5 py-1.5 rounded-t-xl border border-b-0 mb-0.5 max-w-full truncate flex items-center gap-1.5 bg-muted/70 hover:bg-muted text-muted-foreground transition-colors",
+                  "cursor-pointer px-2.5 py-1.5 rounded-t-xl border border-b-0 mb-0.5 max-w-full truncate flex items-center gap-1.5 bg-muted/70 hover:bg-muted text-muted-foreground transition-colors",
+                  messengerType.meta,
                   isMe ? "rounded-tl-xl" : "rounded-tr-xl",
                 )}
               >
@@ -221,16 +250,25 @@ export function MessageBubble({
             {/* 실제 메시지 말풍선 */}
             <div
               className={cn(
-                "relative px-3.5 py-2 rounded-2xl text-xs break-words shadow-2xs leading-relaxed",
+                "relative px-3.5 py-2.5 rounded-2xl break-words shadow-2xs",
+                messengerType.body,
                 isMe
                   ? "bg-primary text-primary-foreground rounded-br-xs"
                   : "bg-card border text-card-foreground rounded-bl-xs",
                 isPinned && "ring-1 ring-amber-400/60",
               )}
+              onPointerDown={startPress}
+              onPointerUp={endPress}
+              onPointerLeave={endPress}
+              onPointerCancel={endPress}
               onClick={(event) => {
                 const target = event.target as HTMLElement;
+                if (longPressed.current) {
+                  longPressed.current = false;
+                  return;
+                }
                 if (target.closest("a, button, img")) return;
-                setActionsOpen((open) => !open);
+                setActionsOpen(true);
               }}
             >
               {/* 첨부파일 렌더링 */}
@@ -242,7 +280,7 @@ export function MessageBubble({
                       <div
                         key={att.id}
                         className="rounded-lg overflow-hidden border bg-background/50 cursor-pointer max-w-[280px]"
-                        onClick={() => att.public_url && setLightboxUrl(att.public_url)}
+                        onClick={() => att.public_url && openImage(att.public_url)}
                       >
                         <img
                           src={att.thumbnail_url || att.public_url || ""}
@@ -250,7 +288,7 @@ export function MessageBubble({
                           className="w-full max-h-56 object-cover hover:opacity-95 transition-opacity"
                           loading="lazy"
                         />
-                        <div className="p-1 px-2 text-[10px] text-muted-foreground flex items-center justify-between bg-background/80">
+                        <div className={cn("p-1 px-2 text-muted-foreground flex items-center justify-between bg-background/80", messengerType.meta)}>
                           <span className="truncate max-w-[180px]">{att.file_name}</span>
                           <span className="shrink-0">{formatBytes(att.file_size)}</span>
                         </div>
@@ -267,8 +305,8 @@ export function MessageBubble({
                       >
                         <FileText className="h-7 w-7 shrink-0 text-primary" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{att.file_name}</p>
-                          <p className="text-[10px] opacity-75">{formatBytes(att.file_size)}</p>
+                          <p className={cn("font-medium truncate", messengerType.preview)}>{att.file_name}</p>
+                          <p className={cn("opacity-75", messengerType.meta)}>{formatBytes(att.file_size)}</p>
                         </div>
                         {att.public_url && (
                           <a
@@ -314,7 +352,8 @@ export function MessageBubble({
                           <div className="flex items-center justify-between gap-2 mb-1.5">
                             <span
                               className={cn(
-                                "text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1",
+                                "font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1",
+                                messengerType.meta,
                                 meta.badgeClass,
                               )}
                             >
@@ -322,23 +361,23 @@ export function MessageBubble({
                               {meta.label}
                             </span>
                             {parsedDoc.card.statusLabel && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                              <span className={cn("px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium", messengerType.meta)}>
                                 {parsedDoc.card.statusLabel}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs font-bold text-foreground line-clamp-2">
+                          <p className={cn("font-bold text-foreground line-clamp-2", messengerType.preview)}>
                             {parsedDoc.card.title}
                           </p>
                           {parsedDoc.card.subtitle && (
-                            <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                            <p className={cn("text-muted-foreground mt-0.5 truncate", messengerType.meta)}>
                               {parsedDoc.card.subtitle}
                             </p>
                           )}
                           {docPath ? (
                             <a
                               href={canonicalizeAppPath(docPath)}
-                              className="mt-2.5 w-full inline-flex items-center justify-center gap-1 text-[11px] font-semibold py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+                              className={cn("mt-2.5 w-full inline-flex items-center justify-center gap-1 font-semibold py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors", messengerType.meta)}
                             >
                               <span>안전문서 바로 열기</span>
                               <ArrowUpRight className="h-3.5 w-3.5" />
@@ -355,90 +394,6 @@ export function MessageBubble({
                 )
               )}
 
-              {/* 데스크톱 호버 / 모바일 탭 액션 툴바 (빠른 리액션 + 답장 + 공지 + 복사 + 삭제) */}
-              <div
-                className={cn(
-                  "absolute -top-8 items-center gap-0.5 p-1 rounded-lg bg-background/95 backdrop-blur-xs border shadow-md z-20",
-                  actionsOpen ? "flex" : "hidden md:group-hover:flex",
-                  isMe ? "right-0" : "left-0",
-                )}
-                onClick={(event) => event.stopPropagation()}
-              >
-                {onToggleReaction &&
-                  QUICK_CHAT_REACTIONS.map((item) => (
-                    <button
-                      key={item.emoji}
-                      type="button"
-                      onClick={() => {
-                        setActionsOpen(false);
-                        onToggleReaction(message.id, item.emoji);
-                      }}
-                      className="px-1.5 py-0.5 text-xs hover:bg-muted rounded transition-transform active:scale-95"
-                      title={`${item.label} (${item.emoji})`}
-                    >
-                      {item.emoji}
-                    </button>
-                  ))}
-
-                {onReply && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActionsOpen(false);
-                      onReply(message);
-                    }}
-                    className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-muted"
-                    title="답장하기"
-                  >
-                    <CornerDownLeft className="h-3.5 w-3.5" />
-                  </button>
-                )}
-
-                {onPinMessage && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActionsOpen(false);
-                      onPinMessage(message);
-                    }}
-                    className={cn(
-                      "p-1 rounded hover:bg-muted",
-                      isPinned
-                        ? "text-amber-500 hover:text-amber-600"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                    title={isPinned ? "공지 고정 해제" : "상단 공지로 고정"}
-                  >
-                    <Pin className="h-3.5 w-3.5" />
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActionsOpen(false);
-                    handleCopy();
-                  }}
-                  className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-muted"
-                  title="복사하기"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-
-                {isMe && onDeleteMessage && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActionsOpen(false);
-                      onDeleteMessage(message);
-                    }}
-                    className="p-1 text-muted-foreground hover:text-destructive rounded hover:bg-destructive/10"
-                    title="메시지 삭제"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
             </div>
 
             {/* 이모지 리액션 배지 목록 */}
@@ -455,7 +410,8 @@ export function MessageBubble({
                     type="button"
                     onClick={() => onToggleReaction?.(message.id, rx.emoji)}
                     className={cn(
-                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors cursor-pointer",
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold border transition-colors cursor-pointer",
+                      messengerType.meta,
                       rx.reactedByMe
                         ? "bg-primary/15 border-primary/40 text-primary"
                         : "bg-muted/60 border-border text-muted-foreground hover:bg-muted",
@@ -473,7 +429,8 @@ export function MessageBubble({
           {/* 시간 및 실시간 미확인 카운트 뱃지 */}
           <div
             className={cn(
-              "flex flex-col justify-end pb-0.5 shrink-0 text-[10px]",
+              "flex flex-col justify-end pb-0.5 shrink-0",
+              messengerType.meta,
               isMe ? "items-end" : "items-start",
             )}
           >
@@ -484,8 +441,8 @@ export function MessageBubble({
               className={cn(
                 "font-bold hover:underline mb-0.5 cursor-pointer px-0.5 leading-none",
                 message.unread_count !== undefined && message.unread_count > 0
-                  ? "text-amber-500 hover:text-amber-600 text-[10px]"
-                  : "text-muted-foreground/70 hover:text-foreground text-[9px] font-medium",
+                  ? "text-amber-500 hover:text-amber-600"
+                  : "text-muted-foreground/70 hover:text-foreground font-medium",
               )}
               title="읽은 사람 / 안 읽은 사람 확인 및 재알림"
             >
@@ -494,13 +451,64 @@ export function MessageBubble({
                 : "읽음"}
             </button>
             {isLastInGroup && (
-              <span className="text-muted-foreground/80 text-[9px] whitespace-nowrap leading-none">
+              <span className="text-muted-foreground/80 whitespace-nowrap leading-none">
                 {formatTime(message.created_at)}
               </span>
             )}
           </div>
         </div>
       )}
+
+      <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className={messengerType.title}>메시지</DialogTitle>
+          </DialogHeader>
+          {onToggleReaction && (
+            <div className="flex flex-wrap gap-2">
+              {QUICK_CHAT_REACTIONS.map((item) => (
+                <Button
+                  key={item.emoji}
+                  type="button"
+                  variant="outline"
+                  className={messengerType.preview}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onToggleReaction(message.id, item.emoji);
+                  }}
+                >
+                  {item.emoji} {item.label}
+                </Button>
+              ))}
+            </div>
+          )}
+          <div className="grid gap-2">
+            {onReply && (
+              <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); onReply(message); }}>
+                <CornerDownLeft className="h-4 w-4" /> 답장
+              </Button>
+            )}
+            <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); handleCopy(); }}>
+              <Copy className="h-4 w-4" /> 복사
+            </Button>
+            {onPinMessage && (
+              <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); onPinMessage(message); }}>
+                <Pin className="h-4 w-4" /> {isPinned ? "공지 해제" : "공지"}
+              </Button>
+            )}
+            {onForward && (
+              <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); onForward(message); }}>
+                <Forward className="h-4 w-4" /> 전달
+              </Button>
+            )}
+            {isMe && onDeleteMessage && (
+              <Button type="button" variant="outline" className={cn("justify-start text-destructive", messengerType.body)} onClick={() => { setActionsOpen(false); onDeleteMessage(message); }}>
+                <Trash2 className="h-4 w-4" /> 삭제
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 라인웍스 읽음 확인 및 미확인자 재알림 모달 */}
       <ReadReceiptModal
@@ -518,7 +526,7 @@ export function MessageBubble({
               alt="확대 이미지"
               className="max-h-[85vh] max-w-full object-contain rounded"
             />
-            <div className="py-2 flex items-center justify-between w-full px-4 text-white/80 text-xs">
+            <div className={cn("py-2 flex items-center justify-between w-full px-4 text-white/80", messengerType.meta)}>
               <span>현장 첨부 사진</span>
               <a
                 href={lightboxUrl}

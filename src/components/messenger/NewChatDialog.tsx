@@ -119,7 +119,7 @@ export function NewChatDialog({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="p-4 border-b bg-muted/40">
-          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+          <DialogTitle className="text-base font-semibold flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
             새 대화방 시작 (소속 업체별 선택)
           </DialogTitle>
@@ -132,7 +132,7 @@ export function NewChatDialog({
           {/* 개인정보 보호 안내 배너 */}
           <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
             <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
-            <div className="text-[11px] leading-relaxed">
+            <div className="text-xs leading-relaxed">
               <span className="font-semibold">개인정보 보호 정책 적용</span>: 타사 관리자의 개인 휴대전화번호는 보호를 위해 은닉되며, 동일 소속 회사 직원 간에만 연락처가 노출됩니다.
             </div>
           </div>
@@ -164,7 +164,7 @@ export function NewChatDialog({
 
           {/* 소속 회사별 대화 상대 목록 */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>관리자 목록 ({contacts.length}명)</span>
               <span className="font-semibold text-primary">{selectedUserIds.length}명 선택됨</span>
             </div>
@@ -185,7 +185,7 @@ export function NewChatDialog({
                   );
                   return (
                     <div key={group.companyName}>
-                      <div className="px-2.5 py-1.5 bg-muted/40 flex items-center justify-between text-[11px]">
+                      <div className="px-2.5 py-1.5 bg-muted/40 flex items-center justify-between text-xs">
                         <span className="font-semibold flex items-center gap-1 text-foreground">
                           <Building2 className="h-3 w-3 text-primary" />
                           {group.companyName} ({group.members.length})
@@ -194,7 +194,7 @@ export function NewChatDialog({
                           <button
                             type="button"
                             onClick={() => toggleSelectCompany(group.members)}
-                            className="text-[10px] text-primary hover:underline font-medium"
+                            className="text-xs text-primary hover:underline font-medium"
                           >
                             {allSelected ? "업체 선택 해제" : "업체 전체 선택"}
                           </button>
@@ -223,12 +223,12 @@ export function NewChatDialog({
                                       {c.full_name || "사용자"}
                                     </span>
                                     {c.role && (
-                                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground shrink-0">
+                                      <span className="text-xs px-1.5 py-0.2 rounded bg-muted text-muted-foreground shrink-0">
                                         {c.role}
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-[11px] text-muted-foreground truncate">
+                                  <div className="text-xs text-muted-foreground truncate">
                                     {c.company_name || "소속 미지정"}
                                     {c.project_label ? ` · ${c.project_label}` : ""}
                                   </div>
@@ -236,7 +236,7 @@ export function NewChatDialog({
                               </div>
 
                               {c.phone && (
-                                <span className="text-[10px] text-primary flex items-center gap-0.5 shrink-0 pl-2">
+                                <span className="text-xs text-primary flex items-center gap-0.5 shrink-0 pl-2">
                                   <Phone className="h-2.5 w-2.5" />
                                   {c.phone}
                                 </span>

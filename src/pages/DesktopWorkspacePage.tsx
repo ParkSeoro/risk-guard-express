@@ -140,19 +140,19 @@ export default function DesktopWorkspacePage() {
                 value={projectAccess.selectedProject}
                 onValueChange={projectAccess.setSelectedProject}
               >
-                <SelectTrigger className="h-7 text-xs font-bold border-0 bg-muted/60 hover:bg-muted px-2.5 rounded-lg max-w-[210px] truncate shadow-none">
+                <SelectTrigger className="h-8 text-sm font-bold border-0 bg-muted/60 hover:bg-muted px-2.5 rounded-lg max-w-[210px] truncate shadow-none">
                   <SelectValue placeholder="현장 선택" />
                 </SelectTrigger>
                 <SelectContent>
                   {projectAccess.projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="text-xs">
+                    <SelectItem key={p.id} value={p.id} className="text-sm">
                       {p.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             ) : (
-              <span className="text-xs font-bold text-foreground truncate">
+              <span className="text-base font-bold text-foreground truncate">
                 SafeNex 메신저
               </span>
             )}
@@ -165,7 +165,7 @@ export default function DesktopWorkspacePage() {
                 variant="outline"
                 size="sm"
                 onClick={() => navigate("/app/admin")}
-                className="h-7 px-2 text-[11px] gap-1 rounded-lg text-amber-400 border-amber-400/30 hover:bg-amber-400/10"
+                className="h-7 px-2 text-sm gap-1 rounded-lg text-amber-400 border-amber-400/30 hover:bg-amber-400/10"
                 title="일반 전체 관리자 대시보드로 돌아가기"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
@@ -177,7 +177,7 @@ export default function DesktopWorkspacePage() {
               variant="outline"
               size="sm"
               onClick={() => openSafeNexWebSite("/app/admin")}
-              className="h-7 px-2 text-[11px] gap-1 rounded-lg text-primary border-primary/30 hover:bg-primary/10"
+              className="h-7 px-2 text-sm gap-1 rounded-lg text-primary border-primary/30 hover:bg-primary/10"
               title="SafeNex 전체 웹 사이트 바로가기 (기본 브라우저 열기)"
             >
               <Globe className="h-3.5 w-3.5" />
@@ -186,7 +186,7 @@ export default function DesktopWorkspacePage() {
             <Button
               size="sm"
               onClick={() => setIsNewChatOpen(true)}
-              className="h-7 px-2.5 text-[11px] gap-1 rounded-lg"
+              className="h-7 px-2.5 text-sm gap-1 rounded-lg"
               title="새 대화"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -205,7 +205,7 @@ export default function DesktopWorkspacePage() {
               setSearchParams({ tab: "directory" }, { replace: true });
             }}
             className={cn(
-              "py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all",
+              "py-2 rounded-md text-sm font-bold flex items-center justify-center gap-1.5 transition-all",
               messengerTab === "directory" && !selectedRoomId
                 ? "bg-background text-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground",
@@ -222,7 +222,7 @@ export default function DesktopWorkspacePage() {
               setSearchParams({ tab: "rooms" }, { replace: true });
             }}
             className={cn(
-              "py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all",
+              "py-2 rounded-md text-sm font-bold flex items-center justify-center gap-1.5 transition-all",
               messengerTab === "rooms"
                 ? "bg-background text-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground",
@@ -231,7 +231,7 @@ export default function DesktopWorkspacePage() {
             <MessageSquare className="h-3.5 w-3.5" />
             <span>대화목록</span>
             {totalUnreadChats > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-[#ff3b30] text-white text-[10px] font-extrabold">
+              <span className="px-1.5 py-0.2 rounded-full bg-[#ff3b30] text-white text-xs font-extrabold">
                 {totalUnreadChats > 99 ? "99+" : totalUnreadChats}
               </span>
             )}

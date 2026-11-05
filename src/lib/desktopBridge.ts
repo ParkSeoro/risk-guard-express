@@ -1,8 +1,8 @@
 /**
  * SafeNex Windows Desktop Bridge (`window.safenexDesktop`)
- * - Bridges Electron / Tauri / Web environments seamlessly.
+ * - Bridges Electron / Web environments seamlessly.
  * - Manages Windows Auto-Start on Boot, Keep Logged In (Credential Memory),
- *   Minimize-to-Tray on Close, Compact (KakaoTalk 420px) vs Expanded (1440px) Window Mode,
+ *   Minimize-to-Tray on Close, Compact (420px) vs Expanded (1260px) Window Mode,
  *   Multi-Window Pop-out Chat / Work Modules, and Taskbar Unread Badge & FlashFrame.
  */
 
@@ -16,7 +16,7 @@ export interface DesktopAppSettings {
   keepLoggedIn: boolean;
   /** 창 닫기(X) 시 종료하지 않고 트레이로 최소화 */
   minimizeToTrayOnClose: boolean;
-  /** 시작 시 카톡형 미니모드(420px)로 실행할지, 통합 워크스페이스로 실행할지 */
+  /** 시작 시 슬림 메신저 모드(420px)로 실행할지, 통합 워크스페이스로 실행할지 */
   defaultWindowMode: DesktopWindowMode;
   /** 새 메시지 도착 시 우측 하단 배너 및 작업표시줄 깜빡임 */
   desktopNotificationBanner: boolean;
@@ -24,7 +24,7 @@ export interface DesktopAppSettings {
   soundNotification: boolean;
   /** 항상 위(Always on Top) 고정 (미니모드에서 유용) */
   alwaysOnTop: boolean;
-  /** 로그인 후 기본 시작 화면을 카톡형 데스크톱 워크스페이스로 설정 */
+  /** 로그인 후 기본 시작 화면을 데스크톱 메신저 워크스페이스로 설정 */
   launchMessengerWorkspaceOnLogin: boolean;
 }
 
@@ -39,6 +39,8 @@ export interface SafeNexNativeDesktopAPI {
   isDesktopApp?: boolean;
   platform?: string;
   appVersion?: string;
+  resizeWindow?: (width: number, height: number) => Promise<void> | void;
+  openExternal?: (url: string) => Promise<boolean> | void;
   setAutoStart?: (enabled: boolean) => Promise<boolean> | void;
   getAutoStart?: () => Promise<boolean>;
   setMinimizeToTray?: (enabled: boolean) => Promise<boolean> | void;
@@ -160,6 +162,11 @@ export function resizeDesktopWindow(width: number, height: number): void {
   if (typeof window === "undefined") return;
   const targetW = Math.max(360, Math.round(width));
   const targetH = Math.max(520, Math.round(height));
+
+  if (window.safenexDesktop?.resizeWindow) {
+    void window.safenexDesktop.resizeWindow(targetW, targetH);
+    return;
+  }
 
   try {
     const availW = window.screen?.availWidth || 1920;
@@ -788,7 +795,20 @@ export async function createSafeNexWebLoginLink(targetUrl: string): Promise<stri
   }
 }
 
-function openExternalUrl(url: string): void {
+export function openExternalUrl(url: string): void {
+  if (typeof window === "undefined" || !url) return;
+
+  // 1. Electron Desktop App 환경 최우선 호출 (시스템 기본 브라우저 전체화면으로 실행)
+  if (window.safenexDesktop?.openExternal) {
+    try {
+      void window.safenexDesktop.openExternal(url);
+      return;
+    } catch (e) {
+      console.warn("window.safenexDesktop.openExternal failed:", e);
+    }
+  }
+
+  // 2. 레거시 로컬 런처 HTTP 엔드포인트
   fetch(`/__desktop/open-external?url=${encodeURIComponent(url)}`, {
     method: "GET",
     cache: "no-store",
@@ -817,11 +837,19 @@ export function openSafeNexWebSite(pathname?: string, search?: string): void {
     window.location.hostname === "127.0.0.1" ||
     window.location.hostname === "localhost"
   ) {
-    void createSafeNexWebLoginLink(targetUrl).then((loginUrl) => {
-      openExternalUrl(loginUrl || targetUrl);
-    });
+    // 800ms race 타임아웃을 두어 핸드오프 링크 생성이 지연되더라도 즉시 기본 사이트로 열림
+    const linkPromise = createSafeNexWebLoginLink(targetUrl);
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
+
+    Promise.race([linkPromise, timeoutPromise])
+      .then((loginUrl) => {
+        openExternalUrl(loginUrl || targetUrl);
+      })
+      .catch(() => {
+        openExternalUrl(targetUrl);
+      });
     return;
   }
 
-  window.open(targetUrl, "_blank", "noopener,noreferrer");
+  openExternalUrl(targetUrl);
 }

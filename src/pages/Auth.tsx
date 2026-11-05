@@ -1108,7 +1108,7 @@ const Auth = () => {
                       <span className="text-xs leading-snug">
                         자동 로그인 및 이메일 저장
                         <span className="block text-[10px] text-muted-foreground mt-0.5">
-                          카카오톡 PC버전처럼 다음 실행 시 로그인 상태를 유지합니다.
+                          다음 실행 시에도 로그인 상태를 안전하게 유지합니다.
                         </span>
                       </span>
                     </label>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "@/components/messenger/MessengerRoomList";
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";
@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import {
+  isWindowsDesktopApp,
   openDesktopPopoutWindow,
   openSafeNexWebSite,
   resizeDesktopWindow,
@@ -22,10 +23,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Users, Plus, Globe } from "lucide-react";
+import { MessageSquare, Users, Plus, Globe, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function DesktopWorkspacePage() {
+  const navigate = useNavigate();
   const { user, roles, rolesReady } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const roomParam = searchParams.get("room");
@@ -157,6 +159,19 @@ export default function DesktopWorkspacePage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            {!isWindowsDesktopApp() && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/app/admin")}
+                className="h-7 px-2 text-[11px] gap-1 rounded-lg text-amber-400 border-amber-400/30 hover:bg-amber-400/10"
+                title="일반 전체 관리자 대시보드로 돌아가기"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <span>관리자 홈</span>
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

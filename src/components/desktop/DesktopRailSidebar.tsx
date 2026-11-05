@@ -5,6 +5,7 @@ import { DesktopAppSettingsDialog } from "@/components/desktop/DesktopAppSetting
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 import { isAllowedForContractor } from "@/lib/contractorRouteAccess";
 import {
   checkAndApplyDesktopOtaUpdate,
@@ -358,16 +359,25 @@ export function DesktopRailSidebar() {
                 playMessengerChime();
               }
               if (desktopSettings.desktopNotificationBanner !== false) {
+                const targetRoute = resolveNotificationRoute(newNotif, { mobileShell: false });
                 toast(newNotif.title || "새 알림", {
                   description: newNotif.message || newNotif.body || "",
-                  action: newNotif.link
+                  action: targetRoute
                     ? {
                         label: "확인",
                         onClick: () => {
-                          if (newNotif.link.startsWith("http")) {
-                            window.open(newNotif.link, "_blank");
+                          if (targetRoute.startsWith("http")) {
+                            if (window.safenexDesktop?.openExternal) {
+                              void window.safenexDesktop.openExternal(targetRoute);
+                            } else {
+                              window.open(targetRoute, "_blank");
+                            }
                           } else {
-                            navigate(newNotif.link);
+                            // 업무 페이지로 이동 시 데스크톱 창 자동 확장
+                            if (!targetRoute.includes("/desktop-workspace") && !targetRoute.includes("/messenger")) {
+                              resizeDesktopWindow(DESKTOP_WORK_WINDOW_SIZE.width, DESKTOP_WORK_WINDOW_SIZE.height);
+                            }
+                            navigate(targetRoute);
                           }
                         },
                       }
@@ -659,7 +669,11 @@ export function DesktopRailSidebar() {
             <button
               type="button"
               onClick={() => {
-                openSafeNexWebSite(location.pathname, location.search);
+                if (window.safenexDesktop?.openExternal) {
+                  void window.safenexDesktop.openExternal("https://safenex.org/app/admin");
+                } else {
+                  openSafeNexWebSite(location.pathname, location.search);
+                }
                 toast.info("기본 웹 브라우저에서 SafeNex 사이트를 엽니다.");
               }}
               title="SafeNex 웹 사이트 바로가기 (기본 브라우저 전체 화면으로 열기)"

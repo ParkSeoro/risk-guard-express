@@ -148,7 +148,7 @@ export function DesktopAppSettingsDialog({
                   )}
                 </DialogTitle>
                 <DialogDescription className="text-xs mt-0.5">
-                  카카오톡·네이버웍스 PC버전처럼 윈도우 시작 시 자동 실행과 상시 대화·결재 알림을 설정합니다.
+                  윈도우 시작 시 자동 실행과 상시 대화 및 결재 알림 환경을 설정합니다.
                 </DialogDescription>
               </div>
             </div>

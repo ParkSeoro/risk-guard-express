@@ -20,7 +20,7 @@ import {
 } from '@/lib/remoteSupport';
 import { toast } from 'sonner';
 
-const resolveRoute = (n: any): string | null => resolveNotificationRoute(n);
+const resolveRoute = (n: any): string | null => resolveNotificationRoute(n, { mobileShell: false });
 
 
 export function NotificationBell() {

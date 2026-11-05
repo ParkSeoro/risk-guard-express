@@ -7,8 +7,10 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("safenexDesktop", {
   isDesktopApp: true,
   platform: process.platform,
-  appVersion: "1.0.0",
+  appVersion: "1.2.0",
 
+  resizeWindow: (w, h) => ipcRenderer.invoke("safenex:resize-window", w, h),
+  openExternal: (url) => ipcRenderer.invoke("safenex:open-external", url),
   setAutoStart: (enabled) => ipcRenderer.invoke("safenex:set-auto-start", Boolean(enabled)),
   getAutoStart: () => ipcRenderer.invoke("safenex:get-auto-start"),
 

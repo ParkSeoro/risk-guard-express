@@ -731,9 +731,24 @@ const Approvals = () => {
                       {displayStatus === '승인' && isSubmitterStep && <span className="text-[10px] opacity-70">· 상신완료</span>}
                     </div>
                     {canAct && (
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
-                        <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => setRejectingId(step.id)}>반려</Button>
+                      <div className="flex gap-1.5 ml-1">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs px-2.5 font-bold bg-primary text-primary-foreground shadow-xs hover:bg-primary/90"
+                          onClick={() => handleApprovalAction(step.id, '승인')}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1 pointer-events-none" />
+                          승인
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs px-2.5 font-bold text-destructive border-destructive/40 hover:bg-destructive/10"
+                          onClick={() => setRejectingId(step.id)}
+                        >
+                          <XCircle className="h-3.5 w-3.5 mr-1 pointer-events-none" />
+                          반려
+                        </Button>
                       </div>
                     )}
                     {i < sectionLen - 1 && <div className="h-px w-6 bg-border" />}

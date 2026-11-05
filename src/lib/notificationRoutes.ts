@@ -84,7 +84,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
 const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   danger_zone_entry: (n) => withProject(`${ADMIN}/zone-events`, n.project_id),
   suspended_site_entry: () => `${ADMIN}/workers`,
-  approval_request: () => `${WORKER}/approvals`,
+  approval_request: () => `${ADMIN}/approvals`,
   approval_result: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${ADMIN}/assessment-run/${n.related_id}`
@@ -251,19 +251,45 @@ export function toMobileShellPath(path: string): string {
   return `${WORKER}/today`;
 }
 
+/** Map worker/mobile paths into admin equivalents when on desktop/admin shell. */
+export function toAdminShellPath(path: string): string {
+  if (!path) return `${ADMIN}/dashboard`;
+  let p = path;
+  if (p.startsWith(WORKER)) p = p.slice(WORKER.length) || "/";
+
+  if (p.startsWith("/approvals")) return `${ADMIN}/approvals`;
+  if (p.startsWith("/permits") || p.startsWith("/work-permits")) return `${ADMIN}/work-permits`;
+  if (p.startsWith("/work-plans")) return `${ADMIN}/work-plans`;
+  if (p.startsWith("/risk-assessment")) return `${ADMIN}/risk-assessment`;
+  if (p.startsWith("/inspect") || p.startsWith("/safety-inspections")) return `${ADMIN}/safety-inspections`;
+  if (p.startsWith("/incident")) return `${ADMIN}/incidents`;
+  if (p.startsWith("/tbm")) return `${ADMIN}/tbm-logs`;
+  if (p.startsWith("/work-stop")) return `${ADMIN}/work-stop`;
+  if (p.startsWith("/alerts")) return `${ADMIN}/alerts`;
+  if (p.startsWith("/workers")) return `${ADMIN}/workers`;
+  if (p.startsWith("/distribution")) return `${ADMIN}/worker-distribution`;
+  if (p.startsWith("/announcements")) return `${ADMIN}/announcements`;
+  if (p.startsWith("/vision-events") || p.startsWith("/vision-fleet")) return `${ADMIN}/vision-fleet`;
+  if (p.startsWith("/messenger")) return `${ADMIN}/messenger`;
+  if (p.startsWith("/account") || p.startsWith("/settings")) return `${ADMIN}/settings`;
+
+  return `${ADMIN}/dashboard`;
+}
+
 /** Normalize legacy /m and bare admin paths into canonical shells. */
 export function canonicalizeAppPath(path: string, opts?: { mobileShell?: boolean }): string {
   if (!path) return path;
   const mobile = opts?.mobileShell ?? (typeof window !== "undefined" && prefersMobileAppShell());
 
   if (path.startsWith("/app/worker")) {
+    if (!mobile) return toAdminShellPath(path);
     if (path === `${WORKER}/menu` || path === `${WORKER}/home`) return `${WORKER}/today`;
     return path;
   }
   if (path === "/m" || path.startsWith("/m/")) {
     const rest = path === "/m" ? "/today" : path.slice(2);
     const mapped = rest === "/menu" || rest === "/home" ? "/today" : rest;
-    return `${WORKER}${mapped}`;
+    return mobile ? `${WORKER}${mapped}` : toAdminShellPath(`${WORKER}${mapped}`);
   }
   if (path.startsWith("/app/admin")) {
     return mobile ? toMobileShellPath(path) : path;
@@ -314,6 +340,6 @@ export function resolveNotificationRoute(
       path = typeMap[n.type](n);
     }
   }
-  if (!path) path = `${WORKER}/alerts`;
+  if (!path) path = mobile ? `${WORKER}/alerts` : `${ADMIN}/alerts`;
   return attachWorkStopRequestId(path, n.related_id);
 }

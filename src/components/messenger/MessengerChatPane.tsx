@@ -849,7 +849,7 @@ export function MessengerChatPane({
                   height: 720,
                 })
               }
-              title="대화방 새 창으로 분리 (카카오톡 스타일 독립 창)"
+              title="대화방 새 창으로 분리 (독립 창)"
               aria-label="대화방 새 창으로 열기"
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -926,7 +926,7 @@ export function MessengerChatPane({
         </div>
       )}
 
-      {/* 상단 고정 공지 배너 (네이버웍스 / 카카오톡 스타일) */}
+      {/* 상단 고정 공지 배너 */}
       {pinnedPreview && (
         <div className="px-3 py-2 border-b bg-amber-500/10 border-amber-500/20 flex items-center justify-between gap-2 shrink-0">
           <button

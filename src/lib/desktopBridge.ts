@@ -688,7 +688,45 @@ export function resolveSafeNexWebSiteUrl(
 }
 
 /**
+ * PC 프로그램에서만 쓰는 웹사이트 로그인 이어가기.
+ * 세션 토큰을 URL로 넘기지 않고, Edge Function(desktop-web-handoff)이 로그인한 본인에게만
+ * 1회용 매직링크를 새로 만들어 준다. 브라우저는 웹 전용 새 세션으로 로그인된다.
+ * 실패하면 null → 호출부는 로그인 없는 일반 주소로 연다.
+ */
+export async function createSafeNexWebLoginLink(targetUrl: string): Promise<string | null> {
+  try {
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData?.session) return null;
+    const { data, error } = await supabase.functions.invoke("desktop-web-handoff", {
+      body: { target: targetUrl },
+    });
+    if (error) return null;
+    const res = data as { ok?: boolean; url?: string } | null;
+    if (!res?.ok || typeof res.url !== "string") return null;
+    if (!res.url.startsWith("https://")) return null;
+    return res.url;
+  } catch {
+    return null;
+  }
+}
+
+function openExternalUrl(url: string): void {
+  fetch(`/__desktop/open-external?url=${encodeURIComponent(url)}`, {
+    method: "GET",
+    cache: "no-store",
+  })
+    .then((res) => {
+      if (!res.ok) window.open(url, "_blank", "noopener,noreferrer");
+    })
+    .catch(() => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+}
+
+/**
  * Opens the SafeNex official website (`https://safenex.org`) in the user's default desktop browser (Chrome/Edge normal tab).
+ * PC 프로그램에서는 현재 로그인 상태를 이어서 연다.
  */
 export function openSafeNexWebSite(pathname?: string, search?: string): void {
   if (typeof window === "undefined") return;
@@ -702,18 +740,9 @@ export function openSafeNexWebSite(pathname?: string, search?: string): void {
     window.location.hostname === "127.0.0.1" ||
     window.location.hostname === "localhost"
   ) {
-    fetch(`/__desktop/open-external?url=${encodeURIComponent(targetUrl)}`, {
-      method: "GET",
-      cache: "no-store",
-    })
-      .then((res) => {
-        if (!res.ok) {
-          window.open(targetUrl, "_blank", "noopener,noreferrer");
-        }
-      })
-      .catch(() => {
-        window.open(targetUrl, "_blank", "noopener,noreferrer");
-      });
+    void createSafeNexWebLoginLink(targetUrl).then((loginUrl) => {
+      openExternalUrl(loginUrl || targetUrl);
+    });
     return;
   }
 

@@ -4,6 +4,7 @@ import {
   fetchRoomAttachments,
   inviteChatParticipants,
   leaveChatRoom,
+  deleteChatRoom,
   setChatRoomName,
   type ChatAttachment,
   type ChatContact,
@@ -24,6 +25,7 @@ import {
   Image as ImageIcon,
   LogOut,
   Save,
+  Trash2,
   Settings,
   User,
   UserPlus,
@@ -31,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface MessengerRoomDrawerProps {
   room: ChatRoom;
@@ -62,6 +65,11 @@ export function MessengerRoomDrawer({
   const [roomNameInput, setRoomNameInput] = useState(initialName);
   const [savingName, setSavingName] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { user } = useAuth();
+  const canDeleteGroup = Boolean(
+    room.is_group && user?.id && room.created_by && room.created_by === user.id,
+  );
 
   useEffect(() => {
     setRoomNameInput(room.custom_name || room.name || "");
@@ -139,6 +147,26 @@ export function MessengerRoomDrawer({
       }
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (deleting || !canDeleteGroup) return;
+    if (!window.confirm("이 그룹 대화방을 삭제하면 모든 참여자의 목록에서 사라집니다. 되돌릴 수 없습니다.")) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const ok = await deleteChatRoom(room.id);
+      if (ok) {
+        toast.success("그룹 대화방을 삭제했습니다.");
+        onClose();
+        onRoomLeft?.();
+      } else {
+        toast.error("대화방 삭제에 실패했습니다. 방을 만든 사람만 삭제할 수 있습니다.");
+      }
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -251,6 +279,7 @@ export function MessengerRoomDrawer({
                             </p>
                             <p className="text-[10px] text-muted-foreground truncate">
                               {c.company_name || "소속 미지정"}
+                              {c.project_label ? ` · ${c.project_label}` : ""}
                             </p>
                           </div>
                         </div>
@@ -444,6 +473,29 @@ export function MessengerRoomDrawer({
               )}
             </div>
           </div>
+
+          {canDeleteGroup && (
+            <div className="p-3 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2">
+              <div className="text-xs font-semibold text-destructive flex items-center gap-1.5">
+                <Trash2 className="h-3.5 w-3.5" />
+                그룹 대화방 삭제
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                내가 만든 그룹방입니다. 삭제하면 참여자 모두의 목록에서 방과 대화가 사라집니다.
+              </p>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={deleting}
+                onClick={() => void handleDeleteRoom()}
+                className="w-full h-8 text-xs gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{deleting ? "삭제 중..." : "이 그룹 대화방 삭제"}</span>
+              </Button>
+            </div>
+          )}
 
           <div className="p-3 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2">
             <div className="text-xs font-semibold text-destructive flex items-center gap-1.5">

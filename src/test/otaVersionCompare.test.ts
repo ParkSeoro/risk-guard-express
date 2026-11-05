@@ -34,4 +34,10 @@ describe("cmpVersion — OTA 1.0.0-timestamp builds", () => {
     expect(oldCmp("1.0.1-202608040505", "1.0.0")).toBe(0); // still stuck
     expect(cmpVersion("1.1.0-202608040600", "1.0.0")).toBeGreaterThan(0);
   });
+
+  it("does not let an older number with a timestamp replace a newer install", () => {
+    expect(cmpVersion("1.1.5-202611050559", "1.1.5")).toBeGreaterThan(0);
+    expect(cmpVersion("1.1.5-202611050559", "1.1.5-202611050541")).toBeGreaterThan(0);
+    expect(cmpVersion("1.1.4-202611059999", "1.1.5")).toBeLessThan(0);
+  });
 });

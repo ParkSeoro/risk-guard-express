@@ -6,6 +6,7 @@
 // - 앱을 벗어날 때 받은 묶음으로 바꾼다. 다음에 열면 새 화면이다.
 // - Release lookup uses otaAnonClient (no auth Preferences) so boot splash cannot hang.
 import { supabase } from "@/integrations/supabase/client";
+import { cmpOtaVersion } from "@/lib/otaVersion";
 import { getOtaAnonClient } from "./otaAnonClient";
 import { isNativeApp } from "./platform";
 
@@ -53,24 +54,9 @@ export function setChannel(c: "stable" | "beta") {
   localStorage.setItem(CHANNEL_KEY, c);
 }
 
-/**
- * Compare app/OTA versions. CI publishes `1.0.0-YYYYMMDDHHMM` — the old
- * `split(".").map(Number)` treated the date suffix as NaN so every 1.0.0-*
- * build compared equal and phones never downloaded newer OTAs.
- */
+/** Phone and PC share `src/lib/otaVersion.ts`. */
 export function cmpVersion(a: string, b: string): number {
-  const parts = (v: string) => {
-    const nums = String(v).match(/\d+/g);
-    return nums ? nums.map((n) => Number(n)) : [0];
-  };
-  const pa = parts(a);
-  const pb = parts(b);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] || 0;
-    const y = pb[i] || 0;
-    if (x !== y) return x - y;
-  }
-  return 0;
+  return cmpOtaVersion(a, b);
 }
 
 export type OtaStatus = {
@@ -115,6 +101,7 @@ export async function getOtaStatus(): Promise<OtaStatus> {
     const ota = getOtaAnonClient();
     const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: channel,
+      _platform: "android",
     } as any);
     if (error) {
       return {
@@ -185,6 +172,7 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
     const ota = getOtaAnonClient();
     const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: getChannel(),
+      _platform: "android",
     } as any);
     if (error) return { ok: false, message: "릴리스 조회 실패: " + error.message, apply: "none" };
     const release: any = Array.isArray(data) ? data[0] : data;

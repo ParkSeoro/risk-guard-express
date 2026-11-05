@@ -82,6 +82,7 @@ export async function fetchNativeStoreUpdateState(): Promise<NativeStoreUpdateSt
   try {
     const { data, error } = await getOtaAnonClient().rpc("get_latest_app_release", {
       _channel: getChannel(),
+      _platform: "android",
     } as any);
     if (error) return { applicable: true, needed: false, current, minNative: null };
     const release: any = Array.isArray(data) ? data[0] : data;

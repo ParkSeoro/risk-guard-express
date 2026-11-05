@@ -384,8 +384,9 @@ jobs:
             -H "X-OTA-Set-Min-Native-Only: 1" \
             -H "X-OTA-Min-Native-Version: $VC" \
             -H "X-OTA-Channel: stable" \
+            -H "X-OTA-Platform: android" \
             -H "Content-Type: application/json" \
-            --data "{\"min_native_only\":true,\"min_native_version\":\"${VC}\",\"channel\":\"stable\"}")
+            --data "{\"min_native_only\":true,\"min_native_version\":\"${VC}\",\"channel\":\"stable\",\"platform\":\"android\"}")
           echo "HTTP $HTTP"
           cat /tmp/min-native.json || true
           if [ "$HTTP" != "200" ]; then

@@ -19,6 +19,9 @@ const {
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
+const https = require("https");
+const os = require("os");
+const { unzipBuffer, isHttpsDownloadUrl } = require("./desktopOtaFiles.cjs");
 
 let mainWindow = null;
 let tray = null;
@@ -26,6 +29,7 @@ let isQuitting = false;
 let minimizeToTrayOnClose = true;
 let localServer = null;
 let localPort = 0;
+let activeDistDir = null;
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -64,9 +68,127 @@ function getDistDir() {
   return path.join(__dirname, "../dist");
 }
 
+function userWwwDir() {
+  return path.join(app.getPath("userData"), "www");
+}
+
+function chooseServeDir(packagedDir) {
+  const userWww = userWwwDir();
+  if (fs.existsSync(path.join(userWww, "index.html"))) return userWww;
+  return packagedDir;
+}
+
+function readPackageVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
+    return String(pkg.version || "0.0.0");
+  } catch {
+    return "0.0.0";
+  }
+}
+
+function readBundleVersion(dir) {
+  try {
+    const file = path.join(dir, "bundle-version.txt");
+    if (fs.existsSync(file)) {
+      const value = fs.readFileSync(file, "utf8").trim();
+      if (value) return value;
+    }
+  } catch {
+    /* ignore */
+  }
+  return readPackageVersion();
+}
+
+function sendJson(res, status, body) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(JSON.stringify(body));
+}
+
+function downloadHttps(url, redirectsLeft = 3) {
+  return new Promise((resolve, reject) => {
+    if (!isHttpsDownloadUrl(url)) {
+      reject(new Error("https 주소만 받을 수 있습니다."));
+      return;
+    }
+    const req = https.get(url, { headers: { "User-Agent": "SafeNexDesktop" } }, (incoming) => {
+      const code = incoming.statusCode || 0;
+      if (code >= 300 && code < 400 && incoming.headers.location) {
+        incoming.resume();
+        if (redirectsLeft <= 0) {
+          reject(new Error("리다이렉트가 너무 많습니다."));
+          return;
+        }
+        downloadHttps(new URL(incoming.headers.location, url).href, redirectsLeft - 1).then(resolve, reject);
+        return;
+      }
+      if (code !== 200) {
+        incoming.resume();
+        reject(new Error("다운로드 실패 HTTP " + code));
+        return;
+      }
+      const chunks = [];
+      let size = 0;
+      incoming.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > 50 * 1024 * 1024) {
+          req.destroy(new Error("번들이 너무 큽니다."));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      incoming.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    req.on("error", reject);
+  });
+}
+
+function bundleSourceDir(dir) {
+  if (fs.existsSync(path.join(dir, "index.html"))) return dir;
+  const subs = fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  if (subs.length === 1 && fs.existsSync(path.join(dir, subs[0].name, "index.html"))) {
+    return path.join(dir, subs[0].name);
+  }
+  return null;
+}
+
+async function applyDesktopOta(version, downloadUrl) {
+  let staging = null;
+  try {
+    if (!version || !downloadUrl) {
+      return { ok: false, error: "version 또는 url 파라미터가 누락되었습니다." };
+    }
+    const buf = await downloadHttps(downloadUrl);
+    if (!buf || buf.length < 512) {
+      return { ok: false, error: "다운로드된 업데이트 파일이 유효하지 않습니다." };
+    }
+    staging = fs.mkdtempSync(path.join(os.tmpdir(), "safenex-ota-"));
+    unzipBuffer(buf, staging);
+    const source = bundleSourceDir(staging);
+    if (!source) {
+      return { ok: false, error: "업데이트 번들에 index.html이 포함되어 있지 않습니다." };
+    }
+    fs.writeFileSync(path.join(source, "bundle-version.txt"), version, "utf8");
+    const dest = userWwwDir();
+    fs.mkdirSync(dest, { recursive: true });
+    fs.cpSync(source, dest, { recursive: true, force: true });
+    activeDistDir = dest;
+    return { ok: true, version };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : "로컬 업데이트 교체 중 오류가 발생했습니다." };
+  } finally {
+    if (staging) fs.rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 function startLocalServer(distDir) {
+  activeDistDir = chooseServeDir(distDir);
   return new Promise((resolve) => {
-    if (!fs.existsSync(distDir) || !fs.existsSync(path.join(distDir, "index.html"))) {
+    const initialDir = activeDistDir;
+    if (!fs.existsSync(initialDir) || !fs.existsSync(path.join(initialDir, "index.html"))) {
       resolve(0);
       return;
     }
@@ -92,6 +214,23 @@ function startLocalServer(distDir) {
       try {
         const [rawPath, rawQuery] = (req.url || "/").split("?");
         const urlPath = decodeURIComponent(rawPath);
+        const root = activeDistDir || initialDir;
+
+        if (urlPath === "/__desktop/version") {
+          sendJson(res, 200, {
+            ok: true,
+            appVersion: readPackageVersion(),
+            bundleVersion: readBundleVersion(root),
+          });
+          return;
+        }
+
+        if (urlPath === "/__desktop/apply-ota") {
+          const searchParams = new URLSearchParams(rawQuery || "");
+          void applyDesktopOta(searchParams.get("version") || "", searchParams.get("url") || "")
+            .then((result) => sendJson(res, 200, result));
+          return;
+        }
 
         // Native open-external bridge for legacy endpoints & direct fetch
         if (urlPath === "/__desktop/open-external") {
@@ -105,9 +244,9 @@ function startLocalServer(distDir) {
           }
         }
 
-        let filePath = path.normalize(path.join(distDir, urlPath));
+        let filePath = path.normalize(path.join(root, urlPath));
 
-        if (!filePath.startsWith(path.normalize(distDir))) {
+        if (!filePath.startsWith(path.normalize(root))) {
           res.writeHead(403);
           res.end();
           return;
@@ -124,7 +263,7 @@ function startLocalServer(distDir) {
             fs.createReadStream(filePath).pipe(res);
           } else {
             // SPA Fallback: serve index.html for all client routes (/app/admin/...)
-            const indexPath = path.join(distDir, "index.html");
+            const indexPath = path.join(root, "index.html");
             res.writeHead(200, {
               "Content-Type": "text/html; charset=utf-8",
               "Cache-Control": "no-cache",

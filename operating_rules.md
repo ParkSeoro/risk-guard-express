@@ -25,34 +25,14 @@ flowchart TD
 
 ---
 
-## 2. 모바일 vs PC 자동 업데이트 완전 격리 규칙 (Issue #625 방지 장치)
+## 2. 폰 OTA와 PC OTA 목록
 
-> [!CRITICAL]
-> **모바일(안드로이드)과 PC(데스크톱)는 절대로 동일한 업데이트 채널이나 번들을 공유하지 않는다.**
-> 동일한 RPC/버킷/채널을 무분별하게 공유할 경우, PC용 수정 사항이 안드로이드 Capgo로 흘러 들어가 현장 작업자의 스마트폰 앱이 화이트스크린(크래시)되거나, 반대로 모바일 네이티브 코드가 PC 셸을 손상시킬 수 있습니다.
+같은 시각의 `main` 푸시는 `android` 행과 `desktop` 행을 같이 만든다. zip과 버전 문자열은 같다. 채널 이름은 그대로 `stable` 또는 `beta`다.
 
-### 규칙 2-1. 업데이트 채널 및 파이프라인 물리적 분리
-1. **안드로이드 모바일 OTA 채널**:
-   - 채널 식별자: `channel = 'android-production'` (또는 `android-beta`)
-   - 전송 엔진: `@capgo/capacitor-updater`
-   - 검증 요건: Capgo 압축 규격, `min_native_version` (Play 스토어 versionCode) 일치 필수.
-   - 대상: Google Play 안드로이드 네이티브 앱만 다운로드하여 적용.
-2. **PC 데스크톱 업데이트 채널**:
-   - 채널 식별자: `channel = 'desktop-production'`
-   - 전송 방식:
-     - **UI/기능 업데이트(99%)**: 클라우드 실시간 핫 리로드 (`https://safenex.org`) 및 로컬 오프라인 fallback.
-     - **네이티브 셸 업데이트(1%)**: Electron NSIS Setup 인스톨러 배포.
-   - **절대 금지**: PC 프로그램이 모바일 전용 Capgo ZIP 패키지를 받아 로컬 경로에 압축 해제하거나, 모바일이 PC용 Electron 정적 번들을 다운로드하는 행위 원천 차단.
-
-### 규칙 2-2. `app_releases` 테이블 조회 시 플랫폼 필터 필수
-- 업데이트 조회 RPC(`get_latest_app_release`) 호출 시 반드시 플랫폼 구분 파라미터를 넘겨야 하며, 모바일용 릴리스와 PC용 릴리스는 별도의 레코드로 격리 관리합니다:
-  ```typescript
-  // 안드로이드 앱 호출 (otaUpdater.ts)
-  await ota.rpc("get_latest_app_release", { _channel: "android-production", _platform: "android" });
-
-  // PC 데스크톱 호출 (desktopBridge.ts)
-  await ota.rpc("get_latest_app_release", { _channel: "desktop-production", _platform: "desktop" });
-  ```
+- 폰 조회는 `android`, PC 조회는 `desktop`이다. 인자를 생략하는 예전 클라이언트는 `android`와 `shared`만 본다.
+- 버전 비교는 `src/lib/otaVersion.ts` 하나다. 더 낮은 번호는 시각이 있어도 더 높은 설치본을 갱신하지 않는다.
+- 폰의 조용한 다음 실행 적용은 유지한다. PC가 바로 새로고침하는 것은 desktop 행이 필수일 때만이다.
+- 결재, 허가서, 위험성평가, TBM 작성 함수와 테이블은 이 목록과 무관하다.
 
 ---
 
@@ -64,17 +44,16 @@ flowchart TD
 - 버전을 올릴 때는 `package.json`을 먼저 수정하고, 관련된 런처/다이얼로그의 기본값을 함께 동기화해야 합니다.
 
 ### 규칙 3-2. OTA 릴리스 명명 규칙
-- GitHub Actions CI가 생성하는 릴리스는 플랫폼 접두사를 포함해야 합니다:
-  $$\text{Android OTA} = \text{android-v<version>-<YYYYMMDDHHMM>}$$
-  $$\text{Desktop Release} = \text{desktop-v<version>-<YYYYMMDDHHMM>}$$
-- 안드로이드(`otaUpdater.ts`)와 PC(`desktopBridge.ts`)의 버전 비교기는 자기 플랫폼 접두사가 붙은 버전만 비교하여 타 플랫폼 빌드를 무시합니다.
+- 버전 문자열은 `<package.json.version>-<YYYYMMDDHHMM>`이다. 플랫폼 접두사를 붙이지 않는다.
+- 플랫폼은 버전 문자열이 아니라 `app_releases.platform`으로 구분한다.
 
 ---
 
 ## 4. 구글 플레이 스토어 안전 보장 규칙 (Google Play Store Safety)
 
 ### 규칙 4-1. `min_native_version` (Play 스토어 강제 업데이트 기준) 보존
-- `app_releases` 테이블의 `min_native_version`은 **Google Play에 업로드된 안드로이드 바이너리의 `versionCode` 정수**(예: `478`)입니다.
+- `min_native_version`은 `android` 행에만 둔다. `desktop` 행은 비운다. 값은 **Google Play에 업로드된 안드로이드 바이너리의 `versionCode` 정수**(예: `478`)이다.
+- AAB 게시는 `android` 행만 고친다. PC 게시와 PC 핫스왑은 이 값을 읽거나 쓰지 않는다.
 - **치명적 위험 방지**:
   - PC 업데이트나 웹 배포 시 이 값을 `null`로 지우거나, 임의의 문자열(예: `1.1.5`)로 덮어쓰면 **구글 플레이 정상 사용자들에게 스토어 업데이트 차단 화면(NativeStoreUpdateGate)이 오작동하거나 구버전 차단이 해제**됩니다.
   - `publish-ota-release` Edge Function은 신규 OTA 업로드 시 직전 릴리스의 `min_native_version`을 자동으로 유지·계승합니다.
@@ -111,7 +90,7 @@ flowchart TD
 ### 🤝 [AI-2 ➔ AI-1] 모바일/백엔드 담당 AI에게 요청합니다 (AI-1이 해줄 일)
 
 1. **`app_releases` 조회 시 플랫폼 격리 필터를 적용해 줘**:
-   - 모바일 Capgo OTA 업데이트를 담당하는 `otaUpdater.ts`나 관련 RPC에서 `get_latest_app_release`를 호출할 때 반드시 `_platform: 'android'`(또는 `channel: 'android-production'`)를 명시해 줘.
+   - 모바일 Capgo OTA 업데이트를 담당하는 `otaUpdater.ts`에서 `get_latest_app_release`를 호출할 때 `_channel`은 기존 `stable` 또는 `beta`로 두고 `_platform: 'android'`만 넘긴다. 채널 이름을 `android-production`으로 바꾸지 않는다.
    - PC 전용 릴리스가 등록되더라도 모바일 폰이 그걸 잘못 내려받아 스마트폰이 먹통(화이트스크린)이 되지 않도록, 모바일은 오직 **안드로이드 전용 레코드만 조회**하도록 철저히 가드해 줘.
 
 2. **Capgo OTA 번들 패키징 시 PC 전용 리소스 제외해 줘**:
@@ -129,8 +108,7 @@ flowchart TD
    - 레거시 C# 로컬 서버(`127.0.0.1:45780`)는 이제 쓰지 않으며, 안전한 운영체제 내부 IPC(`safenexDesktop`)로만 동작해.
 
 2. **모바일 전용 Capgo 저장소 버킷을 건드리지 않을게**:
-   - PC 프로그램은 모바일용 `app_releases`의 ZIP 파일을 내려받아 로컬에 푸는 방식 대신, **`https://safenex.org` 실시간 클라우드 핫 리로드** 방식으로 화면을 업데이트해.
-   - 따라서 모바일용 Supabase Storage(`app-updates`) 대역폭이나 릴리스 테이블을 침범하지 않아.
+   - PC는 `desktop` 행의 zip만 보고, 그 적용은 창이 열린 로컬 포트의 `/__desktop/apply-ota`로 한다. 폰 행의 `mandatory`나 `min_native_version`은 읽지 않는다.
 
 3. **모바일 네이티브 센서/GPS 코드 100% 무결성 보존**:
    - 백그라운드 GPS 추적(`headlessTrack`), 비상 알람(`alarmVolume`), FCM 푸시 등 안드로이드 고유 코드는 PC용 코드 변경 시 단 1글자도 건드리지 않고 철저히 보호할게.

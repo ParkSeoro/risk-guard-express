@@ -33,6 +33,7 @@ import {
   loadDesktopSettings,
   saveDesktopSettings,
   applyDesktopWindowMode,
+  DESKTOP_DEFAULT_VERSION,
   type DesktopAppSettings,
 } from "@/lib/desktopBridge";
 import { useNavigate } from "react-router-dom";
@@ -61,7 +62,7 @@ export function DesktopAppSettingsDialog({
   const [versionInfo, setVersionInfo] = useState<{
     appVersion: string;
     bundleVersion: string;
-  }>({ appVersion: "1.1.5", bundleVersion: "1.1.5" });
+  }>({ appVersion: DESKTOP_DEFAULT_VERSION, bundleVersion: DESKTOP_DEFAULT_VERSION });
   const [checkingOta, setCheckingOta] = useState(false);
 
   useEffect(() => {

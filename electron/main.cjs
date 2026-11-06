@@ -31,6 +31,18 @@ let localServer = null;
 let localPort = 0;
 let activeDistDir = null;
 
+// Test-only: run a second copy with its own data folder (does not touch the installed program).
+if (process.env.SAFENEX_USER_DATA) {
+  app.setPath("userData", process.env.SAFENEX_USER_DATA);
+}
+
+/**
+ * Fixed local ports. The page origin (127.0.0.1:PORT) decides where the login session
+ * and settings are stored. A random port every launch meant a new origin every launch,
+ * so the user was logged out each time. Port 0 is only the last resort.
+ */
+const PREFERRED_PORTS = [38471, 38472, 38473, 38474, 0];
+
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -72,16 +84,56 @@ function userWwwDir() {
   return path.join(app.getPath("userData"), "www");
 }
 
+function pendingWwwDir() {
+  return path.join(app.getPath("userData"), "www_pending");
+}
+
+/** Numeric compare of "1.1.7" / "1.1.6-202611060228". Positive when a is newer. */
+function cmpVersion(a, b) {
+  const pa = String(a || "0").split(/[^0-9]+/).filter(Boolean).map(Number);
+  const pb = String(b || "0").split(/[^0-9]+/).filter(Boolean).map(Number);
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i++) {
+    const x = pa[i];
+    const y = pb[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+}
+
+/** A bundle received while running is swapped in here, before the window opens. */
+function applyPendingBundle() {
+  const pending = pendingWwwDir();
+  if (!fs.existsSync(path.join(pending, "index.html"))) return;
+  const dest = userWwwDir();
+  const old = dest + "_old";
+  try {
+    fs.rmSync(old, { recursive: true, force: true });
+    if (fs.existsSync(dest)) fs.renameSync(dest, old);
+    fs.renameSync(pending, dest);
+    fs.rmSync(old, { recursive: true, force: true });
+  } catch {
+    if (!fs.existsSync(dest) && fs.existsSync(old)) {
+      try { fs.renameSync(old, dest); } catch { /* ignore */ }
+    }
+  }
+}
+
 function chooseServeDir(packagedDir) {
+  applyPendingBundle();
   const userWww = userWwwDir();
-  if (fs.existsSync(path.join(userWww, "index.html"))) return userWww;
+  if (fs.existsSync(path.join(userWww, "index.html"))) {
+    // A newer installer must win over an older downloaded bundle.
+    if (cmpVersion(readBundleVersion(userWww), readBundleVersion(packagedDir)) >= 0) return userWww;
+  }
   return packagedDir;
 }
 
 function readPackageVersion() {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
-    return String(pkg.version || "0.0.0");
+    return String(app.getVersion() || "0.0.0");
   } catch {
     return "0.0.0";
   }
@@ -217,10 +269,17 @@ function startLocalServer(distDir) {
         const root = activeDistDir || initialDir;
 
         if (urlPath === "/__desktop/version") {
+          const pendingVersion = fs.existsSync(path.join(pendingWwwDir(), "index.html"))
+            ? readBundleVersion(pendingWwwDir())
+            : null;
+          const running = readBundleVersion(root);
           sendJson(res, 200, {
             ok: true,
             appVersion: readPackageVersion(),
-            bundleVersion: readBundleVersion(root),
+            // Report the stored bundle so the page does not download it again before restart.
+            bundleVersion: pendingVersion && cmpVersion(pendingVersion, running) > 0 ? pendingVersion : running,
+            runningBundleVersion: running,
+            pendingVersion,
           });
           return;
         }
@@ -233,38 +292,66 @@ function startLocalServer(distDir) {
         }
 
         if (urlPath === "/__desktop/stage-ota") {
+          if (req.method !== "POST") {
+            sendJson(res, 405, { ok: false, error: "POST로 보내야 합니다." });
+            return;
+          }
           const version = new URLSearchParams(rawQuery || "").get("version") || "";
           const chunks = [];
-          req.on("data", (chunk) => chunks.push(chunk));
-          req.on("end", async () => {
+          let size = 0;
+          let tooBig = false;
+          req.on("data", (chunk) => {
+            size += chunk.length;
+            if (size > 80 * 1024 * 1024) {
+              tooBig = true;
+              return;
+            }
+            chunks.push(chunk);
+          });
+          req.on("end", () => {
             let staging = null;
             try {
+              if (tooBig) {
+                sendJson(res, 413, { ok: false, error: "업데이트 파일이 너무 큽니다." });
+                return;
+              }
               const buf = Buffer.concat(chunks);
-              if (!buf || buf.length < 512) {
-                sendJson(res, 400, { ok: false, error: "다운로드된 번들이 유효하지 않습니다." });
+              if (!version || buf.length < 512) {
+                sendJson(res, 400, { ok: false, error: "업데이트 파일이 올바르지 않습니다." });
                 return;
               }
               staging = fs.mkdtempSync(path.join(os.tmpdir(), "safenex-stage-"));
               unzipBuffer(buf, staging);
               const source = bundleSourceDir(staging);
               if (!source) {
-                sendJson(res, 400, { ok: false, error: "번들에 index.html이 없습니다." });
+                sendJson(res, 400, { ok: false, error: "업데이트 파일에 화면 시작 파일이 없습니다." });
                 return;
               }
               fs.writeFileSync(path.join(source, "bundle-version.txt"), version, "utf8");
-              const dest = userWwwDir();
-              fs.mkdirSync(dest, { recursive: true });
-              fs.cpSync(source, dest, { recursive: true, force: true });
-              activeDistDir = dest;
+              // Never overwrite files that the open window is using. Swap at next start.
+              const pending = pendingWwwDir();
+              fs.rmSync(pending, { recursive: true, force: true });
+              fs.mkdirSync(pending, { recursive: true });
+              fs.cpSync(source, pending, { recursive: true, force: true });
               sendJson(res, 200, { ok: true, pending: true, version });
             } catch (err) {
-              sendJson(res, 500, { ok: false, error: err && err.message ? err.message : String(err) });
+              sendJson(res, 500, { ok: false, error: "업데이트 파일을 저장하지 못했습니다." });
             } finally {
               if (staging) {
-                try { fs.rmSync(staging, { recursive: true, force: true }); } catch {}
+                try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ }
               }
             }
           });
+          return;
+        }
+
+        if (urlPath === "/__desktop/restart") {
+          sendJson(res, 200, { ok: true });
+          setTimeout(() => {
+            isQuitting = true;
+            app.relaunch();
+            app.exit(0);
+          }, 300);
           return;
         }
 

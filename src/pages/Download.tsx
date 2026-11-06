@@ -6,7 +6,9 @@ import { Link } from 'react-router-dom';
 import { openPlayStore } from '@/lib/playStore';
 
 const GITHUB_REPO = 'ParkSeoro/risk-guard-express';
-const PC_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/SafeNex_PC_Setup_1.1.6.exe`;
+export const PC_APP_VERSION = 'v1.1.7';
+const PC_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/SafeNex_PC_Setup.exe`;
+const PC_VERSIONED_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/SafeNex_PC_Setup_1.1.7.exe`;
 
 export default function DownloadPage() {
   return (
@@ -43,7 +45,7 @@ export default function DownloadPage() {
                 <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
                   <Monitor className="h-7 w-7" />
                 </div>
-                <Badge className="bg-primary/90 hover:bg-primary font-medium">공식 정식 버전 v1.1.6</Badge>
+                <Badge className="bg-primary/90 hover:bg-primary font-medium">공식 정식 버전 {PC_APP_VERSION}</Badge>
               </div>
               <CardTitle className="text-xl">SafeNex PC (Windows)</CardTitle>
               <CardDescription className="text-xs sm:text-sm">

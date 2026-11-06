@@ -429,6 +429,15 @@ export function DesktopRailSidebar() {
         setStagedUpdateVersion(res.latestVersion);
         toast.success(res.message);
       } else if (!res.ok && res.hasUpdate) {
+        if (res.needsInstaller) {
+          const notifiedKey = `safenex_ota_notified_${res.latestVersion || 'latest'}`;
+          try {
+            if (sessionStorage.getItem(notifiedKey)) return;
+            sessionStorage.setItem(notifiedKey, "true");
+          } catch {
+            /* ignore */
+          }
+        }
         toast.error(res.message);
       }
     };

@@ -478,7 +478,7 @@ export interface DesktopOtaCheckResult {
 }
 
 const DESKTOP_BUNDLE_VERSION_KEY = "safenex_pc_bundle_version";
-export const DESKTOP_DEFAULT_VERSION = "1.1.6";
+export const DESKTOP_DEFAULT_VERSION = "1.1.7";
 
 /**
  * Same numeric compare as the phone. A lower release number does not replace
@@ -677,6 +677,40 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
         if (stageReply.ok || stageReply.needsInstaller || r.ok) break;
       } catch {
         /* try next */
+      }
+    }
+
+    // 하위 호환 폴백: 설치된 PC 셸이 /__desktop/stage-ota가 없는 구버전이어도
+    // /__desktop/apply-ota 엔드포인트가 있으면 즉시 원격 다운로드로 번들을 갱신하여 재설치 없이 구출합니다.
+    if (!stageReply || !stageReply.ok) {
+      if (downloadUrl && downloadUrl.startsWith("https://")) {
+        const applyEndpoints = desktopShellEndpoints(
+          `/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
+          typeof window !== "undefined" ? window.location.origin : null,
+        );
+        for (const aep of applyEndpoints) {
+          try {
+            const ar = await fetch(aep, { cache: "no-store" });
+            if (ar.ok) {
+              const aj = (await ar.json()) as { ok?: boolean; error?: string };
+              if (aj && aj.ok) {
+                return {
+                  ok: true,
+                  hasUpdate: true,
+                  applied: true,
+                  pendingRestart: false,
+                  currentVersion,
+                  latestVersion,
+                  mandatory: Boolean(release.mandatory),
+                  notes: release.notes || null,
+                  message: "새 버전 업데이트가 적용되었습니다. 프로그램을 재시작하면 새 버전으로 동작합니다.",
+                };
+              }
+            }
+          } catch {
+            /* try next */
+          }
+        }
       }
     }
 

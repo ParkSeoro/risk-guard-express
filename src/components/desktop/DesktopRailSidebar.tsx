@@ -9,6 +9,7 @@ import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 import { isAllowedForContractor } from "@/lib/contractorRouteAccess";
 import {
   checkAndApplyDesktopOtaUpdate,
+  restartDesktopShell,
   DESKTOP_MESSENGER_WINDOW_SIZE,
   DESKTOP_WORK_WINDOW_SIZE,
   isWindowsDesktopApp,
@@ -412,20 +413,12 @@ export function DesktopRailSidebar() {
     let cancelled = false;
     const runAutoUpdateCheck = async () => {
       const res = await checkAndApplyDesktopOtaUpdate();
-      if (!cancelled && res.applied && res.latestVersion) {
+      if (cancelled) return;
+      if (res.pendingRestart && res.latestVersion) {
         setStagedUpdateVersion(res.latestVersion);
-        if (res.mandatory) {
-          toast.info(`필수 업데이트(v${res.latestVersion})가 설치되어 화면을 갱신합니다.`);
-          window.setTimeout(() => window.location.reload(), 1200);
-        } else {
-          toast.success(`새 버전(v${res.latestVersion}) 준비 완료`, {
-            description: "재설치 없이 지금 새로고침하면 최신 버전이 즉시 적용됩니다.",
-            action: {
-              label: "지금 적용",
-              onClick: () => window.location.reload(),
-            },
-          });
-        }
+        toast.success(res.message);
+      } else if (!res.ok && res.hasUpdate) {
+        toast.error(res.message);
       }
     };
     const initTimer = window.setTimeout(() => void runAutoUpdateCheck(), 4000);
@@ -650,8 +643,14 @@ export function DesktopRailSidebar() {
             {stagedUpdateVersion && (
               <button
                 type="button"
-                onClick={() => window.location.reload()}
-                title={`새 버전(v${stagedUpdateVersion}) 지금 적용`}
+                onClick={() => {
+                  void restartDesktopShell().then((started) => {
+                    if (!started) {
+                      toast.info("프로그램을 완전히 종료한 뒤 다시 열면 새 버전이 적용됩니다.");
+                    }
+                  });
+                }}
+                title={`새 버전(v${stagedUpdateVersion})은 프로그램을 다시 열면 적용됩니다`}
                 className={cn(
                   "h-8 rounded-lg flex items-center gap-2 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-semibold transition-colors mb-0.5",
                   isExpanded ? "w-full px-2.5 justify-start" : "w-8 justify-center mx-auto",
@@ -660,7 +659,7 @@ export function DesktopRailSidebar() {
                 <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
                 {isExpanded && (
                   <span className="text-[11px] whitespace-nowrap truncate">
-                    업데이트 적용 (v{stagedUpdateVersion})
+                    다시 시작하여 적용 (v{stagedUpdateVersion})
                   </span>
                 )}
               </button>

@@ -462,6 +462,10 @@ namespace SafeNexDesktop
                 {
                     File.WriteAllText(Path.Combine(_installDir, "exe-version.txt"), AppConstants.APP_VERSION, Encoding.UTF8);
                     File.WriteAllText(Path.Combine(wwwDir, "bundle-version.txt"), AppConstants.APP_VERSION, Encoding.UTF8);
+                    string pendingDir = Path.Combine(_installDir, "www_next");
+                    if (Directory.Exists(pendingDir)) Directory.Delete(pendingDir, true);
+                    string pendingVersion = Path.Combine(_installDir, "www_next_version.txt");
+                    if (File.Exists(pendingVersion)) File.Delete(pendingVersion);
                 }
                 catch { }
 
@@ -626,6 +630,7 @@ namespace SafeNexDesktop
 
             _wwwDir = Path.Combine(_installDir, "www");
             EnsureWebBundleInitialized();
+            ApplyPendingWebBundle();
 
             StartLocalSpaServer();
 
@@ -691,65 +696,218 @@ namespace SafeNexDesktop
             return AppConstants.APP_VERSION;
         }
 
-        private bool ApplyOtaWebBundle(string newVersion, string downloadUrl, out string errorMsg)
+        private static string RawQueryValue(HttpListenerRequest req, string key)
         {
-            errorMsg = null;
-            string tempZip = Path.Combine(Path.GetTempPath(), "safenex_ota_" + Guid.NewGuid().ToString("N") + ".zip");
-            string stagingDir = Path.Combine(_installDir, "www_staging_" + Guid.NewGuid().ToString("N"));
+            string raw = req.RawUrl ?? "";
+            int q = raw.IndexOf('?');
+            if (q >= 0)
+            {
+                string[] parts = raw.Substring(q + 1).Split('&');
+                foreach (string part in parts)
+                {
+                    int eq = part.IndexOf('=');
+                    if (eq <= 0) continue;
+                    string name = Uri.UnescapeDataString(part.Substring(0, eq).Replace("+", " "));
+                    if (!string.Equals(name, key, StringComparison.OrdinalIgnoreCase)) continue;
+                    return Uri.UnescapeDataString(part.Substring(eq + 1).Replace("+", " "));
+                }
+            }
+            return req.QueryString[key] ?? "";
+        }
+
+        private string PendingWebDir
+        {
+            get { return Path.Combine(_installDir, "www_next"); }
+        }
+
+        private void ApplyPendingWebBundle()
+        {
             try
             {
-                using (WebClient wc = new WebClient())
+                string pending = PendingWebDir;
+                if (!Directory.Exists(pending)) return;
+                string source = BundleSourceDir(pending);
+                if (source == null) return;
+
+                string versionFile = Path.Combine(_installDir, "www_next_version.txt");
+                string version = File.Exists(versionFile) ? File.ReadAllText(versionFile, Encoding.UTF8).Trim() : "";
+                if (!string.IsNullOrEmpty(version))
+                    File.WriteAllText(Path.Combine(source, "bundle-version.txt"), version, Encoding.UTF8);
+
+                string oldDir = Path.Combine(_installDir, "www_old");
+                try { if (Directory.Exists(oldDir)) Directory.Delete(oldDir, true); } catch { }
+                if (Directory.Exists(_wwwDir))
                 {
-                    wc.Headers.Add("User-Agent", "SafeNexDesktop/" + AppConstants.APP_VERSION);
-                    wc.DownloadFile(downloadUrl, tempZip);
+                    try { Directory.Move(_wwwDir, oldDir); }
+                    catch { try { Directory.Delete(_wwwDir, true); } catch { } }
                 }
 
+                if (string.Equals(source, pending, StringComparison.OrdinalIgnoreCase))
+                    Directory.Move(pending, _wwwDir);
+                else
+                {
+                    Directory.CreateDirectory(_wwwDir);
+                    CopyDirectoryRecursive(source, _wwwDir);
+                    try { Directory.Delete(pending, true); } catch { }
+                }
+                try { if (File.Exists(versionFile)) File.Delete(versionFile); } catch { }
+                try { if (Directory.Exists(oldDir)) Directory.Delete(oldDir, true); } catch { }
+            }
+            catch { }
+        }
+
+        private static string BundleSourceDir(string root)
+        {
+            if (File.Exists(Path.Combine(root, "index.html"))) return root;
+            string[] subDirs = Directory.Exists(root) ? Directory.GetDirectories(root) : new string[0];
+            if (subDirs.Length == 1 && File.Exists(Path.Combine(subDirs[0], "index.html"))) return subDirs[0];
+            return null;
+        }
+
+        private bool StageOtaFromZipFile(string newVersion, string tempZip, out string errorMsg)
+        {
+            errorMsg = null;
+            string stagingDir = Path.Combine(_installDir, "www_stage_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                if (string.IsNullOrEmpty(newVersion))
+                {
+                    errorMsg = "업데이트 버전을 확인하지 못했습니다.";
+                    return false;
+                }
                 if (!File.Exists(tempZip) || new FileInfo(tempZip).Length < 512)
                 {
-                    errorMsg = "다운로드된 업데이트 파일이 유효하지 않습니다.";
+                    errorMsg = "업데이트 파일을 받지 못했습니다.";
                     return false;
                 }
 
                 Directory.CreateDirectory(stagingDir);
                 ZipFile.ExtractToDirectory(tempZip, stagingDir);
-
-                // Handle case where zip has a single top-level folder (e.g., dist/)
-                string effectiveSourceDir = stagingDir;
-                if (!File.Exists(Path.Combine(effectiveSourceDir, "index.html")))
-                {
-                    string[] subDirs = Directory.GetDirectories(stagingDir);
-                    if (subDirs.Length == 1 && File.Exists(Path.Combine(subDirs[0], "index.html")))
-                    {
-                        effectiveSourceDir = subDirs[0];
-                    }
-                }
-
-                if (!File.Exists(Path.Combine(effectiveSourceDir, "index.html")))
+                string source = BundleSourceDir(stagingDir);
+                if (source == null)
                 {
                     errorMsg = "업데이트 번들에 index.html이 포함되어 있지 않습니다.";
                     return false;
                 }
 
-                File.WriteAllText(Path.Combine(effectiveSourceDir, "bundle-version.txt"), newVersion, Encoding.UTF8);
-
-                if (Directory.Exists(_wwwDir))
+                File.WriteAllText(Path.Combine(source, "bundle-version.txt"), newVersion, Encoding.UTF8);
+                string pending = PendingWebDir;
+                if (Directory.Exists(pending))
                 {
-                    try { Directory.Delete(_wwwDir, true); } catch { }
+                    try { Directory.Delete(pending, true); } catch { }
                 }
-
-                CopyDirectoryRecursive(effectiveSourceDir, _wwwDir);
+                if (Directory.Exists(pending))
+                {
+                    errorMsg = "이전 업데이트를 치우지 못했습니다. 프로그램을 완전히 종료한 뒤 다시 열어 주세요.";
+                    return false;
+                }
+                if (string.Equals(source, stagingDir, StringComparison.OrdinalIgnoreCase))
+                    Directory.Move(stagingDir, pending);
+                else
+                {
+                    Directory.CreateDirectory(pending);
+                    CopyDirectoryRecursive(source, pending);
+                }
+                File.WriteAllText(Path.Combine(_installDir, "www_next_version.txt"), newVersion, Encoding.UTF8);
                 return true;
             }
-            catch (Exception ex)
+            catch
             {
-                errorMsg = ex.Message;
+                errorMsg = "업데이트 파일을 받지 못했습니다.";
+                return false;
+            }
+            finally
+            {
+                try { if (Directory.Exists(stagingDir) && !string.Equals(stagingDir, PendingWebDir, StringComparison.OrdinalIgnoreCase)) Directory.Delete(stagingDir, true); } catch { }
+            }
+        }
+
+        private bool StageOtaFromDownload(string newVersion, string downloadUrl, out string errorMsg)
+        {
+            errorMsg = null;
+            string tempZip = Path.Combine(Path.GetTempPath(), "safenex_ota_" + Guid.NewGuid().ToString("N") + ".zip");
+            try
+            {
+                if (string.IsNullOrEmpty(downloadUrl) || downloadUrl.IndexOf("http", StringComparison.OrdinalIgnoreCase) != 0)
+                {
+                    errorMsg = "업데이트 파일을 받지 못했습니다.";
+                    return false;
+                }
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "SafeNexDesktop/" + AppConstants.APP_VERSION);
+                    wc.DownloadFile(downloadUrl, tempZip);
+                }
+                return StageOtaFromZipFile(newVersion, tempZip, out errorMsg);
+            }
+            catch
+            {
+                errorMsg = "업데이트 파일을 받지 못했습니다.";
                 return false;
             }
             finally
             {
                 try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
-                try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true); } catch { }
             }
+        }
+
+        private bool StageOtaFromStream(string newVersion, Stream body, out string errorMsg)
+        {
+            errorMsg = null;
+            string tempZip = Path.Combine(Path.GetTempPath(), "safenex_ota_" + Guid.NewGuid().ToString("N") + ".zip");
+            try
+            {
+                using (FileStream fs = new FileStream(tempZip, FileMode.Create, FileAccess.Write))
+                {
+                    byte[] buf = new byte[81920];
+                    int read;
+                    long total = 0;
+                    while ((read = body.Read(buf, 0, buf.Length)) > 0)
+                    {
+                        total += read;
+                        if (total > 50L * 1024 * 1024)
+                        {
+                            errorMsg = "업데이트 파일을 받지 못했습니다.";
+                            return false;
+                        }
+                        fs.Write(buf, 0, read);
+                    }
+                }
+                return StageOtaFromZipFile(newVersion, tempZip, out errorMsg);
+            }
+            catch
+            {
+                errorMsg = "업데이트 파일을 받지 못했습니다.";
+                return false;
+            }
+            finally
+            {
+                try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+            }
+        }
+
+        private void WriteJson(HttpListenerContext ctx, int status, string json)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(json);
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            ctx.Response.StatusCode = status;
+            ctx.Response.ContentLength64 = bytes.Length;
+            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            ctx.Response.OutputStream.Close();
+        }
+
+        private void ScheduleRestart()
+        {
+            string exe = _exePath.Replace("\"", "");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c ping 127.0.0.1 -n 3 >nul & start \"\" \"" + exe + "\"",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+            ExitApplication();
         }
 
         private static void CopyDirectoryRecursive(string sourceDir, string targetDir)
@@ -952,32 +1110,46 @@ namespace SafeNexDesktop
                     return;
                 }
 
-                // Zero-reinstall OTA hot-swap endpoint: downloads latest zip from Supabase Storage and updates %LOCALAPPDATA%\SafeNexPC\www
+                if (string.Equals(rawPath, "/__desktop/restart", StringComparison.OrdinalIgnoreCase))
+                {
+                    WriteJson(ctx, 200, "{\"ok\":true}");
+                    ScheduleRestart();
+                    return;
+                }
+
+                // Browser-downloaded zip. Stored until the next program start, then swapped before the window opens.
+                if (string.Equals(rawPath, "/__desktop/stage-ota", StringComparison.OrdinalIgnoreCase))
+                {
+                    string newVer = RawQueryValue(ctx.Request, "version");
+                    string err;
+                    bool ok = StageOtaFromStream(newVer, ctx.Request.InputStream, out err);
+                    string safeErr = (err ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    string safeVer = (newVer ?? "").Replace("\"", "");
+                    string respJson = ok
+                        ? "{\"ok\":true,\"pending\":true,\"version\":\"" + safeVer + "\"}"
+                        : "{\"ok\":false,\"error\":\"" + safeErr + "\"}";
+                    WriteJson(ctx, 200, respJson);
+                    return;
+                }
+
+                // Older screen builds still ask the program to download. Stage that zip too.
                 if (string.Equals(rawPath, "/__desktop/apply-ota", StringComparison.OrdinalIgnoreCase))
                 {
-                    string newVer = ctx.Request.QueryString["version"] ?? "";
-                    string downloadUrl = ctx.Request.QueryString["url"] ?? "";
+                    string newVer = RawQueryValue(ctx.Request, "version");
+                    string downloadUrl = RawQueryValue(ctx.Request, "url");
                     string err;
                     bool ok = false;
                     if (!string.IsNullOrEmpty(newVer) && !string.IsNullOrEmpty(downloadUrl))
-                    {
-                        ok = ApplyOtaWebBundle(newVer, downloadUrl, out err);
-                    }
+                        ok = StageOtaFromDownload(newVer, downloadUrl, out err);
                     else
-                    {
-                        err = "version 또는 url 파라미터가 누락되었습니다.";
-                    }
+                        err = "업데이트 버전을 확인하지 못했습니다.";
 
                     string safeErr = (err ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    string safeVer = (newVer ?? "").Replace("\"", "");
                     string respJson = ok
-                        ? "{\"ok\":true,\"version\":\"" + newVer.Replace("\"", "") + "\"}"
+                        ? "{\"ok\":true,\"pending\":true,\"version\":\"" + safeVer + "\"}"
                         : "{\"ok\":false,\"error\":\"" + safeErr + "\"}";
-                    byte[] respBytes = Encoding.UTF8.GetBytes(respJson);
-                    ctx.Response.ContentType = "application/json; charset=utf-8";
-                    ctx.Response.StatusCode = 200;
-                    ctx.Response.ContentLength64 = respBytes.Length;
-                    ctx.Response.OutputStream.Write(respBytes, 0, respBytes.Length);
-                    ctx.Response.OutputStream.Close();
+                    WriteJson(ctx, 200, respJson);
                     return;
                 }
 

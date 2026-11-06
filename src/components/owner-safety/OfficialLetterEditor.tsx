@@ -13,21 +13,28 @@ import { toast } from 'sonner';
 
 interface Props {
   letter: OfficialLetter;
-  onSave: (letter: OfficialLetter) => void;
+  onSave: (letter: OfficialLetter) => void | Promise<void>;
   onClose: () => void;
 }
+
+type DraftLetter = OfficialLetter & {
+  content_paragraphs: string[];
+  sub_items: NonNullable<OfficialLetter['sub_items']>;
+};
 
 export function OfficialLetterEditor({ letter: initialLetter, onSave, onClose }: Props) {
   const { profile } = useAuth();
 
   // If new letter and sender fields are generic, default to logged in user / author
   const defaultAuthorName = profile?.display_name || '박 서 로';
-  const [letter, setLetter] = useState<OfficialLetter>(() => ({
+  const [letter, setLetter] = useState<DraftLetter>(() => ({
     ...initialLetter,
     sender_name: initialLetter.sender_name || defaultAuthorName,
     sender_title: initialLetter.sender_title || '차장',
     sender_department: initialLetter.sender_department || '에어리퀴드코리아 기술본부 건설안전팀',
     sender: initialLetter.sender !== undefined ? initialLetter.sender : '',
+    content_paragraphs: initialLetter.content_paragraphs?.length ? initialLetter.content_paragraphs : [''],
+    sub_items: initialLetter.sub_items ?? [],
   }));
 
   const [activeView, setActiveView] = useState<'editor' | 'preview'>('preview');
@@ -125,7 +132,7 @@ export function OfficialLetterEditor({ letter: initialLetter, onSave, onClose }:
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!letter.subject.trim()) {
       toast.error('공문 제목을 입력해주세요.');
       return;
@@ -134,11 +141,15 @@ export function OfficialLetterEditor({ letter: initialLetter, onSave, onClose }:
       toast.error('문서 번호를 입력해주세요.');
       return;
     }
-    onSave({
-      ...letter,
-      updated_at: new Date().toISOString(),
-    });
-    toast.success('공문이 저장되었습니다.');
+    try {
+      await onSave({
+        ...letter,
+        updated_at: new Date().toISOString(),
+      });
+      toast.success('공문이 저장되었습니다.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '공문을 저장하지 못했습니다.');
+    }
   };
 
   const handlePrint = () => {
@@ -195,7 +206,8 @@ export function OfficialLetterEditor({ letter: initialLetter, onSave, onClose }:
                   <p className="text-xs text-muted-foreground mt-0.5">에어리퀴드 공식 공문 아웃라인 기준</p>
                 </div>
                 <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-0.5 rounded">
-                  {letter.doc_number}
+                  {letter.source === 'upload' ? '시스템 외 발신 · ' : ''}
+                  {letter.doc_number || '문서번호 확인'}
                 </span>
               </div>
 

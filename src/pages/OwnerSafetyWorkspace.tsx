@@ -5,6 +5,7 @@ import { AirLiquideLogo } from '@/components/owner-safety/AirLiquideLogo';
 import { OfficialLetterRegistry } from '@/components/owner-safety/OfficialLetterRegistry';
 import { TeamPeriodicTasks } from '@/components/owner-safety/TeamPeriodicTasks';
 import { TeamSharedSheet } from '@/components/owner-safety/TeamSharedSheet';
+import { WeeklyWorkReports } from '@/components/owner-safety/WeeklyWorkReports';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -89,8 +90,10 @@ export default function OwnerSafetyWorkspace() {
         </div>
       </div>
 
+      <WeeklyWorkReports projectId={selectedProject} />
+
       {/* Tab 1: Official Letter Registry & Generator */}
-      {activeTab === 'letters' && <OfficialLetterRegistry />}
+      {activeTab === 'letters' && <OfficialLetterRegistry projectId={selectedProject} />}
 
       {/* Tab 2: Periodic Tasks */}
       {activeTab === 'tasks' && <TeamPeriodicTasks />}

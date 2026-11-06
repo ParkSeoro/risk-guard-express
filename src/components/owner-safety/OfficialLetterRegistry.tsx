@@ -1,6 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { OfficialLetter } from './types';
-import { INITIAL_LETTERS } from './sampleData';
 import { OfficialLetterEditor } from './OfficialLetterEditor';
 import { ReceivedLetterModal } from './ReceivedLetterModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,22 +23,25 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   AlertCircle,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { differenceInCalendarDays, startOfDay } from 'date-fns';
+import { nextSerialDocNumber, parseOfficialLetterText } from '@/lib/officialLetterOcr';
+import { prepareOfficialLetterFile } from '@/lib/officialLetterFile';
+import {
+  deleteOwnerLetter,
+  loadOwnerLetters,
+  readOfficialLetterImage,
+  saveOwnerLetter,
+  uploadOfficialLetterFile,
+} from '@/lib/ownerOfficialLetters';
 
-const STORAGE_KEY = 'safenex_owner_official_letters';
-
-export function OfficialLetterRegistry() {
-  const [letters, setLetters] = useState<OfficialLetter[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      /* ignore */
-    }
-    return INITIAL_LETTERS;
-  });
+export function OfficialLetterRegistry({ projectId }: { projectId?: string | null }) {
+  const [letters, setLetters] = useState<OfficialLetter[]>([]);
+  const [lettersReady, setLettersReady] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const uploadRef = useRef<HTMLInputElement | null>(null);
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | '발신' | '수신'>('all');
@@ -50,60 +52,28 @@ export function OfficialLetterRegistry() {
   const [receivedModalOpen, setReceivedModalOpen] = useState(false);
   const [selectedReceivedLetter, setSelectedReceivedLetter] = useState<OfficialLetter | null>(null);
 
-  // Sync to local storage
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(letters));
-    } catch {
-      /* ignore */
-    }
-  }, [letters]);
+    let cancelled = false;
+    loadOwnerLetters()
+      .then((rows) => {
+        if (!cancelled) setLetters(rows);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) toast.error(error.message || '공문 대장을 불러오지 못했습니다.');
+      })
+      .finally(() => {
+        if (!cancelled) setLettersReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // Compute next auto-increment document number for outgoing letters
-  const generateNextDocNumber = (): string => {
-    const currentYear = new Date().getFullYear();
-    const yy = String(currentYear).slice(-2); // "26"
-    const prefix = `ALK Technology - Construction Safety - ${yy}-`;
+  const generateNextDocNumber = (): string =>
+    nextSerialDocNumber(letters.map((letter) => letter.doc_number), 'outgoing');
 
-    let maxSeq = 0;
-    letters.forEach((l) => {
-      if (l.doc_number.startsWith(prefix)) {
-        const match = l.doc_number.match(new RegExp(`${prefix}(\\d+)호`));
-        if (match && match[1]) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num > maxSeq) {
-            maxSeq = num;
-          }
-        }
-      }
-    });
-
-    const nextSeq = String(maxSeq + 1).padStart(2, '0');
-    return `${prefix}${nextSeq}호`;
-  };
-
-  // Compute next document number for received letters
-  const generateNextRecDocNumber = (): string => {
-    const currentYear = new Date().getFullYear();
-    const yy = String(currentYear).slice(-2); // "26"
-    const prefix = `ALK-REC-${yy}-`;
-
-    let maxSeq = 0;
-    letters.forEach((l) => {
-      if (l.doc_number.startsWith(prefix)) {
-        const match = l.doc_number.match(new RegExp(`${prefix}(\\d+)호`));
-        if (match && match[1]) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num > maxSeq) {
-            maxSeq = num;
-          }
-        }
-      }
-    });
-
-    const nextSeq = String(maxSeq + 1).padStart(2, '0');
-    return `${prefix}${nextSeq}호`;
-  };
+  const generateNextRecDocNumber = (): string =>
+    nextSerialDocNumber(letters.map((letter) => letter.doc_number), 'received');
 
   const handleCreateNewOutgoing = () => {
     const today = new Date();
@@ -112,6 +82,7 @@ export function OfficialLetterRegistry() {
 
     const newLetter: OfficialLetter = {
       id: `letter-${Date.now()}`,
+      project_id: projectId || undefined,
       doc_number: nextNumber,
       direction: '발신',
       dispatch_date: formattedDate,
@@ -150,6 +121,7 @@ export function OfficialLetterRegistry() {
 
     const newRecLetter: OfficialLetter = {
       id: `letter-rec-${Date.now()}`,
+      project_id: projectId || undefined,
       direction: '수신',
       doc_number: nextNumber,
       dispatch_date: todayStr.replace(/-/g, '. ') + '.',
@@ -177,54 +149,57 @@ export function OfficialLetterRegistry() {
     setReceivedModalOpen(true);
   };
 
-  const handleSaveLetter = (updated: OfficialLetter) => {
+  const handleSaveLetter = async (updated: OfficialLetter) => {
+    const saved = await saveOwnerLetter({ ...updated, project_id: updated.project_id || projectId || undefined });
     setLetters((prev) => {
-      const idx = prev.findIndex((l) => l.id === updated.id);
+      const idx = prev.findIndex((l) => l.id === saved.id || l.id === updated.id);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = updated;
+        next[idx] = saved;
         return next;
       }
-      return [updated, ...prev];
+      return [saved, ...prev];
     });
     setEditingLetter(null);
     setReceivedModalOpen(false);
     setSelectedReceivedLetter(null);
   };
 
-  const handleSaveReceivedLetter = (updated: OfficialLetter) => {
+  const handleSaveReceivedLetter = async (updated: OfficialLetter) => {
+    const saved = await saveOwnerLetter({ ...updated, project_id: updated.project_id || projectId || undefined });
     setLetters((prev) => {
-      const idx = prev.findIndex((l) => l.id === updated.id);
+      const idx = prev.findIndex((l) => l.id === saved.id || l.id === updated.id);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = updated;
+        next[idx] = saved;
         return next;
       }
-      return [updated, ...prev];
+      return [saved, ...prev];
     });
-    toast.success('수신 공문 내역이 저장되었습니다.');
   };
 
-  const handleUpdateLetterStatus = (letterId: string, newStatus: string) => {
-    setLetters((prev) =>
-      prev.map((l) => {
-        if (l.id !== letterId) return l;
-        if (l.direction === '수신') {
-          return {
-            ...l,
-            handling_status: newStatus as any,
-            status: (newStatus === '처리완료' ? '처리완료' : newStatus === '조치/회신중' ? '조치중' : '접수완료') as any,
-            updated_at: new Date().toISOString(),
-          };
+  const handleUpdateLetterStatus = async (letterId: string, newStatus: string) => {
+    const current = letters.find((l) => l.id === letterId);
+    if (!current) return;
+    const nextLetter: OfficialLetter = current.direction === '수신'
+      ? {
+          ...current,
+          handling_status: newStatus as OfficialLetter['handling_status'],
+          status: (newStatus === '처리완료' ? '처리완료' : newStatus === '조치/회신중' ? '조치중' : '접수완료') as OfficialLetter['status'],
+          updated_at: new Date().toISOString(),
         }
-        return {
-          ...l,
-          status: newStatus as any,
+      : {
+          ...current,
+          status: newStatus as OfficialLetter['status'],
           updated_at: new Date().toISOString(),
         };
-      })
-    );
-    toast.success(`진행 상태가 [${newStatus}]로 변경되었습니다.`);
+    try {
+      const saved = await saveOwnerLetter(nextLetter);
+      setLetters((prev) => prev.map((l) => (l.id === letterId ? saved : l)));
+      toast.success(`진행 상태가 [${newStatus}]로 변경되었습니다.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '상태를 저장하지 못했습니다.');
+    }
   };
 
   const handleQuickComplete = (letter: OfficialLetter) => {
@@ -243,6 +218,7 @@ export function OfficialLetterRegistry() {
 
     const replyLetter: OfficialLetter = {
       id: `letter-${Date.now()}`,
+      project_id: projectId || receivedLetter.project_id,
       doc_number: nextNumber,
       direction: '발신',
       dispatch_date: formattedDate,
@@ -277,10 +253,82 @@ export function OfficialLetterRegistry() {
     toast.info(`수신 공문에 대한 회신 공문(${nextNumber}) 초안이 기안되었습니다.`);
   };
 
-  const handleDelete = (id: string, docNumber: string) => {
+  const handleDelete = async (id: string, docNumber: string) => {
     if (!window.confirm(`[${docNumber}] 공문을 삭제하시겠습니까?`)) return;
-    setLetters((prev) => prev.filter((l) => l.id !== id));
-    toast.success('공문이 삭제되었습니다.');
+    try {
+      await deleteOwnerLetter(id);
+      setLetters((prev) => prev.filter((l) => l.id !== id));
+      toast.success('공문이 삭제되었습니다.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '공문을 삭제하지 못했습니다.');
+    }
+  };
+
+  const handleUploadOutgoing = async (file: File) => {
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error('15MB 이하 파일만 올릴 수 있습니다.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const filePath = await uploadOfficialLetterFile(file);
+      const prepared = await prepareOfficialLetterFile(file);
+      let text = prepared.text;
+      let ocrStatus = text ? 'text' : '';
+      let confidence: number | null = text ? 0.95 : null;
+      let warning = '';
+      if (prepared.imageBase64 && prepared.mimeType) {
+        const read = await readOfficialLetterImage(prepared.imageBase64, prepared.mimeType);
+        text = [text, read.text].filter((part) => part && part.trim()).join('\n');
+        ocrStatus = read.status;
+        confidence = read.confidence;
+        warning = read.warning || '';
+      }
+      const parsed = parseOfficialLetterText(text);
+      if (parsed.docNumber && letters.some((letter) => letter.doc_number === parsed.docNumber)) {
+        toast.error(`${parsed.docNumber} 은 이미 대장에 있습니다. 다음 채번은 이 번호를 건너뜁니다.`);
+        return;
+      }
+      const today = new Date();
+      const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, '0')}. ${String(today.getDate()).padStart(2, '0')}.`;
+      const uploaded: OfficialLetter = {
+        id: `letter-upload-${Date.now()}`,
+        project_id: projectId || undefined,
+        doc_number: parsed.docNumber || '',
+        direction: '발신',
+        dispatch_date: parsed.dispatchDate || formattedDate,
+        recipient: parsed.recipient,
+        reference: parsed.reference,
+        sender: '에어리퀴드코리아 기술본부 건설안전팀',
+        sender_department: '에어리퀴드코리아 기술본부 건설안전팀',
+        sender_title: '차장',
+        sender_name: '박 서 로',
+        subject: parsed.subject,
+        content_paragraphs: parsed.paragraphs.length ? parsed.paragraphs : ['원문에서 읽은 본문을 확인해 주세요.'],
+        sub_items_title: '- 아 래 -',
+        sub_items: [],
+        status: '발송완료',
+        source: 'upload',
+        attachment_name: file.name,
+        file_path: filePath,
+        ocr_text: text,
+        ocr_status: ocrStatus,
+        ocr_confidence: confidence,
+        notes: warning || '시스템 밖에서 작성해 발송한 공문입니다.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setEditingLetter(uploaded);
+      if (!parsed.docNumber) {
+        toast.error('문서번호를 읽지 못했습니다. 원문의 번호를 적어 저장하면 다음 채번에 반영됩니다.');
+      } else {
+        toast.success(`${parsed.docNumber} 을 읽었습니다. 내용을 확인한 뒤 대장에 등록하세요.`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '공문을 읽지 못했습니다.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const outgoingLetters = useMemo(() => letters.filter((l) => l.direction === '발신'), [letters]);
@@ -522,11 +570,11 @@ export function OfficialLetterRegistry() {
           <CardContent className="p-3.5 flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground font-medium">다음 공식 발신 채번</p>
-              <p className="text-xs font-mono font-bold text-amber-700 mt-1 truncate" title={generateNextDocNumber()}>
-                {generateNextDocNumber().replace('ALK Technology - Construction Safety - ', '')}
+              <p className="text-xs font-mono font-bold text-amber-700 mt-1 truncate" title={lettersReady ? generateNextDocNumber() : ''}>
+                {lettersReady ? generateNextDocNumber().replace('ALK Technology - Construction Safety - ', '') : '불러오는 중'}
               </p>
               <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                수신: {generateNextRecDocNumber()}
+                수신: {lettersReady ? generateNextRecDocNumber() : '…'}
               </p>
             </div>
             <Sparkles className="h-7 w-7 text-amber-500/40" />
@@ -559,6 +607,28 @@ export function OfficialLetterRegistry() {
               className="h-8 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
             >
               <Inbox className="h-3.5 w-3.5" /> 수신 공문 접수 등록
+            </Button>
+
+            <input
+              ref={uploadRef}
+              type="file"
+              accept="application/pdf,image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) void handleUploadOutgoing(file);
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={uploading}
+              onClick={() => uploadRef.current?.click()}
+              className="h-8 text-xs gap-1.5"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {uploading ? '공문 읽는 중' : '시스템 외 발신 공문 올리기'}
             </Button>
 
             <Button size="sm" onClick={handleCreateNewOutgoing} className="h-8 text-xs gap-1.5">
@@ -675,7 +745,12 @@ export function OfficialLetterRegistry() {
                           </Badge>
                         </td>
                         <td className="p-2.5 font-mono text-[11px] font-medium text-slate-900 dark:text-slate-100">
-                          <div>{letter.doc_number}</div>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span>{letter.doc_number}</span>
+                            {letter.source === 'upload' && (
+                              <Badge variant="outline" className="text-[10px] py-0 font-sans">시스템 외</Badge>
+                            )}
+                          </div>
                           {isIncoming && letter.original_doc_number && (
                             <div className="text-[10px] text-muted-foreground truncate" title={`원문: ${letter.original_doc_number}`}>
                               원문: {letter.original_doc_number}

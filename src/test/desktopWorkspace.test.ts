@@ -99,8 +99,8 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
       expect(item.label).not.toMatch(/\d+×\d+/);
     }
     expect(resolveDesktopRouteWindowSize("/app/admin/desktop-workspace")).toEqual({
-      width: 420,
-      height: 680,
+      width: 520,
+      height: 780,
       isMessengerView: true,
     });
     expect(resolveDesktopRouteWindowSize("/app/admin/alerts")).toEqual({

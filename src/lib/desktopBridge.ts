@@ -2,7 +2,7 @@
  * SafeNex Windows Desktop Bridge (`window.safenexDesktop`)
  * - Bridges Electron / Web environments seamlessly.
  * - Manages Windows Auto-Start on Boot, Keep Logged In (Credential Memory),
- *   Minimize-to-Tray on Close, Compact (420px) vs Expanded (1260px) Window Mode,
+ *   Minimize-to-Tray on Close, Compact (520px) vs Expanded (1260px) Window Mode,
  *   Multi-Window Pop-out Chat / Work Modules, and Taskbar Unread Badge & FlashFrame.
  */
 
@@ -134,7 +134,7 @@ export function setDesktopShellActive(active: boolean): void {
 
 /**
  * Returns the recommended window dimensions for a given route inside the single-window PC shell.
- * - Messenger (대화상대 / 대화목록): 420 × 680 (콤팩트 메신저 창, 사이드바 마우스 오버 열림)
+ * - Messenger (대화상대 / 대화목록): 520 × 780 (콤팩트 메신저 창, 사이드바 마우스 오버 열림)
  * - Work Mode (알림 / 공지사항 이하 모든 업무 화면): 1260 × 820 단일 크기 통일 (좌측 168px 고정 사이드바 + 우측 1092px 데스크톱 레이아웃 보장)
  */
 export const DESKTOP_MESSENGER_WINDOW_SIZE = { width: 520, height: 780 } as const;

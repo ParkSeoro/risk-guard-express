@@ -232,6 +232,42 @@ function startLocalServer(distDir) {
           return;
         }
 
+        if (urlPath === "/__desktop/stage-ota") {
+          const version = new URLSearchParams(rawQuery || "").get("version") || "";
+          const chunks = [];
+          req.on("data", (chunk) => chunks.push(chunk));
+          req.on("end", async () => {
+            let staging = null;
+            try {
+              const buf = Buffer.concat(chunks);
+              if (!buf || buf.length < 512) {
+                sendJson(res, 400, { ok: false, error: "다운로드된 번들이 유효하지 않습니다." });
+                return;
+              }
+              staging = fs.mkdtempSync(path.join(os.tmpdir(), "safenex-stage-"));
+              unzipBuffer(buf, staging);
+              const source = bundleSourceDir(staging);
+              if (!source) {
+                sendJson(res, 400, { ok: false, error: "번들에 index.html이 없습니다." });
+                return;
+              }
+              fs.writeFileSync(path.join(source, "bundle-version.txt"), version, "utf8");
+              const dest = userWwwDir();
+              fs.mkdirSync(dest, { recursive: true });
+              fs.cpSync(source, dest, { recursive: true, force: true });
+              activeDistDir = dest;
+              sendJson(res, 200, { ok: true, pending: true, version });
+            } catch (err) {
+              sendJson(res, 500, { ok: false, error: err && err.message ? err.message : String(err) });
+            } finally {
+              if (staging) {
+                try { fs.rmSync(staging, { recursive: true, force: true }); } catch {}
+              }
+            }
+          });
+          return;
+        }
+
         // Native open-external bridge for legacy endpoints & direct fetch
         if (urlPath === "/__desktop/open-external") {
           const searchParams = new URLSearchParams(rawQuery || "");

@@ -137,7 +137,7 @@ export function setDesktopShellActive(active: boolean): void {
  * - Messenger (대화상대 / 대화목록): 420 × 680 (콤팩트 메신저 창, 사이드바 마우스 오버 열림)
  * - Work Mode (알림 / 공지사항 이하 모든 업무 화면): 1260 × 820 단일 크기 통일 (좌측 168px 고정 사이드바 + 우측 1092px 데스크톱 레이아웃 보장)
  */
-export const DESKTOP_MESSENGER_WINDOW_SIZE = { width: 420, height: 680 } as const;
+export const DESKTOP_MESSENGER_WINDOW_SIZE = { width: 520, height: 780 } as const;
 export const DESKTOP_WORK_WINDOW_SIZE = { width: 1260, height: 820 } as const;
 
 export function resolveDesktopRouteWindowSize(pathname: string): {
@@ -358,9 +358,32 @@ export function saveManagerLoginMemory(opts: {
     };
     window.localStorage.setItem(MANAGER_LOGIN_MEMORY_KEY, JSON.stringify(payload));
     saveDesktopSettings({ keepLoggedIn: opts.autoLoginEnabled });
+    if (window.safenexDesktop?.saveLoginMemory) {
+      void window.safenexDesktop.saveLoginMemory(payload);
+    }
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * 윈도우 PC 전용 네이티브 계정 캐시와 동기화 (포트 변경이나 세션 초기화 시에도 100% 복구)
+ */
+export async function syncManagerLoginMemoryFromNative(): Promise<ManagerSavedLogin> {
+  const current = loadManagerLoginMemory();
+  if (current.email) return current;
+  if (typeof window !== "undefined" && window.safenexDesktop?.loadLoginMemory) {
+    try {
+      const native = await window.safenexDesktop.loadLoginMemory();
+      if (native && typeof native.email === "string" && native.email) {
+        saveManagerLoginMemory(native);
+        return native;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return current;
 }
 
 /**
@@ -478,7 +501,7 @@ export interface DesktopOtaCheckResult {
 }
 
 const DESKTOP_BUNDLE_VERSION_KEY = "safenex_pc_bundle_version";
-export const DESKTOP_DEFAULT_VERSION = "1.1.7";
+export const DESKTOP_DEFAULT_VERSION = "1.1.8";
 
 /**
  * Same numeric compare as the phone. A lower release number does not replace

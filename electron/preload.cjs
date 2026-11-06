@@ -31,4 +31,7 @@ contextBridge.exposeInMainWorld("safenexDesktop", {
   minimizeWindow: () => ipcRenderer.send("safenex:window-minimize"),
   maximizeOrRestoreWindow: () => ipcRenderer.send("safenex:window-maximize"),
   hideToTray: () => ipcRenderer.send("safenex:window-hide-to-tray"),
+
+  saveLoginMemory: (data) => ipcRenderer.invoke("safenex:save-login-memory", data),
+  loadLoginMemory: () => ipcRenderer.invoke("safenex:load-login-memory"),
 });

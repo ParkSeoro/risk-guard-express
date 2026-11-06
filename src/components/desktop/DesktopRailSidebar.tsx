@@ -429,16 +429,9 @@ export function DesktopRailSidebar() {
         setStagedUpdateVersion(res.latestVersion);
         toast.success(res.message);
       } else if (!res.ok && res.hasUpdate) {
-        if (res.needsInstaller) {
-          const notifiedKey = `safenex_ota_notified_${res.latestVersion || 'latest'}`;
-          try {
-            if (sessionStorage.getItem(notifiedKey)) return;
-            sessionStorage.setItem(notifiedKey, "true");
-          } catch {
-            /* ignore */
-          }
-        }
-        toast.error(res.message);
+        // 백그라운드 자동 확인 시 실패 알림을 강제로 띄워 사용자를 방해하지 않고 로그만 남깁니다.
+        // 수동 확인(환경설정 창)에서만 명시적인 에러 알림이 표시됩니다.
+        console.warn("[desktop-ota] Background update check status:", res.message);
       }
     };
     const initTimer = window.setTimeout(() => void runAutoUpdateCheck(), 4000);
@@ -487,7 +480,11 @@ export function DesktopRailSidebar() {
 
   const handleSelectItem = (item: RailMenuItem) => {
     setIsRailHovered(false);
-    resizeDesktopWindow(item.windowWidth, item.windowHeight);
+    // 업무 화면으로 전환 시에는 넉넉한 1260px 데스크톱 레이아웃으로 자동 확장
+    // 메신저 화면으로 복귀 시에는 사용자가 설정해 둔 현재 창 크기를 존중하여 강제 축소하지 않음
+    if (item.group === "feature") {
+      resizeDesktopWindow(item.windowWidth, item.windowHeight);
+    }
     navigate(item.path);
   };
 

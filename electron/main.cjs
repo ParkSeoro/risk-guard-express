@@ -400,17 +400,30 @@ function startLocalServer(distDir) {
       }
     });
 
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address();
-      const port = addr && typeof addr === "object" ? addr.port : 0;
-      localServer = server;
-      localPort = port;
-      resolve(port);
-    });
+    function tryNextPort(idx) {
+      if (idx >= PREFERRED_PORTS.length) {
+        resolve(0);
+        return;
+      }
+      const p = PREFERRED_PORTS[idx];
+      const onError = () => {
+        server.removeListener("listening", onListening);
+        tryNextPort(idx + 1);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        const addr = server.address();
+        const actualPort = addr && typeof addr === "object" ? addr.port : p;
+        localServer = server;
+        localPort = actualPort;
+        resolve(actualPort);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(p, "127.0.0.1");
+    }
 
-    server.on("error", () => {
-      resolve(0);
-    });
+    tryNextPort(0);
   });
 }
 
@@ -436,10 +449,10 @@ function createTray() {
         },
       },
       {
-        label: "카톡 미니모드 (420px)",
+        label: "메신저 콤팩트 모드 (520px)",
         click: () => {
           if (mainWindow) {
-            resizeWindowSmart(420, 680);
+            resizeWindowSmart(520, 780);
             mainWindow.show();
             mainWindow.focus();
           }
@@ -488,6 +501,46 @@ function createTray() {
   });
 }
 
+function loginMemoryFile() {
+  return path.join(app.getPath("userData"), "saved_account.json");
+}
+
+function windowStateFile() {
+  return path.join(app.getPath("userData"), "window-state.json");
+}
+
+function loadSavedWindowState() {
+  try {
+    const f = windowStateFile();
+    if (fs.existsSync(f)) {
+      return JSON.parse(fs.readFileSync(f, "utf8"));
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+let saveBoundsTimer = null;
+function saveWindowStateDebounced() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  clearTimeout(saveBoundsTimer);
+  saveBoundsTimer = setTimeout(() => {
+    try {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const isMax = mainWindow.isMaximized();
+      const bounds = mainWindow.getNormalBounds();
+      fs.writeFileSync(
+        windowStateFile(),
+        JSON.stringify({ ...bounds, isMaximized: isMax }),
+        "utf8",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, 400);
+}
+
 function resizeWindowSmart(reqWidth, reqHeight) {
   if (!mainWindow) return;
   const curBounds = mainWindow.getBounds();
@@ -495,8 +548,8 @@ function resizeWindowSmart(reqWidth, reqHeight) {
   const currentDisplay = screen.getDisplayMatching(curBounds);
   const workArea = currentDisplay ? currentDisplay.workArea : screen.getPrimaryDisplay().workArea;
 
-  // Constrain requested size to fit comfortably within the current monitor work area
-  const targetW = Math.min(Math.max(360, reqWidth), workArea.width - 20);
+  // 메신저 콤팩트 모드도 최소 480px 이상을 보장하여 버튼/텍스트 잘림 방지
+  const targetW = Math.min(Math.max(480, reqWidth), workArea.width - 20);
   const targetH = Math.min(Math.max(520, reqHeight), workArea.height - 20);
 
   const curRight = curBounds.x + curBounds.width;
@@ -517,15 +570,28 @@ function resizeWindowSmart(reqWidth, reqHeight) {
   }
 
   mainWindow.setBounds({ x: nextX, y: nextY, width: targetW, height: targetH }, true);
+  saveWindowStateDebounced();
 }
 
 async function createMainWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const workArea = primaryDisplay.workArea;
-  const width = 420;
-  const height = Math.min(680, workArea.height - 30);
-  const posX = Math.max(workArea.x + 16, workArea.x + workArea.width - width - 20);
-  const posY = Math.max(workArea.y + 16, workArea.y + workArea.height - height - 20);
+  const savedState = loadSavedWindowState();
+
+  // 기본 메신저 모드: 520 × 780 (상단 셀렉트 + 버튼이 넉넉하게 들어가는 최적 사이즈)
+  let width = 520;
+  let height = Math.min(780, workArea.height - 30);
+  let posX = Math.max(workArea.x + 16, workArea.x + workArea.width - width - 20);
+  let posY = Math.max(workArea.y + 16, workArea.y + workArea.height - height - 20);
+
+  if (savedState && typeof savedState.width === "number" && typeof savedState.height === "number") {
+    width = Math.min(Math.max(480, savedState.width), workArea.width - 20);
+    height = Math.min(Math.max(520, savedState.height), workArea.height - 20);
+    if (typeof savedState.x === "number" && typeof savedState.y === "number") {
+      posX = Math.min(Math.max(workArea.x + 10, savedState.x), workArea.x + workArea.width - width - 10);
+      posY = Math.min(Math.max(workArea.y + 10, savedState.y), workArea.y + workArea.height - height - 10);
+    }
+  }
 
   const iconPath = getAppIconPath();
   mainWindow = new BrowserWindow({
@@ -533,7 +599,7 @@ async function createMainWindow() {
     height,
     x: posX,
     y: posY,
-    minWidth: 360,
+    minWidth: 460,
     minHeight: 520,
     title: "SafeNex PC 메신저",
     icon: iconPath,
@@ -546,6 +612,13 @@ async function createMainWindow() {
       nodeIntegration: false,
     },
   });
+
+  if (savedState && savedState.isMaximized) {
+    mainWindow.maximize();
+  }
+
+  mainWindow.on("resize", saveWindowStateDebounced);
+  mainWindow.on("move", saveWindowStateDebounced);
 
   const defaultUA = mainWindow.webContents.getUserAgent();
   mainWindow.webContents.setUserAgent(`${defaultUA} SafeNexDesktop/1.2.0`);
@@ -642,10 +715,31 @@ ipcMain.handle("safenex:set-always-on-top", (_event, enabled) => {
 ipcMain.handle("safenex:set-window-mode", (_event, mode) => {
   if (!mainWindow) return;
   if (mode === "compact") {
-    resizeWindowSmart(420, 680);
+    resizeWindowSmart(520, 780);
   } else {
     resizeWindowSmart(1260, 820);
   }
+});
+
+ipcMain.handle("safenex:save-login-memory", (_event, data) => {
+  try {
+    fs.writeFileSync(loginMemoryFile(), JSON.stringify(data || {}), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle("safenex:load-login-memory", () => {
+  try {
+    const f = loginMemoryFile();
+    if (fs.existsSync(f)) {
+      return JSON.parse(fs.readFileSync(f, "utf8"));
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 });
 
 ipcMain.handle("safenex:open-popout", (_event, opts) => {

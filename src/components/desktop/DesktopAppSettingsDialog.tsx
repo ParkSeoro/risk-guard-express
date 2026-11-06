@@ -127,30 +127,28 @@ export function DesktopAppSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <Monitor className="h-5 w-5" />
-              </div>
-              <div>
-                <DialogTitle className="text-base font-bold flex items-center gap-2">
-                  <span>SafeNex PC 데스크톱 메신저 설정</span>
-                  {isNativeDesktop ? (
-                    <Badge className="bg-emerald-600 text-white text-[10px]">
-                      Windows .exe 실행 중
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="text-[10px]">
-                      웹 워크스페이스 모드
-                    </Badge>
-                  )}
-                </DialogTitle>
-                <DialogDescription className="text-xs mt-0.5">
-                  윈도우 시작 시 자동 실행과 상시 대화 및 결재 알림 환경을 설정합니다.
-                </DialogDescription>
-              </div>
+      <DialogContent className="w-[calc(100vw-32px)] max-w-[480px] max-h-[88vh] overflow-y-auto p-4 sm:p-5">
+        <DialogHeader className="pb-1">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <Monitor className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-sm font-bold flex items-center gap-2">
+                <span className="truncate">PC 데스크톱 메신저 설정</span>
+                {isNativeDesktop ? (
+                  <Badge className="bg-emerald-600 text-white text-[10px] shrink-0">
+                    Windows PC
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-[10px] shrink-0">
+                    웹 모드
+                  </Badge>
+                )}
+              </DialogTitle>
+              <DialogDescription className="text-[11px] mt-0.5 truncate">
+                자동 실행, 로그인 세션 유지 및 알림 환경을 설정합니다.
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>

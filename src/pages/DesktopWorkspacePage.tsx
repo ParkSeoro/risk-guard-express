@@ -44,7 +44,6 @@ export default function DesktopWorkspacePage() {
 
   useEffect(() => {
     setDesktopShellActive(true);
-    resizeDesktopWindow(420, 680);
   }, []);
 
   // 좌측 아이콘 레일에서 대화상대(?tab=directory) / 대화목록(?tab=rooms) 클릭 시 동기화

@@ -35,6 +35,7 @@ import {
   isWindowsDesktopApp,
   loadDesktopSettings,
   loadManagerLoginMemory,
+  syncManagerLoginMemoryFromNative,
   saveDesktopSettings,
   saveManagerLoginMemory,
 } from '@/lib/desktopBridge';
@@ -146,6 +147,15 @@ const Auth = () => {
   const [qrProjectName, setQrProjectName] = useState('');
   const [qrCompanyName, setQrCompanyName] = useState('');
   const { toast } = useToast();
+
+  useEffect(() => {
+    void syncManagerLoginMemoryFromNative().then((mem) => {
+      if (mem?.email) {
+        setEmail((prev) => prev || mem.email);
+        setRememberManagerEmail(mem.rememberEmail !== false);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (workerQrContext) {

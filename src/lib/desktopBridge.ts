@@ -7,6 +7,10 @@
  */
 
 import { isOtaUpdateAvailable } from "@/lib/otaVersion";
+import {
+  DESKTOP_OTA_DOWNLOAD_FAILED,
+  interpretDesktopStageReply,
+} from "@/lib/desktopOtaApply";
 
 export type DesktopWindowMode = "compact" | "expanded";
 export type DesktopPresenceStatus = "online" | "busy" | "away" | "inspecting";
@@ -463,6 +467,9 @@ export interface DesktopOtaCheckResult {
   ok: boolean;
   hasUpdate: boolean;
   applied: boolean;
+  /** The zip is stored for the next program start. A page reload still shows the old screen. */
+  pendingRestart?: boolean;
+  needsInstaller?: boolean;
   currentVersion: string;
   latestVersion: string | null;
   mandatory?: boolean;
@@ -556,11 +563,9 @@ export async function getDesktopVersionInfo(): Promise<{
 }
 
 /**
- * Zero-Reinstall OTA Auto-Updater for SafeNex PC:
- * Checks Supabase `app_releases` (published automatically by GitHub Actions on every push to `main`
- * or via `/app/admin/settings/mobile-releases`) and instructs the local `SafeNexPC.exe` server
- * (`/__desktop/apply-ota`) to download and hot-swap `%LOCALAPPDATA%\SafeNexPC\www` in place.
- * Users NEVER need to receive or run a new `.exe` installer for web/UI/feature updates.
+ * PC OTA. The browser downloads the zip, then the local program stores it and
+ * swaps `www` the next time the program starts, before the window opens.
+ * One installer is required only when the program itself cannot store that zip.
  */
 export async function checkAndApplyDesktopOtaUpdate(opts?: {
   channel?: "stable" | "beta";
@@ -577,13 +582,14 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
     } as any);
 
     if (error) {
+      console.error("[desktop-ota]", error.message);
       return {
         ok: false,
         hasUpdate: false,
         applied: false,
         currentVersion,
         latestVersion: null,
-        message: `업데이트 서버 조회 실패: ${error.message}`,
+        message: "업데이트 서버에 연결하지 못했습니다.",
       };
     }
 
@@ -631,31 +637,54 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
       downloadUrl = signed.signedUrl;
     }
 
-    const applyEndpoints = desktopShellEndpoints(
-      `/__desktop/apply-ota?version=${encodeURIComponent(latestVersion)}&url=${encodeURIComponent(downloadUrl)}`,
+    const fileRes = await fetch(downloadUrl, { cache: "no-store" });
+    if (!fileRes.ok) {
+      return {
+        ok: false,
+        hasUpdate: true,
+        applied: false,
+        currentVersion,
+        latestVersion,
+        message: DESKTOP_OTA_DOWNLOAD_FAILED,
+      };
+    }
+    const zipBytes = await fileRes.arrayBuffer();
+    if (zipBytes.byteLength < 512) {
+      return {
+        ok: false,
+        hasUpdate: true,
+        applied: false,
+        currentVersion,
+        latestVersion,
+        message: DESKTOP_OTA_DOWNLOAD_FAILED,
+      };
+    }
+
+    const stageEndpoints = desktopShellEndpoints(
+      `/__desktop/stage-ota?version=${encodeURIComponent(latestVersion)}`,
       typeof window !== "undefined" ? window.location.origin : null,
     );
-
-    let applyRes: Response | null = null;
-    let lastStatus = 0;
-    for (const ep of applyEndpoints) {
+    let stageReply: ReturnType<typeof interpretDesktopStageReply> | null = null;
+    for (const ep of stageEndpoints) {
       try {
-        const r = await fetch(ep, { method: "POST", cache: "no-store" });
-        if (r.ok) {
-          applyRes = r;
-          break;
-        }
-        lastStatus = r.status;
+        const r = await fetch(ep, {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: zipBytes,
+        });
+        stageReply = interpretDesktopStageReply(r.status, await r.text());
+        if (stageReply.ok || stageReply.needsInstaller || r.ok) break;
       } catch {
         /* try next */
       }
     }
 
-    if (!applyRes) {
-      const isPc =
-        isWindowsDesktopApp() ||
-        (typeof window !== "undefined" &&
-          (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"));
+    const isPc =
+      isWindowsDesktopApp() ||
+      (typeof window !== "undefined" &&
+        (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"));
+    if (!stageReply) {
       return {
         ok: false,
         hasUpdate: true,
@@ -663,49 +692,62 @@ export async function checkAndApplyDesktopOtaUpdate(opts?: {
         currentVersion,
         latestVersion,
         message: isPc
-          ? `로컬 업데이트 적용 실패 (HTTP ${lastStatus || "통신 오류"})`
+          ? "PC 프로그램에 업데이트를 넘기지 못했습니다. 프로그램을 완전히 종료한 뒤 다시 열어 주세요."
           : "무설치 자동 업데이트는 SafeNex PC 설치 버전에서 동작합니다.",
       };
     }
-
-    const applyJson = (await applyRes.json()) as { ok?: boolean; error?: string };
-    if (!applyJson.ok) {
+    if (!stageReply.ok) {
       return {
         ok: false,
         hasUpdate: true,
         applied: false,
+        needsInstaller: stageReply.needsInstaller,
         currentVersion,
         latestVersion,
-        message: applyJson.error || "로컬 업데이트 교체 중 오류가 발생했습니다.",
+        message: stageReply.message,
       };
-    }
-
-    try {
-      window.localStorage.setItem(DESKTOP_BUNDLE_VERSION_KEY, latestVersion);
-    } catch {
-      /* ignore */
     }
 
     return {
       ok: true,
       hasUpdate: true,
-      applied: true,
+      applied: false,
+      pendingRestart: stageReply.pending,
       currentVersion,
       latestVersion,
       mandatory: Boolean(release.mandatory),
       notes: release.notes || null,
-      message: `새 버전(v${latestVersion}) 다운로드 및 설치가 완료되었습니다.`,
+      message: stageReply.message,
     };
   } catch (err: any) {
+    console.error("[desktop-ota]", err);
+    const raw = String(err?.message || "");
     return {
       ok: false,
       hasUpdate: false,
       applied: false,
       currentVersion,
       latestVersion: null,
-      message: err?.message || "업데이트 확인 중 오류가 발생했습니다.",
+      message: /[가-힣]/.test(raw) ? raw : DESKTOP_OTA_DOWNLOAD_FAILED,
     };
   }
+}
+
+/** Relaunch the PC program so a staged web bundle is applied before the window opens. */
+export async function restartDesktopShell(): Promise<boolean> {
+  const endpoints = desktopShellEndpoints(
+    "/__desktop/restart",
+    typeof window !== "undefined" ? window.location.origin : null,
+  );
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, { method: "POST", cache: "no-store" });
+      if (r.ok) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
 }
 
 export const SAFENEX_PUBLIC_SITE_ORIGIN = "https://safenex.org";

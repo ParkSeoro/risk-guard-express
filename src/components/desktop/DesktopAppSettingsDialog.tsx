@@ -77,9 +77,8 @@ export function DesktopAppSettingsDialog({
       const res = await checkAndApplyDesktopOtaUpdate();
       const updatedInfo = await getDesktopVersionInfo();
       setVersionInfo(updatedInfo);
-      if (res.applied && res.latestVersion) {
-        toast.success(`새 버전(v${res.latestVersion}) 다운로드 완료! 화면을 새로고침합니다.`);
-        window.setTimeout(() => window.location.reload(), 900);
+      if (res.pendingRestart) {
+        toast.success(res.message);
       } else if (res.ok) {
         toast.info(res.message);
       } else {
@@ -318,7 +317,7 @@ export function DesktopAppSettingsDialog({
                   <span>무설치 자동 업데이트 (OTA)</span>
                 </h4>
                 <p className="text-[11px] text-muted-foreground">
-                  시스템 업데이트 배포 시 설치 파일(.exe)을 다시 받을 필요 없이 백그라운드에서 자동으로 최신 버전을 내려받아 적용합니다.
+                  화면 업데이트는 설치 파일 없이 받아 둡니다. 프로그램을 완전히 종료한 뒤 다시 열면 적용됩니다.
                 </p>
               </div>
             </div>

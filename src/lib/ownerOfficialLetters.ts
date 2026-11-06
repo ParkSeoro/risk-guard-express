@@ -3,8 +3,6 @@ import type { OfficialLetter } from '@/components/owner-safety/types';
 import { INITIAL_LETTERS } from '@/components/owner-safety/sampleData';
 
 const LOCAL_KEY = 'safenex_owner_official_letters';
-const IMPORTED_KEY = 'safenex_owner_official_letters_db_v1';
-const SAMPLE_IDS = new Set(INITIAL_LETTERS.map((letter) => letter.id));
 
 type DbError = { message: string; code?: string } | null;
 
@@ -69,51 +67,56 @@ function duplicateMessage(error: { message: string; code?: string }): Error {
   return new Error(error.message);
 }
 
+function readableLetters(value: unknown): OfficialLetter[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((letter): letter is OfficialLetter => {
+    if (!letter || typeof letter !== 'object') return false;
+    const row = letter as OfficialLetter;
+    const number = String(row.doc_number || '').trim();
+    return Boolean(number) && (row.direction === '발신' || row.direction === '수신');
+  });
+}
+
+function readLocalLetters(): OfficialLetter[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return [];
+    return readableLetters(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
 export async function loadOwnerLetters(): Promise<OfficialLetter[]> {
   const { data, error } = await table().select('*').order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   const remote = (data || []).map(toOfficialLetter);
-  const imported = await importLocalLettersOnce(remote);
-  return [...imported, ...remote].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-}
-
-async function importLocalLettersOnce(remote: OfficialLetter[]): Promise<OfficialLetter[]> {
-  try {
-    if (localStorage.getItem(IMPORTED_KEY) === '1') return [];
-  } catch {
-    return [];
-  }
-  let stored: OfficialLetter[] = [];
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY);
-    if (raw) stored = JSON.parse(raw);
-  } catch {
-    stored = [];
-  }
-  const known = new Set(remote.map((letter) => letter.doc_number));
-  const pending = (Array.isArray(stored) ? stored : []).filter((letter) => {
-    if (!letter || SAMPLE_IDS.has(letter.id)) return false;
-    if (!letter.doc_number || known.has(letter.doc_number)) return false;
-    known.add(letter.doc_number);
-    return letter.direction === '발신' || letter.direction === '수신';
-  });
-  const imported: OfficialLetter[] = [];
-  let failed = false;
-  for (const letter of pending) {
-    try {
-      imported.push(await saveOwnerLetter({ ...letter, id: `local-${letter.id}` }));
-    } catch {
-      failed = true;
+  const local = readLocalLetters();
+  const incoming = local.length > 0 ? local : remote.length > 0 ? [] : INITIAL_LETTERS;
+  const byNumber = new Map<string, OfficialLetter>();
+  for (const letter of remote) byNumber.set(letter.doc_number, letter);
+  for (const letter of incoming) {
+    const number = letter.doc_number.trim();
+    const existing = byNumber.get(number);
+    if (!existing) {
+      try {
+        const saved = await saveOwnerLetter({ ...letter, id: `local-${letter.id || number}` });
+        byNumber.set(number, saved);
+      } catch {
+        byNumber.set(number, letter);
+      }
+      continue;
+    }
+    if ((letter.updated_at || '') > (existing.updated_at || '')) {
+      try {
+        const saved = await saveOwnerLetter({ ...letter, id: existing.id });
+        byNumber.set(number, saved);
+      } catch {
+        /* 저장된 본문을 유지한다. */
+      }
     }
   }
-  if (!failed) {
-    try {
-      localStorage.setItem(IMPORTED_KEY, '1');
-    } catch {
-      /* ignore */
-    }
-  }
-  return imported;
+  return [...byNumber.values()].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
 export async function saveOwnerLetter(letter: OfficialLetter): Promise<OfficialLetter> {
@@ -149,11 +152,16 @@ export async function deleteOwnerLetter(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** 저장 경로는 영문·숫자만 쓴다. 한글 파일명은 보관 요청이 거절된다. */
+export function officialLetterObjectName(fileName: string, id: string): string {
+  const ext = (String(fileName || '').match(/\.([a-zA-Z0-9]{1,8})$/)?.[1] || 'bin').toLowerCase();
+  return `${id}.${ext}`;
+}
+
 export async function uploadOfficialLetterFile(file: File): Promise<string> {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error('로그인이 필요합니다.');
-  const safe = file.name.replace(/[^\w.\-가-힣]+/g, '_').slice(0, 80);
-  const path = `${auth.user.id}/${crypto.randomUUID()}-${safe}`;
+  const path = `${auth.user.id}/${officialLetterObjectName(file.name, crypto.randomUUID())}`;
   const { error } = await supabase.storage.from('official-letters').upload(path, file, {
     contentType: file.type || 'application/octet-stream',
     upsert: false,

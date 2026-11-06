@@ -271,8 +271,14 @@ export function OfficialLetterRegistry({ projectId }: { projectId?: string | nul
     }
     setUploading(true);
     try {
-      const filePath = await uploadOfficialLetterFile(file);
       const prepared = await prepareOfficialLetterFile(file);
+      let filePath = '';
+      let storageWarning = '';
+      try {
+        filePath = await uploadOfficialLetterFile(file);
+      } catch (error) {
+        storageWarning = error instanceof Error ? error.message : '파일 보관에 실패했습니다.';
+      }
       let text = prepared.text;
       let ocrStatus = text ? 'text' : '';
       let confidence: number | null = text ? 0.95 : null;
@@ -310,15 +316,18 @@ export function OfficialLetterRegistry({ projectId }: { projectId?: string | nul
         status: '발송완료',
         source: 'upload',
         attachment_name: file.name,
-        file_path: filePath,
+        file_path: filePath || undefined,
         ocr_text: text,
         ocr_status: ocrStatus,
         ocr_confidence: confidence,
-        notes: warning || '시스템 밖에서 작성해 발송한 공문입니다.',
+        notes: [storageWarning, warning].filter(Boolean).join(' ') || '시스템 밖에서 작성해 발송한 공문입니다.',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       setEditingLetter(uploaded);
+      if (storageWarning) {
+        toast.error(`원문 파일 보관은 건너뛰었습니다. ${storageWarning}`);
+      }
       if (!parsed.docNumber) {
         toast.error('문서번호를 읽지 못했습니다. 원문의 번호를 적어 저장하면 다음 채번에 반영됩니다.');
       } else {

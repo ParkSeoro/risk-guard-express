@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { isWindowsDesktopApp } from "@/lib/desktopBridge";
+import { PC_APP_VERSION } from "@/pages/Download";
 import { SiteSafetyRiskControlHub } from "@/components/dashboard/SiteSafetyRiskControlHub";
 import { geocodeKoreanAddress, fetchLiveWeatherData, syncProjectCoordinates } from "@/lib/koreanLocationService";
 
@@ -449,7 +450,7 @@ const Dashboard = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">SafeNex PC 데스크톱 버전 배포</span>
-                  <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal">v1.1.6 정식</Badge>
+                  <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal">{PC_APP_VERSION} 정식</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   사무실 듀얼 모니터 최적화, 실시간 안전 알림 및 1클릭 즉시 결재. 최초 1회 설치 시 이후 무설치 자동 업데이트(OTA) 지원

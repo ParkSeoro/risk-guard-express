@@ -168,7 +168,6 @@ export default function WorkPermits() {
   });
   const [plans, setPlans] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
-  const [tbms, setTbms] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [workersDialog, setWorkersDialog] = useState<any | null>(null);
@@ -222,16 +221,13 @@ export default function WorkPermits() {
 
     let plansQ: any = supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }).limit(100);
     plansQ = applyCompanyFilter(plansQ);
-    let tbmQ: any = supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50);
-    tbmQ = applyCompanyFilter(tbmQ);
     // assessment_runs: no company_id — filter by target_company_ids / creator for subordinates
     let runsQ: any = supabase.from('assessment_runs').select('id, period_label, status, created_by, author_user_id, target_company_ids').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(200);
 
-    const [{ data: p }, { data: wp }, { data: ar }, { data: tb }, { data: myApprovals }, { data: nameApprovals }] = await Promise.all([
+    const [{ data: p }, { data: wp }, { data: ar }, { data: myApprovals }, { data: nameApprovals }] = await Promise.all([
       permitQuery,
       plansQ,
       runsQ,
-      tbmQ,
       user?.id
         ? supabase
             .from('approvals')
@@ -284,8 +280,6 @@ export default function WorkPermits() {
         author_name: nameByUser[r.author_user_id] || nameByUser[r.created_by] || '',
       })),
     );
-    setTbms((tb as any) || []);
-
     // Resolve company names for list cards (contractor_company may be empty on older rows)
     const companyIds = Array.from(
       new Set(permitRows.map((row) => row.company_id).filter(Boolean)),
@@ -405,7 +399,6 @@ export default function WorkPermits() {
       work_end_at: toDbTimestamp(form.work_end),
       work_plan_id: form.work_plan_id || null,
       assessment_run_id: form.assessment_run_id || null,
-      tbm_session_id: form.tbm_session_id || null,
     };
     if (editing) {
       if (!isPermitEditable(editing.status)) {
@@ -756,13 +749,6 @@ export default function WorkPermits() {
               <Select value={form.work_plan_id} onValueChange={(v) => setForm({ ...form, work_plan_id: v })}>
                 <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
                 <SelectContent>{plans.map((r) => <SelectItem key={r.id} value={r.id}>{r.title}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>TBM 세션</Label>
-              <Select value={form.tbm_session_id} onValueChange={(v) => setForm({ ...form, tbm_session_id: v })}>
-                <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
-                <SelectContent>{tbms.map((r) => <SelectItem key={r.id} value={r.id}>{r.title} ({r.tbm_date})</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>

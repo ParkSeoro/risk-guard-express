@@ -54,7 +54,7 @@ export function permitIssueApprovalCreatesTbm(
 
 /**
  * After final issuance approve (not closure/extend/void), ensure linked TBM exists.
- * Safe to call repeatedly — reuses existing tbm_session_id.
+ * Safe to call repeatedly. A same-day link is reused. A different day is replaced only here.
  */
 export async function ensureTbmAfterPermitIssued(opts: {
   entityType?: string | null;
@@ -94,5 +94,6 @@ export async function ensureTbmAfterPermitIssued(opts: {
     projectId,
     companyId,
     useAiDraft: true,
+    replaceMismatchedDate: true,
   });
 }

@@ -4,7 +4,44 @@
 import { supabase } from "@/integrations/supabase/client";
 import { PERMIT_KIND_LABEL, normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
 import { extractPermitBriefingFacts } from "@/lib/permitBriefing";
+import { datePartFromDateTime, resolvePermitWorkDate, todayKst } from "@/lib/permitWorkDate";
 import { syncPermitCrewToTbm } from "@/lib/syncPermitCrewToTbm";
+
+/** Issued permits only. Drafts and in-approval docs must not grow a TBM. */
+export const TBM_ISSUE_STATUSES = [
+  "승인",
+  "승인완료",
+  "발행완료",
+  "approved",
+  "ISSUED",
+  "APPROVED",
+  "종료대기",
+  "CLOSURE_PENDING",
+] as const;
+
+export const TBM_WAITS_FOR_APPROVAL =
+  "결재가 끝나면 작업일 일지가 자동으로 만들어집니다.";
+
+export function permitStatusAllowsTbm(status?: string | null): boolean {
+  return (TBM_ISSUE_STATUSES as readonly string[]).includes(status || "");
+}
+
+export function permitWorkDateForTbm(permit: {
+  permit_date?: string | null;
+  work_start_at?: string | null;
+  form_data?: { work_start?: string | null } | null;
+}): string {
+  return resolvePermitWorkDate(permit) || todayKst();
+}
+
+export function linkedTbmMatchesWorkDate(
+  tbmDate?: string | null,
+  workDate?: string | null,
+): boolean {
+  const left = datePartFromDateTime(tbmDate);
+  const right = datePartFromDateTime(workDate);
+  return !!left && left === right;
+}
 
 export type TbmFromPermitResult =
   | { ok: true; tbmId: string; reused: boolean }
@@ -51,7 +88,7 @@ export function buildTbmSeedFromPermit(permit: any, projectName?: string) {
 
   return {
     title: `[허가서] ${workName}`,
-    tbm_date: permit.permit_date,
+    tbm_date: permitWorkDateForTbm(permit),
     location,
     company_name: company,
     work_content: workDesc || workName,
@@ -134,7 +171,12 @@ async function resolvePermitAuthorNameAsync(permit: any, fallback = ""): Promise
   return String(fallback || "").trim();
 }
 
-/** Ensure 1:1 TBM for permit — reuse if work_permits.tbm_session_id set. */
+/**
+ * Ensure 1:1 TBM for an issued permit.
+ * A link whose date already matches the work day is reused.
+ * Pass replaceMismatchedDate only from final issuance, so opening an old
+ * document does not spawn another log.
+ */
 export async function ensureTbmForPermit(opts: {
   permitId: string;
   projectId: string;
@@ -142,6 +184,8 @@ export async function ensureTbmForPermit(opts: {
   leaderName?: string;
   companyId?: string | null;
   useAiDraft?: boolean;
+  /** Final approval: if the linked log is another day, create the work-day log. */
+  replaceMismatchedDate?: boolean;
 }): Promise<TbmFromPermitResult> {
   const { data: permit, error: perr } = await supabase
     .from("work_permits" as any)
@@ -150,11 +194,29 @@ export async function ensureTbmForPermit(opts: {
     .maybeSingle();
   if (perr || !permit) return { ok: false, error: perr?.message || "허가서를 찾을 수 없습니다." };
 
-  if ((permit as any).tbm_session_id) {
-    const tbmId = (permit as any).tbm_session_id as string;
-    // Keep participants aligned even when reusing an existing link
-    await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: tbmId });
-    return { ok: true, tbmId, reused: true };
+  if (!permitStatusAllowsTbm((permit as any).status)) {
+    return { ok: false, error: TBM_WAITS_FOR_APPROVAL };
+  }
+
+  const workDate = permitWorkDateForTbm(permit);
+  const linkedId = (permit as any).tbm_session_id as string | null;
+  if (linkedId) {
+    const { data: linked } = await supabase
+      .from("tbm_sessions" as any)
+      .select("id, tbm_date, is_deleted")
+      .eq("id", linkedId)
+      .maybeSingle();
+    const row = linked as { id?: string; tbm_date?: string | null; is_deleted?: boolean | null } | null;
+    const matches =
+      !!row &&
+      !row.is_deleted &&
+      linkedTbmMatchesWorkDate(row.tbm_date, workDate);
+    if (matches || !opts.replaceMismatchedDate) {
+      if (row && !row.is_deleted) {
+        await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: linkedId });
+      }
+      return { ok: true, tbmId: linkedId, reused: true };
+    }
   }
 
   const seed = buildTbmSeedFromPermit(permit);
@@ -213,7 +275,7 @@ export async function ensureTbmForPermit(opts: {
   const tbmId = (created as any).id;
 
   // Link via RPC so approved/in-approval permits are not blocked by edit lock
-  const { data: linkedId, error: linkErr } = await supabase.rpc("link_work_permit_tbm", {
+  const { data: linkedBack, error: linkErr } = await supabase.rpc("link_work_permit_tbm", {
     _permit_id: opts.permitId,
     _tbm_session_id: tbmId,
   });
@@ -231,7 +293,7 @@ export async function ensureTbmForPermit(opts: {
     return { ok: false, error: linkErr.message };
   }
 
-  const finalTbmId = (linkedId as string) || tbmId;
+  const finalTbmId = (linkedBack as string) || tbmId;
   // Seed TBM participants from work_permit_workers (was missing → 0명 연동 끊김)
   await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: finalTbmId });
 

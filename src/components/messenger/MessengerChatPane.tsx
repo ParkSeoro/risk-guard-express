@@ -42,6 +42,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { MessageBubble } from "./MessageBubble";
 import { MessengerForwardDialog } from "./MessengerForwardDialog";
 import { MessengerRoomDrawer } from "./MessengerRoomDrawer";
+import { EmergencyAlertBanner } from "./EmergencyAlertBanner";
 import { ShareSafetyDocModal } from "./ShareSafetyDocModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -190,6 +191,25 @@ export function MessengerChatPane({
       return prev;
     });
   }, [pinnedMessageId, messages]);
+
+  const activeEmergency = useMemo(() => {
+    if (pinnedPreview && /긴급|비상|작업중지|위험경보|대피|SOS/i.test(pinnedPreview.content || "")) {
+      return {
+        title: "🚨 현장 긴급 안전 경보 발령",
+        description: pinnedPreview.content,
+        level: "critical" as const,
+      };
+    }
+    const latest = messages[messages.length - 1];
+    if (latest && !latest.is_deleted && /\[(긴급|비상|작업중지|SOS)\]/i.test(latest.content || "")) {
+      return {
+        title: "🚨 긴급 안전 공지",
+        description: latest.content,
+        level: "critical" as const,
+      };
+    }
+    return null;
+  }, [pinnedPreview, messages]);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
@@ -953,6 +973,18 @@ export function MessengerChatPane({
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
+      )}
+
+      {/* 긴급 비상 안전 경보 배너 */}
+      {activeEmergency && (
+        <EmergencyAlertBanner
+          title={activeEmergency.title}
+          description={activeEmergency.description}
+          level={activeEmergency.level}
+          onAction={() => {
+            if (pinnedPreview) void scrollToMessage(pinnedPreview.id);
+          }}
+        />
       )}
 
       {/* 상단 고정 공지 배너 */}

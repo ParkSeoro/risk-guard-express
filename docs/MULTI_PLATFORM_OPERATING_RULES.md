@@ -143,3 +143,22 @@ flowchart TD
    ```bash
    bun run test src/test/nativeStoreUpdate.test.ts
    ```
+
+---
+
+## 8. PC 프로그램 무설치(Zero-Reinstall) 자동 업데이트 및 전문 메신저 운영 규약 (AI 간 상호 준수)
+
+1. **구형 C# 파일(`electron/SafeNexWindowsSetup.cs`) 영구 폐기 및 컴파일 절대 금지**:
+   - `SafeNexWindowsSetup.cs`는 레거시 Edge WebView 방식의 구형 파일이며, 현재 **영구 폐기(DEPRECATED)**되었습니다.
+   - 어떤 AI 에이전트나 자동화 스크립트도 본 파일을 `csc.exe` 등으로 컴파일하여 사용자에게 새로운 `.exe` 파일로 전달해서는 안 됩니다.
+   - SafeNex PC의 유일한 정식 런처는 **Electron 34 LTS (`electron/main.cjs`)**입니다.
+
+2. **무설치 백그라운드 핫스왑(Zero-Reinstall OTA) 절대 준수**:
+   - 화면, UI, 기능, 결재, 메신저 수정 사항은 GitHub Actions의 `mobile-release.yml` (`X-OTA-Platform: both`)을 통해 배포됩니다.
+   - PC 클라이언트는 `/__desktop/apply-ota`를 통해 백그라운드에서 zip 번들을 무설치로 자동 교체합니다.
+   - **사용자에게 "설치 프로그램을 다시 실행하라"거나 수동 재설치를 요구하는 것은 엄격히 금지**됩니다.
+
+3. **전문 산업안전 엔터프라이즈 메신저 발전 로드맵 준수**:
+   - 상세 로드맵은 `docs/desktop-autoupdate-and-messenger-roadmap.md`를 단일 진실 공급원(SSOT)으로 삼습니다.
+   - 메신저 내 결재 카드(In-Chat Actions), 조직도 채널링, 상세 읽음 확인/넛지, 비상 경보 배너의 구조를 상호 유지합니다.
+

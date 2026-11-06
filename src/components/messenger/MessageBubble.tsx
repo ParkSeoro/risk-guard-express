@@ -22,7 +22,14 @@ import {
   FileCheck2,
   ArrowUpRight,
   Forward,
+  CheckCircle,
+  Loader2,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  markApprovalNotificationsAsRead,
+  markRelatedNotificationsAsRead,
+} from "@/lib/notificationReadHelper";
 import { toast } from "sonner";
 import { ReadReceiptModal } from "./ReadReceiptModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -96,8 +103,54 @@ export function MessageBubble({
   const [showReceipts, setShowReceipts] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [approvingCardId, setApprovingCardId] = useState<string | null>(null);
+  const [approvedCardIds, setApprovedCardIds] = useState<Set<string>>(() => new Set());
   const pressTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
+
+  const handleQuickApprove = async (card: SafetyDocCardPayload) => {
+    if (approvingCardId || approvedCardIds.has(card.id)) return;
+    const ok = window.confirm(`[${card.title}] 문서를 메신저에서 즉시 승인하시겠습니까?`);
+    if (!ok) return;
+
+    setApprovingCardId(card.id);
+    try {
+      const { data: stepRows } = await supabase
+        .from("approvals")
+        .select("id, status")
+        .eq("entity_id", card.id)
+        .eq("status", "대기")
+        .limit(1);
+
+      const pendingStep = stepRows?.[0];
+      if (pendingStep) {
+        const { error } = await supabase.rpc("act_on_approval", {
+          _approval_id: pendingStep.id,
+          _action: "approve",
+          _comment: "SafeNex 메신저 1-클릭 신속 승인",
+        });
+        if (error) throw error;
+      } else {
+        const { error: entityErr } = await supabase.rpc("act_on_entity_approval", {
+          _approval_id: card.id,
+          _action: "approve",
+          _comment: "SafeNex 메신저 1-클릭 신속 승인",
+        });
+        if (entityErr) throw entityErr;
+      }
+
+      setApprovedCardIds((prev) => new Set([...prev, card.id]));
+      if (currentUserId) {
+        void markApprovalNotificationsAsRead(currentUserId);
+        void markRelatedNotificationsAsRead(currentUserId, card.id);
+      }
+      toast.success("메신저에서 승인 처리가 완료되었습니다.");
+    } catch (err: any) {
+      toast.error(err?.message || "승인 처리에 실패했습니다. 결재 권한을 확인해 주세요.");
+    } finally {
+      setApprovingCardId(null);
+    }
+  };
 
   const openImage = (url: string) => {
     if (onOpenImage) onOpenImage(url);
@@ -360,11 +413,15 @@ export function MessageBubble({
                               <Icon className="h-3 w-3" />
                               {meta.label}
                             </span>
-                            {parsedDoc.card.statusLabel && (
+                            {approvedCardIds.has(parsedDoc.card.id) ? (
+                              <span className={cn("px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30", messengerType.meta)}>
+                                승인 완료
+                              </span>
+                            ) : parsedDoc.card.statusLabel ? (
                               <span className={cn("px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium", messengerType.meta)}>
                                 {parsedDoc.card.statusLabel}
                               </span>
-                            )}
+                            ) : null}
                           </div>
                           <p className={cn("font-bold text-foreground line-clamp-2", messengerType.preview)}>
                             {parsedDoc.card.title}
@@ -374,15 +431,32 @@ export function MessageBubble({
                               {parsedDoc.card.subtitle}
                             </p>
                           )}
-                          {docPath ? (
-                            <a
-                              href={canonicalizeAppPath(docPath)}
-                              className={cn("mt-2.5 w-full inline-flex items-center justify-center gap-1 font-semibold py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors", messengerType.meta)}
-                            >
-                              <span>안전문서 바로 열기</span>
-                              <ArrowUpRight className="h-3.5 w-3.5" />
-                            </a>
-                          ) : null}
+                          <div className="mt-2.5 pt-2 border-t border-border/60 flex items-center gap-1.5">
+                            {docPath && (
+                              <a
+                                href={canonicalizeAppPath(docPath)}
+                                className={cn("flex-1 inline-flex items-center justify-center gap-1 font-semibold py-1.5 px-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors", messengerType.meta)}
+                              >
+                                <span>상세 열람</span>
+                                <ArrowUpRight className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            {!approvedCardIds.has(parsedDoc.card.id) && (
+                              <button
+                                type="button"
+                                disabled={approvingCardId === parsedDoc.card.id}
+                                onClick={() => void handleQuickApprove(parsedDoc.card)}
+                                className={cn("inline-flex items-center justify-center gap-1 font-semibold py-1.5 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-colors disabled:opacity-50", messengerType.meta)}
+                              >
+                                {approvingCardId === parsedDoc.card.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="h-3.5 w-3.5" />
+                                )}
+                                <span>1-클릭 승인</span>
+                              </button>
+                            )}
+                          </div>
                         </>
                       );
                     })()}

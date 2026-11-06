@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChatRoom,
   fetchChatContacts,
@@ -75,6 +75,19 @@ export function MessengerRoomList({
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [startingChatId, setStartingChatId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (activeTab !== "directory") return;
@@ -263,9 +276,10 @@ export function MessengerRoomList({
 
       {/* 검색 및 필터 바 */}
       <div className="p-2.5 border-b bg-muted/20 space-y-2 shrink-0">
-        <div className="relative">
+        <div className="relative flex items-center">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             placeholder={
               activeTab === "rooms"
                 ? "대화방, 참가자, 업체명 검색..."
@@ -273,8 +287,15 @@ export function MessengerRoomList({
             }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className={cn("pl-8 h-10 bg-background", messengerType.preview)}
+            className={cn("pl-8 pr-14 h-10 bg-background", messengerType.preview)}
           />
+          <kbd
+            onClick={() => searchInputRef.current?.focus()}
+            className="absolute right-2.5 hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground bg-muted/80 border rounded shadow-2xs cursor-pointer select-none"
+            title="검색 단축키: Ctrl + K"
+          >
+            Ctrl+K
+          </kbd>
         </div>
 
         {activeTab === "rooms" && (

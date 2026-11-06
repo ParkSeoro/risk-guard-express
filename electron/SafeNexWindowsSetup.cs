@@ -1,3 +1,11 @@
+// =========================================================================================
+// [CRITICAL DEPRECATION NOTICE - 절대 컴파일하거나 배포하지 마십시오]
+// 본 C# 파일(SafeNexWindowsSetup.cs)은 프로젝트 초기의 임시 Edge WebView 런처이며, 현재 영구 폐기(DEPRECATED)되었습니다.
+// SafeNex PC 데스크톱 프로그램의 유일한 공식 런처는 [Electron 34 LTS] (electron/main.cjs) 입니다.
+// 다른 어떤 AI 에이전트나 빌드 스크립트도 본 파일을 csc.exe로 컴파일하여 사용자에게 exe로 전달해서는 안 됩니다.
+// 모든 PC 데스크톱 배포 및 업데이트는 백그라운드 OTA(electron/desktopOtaFiles.cjs / /__desktop/apply-ota)로만 진행됩니다.
+// 관련 문서: docs/MULTI_PLATFORM_OPERATING_RULES.md, docs/desktop-autoupdate-and-messenger-roadmap.md
+// =========================================================================================
 using System;
 using System.Diagnostics;
 using System.Drawing;

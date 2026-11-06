@@ -29,7 +29,7 @@ import {
   fillMissingTbmSignatures,
   type CrewAckSignature,
 } from '@/lib/permitCrewSignatures';
-import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
+import { ensureTbmForPermit, permitStatusAllowsTbm, TBM_WAITS_FOR_APPROVAL } from '@/lib/tbmFromPermit';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { printPermitBundle } from '@/lib/printPermitBundle';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
@@ -1012,7 +1012,7 @@ export default function WorkPermitDetail() {
                 >
                   TBM 일지 열기
                 </Button>
-              ) : isVoided ? null : (
+              ) : isVoided || !permitStatusAllowsTbm(permit?.status) ? null : (
                 <Button
                   size="sm"
                   disabled={tbmBusy || !permit}
@@ -1045,7 +1045,9 @@ export default function WorkPermitDetail() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            1허가서 = 1 TBM. 예상 배정은 TBM 명단(미서명)으로 들어가고, 출근 서명이 당일 TBM 서명입니다. QR은 선택입니다.
+            {!isVoided && !permitStatusAllowsTbm(permit?.status)
+              ? TBM_WAITS_FOR_APPROVAL
+              : '1허가서 = 1 TBM. 예상 배정은 TBM 명단(미서명)으로 들어가고, 출근 서명이 당일 TBM 서명입니다. QR은 선택입니다.'}
             {permit?.tbm_session_id && tbmTitle
               ? ` 현재: 「${tbmTitle}」 · 참여자 ${tbmParticipants.length}명 / 배정 ${assignedWorkers.length}명`
               : ''}

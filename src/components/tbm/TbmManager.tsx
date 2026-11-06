@@ -14,7 +14,7 @@ import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, P
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
-import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
+import { ensureTbmForPermit, TBM_ISSUE_STATUSES } from '@/lib/tbmFromPermit';
 import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
@@ -584,13 +584,14 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
             size="sm"
             variant="outline"
             onClick={async () => {
-              const today = new Date().toISOString().slice(0, 10);
+              const today = todayKst();
               let q = supabase
                 .from('work_permits' as any)
                 .select('id, work_name, work_description, permit_date, location, tbm_session_id, status, contractor_company')
                 .eq('project_id', projectId)
                 .eq('is_deleted', false)
                 .is('tbm_session_id', null)
+                .in('status', [...TBM_ISSUE_STATUSES])
                 .gte('permit_date', today)
                 .order('permit_date', { ascending: true })
                 .limit(30);

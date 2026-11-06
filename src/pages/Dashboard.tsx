@@ -29,7 +29,7 @@ import {
   ClipboardList, ShieldCheck, ArrowRight, RefreshCw,
   FileText, Cloud, CloudRain, Wind, Thermometer, Sun,
   FileSignature, Bot, MapPin, HardHat, ClipboardCheck,
-  Monitor, Download,
+  Monitor, Download, X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { isWindowsDesktopApp } from "@/lib/desktopBridge";
@@ -117,6 +117,13 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(() => {
     return !selectedProject || !dashboardCache.has(selectedProject);
+  });
+  const [dismissedPcBanner, setDismissedPcBanner] = useState(() => {
+    try {
+      return localStorage.getItem("safenex_pc_banner_dismissed") === "true";
+    } catch {
+      return false;
+    }
   });
 
   const fetchDashboard = useCallback(async (force = false) => {
@@ -440,27 +447,36 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      {!isWindowsDesktopApp() && (
-        <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-r from-primary/10 via-card to-background p-3.5 sm:p-4 shadow-sm">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary text-primary-foreground shadow-sm shrink-0">
-                <Monitor className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">SafeNex PC 데스크톱 버전 배포</span>
-                  <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal">{PC_APP_VERSION} 정식</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  사무실 듀얼 모니터 최적화, 실시간 안전 알림 및 1클릭 즉시 결재. 최초 1회 설치 시 이후 무설치 자동 업데이트(OTA) 지원
-                </p>
-              </div>
-            </div>
-            <Button size="sm" asChild className="gap-1.5 shrink-0 w-full sm:w-auto h-8 text-xs font-medium">
+      {!isWindowsDesktopApp() && !dismissedPcBanner && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Monitor className="h-4 w-4 text-primary shrink-0" />
+            <span className="font-semibold text-foreground truncate">SafeNex PC 데스크톱 버전</span>
+            <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal shrink-0">
+              {PC_APP_VERSION} 정식
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button size="sm" asChild className="h-7 text-xs px-2.5 gap-1 font-medium shadow-xs">
               <Link to="/download">
-                <Download className="h-3.5 w-3.5" /> PC 앱 다운로드
+                <Download className="h-3 w-3" /> 다운로드
               </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setDismissedPcBanner(true);
+                try {
+                  localStorage.setItem("safenex_pc_banner_dismissed", "true");
+                } catch {
+                  /* ignore */
+                }
+              }}
+              title="배너 닫기"
+            >
+              <X className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>

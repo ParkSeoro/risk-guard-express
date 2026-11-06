@@ -36,6 +36,10 @@ import {
   desktopApprovalEntityPath,
   type ApprovalPreviewTarget,
 } from "@/lib/approvalInboxPreview";
+import {
+  markApprovalNotificationsAsRead,
+  markRelatedNotificationsAsRead,
+} from "@/lib/notificationReadHelper";
 import ApprovalDocPreviewDialog from "@/components/approval/ApprovalDocPreviewDialog";
 import ApprovalRejectReasonDialog from "@/components/approval/ApprovalRejectReasonDialog";
 import RejectionReasonBanner from "@/components/approval/RejectionReasonBanner";
@@ -110,11 +114,20 @@ const Approvals = () => {
     stepMeta?: any;
   } | null>(null);
 
+  useEffect(() => {
+    if (user?.id) {
+      void markApprovalNotificationsAsRead(user.id);
+    }
+  }, [user?.id]);
+
   const openDocPreview = (entityType?: string | null, entityId?: string | null, title?: string | null) => {
     if (!entityType || !entityId) return;
     if (!ENTITY_LINK(entityType, entityId)) {
       toast({ title: '문서를 열 수 없습니다', description: '지원하지 않는 문서 유형입니다.', variant: 'destructive' });
       return;
+    }
+    if (user?.id) {
+      void markRelatedNotificationsAsRead(user.id, entityId);
     }
     setPreviewTarget({ entityType, entityId, title });
     setPreviewOpen(true);
@@ -179,6 +192,12 @@ const Approvals = () => {
     }
     fetchEntityPending();
     fetchData();
+    if (user?.id) {
+      void markApprovalNotificationsAsRead(user.id);
+      if (stepMeta?.entity_id) {
+        void markRelatedNotificationsAsRead(user.id, stepMeta.entity_id);
+      }
+    }
     return true;
   };
 

@@ -9,11 +9,11 @@ import {
 
 describe("messenger type and kakao actions", () => {
   it("keeps body text larger than the time line", () => {
-    expect(messengerType.body).toContain("text-base");
-    expect(messengerType.title).toContain("text-base");
-    expect(messengerType.preview).toContain("text-sm");
-    expect(messengerType.meta).toContain("text-xs");
-    expect(messengerType.input).toContain("text-base");
+    expect(messengerType.body).toContain("text-sm");
+    expect(messengerType.title).toContain("text-sm");
+    expect(messengerType.preview).toContain("text-xs");
+    expect(messengerType.meta).toContain("text-[11px]");
+    expect(messengerType.input).toContain("text-sm");
   });
 
   it("forwards text as a new message and keeps the photo address", () => {

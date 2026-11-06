@@ -46,6 +46,10 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { playMessengerChime } from "@/lib/messengerSound";
+import {
+  markNotificationAsRead,
+  markRelatedNotificationsAsRead,
+} from "@/lib/notificationReadHelper";
 
 export type RailTargetId =
   | "directory"
@@ -367,6 +371,13 @@ export function DesktopRailSidebar() {
                     ? {
                         label: "확인",
                         onClick: () => {
+                          if (newNotif.id) {
+                            void markNotificationAsRead(newNotif.id);
+                          }
+                          if (user?.id && newNotif.related_id) {
+                            void markRelatedNotificationsAsRead(user.id, newNotif.related_id);
+                          }
+                          void loadBadges();
                           if (targetRoute.startsWith("http")) {
                             if (window.safenexDesktop?.openExternal) {
                               void window.safenexDesktop.openExternal(targetRoute);

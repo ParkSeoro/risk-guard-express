@@ -78,7 +78,7 @@ export function ReadReceiptModal({ messageId, isOpen, onClose }: ReadReceiptModa
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="p-4 border-b bg-muted/40">
-          <DialogTitle className="text-base font-semibold flex items-center gap-2">
+          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
             <CheckCheck className="h-4 w-4 text-primary" />
             메시지 수신·읽음 확인 현황
           </DialogTitle>

@@ -119,7 +119,7 @@ export function NewChatDialog({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden bg-background">
         <DialogHeader className="p-4 border-b bg-muted/40">
-          <DialogTitle className="text-base font-semibold flex items-center gap-2">
+          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
             새 대화방 시작 (소속 업체별 선택)
           </DialogTitle>

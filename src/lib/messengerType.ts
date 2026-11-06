@@ -1,12 +1,12 @@
 import { parseSafetyDocMessage } from "@/lib/chatMessages";
 
-/** 카카오톡에 맞춘 메신저 글자. 본문 16px, 목록 이름 16px, 미리보기 14px, 시간·읽음 12px. */
+/** 메신저 글자. 본문 14px, 목록 이름 14px, 미리보기 12px, 시간·읽음 11px. */
 export const messengerType = {
-  body: "text-base leading-relaxed",
-  title: "text-base font-semibold",
-  preview: "text-sm leading-snug",
-  meta: "text-xs",
-  input: "text-base leading-normal",
+  body: "text-sm leading-relaxed",
+  title: "text-sm font-semibold",
+  preview: "text-xs leading-snug",
+  meta: "text-[11px]",
+  input: "text-sm leading-normal",
 } as const;
 
 export type ForwardAttachment = {

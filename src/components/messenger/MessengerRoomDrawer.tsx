@@ -194,7 +194,7 @@ export function MessengerRoomDrawer({
     <div className="absolute inset-y-0 right-0 w-full sm:w-80 bg-background border-l shadow-xl z-30 flex flex-col animate-in slide-in-from-right duration-200">
       {/* 서랍 헤더 */}
       <div className="px-3.5 py-2.5 border-b bg-muted/30 flex items-center justify-between shrink-0">
-        <span className="text-base font-semibold flex items-center gap-1.5">
+        <span className="text-sm font-semibold flex items-center gap-1.5">
           <FolderOpen className="h-3.5 w-3.5 text-primary" />
           대화방 서랍 · 정보
         </span>
@@ -324,7 +324,7 @@ export function MessengerRoomDrawer({
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-base truncate">
+                            <span className="font-semibold text-sm truncate">
                               {p.full_name}
                             </span>
                             {p.role && (

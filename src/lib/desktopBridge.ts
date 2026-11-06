@@ -478,7 +478,7 @@ export interface DesktopOtaCheckResult {
 }
 
 const DESKTOP_BUNDLE_VERSION_KEY = "safenex_pc_bundle_version";
-export const DESKTOP_DEFAULT_VERSION = "1.1.5";
+export const DESKTOP_DEFAULT_VERSION = "1.1.6";
 
 /**
  * Same numeric compare as the phone. A lower release number does not replace

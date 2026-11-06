@@ -18,6 +18,7 @@ import {
   acceptRemoteSupportSession,
   rejectRemoteSupportSession,
 } from '@/lib/remoteSupport';
+import { markRelatedNotificationsAsRead } from '@/lib/notificationReadHelper';
 import { toast } from 'sonner';
 
 const resolveRoute = (n: any): string | null => resolveNotificationRoute(n, { mobileShell: false });
@@ -100,6 +101,9 @@ export function NotificationBell() {
 
   const handleClick = (n: any) => {
     markRead(n.id);
+    if (user?.id && n.related_id) {
+      void markRelatedNotificationsAsRead(user.id, n.related_id);
+    }
     const route = resolveRoute(n);
     if (route) {
       navigate(route);

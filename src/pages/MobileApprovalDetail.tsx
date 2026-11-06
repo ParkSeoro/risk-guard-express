@@ -34,6 +34,10 @@ import {
   type SafetyCostDocItem,
 } from "@/lib/safetyCostDocumentBuilder";
 import { SAFETY_COST_CATEGORIES, formatKRW, sumSafetyCostByCategory } from "@/lib/safetyCost";
+import {
+  markApprovalNotificationsAsRead,
+  markRelatedNotificationsAsRead,
+} from "@/lib/notificationReadHelper";
 import SafetyCostFileList from "@/components/safety-cost/SafetyCostFileList";
 
 /**
@@ -158,6 +162,9 @@ export default function MobileApprovalDetail() {
         const rows = history || [];
         setPriorRejects(priorRejectionNotes(rows));
         setResubmitNotes(latestResubmitNotes(rows));
+        if (user?.id && found.entity_id) {
+          void markRelatedNotificationsAsRead(user.id, found.entity_id);
+        }
       } else {
         setPriorRejects([]);
         setResubmitNotes([]);
@@ -182,6 +189,12 @@ export default function MobileApprovalDetail() {
       const r = data as any;
       if (r?.error) {
         throw new Error(r.error);
+      }
+      if (user?.id) {
+        void markApprovalNotificationsAsRead(user.id);
+        if (row.entity_id) {
+          void markRelatedNotificationsAsRead(user.id, row.entity_id);
+        }
       }
       toast.success(
         stepKind === "closure_sm"

@@ -159,7 +159,7 @@ namespace SafeNexDesktop
                 int existingPort = ReadSavedPort(installDir);
                 if (existingPort > 0)
                 {
-                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, 420, 680);
+                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute + (targetRoute.Contains("?") ? "&" : "?") + "pcboot=" + DateTime.UtcNow.Ticks, 420, 680);
                 }
                 return;
             }
@@ -432,15 +432,24 @@ namespace SafeNexDesktop
                 try
                 {
                     int currentPid = Process.GetCurrentProcess().Id;
-                    foreach (Process p in Process.GetProcessesByName("SafeNexPC"))
+                    foreach (Process p in Process.GetProcesses())
                     {
-                        if (p.Id != currentPid)
+                        if (p.Id == currentPid) continue;
+                        try
                         {
-                            try { p.Kill(); p.WaitForExit(1500); } catch { }
+                            string path = p.MainModule.FileName;
+                            if (string.IsNullOrEmpty(path)) continue;
+                            bool ours = path.StartsWith(_installDir, StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(Path.GetFileNameWithoutExtension(path), "SafeNexPC", StringComparison.OrdinalIgnoreCase);
+                            if (!ours) continue;
+                            p.Kill();
+                            p.WaitForExit(2000);
                         }
+                        catch { }
                     }
                 }
                 catch { }
+                System.Threading.Thread.Sleep(400);
 
                 Directory.CreateDirectory(_installDir);
 
@@ -514,11 +523,23 @@ namespace SafeNexDesktop
         public static void ExtractWebBundleTo(string wwwDir)
         {
             string tempZip = Path.Combine(Path.GetTempPath(), "safenex_webbundle_" + Guid.NewGuid().ToString("N") + ".zip");
+            string staging = wwwDir + "_new";
             try
             {
                 Assembly asm = Assembly.GetExecutingAssembly();
                 Stream resStream = asm.GetManifestResourceStream("SafeNex.webbundle.zip")
                                 ?? asm.GetManifestResourceStream("webbundle.zip");
+                if (resStream == null)
+                {
+                    foreach (string name in asm.GetManifestResourceNames())
+                    {
+                        if (name.EndsWith("webbundle.zip", StringComparison.OrdinalIgnoreCase))
+                        {
+                            resStream = asm.GetManifestResourceStream(name);
+                            break;
+                        }
+                    }
+                }
                 if (resStream != null)
                 {
                     using (resStream)
@@ -531,20 +552,35 @@ namespace SafeNexDesktop
                 {
                     string localZip = Path.Combine(Path.GetDirectoryName(asm.Location), "webbundle.zip");
                     if (File.Exists(localZip))
-                    {
                         File.Copy(localZip, tempZip, true);
-                    }
                 }
 
-                if (File.Exists(tempZip))
+                if (!File.Exists(tempZip) || new FileInfo(tempZip).Length < 512)
+                    throw new InvalidOperationException("설치 파일 안에 새 화면이 없습니다. 설치 파일을 다시 받아 주세요.");
+
+                if (Directory.Exists(staging))
+                    Directory.Delete(staging, true);
+                Directory.CreateDirectory(staging);
+                ZipFile.ExtractToDirectory(tempZip, staging);
+                if (!File.Exists(Path.Combine(staging, "index.html")))
+                    throw new InvalidOperationException("새 화면에 시작 파일이 없습니다. 설치 파일을 다시 받아 주세요.");
+
+                if (Directory.Exists(wwwDir))
                 {
-                    if (Directory.Exists(wwwDir))
-                    {
-                        try { Directory.Delete(wwwDir, true); } catch { }
-                    }
-                    Directory.CreateDirectory(wwwDir);
-                    ZipFile.ExtractToDirectory(tempZip, wwwDir);
+                    try { Directory.Delete(wwwDir, true); }
+                    catch { }
                 }
+                if (!Directory.Exists(wwwDir))
+                {
+                    Directory.Move(staging, wwwDir);
+                }
+                else
+                {
+                    CopyTree(staging, wwwDir);
+                    try { Directory.Delete(staging, true); } catch { }
+                }
+                if (!File.Exists(Path.Combine(wwwDir, "index.html")))
+                    throw new InvalidOperationException("실행 중인 SafeNex 창을 모두 닫은 뒤 설치 파일을 다시 실행해 주세요.");
             }
             finally
             {
@@ -552,6 +588,20 @@ namespace SafeNexDesktop
                 {
                     try { File.Delete(tempZip); } catch { }
                 }
+            }
+        }
+
+        private static void CopyTree(string sourceDir, string targetDir)
+        {
+            Directory.CreateDirectory(targetDir);
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string destFile = Path.Combine(targetDir, Path.GetFileName(file));
+                File.Copy(file, destFile, true);
+            }
+            foreach (string subDir in Directory.GetDirectories(sourceDir))
+            {
+                CopyTree(subDir, Path.Combine(targetDir, Path.GetFileName(subDir)));
             }
         }
 
@@ -979,6 +1029,8 @@ namespace SafeNexDesktop
         private void OpenWorkspace(string route, int width, int height)
         {
             string url = "http://127.0.0.1:" + _port + route;
+            string sep = url.Contains("?") ? "&" : "?";
+            url += sep + "pcboot=" + DateTime.UtcNow.Ticks;
             Program.LaunchAppWindow(url, width, height);
         }
 
@@ -1053,6 +1105,8 @@ namespace SafeNexDesktop
                 ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
                 ctx.Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
                 ctx.Response.Headers.Add("Access-Control-Allow-Headers", "*");
+                ctx.Response.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate");
+                ctx.Response.Headers.Add("Pragma", "no-cache");
 
                 if (string.Equals(ctx.Request.HttpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase))
                 {

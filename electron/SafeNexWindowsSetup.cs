@@ -32,8 +32,8 @@ namespace SafeNexDesktop
     {
         public const string APP_VERSION = "1.1.5";
         public const string PUBLIC_SITE_URL = "https://safenex.org/app/admin";
-        public const int MESSENGER_WIDTH = 420;
-        public const int MESSENGER_HEIGHT = 680;
+        public const int MESSENGER_WIDTH = 520;
+        public const int MESSENGER_HEIGHT = 780;
         public const int WORK_WIDTH = 1260;
         public const int WORK_HEIGHT = 820;
     }
@@ -167,7 +167,7 @@ namespace SafeNexDesktop
                 int existingPort = ReadSavedPort(installDir);
                 if (existingPort > 0)
                 {
-                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, 420, 680);
+                    LaunchAppWindow("http://127.0.0.1:" + existingPort + targetRoute, AppConstants.MESSENGER_WIDTH, AppConstants.MESSENGER_HEIGHT);
                 }
                 return;
             }
@@ -1071,7 +1071,7 @@ namespace SafeNexDesktop
 
                 string rawPath = ctx.Request.Url.AbsolutePath;
 
-                // Native window resize endpoint called when switching between Messenger (420x680) and Work Mode (1260x820)
+                // Native window resize endpoint called when switching between Messenger (520x780) and Work Mode (1260x820)
                 if (string.Equals(rawPath, "/__desktop/resize", StringComparison.OrdinalIgnoreCase))
                 {
                     int w = AppConstants.MESSENGER_WIDTH;

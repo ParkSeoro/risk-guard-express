@@ -585,8 +585,11 @@ async function createMainWindow() {
   let posY = Math.max(workArea.y + 16, workArea.y + workArea.height - height - 20);
 
   if (savedState && typeof savedState.width === "number" && typeof savedState.height === "number") {
-    width = Math.min(Math.max(480, savedState.width), workArea.width - 20);
-    height = Math.min(Math.max(520, savedState.height), workArea.height - 20);
+    const legacyMessenger = savedState.width === 420 && savedState.height === 680;
+    const savedWidth = legacyMessenger ? 520 : savedState.width;
+    const savedHeight = legacyMessenger ? 780 : savedState.height;
+    width = Math.min(Math.max(480, savedWidth), workArea.width - 20);
+    height = Math.min(Math.max(520, savedHeight), workArea.height - 20);
     if (typeof savedState.x === "number" && typeof savedState.y === "number") {
       posX = Math.min(Math.max(workArea.x + 10, savedState.x), workArea.x + workArea.width - width - 10);
       posY = Math.min(Math.max(workArea.y + 10, savedState.y), workArea.y + workArea.height - height - 10);

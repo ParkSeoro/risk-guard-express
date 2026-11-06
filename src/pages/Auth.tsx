@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Loader2, Monitor } from 'lucide-react';
 
 import {
   positionsForCompanyType,
@@ -1159,6 +1159,22 @@ const Auth = () => {
               </Link>
             )}
           </div>
+
+          {!isWindowsDesktopApp() && (
+            <div className="mt-5 pt-3.5 border-t border-border/50 text-center">
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                className="w-full gap-2 text-xs h-9 font-medium"
+              >
+                <Link to="/download">
+                  <Monitor className="h-3.5 w-3.5 text-primary" />
+                  <span>SafeNex PC 데스크톱 버전 다운로드</span>
+                </Link>
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
       <Dialog open={showCompanyRequest} onOpenChange={setShowCompanyRequest}>

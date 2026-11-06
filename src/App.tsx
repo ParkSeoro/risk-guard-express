@@ -33,6 +33,7 @@ const HazardSurveyResponse = lazy(() => import("@/pages/health/HazardSurveyRespo
 const ZoneCheckin = lazy(() => import("@/pages/ZoneCheckin"));
 const CompanyScan = lazy(() => import("@/pages/CompanyScan"));
 const Manual = lazy(() => import("@/pages/Manual"));
+const DownloadPage = lazy(() => import("@/pages/Download"));
 const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
 const NativePermissionsOnboarding = lazy(
   () => import("@/pages/NativePermissionsOnboarding"),
@@ -169,6 +170,7 @@ const App = () => (
                 <Route path="/z/:code" element={<ZoneCheckin />} />
                 <Route path="/c/:token" element={<CompanyScan />} />
                 <Route path="/manual" element={<Manual />} />
+                <Route path="/download" element={<DownloadPage />} />
                 <Route path="/consent" element={<ConsentPage />} />
                 <Route path="/native-permissions" element={<NativePermissionsOnboarding />} />
                 <Route path="/app-language" element={<WorkerLocaleOnboarding />} />

@@ -29,7 +29,10 @@ import {
   ClipboardList, ShieldCheck, ArrowRight, RefreshCw,
   FileText, Cloud, CloudRain, Wind, Thermometer, Sun,
   FileSignature, Bot, MapPin, HardHat, ClipboardCheck,
+  Monitor, Download,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { isWindowsDesktopApp } from "@/lib/desktopBridge";
 import { SiteSafetyRiskControlHub } from "@/components/dashboard/SiteSafetyRiskControlHub";
 import { geocodeKoreanAddress, fetchLiveWeatherData, syncProjectCoordinates } from "@/lib/koreanLocationService";
 
@@ -435,6 +438,32 @@ const Dashboard = () => {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
+
+      {!isWindowsDesktopApp() && (
+        <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-r from-primary/10 via-card to-background p-3.5 sm:p-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary text-primary-foreground shadow-sm shrink-0">
+                <Monitor className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">SafeNex PC 데스크톱 버전 배포</span>
+                  <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal">v1.1.6 정식</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  사무실 듀얼 모니터 최적화, 실시간 안전 알림 및 1클릭 즉시 결재. 최초 1회 설치 시 이후 무설치 자동 업데이트(OTA) 지원
+                </p>
+              </div>
+            </div>
+            <Button size="sm" asChild className="gap-1.5 shrink-0 w-full sm:w-auto h-8 text-xs font-medium">
+              <Link to="/download">
+                <Download className="h-3.5 w-3.5" /> PC 앱 다운로드
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
 
       {selectedProject && <WeatherSummaryCard projectId={selectedProject} />}
 

@@ -160,6 +160,11 @@ export default function ProjectLibrary() {
   };
 
   const handleDownload = async (f: LibFile) => {
+    if (f.file_path.startsWith('http://') || f.file_path.startsWith('https://')) {
+      await supabase.from('project_library_files').update({ download_count: f.download_count + 1 }).eq('id', f.id);
+      window.open(f.file_path, '_blank');
+      return;
+    }
     const { data, error } = await supabase.storage.from('project-library').createSignedUrl(f.file_path, 60);
     if (error || !data) {
       toast({ title: '다운로드 링크 생성 실패', variant: 'destructive' });

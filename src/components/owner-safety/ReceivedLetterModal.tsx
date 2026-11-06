@@ -27,7 +27,7 @@ interface Props {
   letter: OfficialLetter | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (letter: OfficialLetter) => void;
+  onSave: (letter: OfficialLetter) => void | Promise<void>;
   existingOutgoingLetters?: OfficialLetter[];
   onRequestReplyDraft?: (receivedLetter: OfficialLetter) => void;
 }
@@ -84,7 +84,7 @@ export function ReceivedLetterModal({
     return <Badge variant="outline" className="text-muted-foreground text-[10px]">D-{diff}</Badge>;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.subject?.trim()) {
       toast.error('수신 공문 제목을 입력해주세요.');
       return;
@@ -119,11 +119,16 @@ export function ReceivedLetterModal({
       updated_at: new Date().toISOString(),
     };
 
-    onSave(payload);
-    onClose();
+    try {
+      await onSave(payload);
+      toast.success('수신 공문 내역이 저장되었습니다.');
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '수신 공문을 저장하지 못했습니다.');
+    }
   };
 
-  const handleQuickCompleteSave = () => {
+  const handleQuickCompleteSave = async () => {
     if (!form.subject?.trim()) {
       toast.error('수신 공문 제목을 입력해주세요.');
       return;
@@ -158,9 +163,13 @@ export function ReceivedLetterModal({
       updated_at: new Date().toISOString(),
     };
 
-    onSave(payload);
-    toast.success('수신 공문이 [처리완료] 상태로 저장되었습니다.');
-    onClose();
+    try {
+      await onSave(payload);
+      toast.success('수신 공문이 [처리완료] 상태로 저장되었습니다.');
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '수신 공문을 저장하지 못했습니다.');
+    }
   };
 
   const handleReplyDraftClick = () => {

@@ -29,6 +29,11 @@ export interface OfficialLetter {
   reply_doc_number?: string; // 회신 발신 공문 번호 (예: ALK Technology - Construction Safety - 26-02호)
   attachment_url?: string; // 수신 공문 원본 파일 링크/URL
   attachment_name?: string; // 첨부 파일명
+  source?: 'system' | 'upload';
+  ocr_text?: string | null;
+  ocr_confidence?: number | null;
+  ocr_status?: string | null;
+  file_path?: string | null;
 
   created_at: string;
   updated_at: string;

@@ -15,6 +15,7 @@ import {
   CalendarCheck,
   Table as TableIcon,
   LayoutDashboard,
+  ClipboardList,
   ShieldCheck,
   Send,
   Building2,
@@ -27,7 +28,7 @@ import {
 export default function OwnerSafetyWorkspace() {
   const { selectedProject, projects } = useGlobalProjectAccess();
   const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'letters' | 'tasks' | 'sheet' | 'dashboard'>('letters');
+  const [activeTab, setActiveTab] = useState<'letters' | 'tasks' | 'weekly' | 'sheet' | 'dashboard'>('letters');
 
   const currentProjectName =
     projects.find((p) => p.id === selectedProject)?.name || 'GSC 여수 H2/LCO2 PJT';
@@ -72,12 +73,15 @@ export default function OwnerSafetyWorkspace() {
         {/* Tab Navigation */}
         <div className="mt-5 pt-3 border-t">
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
-            <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full sm:w-[620px] h-9">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto">
               <TabsTrigger value="letters" className="text-xs gap-1.5 font-medium">
                 <FileText className="h-3.5 w-3.5" /> 공문 수발신 관리
               </TabsTrigger>
               <TabsTrigger value="tasks" className="text-xs gap-1.5 font-medium">
                 <CalendarCheck className="h-3.5 w-3.5" /> 주기별 업무 관리
+              </TabsTrigger>
+              <TabsTrigger value="weekly" className="text-xs gap-1.5 font-medium">
+                <ClipboardList className="h-3.5 w-3.5" /> 주간 작업
               </TabsTrigger>
               <TabsTrigger value="sheet" className="text-xs gap-1.5 font-medium">
                 <TableIcon className="h-3.5 w-3.5" /> 안전팀 공유 시트
@@ -90,13 +94,13 @@ export default function OwnerSafetyWorkspace() {
         </div>
       </div>
 
-      <WeeklyWorkReports projectId={selectedProject} />
-
       {/* Tab 1: Official Letter Registry & Generator */}
       {activeTab === 'letters' && <OfficialLetterRegistry projectId={selectedProject} />}
 
       {/* Tab 2: Periodic Tasks */}
       {activeTab === 'tasks' && <TeamPeriodicTasks />}
+
+      {activeTab === 'weekly' && <WeeklyWorkReports projectId={selectedProject} />}
 
       {/* Tab 3: Shared Sheet Grid */}
       {activeTab === 'sheet' && <TeamSharedSheet />}

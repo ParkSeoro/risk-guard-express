@@ -8,10 +8,16 @@ const corsHeaders = {
 
 const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니다.
 입력은 지난 한 주 허가서를 회사별로 모은 작업 목록입니다.
-작업은 빠뜨리지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요.
-각 작업 아래에 위험과 대책을 붙이되, 추락, 낙하, 화재, 감전, 붕괴, 협착, 유증기처럼 그 작업에서 실제로 큰 위험만 적으세요.
+작업은 빠뜨리지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요. 장소도 빼지 마세요.
+제목과 같은 작업 줄은 다시 만들지 마세요.
+각 작업 줄 바로 아래에 위험과 대책을 붙이되, 그 작업에서 실제로 큰 위험만 적으세요.
 위험이 크지 않은 작업은 작업 내용만 남기세요. 위험과 대책 줄을 만들지 마세요.
-작업에 없는 장비나 공종을 만들지 마세요. 대책은 그 위험에 대응하는 짧은 조치 한 줄입니다.
+위험 줄에는 재해 이름만 적지 마세요. 어떤 요인이 어떤 위험으로 이어지는지 적으세요.
+예: - 위험: 고소작업에 의한 추락
+예: - 위험: 용접 불티에 의한 화재
+예: - 위험: 중량물 인양에 의한 낙하
+"- 위험: 추락"처럼 요인이나 재해 이름만 있는 줄은 쓰지 마세요.
+작업에 없는 장비나 공종을 만들지 마세요. 대책은 그 위험을 막는 짧은 조치 한 줄입니다.
 형식만 반환하세요. 설명과 주간 안전관리 실적은 적지 마세요.
 
 [현장명 현장 주간 안전보고]
@@ -19,7 +25,7 @@ const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니�
 (회사명)
 ■ 작업 구역
 * 그 주에 한 작업
-- 위험: 한 줄
+- 위험: 요인에 의한 위험
 - 대책: 한 줄`;
 
 type ReportRow = {
@@ -82,7 +88,35 @@ function weekStartMonday(iso: string): string {
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 }
 
-async function writeRisks(apiKey: string, source: unknown): Promise<string> {
+function compactLabel(value: string): string {
+  return value.toLowerCase().replace(/[^0-9a-zA-Z가-힣]+/g, "");
+}
+
+function stripRepeatedHeadings(text: string): string {
+  let heading = "";
+  const kept: string[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    const asHeading = trimmed.match(/^■\s*(.*)$/);
+    if (asHeading) {
+      heading = compactLabel(asHeading[1]);
+      kept.push(line);
+      continue;
+    }
+    const asBullet = trimmed.match(/^\*\s*(.*)$/);
+    if (asBullet && heading && compactLabel(asBullet[1]) === heading) continue;
+    kept.push(line);
+  }
+  return kept.join("\n").trim();
+}
+
+function factorOnlyRisk(text: string): boolean {
+  return text.split("\n").some((line) =>
+    /^-\s*위험:\s*(추락|낙하|화재|감전|붕괴|협착|끼임|유증기|전도|질식)\s*$/.test(line.trim())
+  );
+}
+
+async function askGemini(apiKey: string, source: unknown, extra: string): Promise<string> {
   const res = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
     {
@@ -90,7 +124,7 @@ async function writeRisks(apiKey: string, source: unknown): Promise<string> {
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: REPORT_PROMPT }] },
-        contents: [{ role: "user", parts: [{ text: JSON.stringify(source) }] }],
+        contents: [{ role: "user", parts: [{ text: JSON.stringify(source) + extra }] }],
         generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
       }),
     },
@@ -101,6 +135,17 @@ async function writeRisks(apiKey: string, source: unknown): Promise<string> {
   }
   const parts = payload?.candidates?.[0]?.content?.parts || [];
   return parts.map((part: { text?: string }) => part.text || "").join("\n").trim();
+}
+
+async function writeRisks(apiKey: string, source: unknown): Promise<string> {
+  let text = await askGemini(apiKey, source, "");
+  if (factorOnlyRisk(text)) {
+    text = await askGemini(apiKey, source, "\n지난 답은 위험에 재해 이름만 적었습니다. 요인에 의한 위험으로 다시 적으세요.");
+  }
+  if (factorOnlyRisk(text)) {
+    throw new Error("위험 줄에 요인만 있습니다.");
+  }
+  return text;
 }
 
 Deno.serve(async (req) => {
@@ -185,7 +230,7 @@ Deno.serve(async (req) => {
   const failures: string[] = [];
   for (const row of pending) {
     try {
-      const text = await writeRisks(apiKey, row.source);
+      const text = stripRepeatedHeadings(await writeRisks(apiKey, row.source));
       if (!text || !text.includes("■")) {
         throw new Error("보고 형식이 비어 있습니다.");
       }

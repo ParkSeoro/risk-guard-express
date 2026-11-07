@@ -9,10 +9,14 @@ export type EvidenceKind =
   | 'site_photo' // 사진대지
   | 'certificate' // 안전인증서 등
   | 'ppe_ledger' // 보호구 지급대장 (파일 또는 시스템 대장)
+  | 'qualification' // 자격증 사본
+  | 'employment_contract' // 근로계약서
+  | 'employment_certificate' // 재직증명서
   | 'payroll' // 급여/이체
-  | 'appointment' // 선임·지정
+  | 'appointment' // 선임신고
   | 'education_log' // 교육일지·명단
   | 'report' // 결과보고서/지도일지
+  | 'owner_approval' // 발주처 승인
   | 'other';
 
 export const EVIDENCE_KIND_LABEL: Record<EvidenceKind, string> = {
@@ -21,12 +25,25 @@ export const EVIDENCE_KIND_LABEL: Record<EvidenceKind, string> = {
   site_photo: '사진대지',
   certificate: '인증서/성적서',
   ppe_ledger: '보호구 지급대장',
-  payroll: '급여·이체 증빙',
-  appointment: '선임·지정 서류',
+  qualification: '자격증 사본',
+  employment_contract: '근로계약서',
+  employment_certificate: '재직증명서',
+  payroll: '급여명세서·이체확인증',
+  appointment: '선임신고필증',
   education_log: '교육일지·명단',
   report: '결과서·지도일지',
+  owner_approval: '발주처 승인',
   other: '기타 증빙',
 };
+
+/** 인건비 비목에 칸으로 보여주는 순서. */
+export const WAGE_DOCUMENT_KINDS: EvidenceKind[] = [
+  'qualification',
+  'employment_contract',
+  'employment_certificate',
+  'payroll',
+  'appointment',
+];
 
 export type PackRequirement = {
   kind: EvidenceKind;
@@ -51,9 +68,11 @@ export const CATEGORY_EVIDENCE_PACK: CategoryPack[] = [
     name: '안전·보건관리자 임금 등',
     bindOrder: 10,
     requirements: [
-      { kind: 'payroll', label: '급여명세서/이체증', hard: true },
-      { kind: 'appointment', label: '선임·지정 서류', hard: true },
-      { kind: 'other', label: '근무확인서/근무일지', hard: false },
+      { kind: 'qualification', label: '자격증 사본', hard: true },
+      { kind: 'employment_contract', label: '근로계약서', hard: true },
+      { kind: 'employment_certificate', label: '재직증명서', hard: true },
+      { kind: 'payroll', label: '급여명세서·이체확인증', hard: true },
+      { kind: 'appointment', label: '선임신고필증', hard: true },
     ],
     tips: ['현장 기능공 노무비와 구분', '8번 본사 전담과 중복 금지'],
   },
@@ -133,8 +152,11 @@ export const CATEGORY_EVIDENCE_PACK: CategoryPack[] = [
     name: '본사 전담조직 근로자 임금 등',
     bindOrder: 80,
     requirements: [
-      { kind: 'appointment', label: '전담조직 구성·업무분장', hard: true },
-      { kind: 'payroll', label: '급여명세서/이체증', hard: true },
+      { kind: 'qualification', label: '자격증 사본', hard: true },
+      { kind: 'employment_contract', label: '근로계약서', hard: true },
+      { kind: 'employment_certificate', label: '재직증명서', hard: true },
+      { kind: 'payroll', label: '급여명세서·이체확인증', hard: true },
+      { kind: 'appointment', label: '선임신고필증', hard: true },
     ],
     tips: ['총액의 한도·1번과 중복 금지'],
   },

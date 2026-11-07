@@ -91,8 +91,16 @@ export async function loadSafetyCostDocument(
     category_code: item.category_code,
     category_name: item.category_name,
     amount: item.amount,
+    supply_amount: item.supply_amount,
+    vat_amount: item.vat_amount,
     item_name: item.item_name,
     supplier_name: item.supplier_name,
+    specification: item.specification,
+    quantity: item.quantity,
+    unit: item.unit,
+    unit_price: item.unit_price,
+    transaction_date: item.transaction_date,
+    usage_date: item.usage_date,
     is_deleted: item.is_deleted,
   }));
 

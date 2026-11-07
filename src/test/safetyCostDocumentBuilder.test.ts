@@ -81,7 +81,8 @@ describe('safety cost document builder', () => {
     expect(html).toContain('거래명세표');
     expect(html).not.toContain('거래명세표/검수');
     expect(html).toContain('안전시설물 설치');
-    expect(html).toContain('배분 메모 없음');
+    expect(html).toContain('안전시설비 등 사용 금액');
+    expect(html).not.toContain('배분 메모 없음');
     expect(html).toContain('세금계산서.pdf');
     expect(html).not.toContain('11,224,800');
     expect(html).not.toContain('11224800');

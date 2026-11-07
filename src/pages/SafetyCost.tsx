@@ -20,6 +20,9 @@ import { softRestorePayload } from '@/lib/dataAccess';
 import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostWorkbook } from '@/lib/safetyCostExport';
 import { getEvidenceGuide } from '@/lib/safetyCostEvidenceGuide';
 import { evaluateEvidencePack, packGateSummary, type EvidenceKind } from '@/lib/safetyCostEvidencePack';
+import { hasLaborSubmitOverride, laborRatioStatus, listAmountNotices } from '@/lib/safetyCostAmountMatch';
+import { encodeSafetyCostMoneyNote, parseSafetyCostMoneyNote } from '@/lib/safetyCostMoneyNote';
+import SafetyCostMatchPanel from '@/components/safety-cost/SafetyCostMatchPanel';
 import { itemMissingDailyHard, itemTransactionEvidenceRows, type SourceTransactionFile } from '@/lib/safetyCostItemEvidence';
 import { EvidencePackPanel } from '@/components/safety-cost/EvidencePackPanel';
 import { SafetyCostItemCards } from '@/components/safety-cost/SafetyCostItemCards';
@@ -204,6 +207,28 @@ const SafetyCost = () => {
     exempt: isLegacyImport,
   }), [filteredItems, reportEvidence, ppeSignedCount, isLegacyImport]);
   const packGate = useMemo(() => packGateSummary(evidencePack), [evidencePack]);
+  const amountMatch = useMemo(() => {
+    const empty = laborRatioStatus({ monthLabor: 0, monthTotal: 0, cumulativeLabor: 0, budget: null });
+    if (isLegacyImport) return { notices: [], labor: empty, overridden: false };
+    const monthLabor = baseItems.filter((it) => it.category_code === '1' || it.category_code === '8').reduce((sum, it) => sum + Number(it.amount || 0), 0);
+    const monthTotal = baseItems.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+    const approvedIds = new Set(approvedReports.map((r) => r.id));
+    const laborSum = (rows: typeof items) => rows.filter((it) => it.category_code === '1' || it.category_code === '8').reduce((sum, it) => sum + Number(it.amount || 0), 0);
+    const approvedLabor = laborSum(items.filter((it) => approvedIds.has(it.report_id)));
+    const priorLabor = laborSum(items.filter((it) => approvedIds.has(it.report_id) && it.report_id !== selectedReportId));
+    const cumulativeLabor = selectedReportId && approvedIds.has(selectedReportId) ? approvedLabor : priorLabor + monthLabor;
+    const budgetRaw = Number(selectedConstruction?.safety_cost_total || 0);
+    return {
+      notices: listAmountNotices(baseItems, reportEvidence),
+      labor: laborRatioStatus({
+        monthLabor,
+        monthTotal,
+        cumulativeLabor,
+        budget: budgetRaw > 0 ? budgetRaw : null,
+      }),
+      overridden: hasLaborSubmitOverride(reportEvidence),
+    };
+  }, [isLegacyImport, baseItems, approvedReports, items, selectedReportId, selectedConstruction?.safety_cost_total, reportEvidence]);
   const auditChecklist = useMemo(() => {
     const hasCat3Spend = filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0);
     const ocrGaps = isLegacyImport ? 0 : ocrReviewGaps(filteredItems).length;
@@ -903,8 +928,88 @@ const SafetyCost = () => {
     setRequestingEvidence(false);
   }
 
+  async function saveStatementTotal(fileId: string, total: number) {
+    const file = reportEvidence.find((e: any) => e.id === fileId);
+    const parsed = parseSafetyCostMoneyNote(file?.note);
+    const note = encodeSafetyCostMoneyNote({ total, part: parsed.part, text: parsed.text });
+    const { error } = await supabase.from('safety_cost_evidence_files' as any).update({ note }).eq('id', fileId);
+    if (error) toast({ title: '합계를 저장하지 못했습니다', description: error.message, variant: 'destructive' });
+    else {
+      toast({ title: '거래명세서 합계를 저장했습니다.' });
+      fetchAll();
+    }
+  }
+
+  async function attachLaborApproval(file: File) {
+    if (!selectedReport || !selectedConstruction || !user) return;
+    try {
+      const path = `safety-cost/${selectedReport.project_id}/${selectedReport.id}/pack/owner_${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+      const uploaded = await uploadAttachmentFile(path, file);
+      const { error } = await supabase.from('safety_cost_evidence_files' as any).insert({
+        report_id: selectedReport.id,
+        construction_id: selectedConstruction.id,
+        project_id: selectedReport.project_id,
+        company_id: selectedConstruction.company_id,
+        evidence_kind: 'owner_approval',
+        category_code: '1',
+        file_name: uploaded.file.name,
+        file_path: uploaded.path,
+        file_url: uploaded.publicUrl,
+        mime_type: uploaded.file.type || 'application/octet-stream',
+        file_size: uploaded.finalBytes,
+        uploaded_by: user.id,
+      });
+      if (error) throw error;
+      toast({ title: '발주처 승인 공문을 첨부했습니다.' });
+      fetchAll();
+    } catch (e: any) {
+      toast({ title: '승인 공문을 저장하지 못했습니다', description: e?.message || String(e), variant: 'destructive' });
+    }
+  }
+
+  async function saveLaborReason(reason: string) {
+    if (!selectedReport || !selectedConstruction || !user) return;
+    const existing = reportEvidence.find((e: any) => e.evidence_kind === 'owner_approval' && !String(e.file_path || '').trim());
+    const write = existing
+      ? supabase.from('safety_cost_evidence_files' as any).update({ note: reason, file_name: existing.file_name || '사유' }).eq('id', existing.id)
+      : supabase.from('safety_cost_evidence_files' as any).insert({
+        report_id: selectedReport.id,
+        construction_id: selectedConstruction.id,
+        project_id: selectedReport.project_id,
+        company_id: selectedConstruction.company_id,
+        evidence_kind: 'owner_approval',
+        category_code: '1',
+        file_name: '사유',
+        file_path: '',
+        note: reason,
+        uploaded_by: user.id,
+      });
+    const { error } = await write;
+    if (error) toast({ title: '사유를 저장하지 못했습니다', description: error.message, variant: 'destructive' });
+    else {
+      toast({ title: '인건비 초과 사유를 저장했습니다.' });
+      fetchAll();
+    }
+  }
+
   async function openSubmitDialog() {
     if (!selectedReport || !selectedConstruction || !user) return;
+    if (!isLegacyImport && amountMatch.notices.some((n) => n.blocking)) {
+      toast({
+        title: '금액이 맞지 않아 상신할 수 없습니다.',
+        description: amountMatch.notices.find((n) => n.blocking)?.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!isLegacyImport && amountMatch.labor.level === 'over' && !amountMatch.overridden) {
+      toast({
+        title: '인건비 비율이 50%를 넘었습니다.',
+        description: '발주처 승인 공문을 첨부하거나 사유를 저장한 뒤 다시 상신하세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!approvalReady) {
       const fail = firstFailingAudit;
       const packHint = !evidencePack.ready
@@ -1073,6 +1178,18 @@ const SafetyCost = () => {
 
         <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} />{existingLiveForNewMonth && <p className="text-sm text-muted-foreground">이미 해당 월 내역서가 있습니다. 생성을 누르면 기존 내역서를 엽니다.</p>}<DialogFooter><Button onClick={createReport} disabled={creatingReport}>{creatingReport ? '처리 중…' : '생성'}</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge>{r.source === 'legacy_import' && <Badge variant="outline" className="ml-1">이관</Badge>}</button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved' || r.status === 'submitted'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved' || r.status === 'submitted'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
 
+        {selectedReport && !isLegacyImport && (
+          <SafetyCostMatchPanel
+            notices={amountMatch.notices}
+            monthMessage={amountMatch.labor.monthMessage}
+            cumulativeMessage={amountMatch.labor.cumulativeMessage}
+            level={amountMatch.labor.level}
+            busy={reportLocked}
+            onSaveStatementTotal={saveStatementTotal}
+            onAttachApproval={attachLaborApproval}
+            onSaveReason={saveLaborReason}
+          />
+        )}
         {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {isLegacyImport ? <Badge variant="secondary" className="ml-2">면제</Badge> : (!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{packGate.issueCount}</Badge>)}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + packGate.issueCount) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + packGate.issueCount}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
           {selectedConstruction && selectedReport && (
             <EvidencePackPanel

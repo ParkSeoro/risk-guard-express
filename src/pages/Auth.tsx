@@ -570,12 +570,17 @@ const Auth = () => {
       toast({ title: '참여할 프로젝트·소속 업체·직책을 선택해주세요.', variant: 'destructive' });
       return;
     }
+    const phoneParsed = workerPhoneSchema.safeParse(phone);
+    if (!phoneParsed.success) {
+      toast({ title: zodErrorMessage(phoneParsed.error), variant: 'destructive' });
+      return;
+    }
 
     setLoading(true);
     try {
       const { data: ident } = await (supabase as any).rpc('signup_identity_available', {
         _email: email,
-        _phone: phone || null,
+        _phone: phoneParsed.data,
       });
       const identErr = signupIdentityErrorMessage((ident as any)?.error);
       if (identErr) {
@@ -592,6 +597,7 @@ const Auth = () => {
           data: {
             display_name: displayName,
             company: selectedCompanyName,
+            phone: phoneParsed.data,
             account_kind: 'manager',
             invite_code: signupMethod === 'invite' ? inviteCode.trim() || undefined : undefined,
             signup_project_id: signupMethod === 'directory' ? selectedProject : undefined,
@@ -852,6 +858,20 @@ const Auth = () => {
                 <div className="space-y-1.5">
                   <Label>이름 *</Label>
                   <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="홍길동" required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>전화번호 *</Label>
+                  <Input
+                    value={phone}
+                    onChange={(e) => setPhone(formatPhoneMask(e.target.value))}
+                    placeholder="010-1234-5678"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    required
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    숫자만 입력하면 자동으로 하이픈이 붙습니다. 허가서 명단과 알림에 이 번호를 사용합니다.
+                  </p>
                 </div>
 
                 <div className="flex gap-1 rounded-lg border p-1 bg-muted/30">

@@ -23,6 +23,10 @@ verify_jwt = false
 [functions.dispatch-notification-push]
 verify_jwt = false
 
+# Sunday job sends X-Push-Trigger-Secret. User calls are checked inside the function.
+[functions.write-weekly-safety-report]
+verify_jwt = false
+
 # Gateway QR start / kit claim are device calls without a user JWT. Auth is inside the function.
 [functions.vision-fleet]
 verify_jwt = false

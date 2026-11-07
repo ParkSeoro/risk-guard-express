@@ -453,7 +453,7 @@ export function buildSafetyCostDocument(input: SafetyCostDocInput, scope: Safety
       body.push(`<tr><td colspan="4">소계</td><td></td><td></td><td></td><td class="num">${money(sub)}</td><td class="num">${pct}</td></tr>`);
     }
     const chunks: string[][] = [];
-    for (let i = 0; i < body.length; i += 22) chunks.push(body.slice(i, i + 22));
+    for (let i = 0; i < body.length; i += 18) chunks.push(body.slice(i, i + 18));
     const head = `<tr><th rowspan="2">구분</th><th rowspan="2">No</th><th rowspan="2">월일</th><th rowspan="2">사용항목</th><th colspan="4">산출근거</th><th rowspan="2">비율</th></tr><tr><th>수량</th><th>단위</th><th>단가</th><th>금액</th></tr>`;
     if (!chunks.length) {
       pages.push(page(`<h2>2. 항목별 사용내역</h2><table class="items">${head}<tr><td colspan="9">항목 없음</td></tr></table>`));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hasLaborSubmitOverride, laborRatioStatus, listAmountNotices } from '@/lib/safetyCostAmountMatch';
-import { encodeSafetyCostMoneyNote } from '@/lib/safetyCostMoneyNote';
+import { encodeSafetyCostMoneyNote, parseSafetyCostMoneyNote } from '@/lib/safetyCostMoneyNote';
 
 describe('safety cost amount match', () => {
   it('names a transaction total that does not match the line', () => {
@@ -14,7 +14,7 @@ describe('safety cost amount match', () => {
         note: encodeSafetyCostMoneyNote({ total: 750000 }),
       }],
     );
-    expect(notices.some((n) => n.blocking && n.message.includes('낙하물방지망') && n.message.includes('적음'))).toBe(true);
+    expect(notices.some((n) => n.blocking && n.message.includes('낙하물방지망') && n.message.includes('거래명세서 부족'))).toBe(true);
   });
 
   it('asks for a statement total without blocking', () => {
@@ -23,6 +23,14 @@ describe('safety cost amount match', () => {
       [{ id: 'f', item_id: 'a', evidence_kind: 'transaction', file_name: '명세.jpg', note: '' }],
     );
     expect(notices).toEqual([{ blocking: false, fileId: 'f', message: '난간: 거래명세서 합계를 적어 주세요.' }]);
+  });
+
+  it('reads a money tag when part comes before total', () => {
+    expect(parseSafetyCostMoneyNote('[[sc part=2000 total=5000]]배분')).toEqual({
+      total: 5000,
+      part: 2000,
+      text: '배분',
+    });
   });
 
   it('treats one won as the same amount', () => {

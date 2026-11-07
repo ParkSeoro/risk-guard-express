@@ -83,7 +83,7 @@ export function listAmountNotices(items: AmountRow[], files: AmountFile[]): Amou
     if (sameWon(sum, parsed)) continue;
     notices.push({
       blocking: true,
-      message: `${label}${who}: 내역 ${won(sum)}, 거래명세서 ${won(parsed)}. ${won(Math.abs(sum - parsed))} ${sum > parsed ? '적음' : '많음'}.`,
+      message: `${label}${who}: 내역 ${won(sum)}, 거래명세서 ${won(parsed)}. ${won(Math.abs(sum - parsed))} ${sum > parsed ? '거래명세서 부족' : '거래명세서 초과'}.`,
     });
   }
 

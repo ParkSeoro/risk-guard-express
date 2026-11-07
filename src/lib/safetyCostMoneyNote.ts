@@ -1,6 +1,8 @@
 /** 증빙 메모에 금액을 같이 적는다. 표에 금액 칸을 더하지 않는다. */
 
-const TAG = /\[\[sc(?:\s+total=(\d+(?:\.\d+)?))?(?:\s+part=(\d+(?:\.\d+)?))?\]\]/;
+const TAG = /\[\[sc\b([\s\S]*?)\]\]/;
+const TOTAL = /(?:^|\s)total=(\d+(?:\.\d+)?)/;
+const PART = /(?:^|\s)part=(\d+(?:\.\d+)?)/;
 
 export type SafetyCostMoneyNote = {
   total: number | null;
@@ -11,11 +13,13 @@ export type SafetyCostMoneyNote = {
 export function parseSafetyCostMoneyNote(note: string | null | undefined): SafetyCostMoneyNote {
   const raw = String(note || '');
   const hit = raw.match(TAG);
-  const text = raw.replace(TAG, '').trim();
+  const body = hit?.[1] || '';
+  const total = body.match(TOTAL);
+  const part = body.match(PART);
   return {
-    total: hit?.[1] != null ? Number(hit[1]) : null,
-    part: hit?.[2] != null ? Number(hit[2]) : null,
-    text,
+    total: total ? Number(total[1]) : null,
+    part: part ? Number(part[1]) : null,
+    text: raw.replace(TAG, '').trim(),
   };
 }
 

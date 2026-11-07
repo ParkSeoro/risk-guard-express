@@ -35,7 +35,7 @@ export function classifySafetyCostItem(name: string) {
       category_code: '',
       category_name: '사용 불가 검토',
       classification_status: 'warning' as SafetyCostClassificationStatus,
-      ai_reason: `“${warningKeyword}”은 산업재해 예방 목적 직접 비용으로 보기 어려워 사용 불가 가능성이 높습니다.`,
+      ai_reason: `“${warningKeyword}”은 사용하기 어려울 수 있으니 증빙을 확인하세요.`,
       legal_basis: '건설업 산업안전보건관리비 계상 및 사용기준 제7조 사용기준 및 목적 외 사용 제한',
     };
   }

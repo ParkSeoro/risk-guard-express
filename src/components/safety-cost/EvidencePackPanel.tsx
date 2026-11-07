@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,6 +14,7 @@ import {
   CATEGORY_EVIDENCE_PACK,
   EVIDENCE_BIND_TOC,
   EVIDENCE_KIND_LABEL,
+  WAGE_DOCUMENT_KINDS,
   evaluateEvidencePack,
   packGateSummary,
   type EvidenceKind,
@@ -20,6 +22,7 @@ import {
   type EvidenceFileLike,
 } from '@/lib/safetyCostEvidencePack';
 import { formatKRW } from '@/lib/safetyCost';
+import { encodeSafetyCostMoneyNote } from '@/lib/safetyCostMoneyNote';
 import { cloneEvidenceToCategories, itemMissingDailyHard, missingAllocationNotes, resolvedFileCategory } from '@/lib/safetyCostItemEvidence';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
@@ -49,6 +52,8 @@ export function EvidencePackPanel({
   const [uploadCat, setUploadCat] = useState('3');
   const [uploadCats, setUploadCats] = useState<string[]>([]);
   const [allocNotes, setAllocNotes] = useState<Record<string, string>>({});
+  const [allocTotals, setAllocTotals] = useState<Record<string, string>>({});
+  const [allocParts, setAllocParts] = useState<Record<string, string>>({});
   const [uploadKind, setUploadKind] = useState<EvidenceKind>('tax_invoice');
   const [uploading, setUploading] = useState(false);
 
@@ -106,7 +111,16 @@ export function EvidencePackPanel({
   async function handleUpload(files: FileList | null) {
     if (!files?.length || !userId) return;
     const allocations = uploadKind === 'tax_invoice'
-      ? [...new Set(uploadCats.filter(Boolean))].map((code) => ({ category_code: code, note: allocNotes[code] || '' }))
+      ? [...new Set(uploadCats.filter(Boolean))].map((code) => {
+          const total = Number(String(allocTotals[code] || '').replace(/,/g, ''));
+          const part = Number(String(allocParts[code] || '').replace(/,/g, ''));
+          const text = allocNotes[code] || '';
+          const hasMoney = Number.isFinite(total) && total > 0 && Number.isFinite(part) && part > 0;
+          return {
+            category_code: code,
+            note: hasMoney ? encodeSafetyCostMoneyNote({ total, part, text }) : text.trim(),
+          };
+        })
       : [{ category_code: uploadCat, note: '' }];
     const targetCats = allocations.map((a) => a.category_code);
     if (!targetCats.length) {
@@ -318,12 +332,17 @@ export function EvidencePackPanel({
                           <span>{c.code}. {c.name}</span>
                         </label>
                         {checked ? (
-                          <Textarea
-                            rows={2}
-                            value={allocNotes[c.code] || ''}
-                            onChange={(e) => setAllocNotes((p) => ({ ...p, [c.code]: e.target.value }))}
-                            placeholder="예: 계산서 총액 5,000,000원 중 이 비목 2,000,000원"
-                          />
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <Input inputMode="numeric" value={allocTotals[c.code] || ''} onChange={(e) => setAllocTotals((p) => ({ ...p, [c.code]: e.target.value }))} placeholder="세금계산서 총액" />
+                            <Input inputMode="numeric" value={allocParts[c.code] || ''} onChange={(e) => setAllocParts((p) => ({ ...p, [c.code]: e.target.value }))} placeholder="이 비목 사용 금액" />
+                            <Textarea
+                              className="sm:col-span-2"
+                              rows={2}
+                              value={allocNotes[c.code] || ''}
+                              onChange={(e) => setAllocNotes((p) => ({ ...p, [c.code]: e.target.value }))}
+                              placeholder="예: 계산서 총액 5,000,000원 중 이 비목 2,000,000원"
+                            />
+                          </div>
                         ) : null}
                       </div>
                     );
@@ -344,6 +363,15 @@ export function EvidencePackPanel({
               </div>
             )}
           </div>
+          {(uploadCat === '1' || uploadCat === '8') && uploadKind !== 'tax_invoice' ? (
+            <div className="flex flex-wrap gap-1">
+              {WAGE_DOCUMENT_KINDS.map((kind) => (
+                <Button key={kind} type="button" size="sm" variant={uploadKind === kind ? 'default' : 'outline'} onClick={() => setUploadKind(kind)}>
+                  {EVIDENCE_KIND_LABEL[kind]}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           <div className="flex items-center gap-2">
             <Button size="sm" disabled={uploading} onClick={() => fileRef.current?.click()} className="gap-1">
               <Paperclip className="h-4 w-4" /> {uploading ? '업로드 중…' : '파일 선택·첨부'}

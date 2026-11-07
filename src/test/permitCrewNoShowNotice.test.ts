@@ -9,6 +9,14 @@ const sql = readFileSync(
   "supabase/migrations/20261103080000_permit_no_show_by_company.sql",
   "utf8",
 );
+const managerPresent = readFileSync(
+  "supabase/migrations/20261107102000_permit_manager_always_present.sql",
+  "utf8",
+);
+const rosterDialog = readFileSync(
+  "src/components/permits/WorkPermitWorkersDialog.tsx",
+  "utf8",
+);
 
 describe("permit crew no-show notice", () => {
   it("notifies approved permit crew only and does not write attendance", () => {
@@ -30,5 +38,17 @@ describe("permit crew no-show notice", () => {
     expect(sql).not.toContain("UPDATE public.worker_entry_logs");
     expect(sql).not.toContain("INSERT INTO public.worker_entry_logs");
     expect(sql).not.toContain("'작업취소'");
+  });
+
+  it("keeps managers on the roster and treats them as already present", () => {
+    expect(managerPresent).toContain("permit_roster_always_present");
+    expect(managerPresent).toContain("NOT public.permit_roster_always_present(w.id, v_day)");
+    expect(managerPresent).toContain("OR public.permit_roster_always_present(pw.worker_id, v_day)");
+    expect(managerPresent).toContain("SET exclude_from_tbm = true");
+    expect(managerPresent).toContain("'020' || lpad((");
+    expect(managerPresent).not.toContain("DELETE FROM public.work_permit_workers");
+    expect(managerPresent).not.toContain("INSERT INTO public.worker_entry_logs");
+    expect(rosterDialog).toContain("exclude_from_tbm: managerIds.includes(worker_id)");
+    expect(rosterDialog).toContain("exclude_from_tbm: true");
   });
 });

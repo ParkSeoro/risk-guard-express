@@ -145,16 +145,30 @@ export default function WorkPermitWorkersDialog({
     const toAdd = [...safeAssigned].filter((id) => !initialAssigned.has(id) && allowed.has(id));
     const toRemove = [...initialAssigned].filter((id) => !safeAssigned.has(id));
 
+    const managerIds = [...safeAssigned].filter((id) => workers.some((w) => w.id === id && w.isManager));
     if (toAdd.length > 0) {
       const rows = toAdd.map((worker_id) => ({
         work_permit_id: permit.id,
         worker_id,
         project_id: projectId,
         notification_status: "pending",
+        exclude_from_tbm: managerIds.includes(worker_id),
       }));
       const { error } = await supabase.from("work_permit_workers" as any).insert(rows);
       if (error) {
         toast.error("배정 실패: " + error.message);
+        setSaving(false);
+        return;
+      }
+    }
+    if (managerIds.length > 0) {
+      const { error: flagErr } = await supabase
+        .from("work_permit_workers" as any)
+        .update({ exclude_from_tbm: true } as any)
+        .eq("work_permit_id", permit.id)
+        .in("worker_id", managerIds);
+      if (flagErr) {
+        toast.error("관리자 출근 표시 실패: " + flagErr.message);
         setSaving(false);
         return;
       }

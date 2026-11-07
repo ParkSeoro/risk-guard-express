@@ -12,6 +12,7 @@ import {
 } from '@/lib/weeklySafetyReport';
 
 const sql = readFileSync('supabase/migrations/20261107120000_weekly_safety_report.sql', 'utf8');
+const mergeSql = readFileSync('supabase/migrations/20261107143000_weekly_report_merge_places.sql', 'utf8');
 const writer = readFileSync('supabase/functions/write-weekly-safety-report/index.ts', 'utf8');
 
 describe('weekly safety report calendar', () => {
@@ -29,19 +30,19 @@ describe('weekly safety report calendar', () => {
 
   it('prints saved results and leaves blank plans blank', () => {
     const text = weeklyReportText('[현장 현장 주간 안전보고]\n\n(청원산기)\n■ 전기', {
-      inspection: 2,
-      education: 4,
-      work_stop: 0,
-      suspension: 0,
-      incident: 0,
-      plan: { meeting: 1 },
+      plan: { meeting: 1, inspection: null },
+      actual: { inspection: 2, education: 4, work_stop: 0 },
     });
     expect(text).toContain('(청원산기)');
     expect(text).toContain('안전회의: 계획 1 / 실적 —');
     expect(text).toContain('안전점검: 계획 — / 실적 2');
     expect(text).toContain('안전교육: 계획 — / 실적 4');
-    expect(text).toContain('출입정지·퇴출: 0명');
-    expect(text).toContain('재해: 0건');
+    expect(text).toContain('경고·작업중지: 계획 — / 실적 0');
+    expect(text).toContain('출입정지·퇴출: —명');
+    expect(text).toContain('재해: —건');
+    const counted = weeklyReportText('본문', { inspection: 9, education: 9 });
+    expect(counted).toContain('안전점검: 계획 — / 실적 —');
+    expect(counted).not.toContain('실적 9');
   });
 
   it('skips the model only when the stored report is ready and the work is unchanged', () => {
@@ -60,7 +61,13 @@ describe('weekly safety report calendar', () => {
     expect(sql).not.toContain('bullet_count > 8');
     expect(writer).toContain('작업 내용이 그대로입니다');
     expect(writer).toContain('위험이 크지 않은 작업은 작업 내용만 남기세요');
+    expect(writer).toContain('요인에 의한 위험');
+    expect(writer).toContain('위험 줄에 요인만 있습니다');
+    expect(writer).toContain('stripRepeatedHeadings');
     expect(writer).toContain('gemini-2.5-flash');
     expect(writer).not.toContain('최대 6');
+    expect(mergeSql).toContain('weekly_condense_bullets');
+    expect(mergeSql).toContain('PERFORM public.weekly_prepare_report_items()');
+    expect(mergeSql).toContain('stats = public.owner_weekly_work_reports.stats');
   });
 });

@@ -5,13 +5,19 @@ export type WeeklyPlanNumbers = {
   work_stop?: number | null;
 };
 
-export type WeeklyReportStats = {
+export type WeeklyActualNumbers = {
+  meeting?: number | null;
   inspection?: number | null;
   education?: number | null;
   work_stop?: number | null;
   suspension?: number | null;
   incident?: number | null;
+};
+
+export type WeeklyReportStats = {
   plan?: WeeklyPlanNumbers | null;
+  actual?: WeeklyActualNumbers | null;
+  /** Earlier saves kept the meeting result beside the plan. */
   meeting_actual?: number | null;
 };
 
@@ -98,14 +104,16 @@ function countText(value: number | null | undefined): string {
 export function weeklyStatsFooter(stats: WeeklyReportStats | null | undefined): string {
   const row = stats || {};
   const plan = row.plan || {};
+  const actual = row.actual || {};
+  const meetingActual = actual.meeting ?? row.meeting_actual;
   return [
     '주간 안전관리 실적',
-    `- 안전회의: 계획 ${countText(plan.meeting)} / 실적 ${countText(row.meeting_actual)}`,
-    `- 안전점검: 계획 ${countText(plan.inspection)} / 실적 ${row.inspection ?? 0}`,
-    `- 안전교육: 계획 ${countText(plan.education)} / 실적 ${row.education ?? 0}`,
-    `- 경고·작업중지: 계획 ${countText(plan.work_stop)} / 실적 ${row.work_stop ?? 0}`,
-    `- 출입정지·퇴출: ${row.suspension ?? 0}명`,
-    `- 재해: ${row.incident ?? 0}건`,
+    `- 안전회의: 계획 ${countText(plan.meeting)} / 실적 ${countText(meetingActual)}`,
+    `- 안전점검: 계획 ${countText(plan.inspection)} / 실적 ${countText(actual.inspection)}`,
+    `- 안전교육: 계획 ${countText(plan.education)} / 실적 ${countText(actual.education)}`,
+    `- 경고·작업중지: 계획 ${countText(plan.work_stop)} / 실적 ${countText(actual.work_stop)}`,
+    `- 출입정지·퇴출: ${countText(actual.suspension)}명`,
+    `- 재해: ${countText(actual.incident)}건`,
   ].join('\n');
 }
 

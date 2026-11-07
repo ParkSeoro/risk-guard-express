@@ -33,18 +33,21 @@ function reportsTable() {
 }
 
 function emptyPlan(stats: WeeklyReportStats | null | undefined): WeeklyReportStats {
+  const actual = stats?.actual || {};
   return {
-    inspection: stats?.inspection ?? 0,
-    education: stats?.education ?? 0,
-    work_stop: stats?.work_stop ?? 0,
-    suspension: stats?.suspension ?? 0,
-    incident: stats?.incident ?? 0,
-    meeting_actual: stats?.meeting_actual ?? null,
     plan: {
       meeting: stats?.plan?.meeting ?? null,
       inspection: stats?.plan?.inspection ?? null,
       education: stats?.plan?.education ?? null,
       work_stop: stats?.plan?.work_stop ?? null,
+    },
+    actual: {
+      meeting: actual.meeting ?? stats?.meeting_actual ?? null,
+      inspection: actual.inspection ?? null,
+      education: actual.education ?? null,
+      work_stop: actual.work_stop ?? null,
+      suspension: actual.suspension ?? null,
+      incident: actual.incident ?? null,
     },
   };
 }
@@ -134,7 +137,10 @@ export function WeeklyWorkReports({ projectId }: { projectId?: string | null }) 
   const savePlan = async () => {
     if (!current) return;
     setSaving(true);
-    const next = emptyPlan(plan);
+    const next = {
+      ...emptyPlan(plan),
+      meeting_actual: plan.actual?.meeting ?? null,
+    };
     const { error } = await reportsTable().update({ stats: next, updated_at: new Date().toISOString() }).eq('id', current.id);
     setSaving(false);
     if (error) {
@@ -252,10 +258,15 @@ export function WeeklyWorkReports({ projectId }: { projectId?: string | null }) 
             </Button>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <PlanField label="안전회의 계획" value={plan.plan?.meeting} onChange={(value) => setPlan((prev) => ({ ...prev, plan: { ...prev.plan, meeting: value } }))} />
-              <PlanField label="안전회의 실적" value={plan.meeting_actual} onChange={(value) => setPlan((prev) => ({ ...prev, meeting_actual: value }))} />
+              <PlanField label="안전회의 실적" value={plan.actual?.meeting} onChange={(value) => setPlan((prev) => ({ ...prev, actual: { ...prev.actual, meeting: value } }))} />
               <PlanField label="안전점검 계획" value={plan.plan?.inspection} onChange={(value) => setPlan((prev) => ({ ...prev, plan: { ...prev.plan, inspection: value } }))} />
+              <PlanField label="안전점검 실적" value={plan.actual?.inspection} onChange={(value) => setPlan((prev) => ({ ...prev, actual: { ...prev.actual, inspection: value } }))} />
               <PlanField label="안전교육 계획" value={plan.plan?.education} onChange={(value) => setPlan((prev) => ({ ...prev, plan: { ...prev.plan, education: value } }))} />
+              <PlanField label="안전교육 실적" value={plan.actual?.education} onChange={(value) => setPlan((prev) => ({ ...prev, actual: { ...prev.actual, education: value } }))} />
               <PlanField label="작업중지 계획" value={plan.plan?.work_stop} onChange={(value) => setPlan((prev) => ({ ...prev, plan: { ...prev.plan, work_stop: value } }))} />
+              <PlanField label="작업중지 실적" value={plan.actual?.work_stop} onChange={(value) => setPlan((prev) => ({ ...prev, actual: { ...prev.actual, work_stop: value } }))} />
+              <PlanField label="출입정지 실적" value={plan.actual?.suspension} onChange={(value) => setPlan((prev) => ({ ...prev, actual: { ...prev.actual, suspension: value } }))} />
+              <PlanField label="재해 실적" value={plan.actual?.incident} onChange={(value) => setPlan((prev) => ({ ...prev, actual: { ...prev.actual, incident: value } }))} />
             </div>
             <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-800 dark:text-slate-100">
               {weeklyStatsFooter(plan)}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +20,7 @@ import {
 } from '@/lib/remoteSupport';
 import { markRelatedNotificationsAsRead } from '@/lib/notificationReadHelper';
 import { toast } from 'sonner';
+import { useSystemRealtimeOptional } from '@/providers/SystemRealtimeProvider';
 
 const resolveRoute = (n: any): string | null => resolveNotificationRoute(n, { mobileShell: false });
 
@@ -32,55 +33,32 @@ export function NotificationBell() {
   const [tab, setTab] = useState<'unread' | 'all'>('unread');
   const [nameById, setNameById] = useState<Record<string, string>>({});
   const [projectById, setProjectById] = useState<Record<string, string>>({});
+  const unreadCount = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
+  const listGen = useRef(0);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
+    const gen = ++listGen.current;
     const { data } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(30);
+    if (gen !== listGen.current) return;
     const rows = data || [];
     setNotifications(rows);
     const revealed = await fetchRevealedWorkStopNames(workStopIdsFromNotifications(rows));
+    if (gen !== listGen.current) return;
     setNameById(revealed);
-    setProjectById(await fetchProjectNames(rows.map((n: any) => String(n.project_id || ""))));
+    const projects = await fetchProjectNames(rows.map((n: any) => String(n.project_id || "")));
+    if (gen !== listGen.current) return;
+    setProjectById(projects);
   }, [user]);
 
   useEffect(() => {
-    fetchNotifications();
-    if (!user) return;
-
-    // Realtime: 새 알림 push
-    const channel = supabase
-      .channel(`notif-${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-        () => fetchNotifications(),
-      )
-      .subscribe();
-
-    // 폴백 폴링 (realtime 끊김 대비) - 백그라운드 탭에서는 조회 일시중지
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      fetchNotifications();
-    }, 60_000);
-
-    const onVisibilityChange = () => {
-      if (!document.hidden) fetchNotifications();
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      supabase.removeChannel(channel);
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [user, fetchNotifications]);
-
-  const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
+    if (open) void fetchNotifications();
+  }, [open, unreadCount, fetchNotifications]);
   const visible = useMemo(
     () => (tab === 'unread' ? notifications.filter(n => !n.is_read) : notifications),
     [notifications, tab],
@@ -93,9 +71,11 @@ export function NotificationBell() {
 
   const markAllRead = async () => {
     if (!user) return;
-    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
-    if (unreadIds.length === 0) return;
-    await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', user.id)
+      .eq('is_read', false);
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 

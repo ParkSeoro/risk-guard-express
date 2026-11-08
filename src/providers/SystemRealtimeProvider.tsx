@@ -21,6 +21,11 @@ import { resolveSiteTrackingFences } from "@/lib/tracking/siteTrackBounds";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { readActiveProjectId } from "@/lib/activeProject";
 import { toast } from "sonner";
+import {
+  UNREAD_RECOUNT_DEBOUNCE_MS,
+  createCoalescedCall,
+  notificationBadgeRefreshKind,
+} from "@/lib/notificationBadgeRefresh";
 
 export type GpsFix = {
   lat: number;
@@ -108,6 +113,9 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
     };
     void load();
 
+    const recountBurst = createCoalescedCall(UNREAD_RECOUNT_DEBOUNCE_MS, () => {
+      void load();
+    });
     const channel = supabase
       .channel(`sys-notif-${user.id}`)
       .on(
@@ -118,14 +126,33 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           table: "notifications",
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
-          void load();
+        (payload) => {
+          if (notificationBadgeRefreshKind(payload.eventType) === "immediate") {
+            void load();
+            return;
+          }
+          recountBurst.schedule();
         },
       )
       .subscribe();
 
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void load();
+    }, 60_000);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void load();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
+      recountBurst.cancel();
+      clearInterval(interval);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
       void supabase.removeChannel(channel);
     };
   }, [user?.id]);

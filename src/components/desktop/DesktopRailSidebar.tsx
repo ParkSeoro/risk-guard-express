@@ -44,6 +44,8 @@ import {
   RefreshCw,
   Globe,
   ExternalLink,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -97,6 +99,15 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     label: "대화목록",
     path: "/app/admin/desktop-workspace?tab=rooms",
     icon: MessageSquare,
+    group: "comm",
+    windowWidth: DESKTOP_MESSENGER_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_MESSENGER_WINDOW_SIZE.height,
+  },
+  {
+    id: "ai-council" as any,
+    label: "AI 의회",
+    path: "/app/admin/desktop-workspace?tab=council&room=dev-ai-council",
+    icon: Sparkles,
     group: "comm",
     windowWidth: DESKTOP_MESSENGER_WINDOW_SIZE.width,
     windowHeight: DESKTOP_MESSENGER_WINDOW_SIZE.height,
@@ -433,18 +444,26 @@ export function DesktopRailSidebar() {
   const isItemActive = (item: RailMenuItem): boolean => {
     const pathname = location.pathname;
     const searchParams = new URLSearchParams(location.search);
+    if ((item.id as string) === "ai-council") {
+      return (
+        (pathname.includes("/desktop-workspace") &&
+          (searchParams.get("tab") === "council" || searchParams.get("room") === "dev-ai-council")) ||
+        pathname.includes("/ai-council")
+      );
+    }
     if (item.id === "directory") {
       return (
         pathname.includes("/desktop-workspace") &&
         searchParams.get("tab") !== "rooms" &&
+        searchParams.get("tab") !== "council" &&
         !searchParams.get("room")
       );
     }
     if (item.id === "rooms") {
       return (
         (pathname.includes("/desktop-workspace") &&
-          (searchParams.get("tab") === "rooms" || !!searchParams.get("room"))) ||
-        pathname.includes("/messenger")
+          (searchParams.get("tab") === "rooms" || (!!searchParams.get("room") && searchParams.get("room") !== "dev-ai-council"))) ||
+        (pathname.includes("/messenger") && searchParams.get("room") !== "dev-ai-council")
       );
     }
     if (item.path === "/app/admin") {

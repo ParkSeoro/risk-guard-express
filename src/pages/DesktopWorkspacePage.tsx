@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "@/components/messenger/MessengerRoomList";
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";
+import { AiCouncilChatPane } from "@/components/messenger/AiCouncilChatPane";
 import { NewChatDialog } from "@/components/messenger/NewChatDialog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,8 +37,12 @@ export default function DesktopWorkspacePage() {
 
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(roomParam);
-  const [messengerTab, setMessengerTab] = useState<"directory" | "rooms">(
-    roomParam || tabParam === "rooms" ? "rooms" : "directory",
+  const [messengerTab, setMessengerTab] = useState<"directory" | "rooms" | "council">(
+    roomParam === "dev-ai-council" || tabParam === "council"
+      ? "council"
+      : roomParam || tabParam === "rooms"
+        ? "rooms"
+        : "directory",
   );
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(true);
@@ -46,9 +51,12 @@ export default function DesktopWorkspacePage() {
     setDesktopShellActive(true);
   }, []);
 
-  // 좌측 아이콘 레일에서 대화상대(?tab=directory) / 대화목록(?tab=rooms) 클릭 시 동기화
+  // 좌측 아이콘 레일에서 대화상대(?tab=directory) / 대화목록(?tab=rooms) / AI의회(?tab=council) 클릭 시 동기화
   useEffect(() => {
-    if (roomParam) {
+    if (roomParam === "dev-ai-council" || tabParam === "council") {
+      setSelectedRoomId("dev-ai-council");
+      setMessengerTab("council");
+    } else if (roomParam) {
       setSelectedRoomId(roomParam);
       setMessengerTab("rooms");
     } else if (tabParam === "rooms") {
@@ -105,8 +113,13 @@ export default function DesktopWorkspacePage() {
 
   const handleSelectRoom = (room: ChatRoom) => {
     setSelectedRoomId(room.id);
-    setMessengerTab("rooms");
-    setSearchParams({ tab: "rooms", room: room.id }, { replace: true });
+    if (room.id === "dev-ai-council") {
+      setMessengerTab("council");
+      setSearchParams({ tab: "council", room: "dev-ai-council" }, { replace: true });
+    } else {
+      setMessengerTab("rooms");
+      setSearchParams({ tab: "rooms", room: room.id }, { replace: true });
+    }
   };
 
   const handlePopoutRoom = (room: ChatRoom) => {
@@ -238,9 +251,18 @@ export default function DesktopWorkspacePage() {
         </div>
       </header>
 
-      {/* 본문: 대화상대/대화목록 또는 선택된 채팅방 */}
+      {/* 본문: AI Council 또는 대화상대/대화목록 또는 선택된 채팅방 */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {selectedRoom && messengerTab === "rooms" ? (
+        {selectedRoomId === "dev-ai-council" || messengerTab === "council" ? (
+          <AiCouncilChatPane
+            onBack={() => {
+              setSelectedRoomId(null);
+              setMessengerTab("rooms");
+              setSearchParams({ tab: "rooms" }, { replace: true });
+              void loadRooms();
+            }}
+          />
+        ) : selectedRoom && messengerTab === "rooms" ? (
           <MessengerChatPane
             room={selectedRoom}
             onBack={() => {

@@ -43,6 +43,7 @@ const groups: Group[] = [
       { title: "공지사항", url: "/announcements", icon: Megaphone },
       { title: "알림", url: "/alerts", icon: Bell },
       { title: "실시간 메신저", url: "/messenger", icon: MessageSquare },
+      { title: "🏛️ AI 의회 관제실", url: "/messenger?room=dev-ai-council", icon: Bot },
       { title: "대시보드", url: "/", icon: LayoutDashboard },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: "approvals" },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },

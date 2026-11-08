@@ -123,6 +123,7 @@ function AdminAppRoutesInner() {
             <Route path="manual" element={<Navigate to="/manual" replace />} />
             <Route path="profile" element={<P.LazyProfile />} />
             <Route path="messenger" element={<P.LazyMessengerPage />} />
+            <Route path="ai-council" element={<Navigate to="/app/admin/messenger?room=dev-ai-council" replace />} />
             <Route path="desktop-workspace" element={<P.LazyDesktopWorkspacePage />} />
             <Route path="settings" element={<RoleGuard><P.LazySettings /></RoleGuard>} />
             <Route path="settings/account" element={<P.LazySettingsAccount />} />

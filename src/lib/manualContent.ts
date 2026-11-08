@@ -499,6 +499,7 @@ export const MANUAL_SIDEBAR_EXCEPTIONS: string[] = [
   "공지사항",
   "건설안전팀",
   "실시간 메신저",
+  "🏛️ AI 의회 관제실",
 ];
 
 export function manualTextMatches(query: string, ...fields: string[]): boolean {

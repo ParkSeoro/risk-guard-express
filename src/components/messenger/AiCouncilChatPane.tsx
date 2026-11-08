@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { askCouncilCursor } from "@/lib/councilCursor";
+import { COUNCIL_MAX_CURSOR_TURNS, COUNCIL_MAX_ROUNDS, councilCanClose, readVerdict } from "@/lib/councilDebate";
 import { askCouncilProvider } from "@/lib/councilProvider";
 
 interface CouncilMessage {
@@ -65,14 +66,14 @@ export function AiCouncilChatPane() {
       role: "시스템 안내",
       avatar: "🏛️",
       color: "#6366F1",
-      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\n웹, 모바일 앱, PC 메신저 어디서든 시스템에 장애가 발생하거나 새로운 아키텍처 아이디어가 있을 때 지시하시면, 4대 AI(Gemini, Cursor, Claude, GPT)가 원탁 토론을 통해 무장애 검증된 솔루션과 코드 패치를 도출합니다.",
+      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\n주제를 던지면 Gemini, Claude, GPT가 의견을 있는 그대로 여러 가지 주고받습니다. Cursor는 실제 코드와 정해 둔 규칙을 보고 된다 또는 안된다를 판정합니다. 그 판정이 되고, 남는 반대가 없을 때만 합의합니다. 회의 중에는 코드를 고치지 않습니다.",
       timestamp: "방금 전"
     }
   ]);
   const [inputText, setInputText] = useState("");
   const [isDebating, setIsDebating] = useState(false);
   const [typingStatus, setTypingStatus] = useState<string | null>(null);
-  const consensusScore = 95;
+  const [meetingLabel, setMeetingLabel] = useState("대기");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [config, setConfig] = useState<CouncilConfig>(() => {
     try {
@@ -131,213 +132,123 @@ export function AiCouncilChatPane() {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      setTypingStatus("🏛️ 4대 AI 의회가 코드베이스 분석 및 실제 테스트·PR 파이프라인을 가동 중입니다...");
-      
-      let processed = false;
+      setMeetingLabel("토론 중");
+      const spoken: { name: string; text: string }[] = [];
+      const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      let seq = 0;
+      const speak = (message: Omit<CouncilMessage, "id" | "timestamp">) => {
+        setMessages((prev) => [...prev, { ...message, id: `seat-${Date.now()}-${seq++}`, timestamp: clock() }]);
+      };
+      const priorFor = (instruction: string) => {
+        const body = spoken.map((turn) => `${turn.name}:\n${turn.text}`).join("\n\n");
+        return `${instruction}\n\n${body}`.trim();
+      };
+      let cursorText = "";
+      let cursorCalls = 0;
+      let latest = { gemini: "", claude: "", gpt: "" };
+      let closed = false;
 
-      // 1. 로컬 SafeNex 백엔드 API 우선 시도 (127.0.0.1:3000)
-      const apiEndpoints = [
-        "/api/council/debate",
-        "http://127.0.0.1:3000/api/council/debate",
-      ];
+      for (let round = 1; round <= COUNCIL_MAX_ROUNDS && !closed; round++) {
+        const followUp = round === 1
+          ? "첫 바퀴다. 주제만 보고 의견을 있는 그대로 모두 적어라."
+          : readVerdict(cursorText) === "된다"
+            ? "Cursor가 된다라고 한 안은 유지한 채, 남는 반대와 질문만 풀어라. 안을 바꾸면 마지막 줄은 판정: 계속이다."
+            : "Cursor 판정과 앞선 반대에 답하라. 고친 안과 아직 남는 의견을 있는 그대로 적어라.";
 
-      for (const endpoint of apiEndpoints) {
-        try {
-          const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: text, autoPr: true }),
-          });
-
-          const contentType = res.headers.get("content-type") || "";
-          if (res.ok && contentType.includes("application/json")) {
-            const data = await res.json();
-            if (data.turns && Array.isArray(data.turns)) {
-              const geminiTurn = data.turns.find((turn: { agentName?: string }) =>
-                String(turn.agentName || "").includes("Gemini"),
-              );
-              const claudeTurn = data.turns.find((turn: { agentName?: string }) =>
-                String(turn.agentName || "").includes("Claude"),
-              );
-              if (geminiTurn) {
-                geminiTurn.content = await askSeat(
-                  "gemini",
-                  text,
-                  "",
-                  "🔷 Gemini가 Supabase에 있는 키로 의제를 정리하고 있습니다...",
-                );
-              }
-              if (claudeTurn) {
-                claudeTurn.content = await askSeat(
-                  "anthropic",
-                  text,
-                  geminiTurn?.content || "",
-                  "📐 Claude가 Anthropic API에 설계 의견을 묻고 있습니다...",
-                );
-              }
-
-              const prior = data.turns
-                .filter((turn: { agentName?: string }) => !String(turn.agentName || "").includes("Cursor"))
-                .map((turn: { agentName?: string; content?: string }) => `${turn.agentName}: ${turn.content || ""}`)
-                .join("\n\n");
-              setTypingStatus("⚡ Cursor가 이 대화의 에이전트에게 의견을 묻고 있습니다...");
-              let cursorReply = "";
-              try {
-                cursorReply = await askCouncilCursor({ agenda: text, prior });
-              } catch (e) {
-                cursorReply = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
-              }
-              const cursorTurn = data.turns.find((turn: { agentName?: string }) =>
-                String(turn.agentName || "").includes("Cursor"),
-              );
-              if (cursorTurn) cursorTurn.content = cursorReply;
-              const gptTurn = data.turns.find((turn: { agentName?: string }) =>
-                /GPT|Guardian/i.test(String(turn.agentName || "")),
-              );
-              if (gptTurn) {
-                const gptPrior = data.turns
-                  .filter((turn: { agentName?: string }) => !/GPT|Guardian/i.test(String(turn.agentName || "")))
-                  .map((turn: { agentName?: string; content?: string }) => `${turn.agentName}: ${turn.content || ""}`)
-                  .join("\n\n");
-                gptTurn.content = await askSeat(
-                  "openai",
-                  text,
-                  gptPrior,
-                  "🛡️ GPT가 OpenAI API에 감사 의견을 묻고 있습니다...",
-                );
-              }
-              for (let i = 0; i < data.turns.length; i++) {
-                const turn = data.turns[i];
-                await new Promise((r) => setTimeout(r, 600));
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `turn-${Date.now()}-${i}`,
-                    sender: turn.agentName,
-                    role: turn.role,
-                    avatar: turn.avatar,
-                    color: turn.color,
-                    text: turn.content,
-                    isRfc: turn.agentName.includes("합의"),
-                    timestamp: turn.timestamp || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                  },
-                ]);
-              }
-              toast.success("관제실 발언을 불러왔습니다. Cursor 답변은 이 대화의 에이전트입니다.");
-              processed = true;
-              break;
-            }
-          }
-        } catch {
-          // 다음 엔드포인트 또는 클라이언트 엔진으로 계속
-        }
-      }
-
-      // 2. 백엔드 API 연결 불가 시 (원격 웹 또는 오프라인): 클라이언트 다이렉트 엔진 작동
-      if (!processed) {
-        const geminiText = await askSeat(
+        latest.gemini = await askSeat(
           "gemini",
           text,
-          "",
-          "🔷 Gemini가 Supabase에 있는 키로 의제를 정리하고 있습니다...",
+          priorFor(`${followUp}\n너는 Gemini다. 네 의견을 여러 가지면 그대로 적고, 앞선 각 포인트에 답하라.`),
+          `🔷 ${round}바퀴 Gemini가 의견을 말하고 있습니다...`,
         );
+        spoken.push({ name: "Gemini", text: latest.gemini });
+        speak({
+          sender: "Gemini Arbiter (원탁 의장 / Antigravity)",
+          role: `${round}바퀴 의견`,
+          avatar: "🔷",
+          color: "#4285F4",
+          text: latest.gemini,
+        });
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `gemini-${Date.now()}`,
-            sender: "Gemini Arbiter (원탁 의장 / Antigravity)",
-            role: "총괄 의장 & 오케스트레이터",
-            avatar: "🔷",
-            color: "#4285F4",
-            text: geminiText,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
-
-        // Turn 2: Claude through Anthropic, on the server.
-        const claudeText = await askSeat(
+        latest.claude = await askSeat(
           "anthropic",
           text,
-          geminiText,
-          "📐 Claude가 Anthropic API에 설계 의견을 묻고 있습니다...",
+          priorFor(`${followUp}\n너는 Claude다. Gemini와 다른 자리의 각 포인트에 동의 또는 반대를 말하고, 네 의견도 더하라.`),
+          `📐 ${round}바퀴 Claude가 앞선 의견에 답하고 있습니다...`,
         );
+        spoken.push({ name: "Claude", text: latest.claude });
+        speak({
+          sender: "Claude Architect (시스템 설계)",
+          role: `${round}바퀴 의견`,
+          avatar: "📐",
+          color: "#D97706",
+          text: latest.claude,
+        });
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `claude-${Date.now()}`,
-            sender: "Claude Architect (시스템 설계)",
-            role: "시스템 아키텍트",
-            avatar: "📐",
-            color: "#D97706",
-            text: claudeText,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
+        latest.gpt = await askSeat(
+          "openai",
+          text,
+          priorFor(`${followUp}\n너는 GPT다. 앞선 각 포인트에 동의 또는 반대를 말하고, 네 의견도 더하라.`),
+          `🛡️ ${round}바퀴 GPT가 앞선 의견에 답하고 있습니다...`,
+        );
+        spoken.push({ name: "GPT", text: latest.gpt });
+        speak({
+          sender: "GPT Guardian (무장애 안전 감사)",
+          role: `${round}바퀴 의견`,
+          avatar: "🛡️",
+          color: "#10B981",
+          text: latest.gpt,
+        });
 
-        // Turn 3: this Cursor cloud agent, not a scripted reply.
-        setTypingStatus("⚡ Cursor가 이 대화의 에이전트에게 의견을 묻고 있습니다...");
-        let cursorText = "";
-        try {
-          cursorText = await askCouncilCursor({
-            agenda: text,
-            prior: `Gemini:\n${geminiText}\n\nClaude:\n${claudeText}`,
-          });
-        } catch (e) {
-          cursorText = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
-        }
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `cursor-${Date.now()}`,
+        const threeAgreed = councilCanClose([latest.gemini, latest.claude, latest.gpt], cursorText);
+        const askCursor = cursorCalls < COUNCIL_MAX_CURSOR_TURNS && (cursorCalls === 0 || !threeAgreed);
+        if (askCursor) {
+          setTypingStatus(`⚡ ${round}바퀴 Cursor가 코드와 규칙을 보고 있습니다...`);
+          try {
+            cursorText = await askCouncilCursor({
+              agenda: text,
+              prior: priorFor("너는 Cursor다. 실제 코드와 정해 둔 규칙을 보고, 걸리는 점을 모두 적어라."),
+            });
+          } catch (e) {
+            cursorText = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
+          }
+          cursorCalls += 1;
+          spoken.push({ name: "Cursor", text: cursorText });
+          speak({
             sender: "Cursor Builder (실무 코드 장인)",
-            role: "코드 구현 전문가",
+            role: `${round}바퀴 판정`,
             avatar: "⚡",
             color: "#38BDF8",
             text: cursorText,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
+          });
+        }
 
-        // Turn 4: GPT through OpenAI, on the server.
-        const gptText = await askSeat(
-          "openai",
-          text,
-          `Gemini:\n${geminiText}\n\nClaude:\n${claudeText}\n\nCursor:\n${cursorText}`,
-          "🛡️ GPT가 OpenAI API에 감사 의견을 묻고 있습니다...",
-        );
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `gpt-${Date.now()}`,
-            sender: "GPT Guardian (무장애 안전 감사)",
-            role: "품질 & 안전성 감사관",
-            avatar: "🛡️",
-            color: "#10B981",
-            text: gptText,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
-
-        // Turn 5: Final RFC
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `rfc-${Date.now()}`,
-            sender: "AI Council 의장단 (합의 완료)",
-            role: "최종 합의서 (Consensus RFC)",
+        if (councilCanClose([latest.gemini, latest.claude, latest.gpt], cursorText)) {
+          closed = true;
+          setMeetingLabel("합의");
+          speak({
+            sender: "AI Council 의장단",
+            role: "합의",
             avatar: "📜",
             color: "#818CF8",
             isRfc: true,
-            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **Gemini, Claude, Cursor, GPT 발언**: 위 메시지가 각 회사 API의 답변입니다.\n3. **합의**: 자동 점수로 계산하지 않습니다.`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
+            text: `합의했다.\n\n주제: ${text}\nCursor 판정: 된다\n\n위 마지막 발언이 합의된 안이다. 회의 중에는 코드를 고치지 않았다.`,
+          });
+          toast.success("관제실이 합의했습니다. 코드는 아직 고치지 않았습니다.");
+        }
+      }
 
-        toast.success("4대 AI의 원탁 합의안(RFC)이 도출되었습니다!");
+      if (!closed) {
+        setMeetingLabel("미합의");
+        speak({
+          sender: "AI Council 의장단",
+          role: "미합의",
+          avatar: "📜",
+          color: "#D97706",
+          isRfc: true,
+          text: `아직 합의하지 못했다.\n\n주제: ${text}\nCursor를 ${cursorCalls}번 불렀고, 마지막 판정은 위 Cursor 발언에 있다.\n남는 반대도 위 발언에 있다. 합의로 닫지 않았다.`,
+        });
+        toast("관제실이 합의하지 못했습니다. 남는 반대는 위 발언에 있습니다.");
       }
     } catch (err: any) {
       toast.error(`오류 발생: ${err.message}`);
@@ -359,8 +270,16 @@ export function AiCouncilChatPane() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold tracking-tight">SafeNex AI Council 관제실</h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 font-bold border border-emerald-800">
-                일치율 {consensusScore}%
+              <span
+                className={cn(
+                  "text-[10px] px-2 py-0.5 rounded-full font-bold border",
+                  meetingLabel === "합의" && "bg-emerald-950 text-emerald-400 border-emerald-800",
+                  meetingLabel === "미합의" && "bg-amber-950 text-amber-300 border-amber-800",
+                  meetingLabel === "토론 중" && "bg-sky-950 text-sky-300 border-sky-800",
+                  meetingLabel === "대기" && "bg-muted text-muted-foreground border-border",
+                )}
+              >
+                {meetingLabel}
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 text-indigo-300 font-mono">
                 MASTER

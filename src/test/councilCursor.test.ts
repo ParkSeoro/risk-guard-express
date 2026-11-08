@@ -11,6 +11,8 @@ describe("council cursor link", () => {
     expect(fn).toContain("CURSOR_API_KEY");
     expect(fn).toContain('rpc("is_master"');
     expect(fn).toContain("코드 수정, 커밋, 푸시, 풀 리퀘스트는 하지 말고");
+    expect(fn).toContain("판정: 된다");
+    expect(fn).toContain("판정: 안된다");
     expect(fn).not.toContain("sk-");
 
     expect(client).toContain('invoke("council-cursor"');

@@ -33,6 +33,9 @@ function councilPrompt(agenda: string, prior: string) {
   return [
     "이 메시지는 SafeNex AI Council 관제실의 Cursor 차례다.",
     "코드 수정, 커밋, 푸시, 풀 리퀘스트는 하지 말고 한국어로 토론 답변만 작성한다.",
+    "너는 저장소의 실제 코드, 동작, 이미 정해 둔 규칙을 보고 앞선 안을 판정한다.",
+    "걸리는 점이 여러 가지면 모두 적고 하나로 줄이지 않는다. 각 항목에 된다 또는 안 된다와 근거를 같이 적는다.",
+    "마지막 줄은 '판정: 된다' 또는 '판정: 안된다'만 적는다. 하나라도 규칙이나 실제 동작에 어긋나면 안된다.",
     "",
     "의제:",
     agenda,
@@ -102,7 +105,7 @@ Deno.serve(async (req) => {
   if (body.action === "start") {
     const agenda = clip(body.agenda, 2000);
     if (!agenda) return fail("의제가 비어 있습니다.", "empty_agenda");
-    const prior = clip(body.prior, 4000);
+    const prior = clip(body.prior, 14000);
     const res = await fetch(`https://api.cursor.com/v1/agents/${agentId}/runs`, {
       method: "POST",
       headers,

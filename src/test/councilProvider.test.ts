@@ -12,6 +12,8 @@ describe("council provider link", () => {
     expect(fn).toContain("gemini-3.8-flash");
     expect(fn).toContain("https://generativelanguage.googleapis.com/v1beta/models/");
     expect(fn).toContain("resolveGeminiApiKey");
+    expect(fn).toContain("있는 그대로");
+    expect(fn).toContain("판정: 합의가능");
     expect(fn).toContain("ANTHROPIC_API_KEY");
     expect(fn).toContain("OPENAI_API_KEY");
     expect(fn).toContain("https://api.anthropic.com/v1/messages");
@@ -29,7 +31,11 @@ describe("council provider link", () => {
     expect(pane).toContain('"gemini"');
     expect(pane).toContain('"anthropic"');
     expect(pane).toContain('"openai"');
+    expect(pane).toContain("COUNCIL_MAX_ROUNDS");
+    expect(pane).toContain("councilCanClose");
     expect(pane).not.toContain("메인 UI 루프 및 결재 트랜잭션 블로킹");
+    expect(pane).not.toContain("자동 점수로 계산하지 않습니다");
+    expect(pane).not.toContain("일치율");
     expect(pane).not.toContain("api.anthropic.com");
     expect(pane).not.toContain("api.openai.com");
     expect(pane).not.toContain("generativelanguage.googleapis.com");

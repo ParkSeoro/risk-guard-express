@@ -6,9 +6,9 @@ type CouncilProviderBody = {
   message?: string;
 };
 
-/** Ask Claude or GPT through the server. The browser does not hold those keys. */
+/** Ask Gemini, Claude, or GPT through the server. The browser does not hold those keys. */
 export async function askCouncilProvider(opts: {
-  seat: "anthropic" | "openai";
+  seat: "gemini" | "anthropic" | "openai";
   agenda: string;
   prior?: string;
 }) {

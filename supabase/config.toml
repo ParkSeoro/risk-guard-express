@@ -35,3 +35,7 @@ verify_jwt = false
 # magic link for that same user only (service role Admin API).
 [functions.desktop-web-handoff]
 verify_jwt = false
+
+# AI Council Cursor seat. Verifies the caller JWT and is_master, then calls the Cursor API.
+[functions.council-cursor]
+verify_jwt = false

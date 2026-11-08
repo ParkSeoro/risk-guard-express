@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { isApprovalRequestNotification } from '@/lib/notificationBadgeRefresh';
 
 function asPendingCount(data: unknown): number {
   if (typeof data === 'number' && Number.isFinite(data)) return Math.max(0, Math.trunc(data));
@@ -42,11 +43,32 @@ export function usePendingApprovalsCount() {
     };
     window.addEventListener('focus', onVisibilityChange);
     document.addEventListener('visibilitychange', onVisibilityChange);
+
+    // The approvals table is not in the realtime publication.
+    // A request notification insert is the event the badge can hear.
+    const channel = supabase
+      .channel(`pending-approvals-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (!isApprovalRequestNotification(payload.new)) return;
+          void load();
+        },
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
       clearInterval(t);
       window.removeEventListener('focus', onVisibilityChange);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      void supabase.removeChannel(channel);
     };
   }, [user]);
 

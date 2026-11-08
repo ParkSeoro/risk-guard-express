@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { fetchChatUnreadTotal } from "@/lib/messengerApi";
+import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
+import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { DesktopAppSettingsDialog } from "@/components/desktop/DesktopAppSettingsDialog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -227,8 +229,8 @@ export function DesktopRailSidebar() {
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [totalUnreadChats, setTotalUnreadChats] = useState(0);
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const pendingApprovalsCount = usePendingApprovalsCount();
+  const unreadNotificationsCount = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
   const [stagedUpdateVersion, setStagedUpdateVersion] = useState<string | null>(null);
 
   // 메신저 모드(대화상대/대화목록)에서는 54px 아이콘 레일 + 마우스 오버 시 열림(오버레이),
@@ -283,32 +285,19 @@ export function DesktopRailSidebar() {
     });
   }, [restrictToContractorUI, isMaster, currentSiteRole, hasRole]);
 
-  const loadBadges = useCallback(async () => {
+  const loadChatUnread = useCallback(async () => {
     if (!user) return;
     try {
-      const [chatUnread, approvalRes, { count: notifCount }] =
-        await Promise.all([
-          fetchChatUnreadTotal(),
-          supabase.rpc("count_my_pending_entity_approvals"),
-          supabase
-            .from("notifications")
-            .select("id", { count: "exact", head: true })
-            .eq("user_id", user.id)
-            .eq("is_read", false),
-        ]);
-      const approvalCount =
-        typeof approvalRes?.data === "number" ? approvalRes.data : 0;
+      const chatUnread = await fetchChatUnreadTotal();
       setTotalUnreadChats(chatUnread || 0);
-      setPendingApprovalsCount(approvalCount);
-      setUnreadNotificationsCount(notifCount || 0);
     } catch {
       /* ignore */
     }
   }, [user]);
 
   useEffect(() => {
-    void loadBadges();
-  }, [loadBadges, location.pathname, location.search]);
+    void loadChatUnread();
+  }, [loadChatUnread, location.pathname, location.search]);
 
   useEffect(() => {
     if (!user) return;
@@ -318,7 +307,7 @@ export function DesktopRailSidebar() {
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_room_messages" },
         (payload: any) => {
-          void loadBadges();
+          void loadChatUnread();
           if (payload.eventType === "INSERT") {
             const newMsg = payload.new;
             if (newMsg && newMsg.sender_id !== user.id) {
@@ -356,7 +345,6 @@ export function DesktopRailSidebar() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload: any) => {
-          void loadBadges();
           if (payload.eventType === "INSERT") {
             const newNotif = payload.new;
             if (newNotif) {
@@ -377,7 +365,6 @@ export function DesktopRailSidebar() {
                           if (user?.id && newNotif.related_id) {
                             void markRelatedNotificationsAsRead(user.id, newNotif.related_id);
                           }
-                          void loadBadges();
                           if (targetRoute.startsWith("http")) {
                             if (window.safenexDesktop?.openExternal) {
                               void window.safenexDesktop.openExternal(targetRoute);
@@ -405,7 +392,7 @@ export function DesktopRailSidebar() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, loadBadges, desktopSettings, totalUnreadChats, navigate]);
+  }, [user, loadChatUnread, desktopSettings, totalUnreadChats, navigate]);
 
   useEffect(() => {
     updateDesktopTaskbarBadge(totalUnreadChats + pendingApprovalsCount);

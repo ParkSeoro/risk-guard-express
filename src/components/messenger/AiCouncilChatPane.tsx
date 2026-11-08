@@ -23,6 +23,15 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { askCouncilCursor } from "@/lib/councilCursor";
 import { COUNCIL_MAX_CURSOR_TURNS, COUNCIL_MAX_ROUNDS, councilCanClose, readVerdict } from "@/lib/councilDebate";
+import {
+  appendCouncilTurn,
+  closeCouncilMeeting,
+  loadCouncilMeetings,
+  startCouncilMeeting,
+  type CouncilLogMeeting,
+  type CouncilSeat,
+} from "@/lib/councilLog";
+import { councilMemoryBrief } from "@/lib/councilMemory";
 import { askCouncilProvider } from "@/lib/councilProvider";
 
 interface CouncilMessage {
@@ -59,6 +68,23 @@ const DEFAULT_CONFIG: CouncilConfig = {
 
 const STORAGE_KEY = "safenex_ai_council_config";
 
+function seatFace(seat: string): Pick<CouncilMessage, "sender" | "role" | "avatar" | "color" | "isUser" | "isRfc"> {
+  switch (seat) {
+    case "user":
+      return { sender: "박서로 (Director)", role: "최종 결정권자", avatar: "👤", color: "#6366F1", isUser: true };
+    case "gemini":
+      return { sender: "Gemini Arbiter (원탁 의장 / Antigravity)", role: "의견", avatar: "🔷", color: "#4285F4" };
+    case "claude":
+      return { sender: "Claude Architect (시스템 설계)", role: "의견", avatar: "📐", color: "#D97706" };
+    case "gpt":
+      return { sender: "GPT Guardian (무장애 안전 감사)", role: "의견", avatar: "🛡️", color: "#10B981" };
+    case "cursor":
+      return { sender: "Cursor Builder (실무 코드 장인)", role: "판정", avatar: "⚡", color: "#38BDF8" };
+    default:
+      return { sender: "AI Council 의장단", role: "기록", avatar: "📜", color: "#818CF8", isRfc: true };
+  }
+}
+
 export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
   const [messages, setMessages] = useState<CouncilMessage[]>([
     {
@@ -67,7 +93,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
       role: "시스템 안내",
       avatar: "🏛️",
       color: "#6366F1",
-      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\n주제를 던지면 Gemini, Claude, GPT가 의견을 있는 그대로 여러 가지 주고받습니다. Cursor는 실제 코드와 정해 둔 규칙을 보고 된다 또는 안된다를 판정합니다. 그 판정이 되고, 남는 반대가 없을 때만 합의합니다. 회의 중에는 코드를 고치지 않습니다.",
+      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\n주제를 던지면 Gemini, Claude, GPT가 의견을 있는 그대로 여러 가지 주고받습니다. Cursor는 실제 코드와 정해 둔 규칙을 보고 된다 또는 안된다를 판정합니다. 그 판정이 되고, 남는 반대가 없을 때만 합의합니다. 회의 중에는 코드를 고치지 않고, 풀 리퀘스트와 머지는 디렉터만 합니다. 발언은 다음 회의가 참고하도록 남습니다.",
       timestamp: "방금 전"
     }
   ]);
@@ -75,6 +101,8 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
   const [isDebating, setIsDebating] = useState(false);
   const [typingStatus, setTypingStatus] = useState<string | null>(null);
   const [meetingLabel, setMeetingLabel] = useState("대기");
+  const savedMeetingsRef = useRef<CouncilLogMeeting[]>([]);
+  const debateStartedRef = useRef(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [config, setConfig] = useState<CouncilConfig>(() => {
     try {
@@ -91,6 +119,37 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, typingStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCouncilMeetings()
+      .then((rows) => {
+        if (cancelled || debateStartedRef.current) return;
+        savedMeetingsRef.current = rows;
+        if (!rows.length) return;
+        const clock = (iso: string) =>
+          new Date(iso).toLocaleString("ko-KR", {
+            timeZone: "Asia/Seoul",
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        setMessages(rows.flatMap((meeting) => meeting.turns.map((turn) => ({
+          id: turn.id,
+          ...seatFace(turn.seat),
+          role: turn.role_label || seatFace(turn.seat).role,
+          text: turn.body,
+          timestamp: clock(turn.created_at),
+        }))));
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("지난 관제실 기록을 불러오지 못했습니다.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const saveConfig = (newConfig: CouncilConfig) => {
     setConfig(newConfig);
@@ -119,6 +178,8 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
 
     setInputText("");
     setIsDebating(true);
+    debateStartedRef.current = true;
+    const memory = councilMemoryBrief(savedMeetingsRef.current);
 
     const userMsg: CouncilMessage = {
       id: `user-${Date.now()}`,
@@ -132,17 +193,40 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
     };
     setMessages(prev => [...prev, userMsg]);
 
+    const meetingId = await startCouncilMeeting(text);
+    if (meetingId) {
+      await appendCouncilTurn({
+        meetingId,
+        seat: "user",
+        round: null,
+        roleLabel: userMsg.role,
+        body: text,
+      }).catch(() => undefined);
+    }
+
     try {
       setMeetingLabel("토론 중");
       const spoken: { name: string; text: string }[] = [];
       const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       let seq = 0;
-      const speak = (message: Omit<CouncilMessage, "id" | "timestamp">) => {
+      const speak = async (
+        message: Omit<CouncilMessage, "id" | "timestamp">,
+        seat: CouncilSeat,
+        round: number | null,
+      ) => {
         setMessages((prev) => [...prev, { ...message, id: `seat-${Date.now()}-${seq++}`, timestamp: clock() }]);
+        if (!meetingId) return;
+        await appendCouncilTurn({
+          meetingId,
+          seat,
+          round,
+          roleLabel: message.role,
+          body: message.text,
+        }).catch(() => undefined);
       };
       const priorFor = (instruction: string) => {
         const body = spoken.map((turn) => `${turn.name}:\n${turn.text}`).join("\n\n");
-        return `${instruction}\n\n${body}`.trim();
+        return [instruction, memory, body].filter(Boolean).join("\n\n");
       };
       let cursorText = "";
       let cursorCalls = 0;
@@ -151,7 +235,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
 
       for (let round = 1; round <= COUNCIL_MAX_ROUNDS && !closed; round++) {
         const followUp = round === 1
-          ? "첫 바퀴다. 주제만 보고 의견을 있는 그대로 모두 적어라."
+          ? "첫 바퀴다. 이번 주제를 보고 의견을 있는 그대로 모두 적어라. 지난 회의는 이미 끝난 결론만 참고하라."
           : readVerdict(cursorText) === "된다"
             ? "Cursor가 된다라고 한 안은 유지한 채, 남는 반대와 질문만 풀어라. 안을 바꾸면 마지막 줄은 판정: 계속이다."
             : "Cursor 판정과 앞선 반대에 답하라. 고친 안과 아직 남는 의견을 있는 그대로 적어라.";
@@ -163,13 +247,13 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
           `🔷 ${round}바퀴 Gemini가 의견을 말하고 있습니다...`,
         );
         spoken.push({ name: "Gemini", text: latest.gemini });
-        speak({
+        await speak({
           sender: "Gemini Arbiter (원탁 의장 / Antigravity)",
           role: `${round}바퀴 의견`,
           avatar: "🔷",
           color: "#4285F4",
           text: latest.gemini,
-        });
+        }, "gemini", round);
 
         latest.claude = await askSeat(
           "anthropic",
@@ -178,13 +262,13 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
           `📐 ${round}바퀴 Claude가 앞선 의견에 답하고 있습니다...`,
         );
         spoken.push({ name: "Claude", text: latest.claude });
-        speak({
+        await speak({
           sender: "Claude Architect (시스템 설계)",
           role: `${round}바퀴 의견`,
           avatar: "📐",
           color: "#D97706",
           text: latest.claude,
-        });
+        }, "claude", round);
 
         latest.gpt = await askSeat(
           "openai",
@@ -193,13 +277,13 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
           `🛡️ ${round}바퀴 GPT가 앞선 의견에 답하고 있습니다...`,
         );
         spoken.push({ name: "GPT", text: latest.gpt });
-        speak({
+        await speak({
           sender: "GPT Guardian (무장애 안전 감사)",
           role: `${round}바퀴 의견`,
           avatar: "🛡️",
           color: "#10B981",
           text: latest.gpt,
-        });
+        }, "gpt", round);
 
         const threeAgreed = councilCanClose([latest.gemini, latest.claude, latest.gpt], cursorText);
         const askCursor = cursorCalls < COUNCIL_MAX_CURSOR_TURNS && (cursorCalls === 0 || !threeAgreed);
@@ -215,41 +299,47 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
           }
           cursorCalls += 1;
           spoken.push({ name: "Cursor", text: cursorText });
-          speak({
+          await speak({
             sender: "Cursor Builder (실무 코드 장인)",
             role: `${round}바퀴 판정`,
             avatar: "⚡",
             color: "#38BDF8",
             text: cursorText,
-          });
+          }, "cursor", round);
         }
 
         if (councilCanClose([latest.gemini, latest.claude, latest.gpt], cursorText)) {
           closed = true;
           setMeetingLabel("합의");
-          speak({
+          await speak({
             sender: "AI Council 의장단",
             role: "합의",
             avatar: "📜",
             color: "#818CF8",
             isRfc: true,
-            text: `합의했다.\n\n주제: ${text}\nCursor 판정: 된다\n\n위 마지막 발언이 합의된 안이다. 회의 중에는 코드를 고치지 않았다.`,
-          });
+            text: `합의했다.\n\n주제: ${text}\nCursor 판정: 된다\n\n위 마지막 발언이 합의된 안이다. 회의 중에는 코드를 고치지 않았고, 풀 리퀘스트와 머지는 하지 않았다.`,
+          }, "chair", round);
+          if (meetingId) await closeCouncilMeeting(meetingId, "합의").catch(() => undefined);
           toast.success("관제실이 합의했습니다. 코드는 아직 고치지 않았습니다.");
         }
       }
 
       if (!closed) {
         setMeetingLabel("미합의");
-        speak({
+        await speak({
           sender: "AI Council 의장단",
           role: "미합의",
           avatar: "📜",
           color: "#D97706",
           isRfc: true,
-          text: `아직 합의하지 못했다.\n\n주제: ${text}\nCursor를 ${cursorCalls}번 불렀고, 마지막 판정은 위 Cursor 발언에 있다.\n남는 반대도 위 발언에 있다. 합의로 닫지 않았다.`,
-        });
+          text: `아직 합의하지 못했다.\n\n주제: ${text}\nCursor를 ${cursorCalls}번 불렀고, 마지막 판정은 위 Cursor 발언에 있다.\n남는 반대도 위 발언에 있다. 합의로 닫지 않았고, 풀 리퀘스트와 머지는 하지 않았다.`,
+        }, "chair", null);
+        if (meetingId) await closeCouncilMeeting(meetingId, "미합의").catch(() => undefined);
         toast("관제실이 합의하지 못했습니다. 남는 반대는 위 발언에 있습니다.");
+      }
+      if (meetingId) {
+        const fresh = await loadCouncilMeetings().catch(() => null);
+        if (fresh) savedMeetingsRef.current = fresh;
       }
     } catch (err: any) {
       toast.error(`오류 발생: ${err.message}`);

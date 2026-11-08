@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { messengerHomePath } from "@/lib/messengerPath";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { canOpenCouncil } from "@/lib/councilAccess";
 
 interface MessengerDrawerProps {
   isOpen: boolean;
@@ -138,7 +139,7 @@ export function MessengerDrawer({
 
         {/* 본문 (목록 또는 채팅방) */}
         <div className="flex-1 min-h-0 flex flex-col">
-          {selectedRoomId === "dev-ai-council" ? (
+          {selectedRoomId === "dev-ai-council" && canOpenCouncil(user) ? (
             <AiCouncilChatPane />
           ) : selectedRoom ? (
             <MessengerChatPane

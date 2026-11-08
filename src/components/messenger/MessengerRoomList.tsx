@@ -32,6 +32,7 @@ import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { canOpenCouncil } from "@/lib/councilAccess";
 
 export const DEV_COUNCIL_ROOM: ChatRoom = {
   id: "dev-ai-council",
@@ -72,13 +73,8 @@ export function MessengerRoomList({
   hideHeader = false,
   hideTopTabs = false,
 }: MessengerRoomListProps) {
-  const { user, roles } = useAuth();
-  const isMasterDeveloper =
-    true ||
-    roles?.includes("master") ||
-    user?.email?.toLowerCase().includes("seoro") ||
-    user?.user_metadata?.full_name?.includes("서로") ||
-    user?.email?.includes("ParkSeoro");
+  const { user } = useAuth();
+  const isCouncilDirector = canOpenCouncil(user);
 
   const [internalTab, setInternalTab] = useState<"rooms" | "directory">("rooms");
   const activeTab = forcedTab ?? internalTab;
@@ -354,7 +350,7 @@ export function MessengerRoomList({
       {activeTab === "rooms" ? (
         <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-border/60">
           {/* 박서로 디렉터 마스터 전용 AI Council 무장애 의회 관제실 */}
-          {isMasterDeveloper && (
+          {isCouncilDirector && (
             <div className="p-2 bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-card/60 border-b">
               <button
                 type="button"

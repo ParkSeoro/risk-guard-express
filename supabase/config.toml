@@ -36,10 +36,10 @@ verify_jwt = false
 [functions.desktop-web-handoff]
 verify_jwt = false
 
-# AI Council Cursor seat. Verifies the caller JWT and is_master, then calls the Cursor API.
+# AI Council Cursor seat. Verifies the caller JWT and is_council_director, then calls the Cursor API.
 [functions.council-cursor]
 verify_jwt = false
 
-# AI Council Gemini, Claude, and GPT seats. Verifies the caller JWT and is_master, then calls each company API.
+# AI Council Gemini, Claude, and GPT seats. Verifies the caller JWT and is_council_director, then calls each company API.
 [functions.council-provider]
 verify_jwt = false

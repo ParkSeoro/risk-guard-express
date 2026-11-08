@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { MessageSquare, Users, Plus, Globe, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { canOpenCouncil } from "@/lib/councilAccess";
 
 export default function DesktopWorkspacePage() {
   const navigate = useNavigate();
@@ -53,7 +54,14 @@ export default function DesktopWorkspacePage() {
 
   // 좌측 아이콘 레일에서 대화상대(?tab=directory) / 대화목록(?tab=rooms) / AI의회(?tab=council) 클릭 시 동기화
   useEffect(() => {
-    if (roomParam === "dev-ai-council" || tabParam === "council") {
+    const wantsCouncil = roomParam === "dev-ai-council" || tabParam === "council";
+    if (wantsCouncil && !canOpenCouncil(user)) {
+      setSelectedRoomId(null);
+      setMessengerTab("rooms");
+      setSearchParams({ tab: "rooms" }, { replace: true });
+      return;
+    }
+    if (wantsCouncil) {
       setSelectedRoomId("dev-ai-council");
       setMessengerTab("council");
     } else if (roomParam) {
@@ -66,7 +74,7 @@ export default function DesktopWorkspacePage() {
       setSelectedRoomId(null);
       setMessengerTab("directory");
     }
-  }, [roomParam, tabParam]);
+  }, [roomParam, tabParam, user, setSearchParams]);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -142,8 +150,7 @@ export default function DesktopWorkspacePage() {
   }
 
   const isRoomViewOpen =
-    selectedRoomId === "dev-ai-council" ||
-    messengerTab === "council" ||
+    (canOpenCouncil(user) && (selectedRoomId === "dev-ai-council" || messengerTab === "council")) ||
     Boolean(selectedRoom && messengerTab === "rooms");
 
   return (
@@ -260,7 +267,7 @@ export default function DesktopWorkspacePage() {
 
       {/* 본문: AI Council 또는 대화상대/대화목록 또는 선택된 채팅방 */}
       <div className="flex-1 min-h-0 min-w-0 w-full flex overflow-hidden">
-        {selectedRoomId === "dev-ai-council" || messengerTab === "council" ? (
+        {(selectedRoomId === "dev-ai-council" || messengerTab === "council") && canOpenCouncil(user) ? (
           <AiCouncilChatPane
             onBack={() => {
               setSelectedRoomId(null);
@@ -295,7 +302,7 @@ export default function DesktopWorkspacePage() {
               }}
               currentProjectId={projectAccess?.selectedProject}
               loading={loadingRooms}
-              forcedTab={messengerTab}
+              forcedTab={messengerTab === "council" ? "rooms" : messengerTab}
               onTabChange={(t) => {
                 setMessengerTab(t);
                 setSearchParams({ tab: t }, { replace: true });

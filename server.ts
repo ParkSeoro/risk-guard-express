@@ -154,11 +154,11 @@ app.post('/api/ai/safety-assistant', async (req, res) => {
 // 4-1. AI Council 실체형 오케스트레이터 API (실제 코드/테스트/GitHub 연동)
 app.post('/api/council/debate', async (req, res) => {
   try {
-    const { prompt, autoPr } = req.body;
+    const { prompt } = req.body;
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'prompt is required' });
     }
-    const result = await runRealCouncilPipeline(prompt, { autoPr: !!autoPr });
+    const result = await runRealCouncilPipeline(prompt);
     res.json(result);
   } catch (err: any) {
     console.error('[AI Council API Error]:', err);

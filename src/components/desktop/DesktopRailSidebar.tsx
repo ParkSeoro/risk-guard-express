@@ -7,6 +7,7 @@ import { DesktopAppSettingsDialog } from "@/components/desktop/DesktopAppSetting
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { canOpenCouncil } from "@/lib/councilAccess";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 import { isAllowedForContractor } from "@/lib/contractorRouteAccess";
 import {
@@ -274,6 +275,7 @@ export function DesktopRailSidebar() {
 
   const visibleItems = useMemo(() => {
     return DESKTOP_RAIL_ITEMS.filter((item) => {
+      if ((item.id as string) === "ai-council") return canOpenCouncil(user);
       if (item.group === "comm") return true;
       if (restrictToContractorUI) {
         if (item.adminOnly) return false;
@@ -294,7 +296,7 @@ export function DesktopRailSidebar() {
       }
       return true;
     });
-  }, [restrictToContractorUI, isMaster, currentSiteRole, hasRole]);
+  }, [restrictToContractorUI, isMaster, currentSiteRole, hasRole, user]);
 
   const loadChatUnread = useCallback(async () => {
     if (!user) return;

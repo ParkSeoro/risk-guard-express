@@ -98,7 +98,7 @@ export function AiCouncilChatPane() {
   };
 
   const askSeat = async (
-    seat: "anthropic" | "openai",
+    seat: "gemini" | "anthropic" | "openai",
     agenda: string,
     prior: string,
     status: string,
@@ -159,6 +159,14 @@ export function AiCouncilChatPane() {
               const claudeTurn = data.turns.find((turn: { agentName?: string }) =>
                 String(turn.agentName || "").includes("Claude"),
               );
+              if (geminiTurn) {
+                geminiTurn.content = await askSeat(
+                  "gemini",
+                  text,
+                  "",
+                  "🔷 Gemini가 Supabase에 있는 키로 의제를 정리하고 있습니다...",
+                );
+              }
               if (claudeTurn) {
                 claudeTurn.content = await askSeat(
                   "anthropic",
@@ -227,14 +235,12 @@ export function AiCouncilChatPane() {
 
       // 2. 백엔드 API 연결 불가 시 (원격 웹 또는 오프라인): 클라이언트 다이렉트 엔진 작동
       if (!processed) {
-        const isGithubPr = /pr|pull request|깃허브|github|깃/i.test(text);
-
-        // Turn 1: Gemini Arbiter
-        setTypingStatus("🔷 Gemini Arbiter가 요구사항 및 아키텍처를 분석 중입니다...");
-        await new Promise((r) => setTimeout(r, 700));
-        const geminiText = isGithubPr
-          ? `사용자님의 지시사항을 분석했습니다: "${text}"\n\n1. 요구사항 진단: GitHub 원격 저장소(ParkSeoro/risk-guard-express)에 PR 발행 및 연동 상태 점검 요청.\n2. 환경 검토: gh CLI 및 git이 정상 세팅되어 있어 실제 브랜치 생성 및 PR 생성이 100% 가능합니다.\n3. 의제 제안: 4대 AI 합의 코드를 GitHub PR로 등록하는 절차를 가동합니다.`
-          : `사용자님의 지시사항을 분석했습니다: "${text}"\n\n1. 문제 진단: SafeNex 무장애 운영을 위한 비동기 분리 및 데이터 정합성 검토.\n2. 해결 방향: 메인 UI 루프 및 결재 트랜잭션 블로킹을 원천 차단하는 마이크로태스크 구조 채택.\n3. 아키텍트와 코드 장인에게 실무 패치 작성을 요청합니다.`;
+        const geminiText = await askSeat(
+          "gemini",
+          text,
+          "",
+          "🔷 Gemini가 Supabase에 있는 키로 의제를 정리하고 있습니다...",
+        );
 
         setMessages((prev) => [
           ...prev,
@@ -326,7 +332,7 @@ export function AiCouncilChatPane() {
             avatar: "📜",
             color: "#818CF8",
             isRfc: true,
-            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **Claude, Cursor, GPT 발언**: 위 메시지가 각 회사 API의 답변입니다.\n3. **합의**: 자동 점수로 계산하지 않습니다.`,
+            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **Gemini, Claude, Cursor, GPT 발언**: 위 메시지가 각 회사 API의 답변입니다.\n3. **합의**: 자동 점수로 계산하지 않습니다.`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           },
         ]);
@@ -526,12 +532,9 @@ export function AiCouncilChatPane() {
               {/* Gemini */}
               <div className="space-y-1 p-2.5 rounded-xl border bg-card">
                 <span className="font-bold text-blue-400">🔷 Gemini Arbiter</span>
-                <Input
-                  value={config.geminiModel}
-                  onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
-                  placeholder="google/gemini-2.0-flash-001"
-                  className="text-xs h-7 font-mono"
-                />
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  브라우저 키가 아닙니다. 서버의 GEMINI_API_KEY로 Gemini 4 Argon에 묻고, 그 모델을 쓸 수 없으면 Gemini 3.8 Flash로 넘깁니다.
+                </p>
               </div>
 
               {/* Cursor */}

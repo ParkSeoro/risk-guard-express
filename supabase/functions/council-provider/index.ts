@@ -1,6 +1,7 @@
-// Claude and GPT seats of the AI Council. Master-only.
+// Gemini, Claude, and GPT seats of the AI Council. Master-only.
 // The browser never sees the provider keys. One call returns that seat's reply.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGeminiApiKey } from "./geminiKey.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,7 +10,16 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const GEMINI_MODELS = ["gemini-4-argon", "gemini-3.8-flash"] as const;
+
 const SEATS = {
+  gemini: {
+    secret: "GEMINI_API_KEY",
+    modelEnv: "GEMINI_COUNCIL_MODEL",
+    model: GEMINI_MODELS[0],
+    missing: "Supabase의 GEMINI_API_KEY가 없습니다. Vault 또는 Edge Function 시크릿에 그 이름으로 넣어 주세요.",
+    role: "당신은 SafeNex AI Council의 의장 Gemini다. 의제와 앞선 발언만 보고 한국어로 쟁점과 결정이 필요한 사항을 정리한다. 실행하지 않은 테스트나 합의율을 만들지 않는다. 미리 적어 둔 진단 문장을 반복하지 않는다.",
+  },
   anthropic: {
     secret: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_COUNCIL_MODEL",
@@ -25,6 +35,8 @@ const SEATS = {
     role: "당신은 SafeNex AI Council의 감사 GPT다. 의제와 앞선 발언만 보고 한국어로 의견을 작성한다. 실행하지 않은 테스트 결과나 합의율을 만들지 않는다.",
   },
 } as const;
+
+type SeatName = keyof typeof SEATS;
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -44,6 +56,61 @@ function clip(value: unknown, max: number) {
 
 function prompt(agenda: string, prior: string) {
   return `의제:\n${agenda}\n\n앞선 발언:\n${prior || "(없음)"}`;
+}
+
+function isSeat(value: unknown): value is SeatName {
+  return value === "gemini" || value === "anthropic" || value === "openai";
+}
+
+function geminiReply(payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> }): string {
+  const parts = payload?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .filter((part) => part && typeof part.text === "string" && !part.thought)
+    .map((part) => part.text as string)
+    .join("\n")
+    .trim();
+}
+
+function geminiModelMissing(status: number, payload: { error?: { message?: string } }): boolean {
+  const message = String(payload?.error?.message || "");
+  return status === 404 || /not found|is not found|not supported|unknown model/i.test(message);
+}
+
+async function callGemini(apiKey: string, model: string, role: string, userText: string, timeoutMs: number) {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: role }] },
+          contents: [{ role: "user", parts: [{ text: userText }] }],
+          generationConfig: {
+            maxOutputTokens: 2048,
+            thinkingConfig: { thinkingLevel: "low" },
+          },
+        }),
+      },
+    );
+    const payload = await res.json().catch(() => ({}));
+    return { res, payload, timedOut: false };
+  } catch (error) {
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    if (!timedOut) throw error;
+    return { res: null, payload: {}, timedOut: true };
+  }
+}
+
+function tryNextGeminiModel(status: number, payload: { error?: { message?: string } }, timedOut: boolean): boolean {
+  if (timedOut) return true;
+  if (status === 401 || status === 403) return false;
+  return geminiModelMissing(status, payload) || status === 400 || status === 408 || status === 429 || status >= 500;
 }
 
 Deno.serve(async (req) => {
@@ -74,7 +141,7 @@ Deno.serve(async (req) => {
   });
   const { data: isMaster, error: roleErr } = await admin.rpc("is_master", { _user_id: callerId });
   if (roleErr || !isMaster) {
-    return fail("마스터 계정만 관제실의 Claude와 GPT를 부를 수 있습니다.", "forbidden");
+    return fail("마스터 계정만 관제실의 Gemini, Claude, GPT를 부를 수 있습니다.", "forbidden");
   }
 
   let body: { seat?: string; agenda?: string; prior?: string };
@@ -84,19 +151,42 @@ Deno.serve(async (req) => {
     return fail("요청 형식이 올바르지 않습니다.", "invalid_json");
   }
 
-  const seat = body.seat === "openai" || body.seat === "anthropic" ? SEATS[body.seat] : null;
-  if (!seat) return fail("자리 이름이 올바르지 않습니다.", "unknown_seat");
+  if (!isSeat(body.seat)) return fail("자리 이름이 올바르지 않습니다.", "unknown_seat");
+  const seatName = body.seat;
+  const seat = SEATS[seatName];
 
-  const apiKey = (Deno.env.get(seat.secret) ?? "").trim();
+  const apiKey = seatName === "gemini"
+    ? await resolveGeminiApiKey()
+    : (Deno.env.get(seat.secret) ?? "").trim();
   if (!apiKey) return fail(seat.missing, "missing_provider_key");
 
   const agenda = clip(body.agenda, 2000);
   if (!agenda) return fail("의제가 비어 있습니다.", "empty_agenda");
   const prior = clip(body.prior, 4000);
-  const model = (Deno.env.get(seat.modelEnv) ?? "").trim() || seat.model;
+  const modelOverride = (Deno.env.get(seat.modelEnv) ?? "").trim();
   const userText = prompt(agenda, prior);
 
-  const res = body.seat === "anthropic"
+  if (seatName === "gemini") {
+    const models = modelOverride ? [modelOverride] : [...GEMINI_MODELS];
+    let lastDetail = "";
+    let lastStatus = 0;
+    for (const model of models) {
+      const timeoutMs = model === "gemini-4-argon" ? 20_000 : 40_000;
+      const { res, payload, timedOut } = await callGemini(apiKey, model, seat.role, userText, timeoutMs);
+      if (res?.ok) {
+        return json({ ok: true, model, text: clip(geminiReply(payload), 8000) || "(응답 없음)" });
+      }
+      lastStatus = res?.status ?? 504;
+      lastDetail = timedOut
+        ? `${model} 응답이 시간 안에 오지 않았습니다.`
+        : clip(payload?.error?.message, 180);
+      if (modelOverride || !tryNextGeminiModel(lastStatus, payload, timedOut)) break;
+    }
+    return fail(lastDetail || `gemini 호출에 실패했습니다. (${lastStatus})`, "provider_failed");
+  }
+
+  const model = modelOverride || seat.model;
+  const res = seatName === "anthropic"
     ? await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -130,13 +220,13 @@ Deno.serve(async (req) => {
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = clip(payload?.error?.message, 180);
-    return fail(detail || `${body.seat} 호출에 실패했습니다. (${res.status})`, "provider_failed");
+    return fail(detail || `${seatName} 호출에 실패했습니다. (${res.status})`, "provider_failed");
   }
 
   const claudeBlock = Array.isArray(payload?.content)
     ? payload.content.find((block: { type?: string; text?: string }) => block?.type === "text")
     : null;
-  const text = body.seat === "anthropic"
+  const text = seatName === "anthropic"
     ? claudeBlock?.text
     : payload?.choices?.[0]?.message?.content;
 

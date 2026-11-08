@@ -20,6 +20,7 @@ import {
   isSubmitterApprovalStep,
 } from "@/lib/approvalRules";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
+import { permitIssueApprovalCreatesTbm } from "@/lib/tbmLifecycle";
 import { approvalCardHeading } from "@/lib/approvalDocumentTitle";
 import { loadApprovalDocumentTitles } from "@/lib/loadApprovalDocumentTitles";
 import {
@@ -174,18 +175,23 @@ export default function MobileApprovals() {
               ? (action === "approve" ? "작업 취소 처리됨" : "작업취소 요청이 반려되었습니다. 허가서는 발행 상태입니다.")
               : (action === "approve" ? "승인 완료" : "반려 처리됨"),
       );
-      if (action === "approve" && kind === "normal" && r.entity_type === "work_permit") {
-        try {
-          const { ensureTbmAfterPermitIssued } = await import("@/lib/tbmLifecycle");
-          await ensureTbmAfterPermitIssued({
-            rpcResult: result,
-            entityType: r.entity_type,
-            entityId: r.entity_id,
-            projectId: r.project_id,
-          });
-        } catch (e) {
-          console.warn("ensureTbmAfterPermitIssued", e);
-        }
+      if (
+        action === "approve" &&
+        kind === "normal" &&
+        r.entity_type === "work_permit" &&
+        permitIssueApprovalCreatesTbm(result)
+      ) {
+        toast.message("TBM 일지 자동 생성 중");
+        void import("@/lib/tbmLifecycle")
+          .then(({ ensureTbmAfterPermitIssued }) =>
+            ensureTbmAfterPermitIssued({
+              rpcResult: result,
+              entityType: r.entity_type,
+              entityId: r.entity_id,
+              projectId: r.project_id,
+            }),
+          )
+          .catch((e) => console.warn("ensureTbmAfterPermitIssued", e));
       }
       setOpenId(null); setComment("");
       load();

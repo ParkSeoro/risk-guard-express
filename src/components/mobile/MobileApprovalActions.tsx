@@ -8,6 +8,7 @@ import {
   approvalActionSuccessMessage,
   submitApprovalAction,
 } from "@/lib/actOnApprovalClient";
+import { permitIssueApprovalCreatesTbm } from "@/lib/tbmLifecycle";
 import {
   permitPostStepApproveLabel,
   permitPostStepKind,
@@ -54,7 +55,7 @@ export default function MobileApprovalActions({
     }
     setSubmitting(true);
     try {
-      const { kind: doneKind } = await submitApprovalAction({
+      const { kind: doneKind, result } = await submitApprovalAction({
         approvalId: pending.approval_id,
         action,
         comment,
@@ -64,6 +65,13 @@ export default function MobileApprovalActions({
         stepPosition: pending.step_position || pending.position,
       });
       toast.success(approvalActionSuccessMessage(action, doneKind));
+      if (
+        action === "approve" &&
+        pending.entity_type === "work_permit" &&
+        permitIssueApprovalCreatesTbm(result)
+      ) {
+        toast.message("TBM 일지 자동 생성 중");
+      }
       onDone?.();
     } catch (e: any) {
       toast.error(e?.message || "처리 실패");

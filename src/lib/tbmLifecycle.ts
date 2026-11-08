@@ -94,6 +94,7 @@ export async function ensureTbmAfterPermitIssued(opts: {
     projectId,
     companyId,
     useAiDraft: true,
+    aiAfterSave: true,
     replaceMismatchedDate: true,
   });
 }

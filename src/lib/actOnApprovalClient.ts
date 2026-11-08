@@ -87,17 +87,17 @@ export async function submitApprovalAction(opts: {
   if (result?.error) throw new Error(result.error);
   const kind = permitPostStepKind(opts.stepPosition);
   if (opts.action === "approve" && kind === "normal" && opts.entityType === "work_permit") {
-    try {
-      const { ensureTbmAfterPermitIssued } = await import("@/lib/tbmLifecycle");
-      await ensureTbmAfterPermitIssued({
-        rpcResult: result,
-        entityType: opts.entityType,
-        entityId: opts.entityId,
-        projectId: opts.projectId,
-      });
-    } catch (e) {
-      console.warn("ensureTbmAfterPermitIssued", e);
-    }
+    void import("@/lib/tbmLifecycle")
+      .then(({ ensureTbmAfterPermitIssued, permitIssueApprovalCreatesTbm }) => {
+        if (!permitIssueApprovalCreatesTbm(result)) return;
+        return ensureTbmAfterPermitIssued({
+          rpcResult: result,
+          entityType: opts.entityType,
+          entityId: opts.entityId,
+          projectId: opts.projectId,
+        });
+      })
+      .catch((e) => console.warn("ensureTbmAfterPermitIssued", e));
   }
   return { kind, result };
 }

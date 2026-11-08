@@ -25,6 +25,7 @@ import {
   sequentialDisplayStatus,
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
+import { permitIssueApprovalCreatesTbm } from "@/lib/tbmLifecycle";
 import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
 import { approvalCardHeading } from "@/lib/approvalDocumentTitle";
 import { loadApprovalDocumentTitles } from "@/lib/loadApprovalDocumentTitles";
@@ -175,23 +176,30 @@ const Approvals = () => {
           : stepKind === 'void_request_client'
             ? (action === 'approve' ? '작업 취소 처리됨' : '작업취소 요청이 반려되었습니다. 허가서는 발행 상태입니다.')
             : (action === 'approve' ? '승인 완료' : '반려 완료');
-    toast({ title });
-    // 발행 최종 승인 시 TBM 일지 자동 생성·연결
-    if (action === 'approve' && stepKind === 'normal') {
-      try {
-        const { ensureTbmAfterPermitIssued } = await import('@/lib/tbmLifecycle');
-        await ensureTbmAfterPermitIssued({
-          rpcResult: r,
-          entityType: stepMeta?.entity_type,
-          entityId: stepMeta?.entity_id,
-          projectId: stepMeta?.project_id || selectedProject,
-        });
-      } catch (e) {
-        console.warn('ensureTbmAfterPermitIssued', e);
-      }
+    const createsTbm =
+      action === 'approve' &&
+      stepKind === 'normal' &&
+      stepMeta?.entity_type === 'work_permit' &&
+      permitIssueApprovalCreatesTbm(r);
+    toast({
+      title,
+      description: createsTbm ? 'TBM 일지 자동 생성 중' : undefined,
+    });
+    if (createsTbm) {
+      void import('@/lib/tbmLifecycle')
+        .then(({ ensureTbmAfterPermitIssued }) =>
+          ensureTbmAfterPermitIssued({
+            rpcResult: r,
+            entityType: stepMeta?.entity_type,
+            entityId: stepMeta?.entity_id,
+            projectId: stepMeta?.project_id || selectedProject,
+          }),
+        )
+        .catch((e) => console.warn('ensureTbmAfterPermitIssued', e));
     }
-    fetchEntityPending();
-    fetchData();
+    setEntityPending((prev) => prev.filter((row) => row.approval_id !== id));
+    void fetchEntityPending();
+    void fetchData({ silent: true });
     if (user?.id) {
       void markApprovalNotificationsAsRead(user.id);
       if (stepMeta?.entity_id) {
@@ -253,10 +261,10 @@ const Approvals = () => {
     fetchData(); fetchEntityPending();
   };
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { silent?: boolean }) => {
     if (!selectedProject || scopeStatus !== 'ready') return;
     const seq = ++fetchSeqRef.current;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     try {
       const [a, r] = await Promise.all([
         supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
@@ -319,7 +327,7 @@ const Approvals = () => {
       setApprovals(approvalsData);
       setRuns(runsData);
     } finally {
-      if (seq === fetchSeqRef.current) setLoading(false);
+      if (!opts?.silent && seq === fetchSeqRef.current) setLoading(false);
     }
   };
 

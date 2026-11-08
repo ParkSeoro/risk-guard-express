@@ -24,6 +24,7 @@ import {
 } from "@/lib/permitPostApproval";
 import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
 import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
+import { permitIssueApprovalCreatesTbm } from "@/lib/tbmLifecycle";
 import RejectionReasonBanner from "@/components/approval/RejectionReasonBanner";
 import { latestResubmitNotes, priorRejectionNotes, type RejectionNote } from "@/lib/priorRejectionReason";
 import { loadSafetyCostDocument } from "@/lib/safetyCostDocumentLoad";
@@ -209,18 +210,23 @@ export default function MobileApprovalDetail() {
               ? action === "approve" ? "작업 취소 처리됨" : "작업취소 요청이 반려되었습니다. 허가서는 발행 상태입니다."
               : action === "approve" ? "승인 완료" : "반려 처리됨",
       );
-      if (action === "approve" && stepKind === "normal" && row.entity_type === "work_permit") {
-        try {
-          const { ensureTbmAfterPermitIssued } = await import("@/lib/tbmLifecycle");
-          await ensureTbmAfterPermitIssued({
-            rpcResult: r,
-            entityType: row.entity_type,
-            entityId: row.entity_id,
-            projectId: row.project_id,
-          });
-        } catch (e) {
-          console.warn("ensureTbmAfterPermitIssued", e);
-        }
+      if (
+        action === "approve" &&
+        stepKind === "normal" &&
+        row.entity_type === "work_permit" &&
+        permitIssueApprovalCreatesTbm(r)
+      ) {
+        toast.message("TBM 일지 자동 생성 중");
+        void import("@/lib/tbmLifecycle")
+          .then(({ ensureTbmAfterPermitIssued }) =>
+            ensureTbmAfterPermitIssued({
+              rpcResult: r,
+              entityType: row.entity_type,
+              entityId: row.entity_id,
+              projectId: row.project_id,
+            }),
+          )
+          .catch((e) => console.warn("ensureTbmAfterPermitIssued", e));
       }
       navigate("/app/worker/approvals", { replace: true });
     } catch (e: any) {

@@ -184,6 +184,11 @@ export async function ensureTbmForPermit(opts: {
   leaderName?: string;
   companyId?: string | null;
   useAiDraft?: boolean;
+  /**
+   * Save the form-text briefing first and fill Gemini afterwards.
+   * Approval and the permit-open heal use this so the log exists before the model returns.
+   */
+  aiAfterSave?: boolean;
   /** Final approval: if the linked log is another day, create the work-day log. */
   replaceMismatchedDate?: boolean;
 }): Promise<TbmFromPermitResult> {
@@ -221,8 +226,9 @@ export async function ensureTbmForPermit(opts: {
 
   const seed = buildTbmSeedFromPermit(permit);
   const leaderName = await resolvePermitAuthorNameAsync(permit, opts.leaderName || "");
+  const deferAi = opts.aiAfterSave === true && opts.useAiDraft !== false;
   let summary = templateBriefingSummary(seed);
-  if (opts.useAiDraft !== false) {
+  if (!deferAi && opts.useAiDraft !== false) {
     summary = await draftTbmBriefingAi({
       projectId: opts.projectId,
       permit,
@@ -297,7 +303,40 @@ export async function ensureTbmForPermit(opts: {
   // Seed TBM participants from work_permit_workers (was missing → 0명 연동 끊김)
   await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: finalTbmId });
 
+  if (deferAi) {
+    void fillTbmBriefingAfterSave({
+      tbmId: finalTbmId,
+      projectId: opts.projectId,
+      permit,
+      seed,
+    });
+  }
+
   return { ok: true, tbmId: finalTbmId, reused: false };
+}
+
+function fillTbmBriefingAfterSave(opts: {
+  tbmId: string;
+  projectId: string;
+  permit: any;
+  seed: ReturnType<typeof buildTbmSeedFromPermit>;
+}) {
+  const template = templateBriefingSummary(opts.seed);
+  void draftTbmBriefingAi({
+    projectId: opts.projectId,
+    permit: opts.permit,
+    seed: opts.seed,
+  })
+    .then(async (summary) => {
+      const next = String(summary || "").trim();
+      if (!next || next === template) return;
+      const { error } = await supabase
+        .from("tbm_sessions" as any)
+        .update({ briefing_summary: next })
+        .eq("id", opts.tbmId);
+      if (error) console.warn("tbm ai briefing", error.message);
+    })
+    .catch((e) => console.warn("tbm ai briefing", e));
 }
 
 export function canManagePermitCrew(role: string | null | undefined, isMaster?: boolean): boolean {

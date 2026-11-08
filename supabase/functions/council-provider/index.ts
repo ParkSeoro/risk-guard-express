@@ -18,21 +18,21 @@ const SEATS = {
     modelEnv: "GEMINI_COUNCIL_MODEL",
     model: GEMINI_MODELS[0],
     missing: "Supabase의 GEMINI_API_KEY가 없습니다. Vault 또는 Edge Function 시크릿에 그 이름으로 넣어 주세요.",
-    role: "당신은 SafeNex AI Council의 의장 Gemini다. 의제와 앞선 발언만 보고 한국어로 쟁점과 결정이 필요한 사항을 정리한다. 실행하지 않은 테스트나 합의율을 만들지 않는다. 미리 적어 둔 진단 문장을 반복하지 않는다.",
+    role: "당신은 SafeNex AI Council의 의장 Gemini다. 의제와 앞선 발언만 보고 한국어로 답한다. 의견은 있는 그대로 여러 가지를 적고 하나로 줄이지 않는다. 앞선 각 포인트에 동의 또는 반대를 이유와 함께 답하고, 질문은 있는 대로 적는다. 실행하지 않은 테스트, 합의율, 점수는 만들지 않는다. 마지막 줄은 '판정: 합의가능' 또는 '판정: 계속'만 적는다. 남는 반대나 확인되지 않은 질문이 있으면 계속이다.",
   },
   anthropic: {
     secret: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_COUNCIL_MODEL",
     model: "claude-sonnet-5-5",
     missing: "Supabase 시크릿 ANTHROPIC_API_KEY가 없습니다. Anthropic 콘솔에서 만든 키를 그 이름으로 넣어 주세요.",
-    role: "당신은 SafeNex AI Council의 시스템 아키텍트 Claude다. 의제와 앞선 발언만 보고 한국어로 설계 의견을 작성한다. 실행하지 않은 테스트나 합의율을 만들지 않는다.",
+    role: "당신은 SafeNex AI Council의 시스템 아키텍트 Claude다. 의제와 앞선 발언만 보고 한국어로 답한다. 의견은 있는 그대로 여러 가지를 적고 하나로 줄이지 않는다. 앞선 각 포인트에 동의 또는 반대를 이유와 함께 답하고, 질문은 있는 대로 적는다. 실행하지 않은 테스트, 합의율, 점수는 만들지 않는다. 마지막 줄은 '판정: 합의가능' 또는 '판정: 계속'만 적는다. 남는 반대나 확인되지 않은 질문이 있으면 계속이다.",
   },
   openai: {
     secret: "OPENAI_API_KEY",
     modelEnv: "OPENAI_COUNCIL_MODEL",
     model: "gpt-4o",
     missing: "Supabase 시크릿 OPENAI_API_KEY가 없습니다. OpenAI 대시보드에서 만든 키를 그 이름으로 넣어 주세요.",
-    role: "당신은 SafeNex AI Council의 감사 GPT다. 의제와 앞선 발언만 보고 한국어로 의견을 작성한다. 실행하지 않은 테스트 결과나 합의율을 만들지 않는다.",
+    role: "당신은 SafeNex AI Council의 감사 GPT다. 의제와 앞선 발언만 보고 한국어로 답한다. 의견은 있는 그대로 여러 가지를 적고 하나로 줄이지 않는다. 앞선 각 포인트에 동의 또는 반대를 이유와 함께 답하고, 질문은 있는 대로 적는다. 실행하지 않은 테스트, 합의율, 점수는 만들지 않는다. 마지막 줄은 '판정: 합의가능' 또는 '판정: 계속'만 적는다. 남는 반대나 확인되지 않은 질문이 있으면 계속이다.",
   },
 } as const;
 
@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
 
   const agenda = clip(body.agenda, 2000);
   if (!agenda) return fail("의제가 비어 있습니다.", "empty_agenda");
-  const prior = clip(body.prior, 4000);
+  const prior = clip(body.prior, 14000);
   const modelOverride = (Deno.env.get(seat.modelEnv) ?? "").trim();
   const userText = prompt(agenda, prior);
 
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
       const timeoutMs = model === "gemini-4-argon" ? 20_000 : 40_000;
       const { res, payload, timedOut } = await callGemini(apiKey, model, seat.role, userText, timeoutMs);
       if (res?.ok) {
-        return json({ ok: true, model, text: clip(geminiReply(payload), 8000) || "(응답 없음)" });
+        return json({ ok: true, model, text: clip(geminiReply(payload), 12000) || "(응답 없음)" });
       }
       lastStatus = res?.status ?? 504;
       lastDetail = timedOut
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        max_tokens: 2048,
         system: seat.role,
         messages: [{ role: "user", content: userText }],
       }),
@@ -209,7 +209,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        max_tokens: 2048,
         messages: [
           { role: "system", content: seat.role },
           { role: "user", content: userText },
@@ -230,5 +230,5 @@ Deno.serve(async (req) => {
     ? claudeBlock?.text
     : payload?.choices?.[0]?.message?.content;
 
-  return json({ ok: true, text: clip(text, 8000) || "(응답 없음)" });
+  return json({ ok: true, text: clip(text, 12000) || "(응답 없음)" });
 });

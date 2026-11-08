@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { askCouncilCursor } from "@/lib/councilCursor";
 
 interface CouncilMessage {
   id: string;
@@ -70,7 +71,7 @@ export function AiCouncilChatPane() {
   const [inputText, setInputText] = useState("");
   const [isDebating, setIsDebating] = useState(false);
   const [typingStatus, setTypingStatus] = useState<string | null>(null);
-  const [consensusScore, setConsensusScore] = useState(95);
+  const consensusScore = 95;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [config, setConfig] = useState<CouncilConfig>(() => {
     try {
@@ -93,39 +94,6 @@ export function AiCouncilChatPane() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
     toast.success("AI Council API 설정이 저장되었습니다.");
     setIsSettingsOpen(false);
-  };
-
-  const callOpenRouter = async (model: string, systemPrompt: string, userPrompt: string, customKey?: string) => {
-    const key = customKey || config.openrouterApiKey;
-    if (!key) {
-      throw new Error("OpenRouter API Key가 설정되지 않았습니다.");
-    }
-
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${key}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": window.location.origin,
-        "X-Title": "SafeNex AI Council"
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.7
-      })
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`API 호출 실패 (${res.status}): ${err}`);
-    }
-
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "(응답 없음)";
   };
 
   const handleSend = async () => {
@@ -170,6 +138,21 @@ export function AiCouncilChatPane() {
           if (res.ok && contentType.includes("application/json")) {
             const data = await res.json();
             if (data.turns && Array.isArray(data.turns)) {
+              const prior = data.turns
+                .filter((turn: { agentName?: string }) => !String(turn.agentName || "").includes("Cursor"))
+                .map((turn: { agentName?: string; content?: string }) => `${turn.agentName}: ${turn.content || ""}`)
+                .join("\n\n");
+              setTypingStatus("⚡ Cursor가 이 대화의 에이전트에게 의견을 묻고 있습니다...");
+              let cursorReply = "";
+              try {
+                cursorReply = await askCouncilCursor({ agenda: text, prior });
+              } catch (e) {
+                cursorReply = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
+              }
+              const cursorTurn = data.turns.find((turn: { agentName?: string }) =>
+                String(turn.agentName || "").includes("Cursor"),
+              );
+              if (cursorTurn) cursorTurn.content = cursorReply;
               for (let i = 0; i < data.turns.length; i++) {
                 const turn = data.turns[i];
                 await new Promise((r) => setTimeout(r, 600));
@@ -187,12 +170,7 @@ export function AiCouncilChatPane() {
                   },
                 ]);
               }
-              setConsensusScore(100);
-              toast.success(
-                data.githubPrUrl
-                  ? "GitHub PR 생성 및 4대 AI 합의 완료!"
-                  : "4대 AI 실체형 의회 합의(RFC) 완료!"
-              );
+              toast.success("관제실 발언을 불러왔습니다. Cursor 답변은 이 대화의 에이전트입니다.");
               processed = true;
               break;
             }
@@ -244,12 +222,17 @@ export function AiCouncilChatPane() {
           },
         ]);
 
-        // Turn 3: Cursor Builder
-        setTypingStatus("⚡ Cursor Builder가 실무 TypeScript 코드 패치를 작성 중입니다...");
-        await new Promise((r) => setTimeout(r, 700));
-        const cursorText = isGithubPr
-          ? `실무 구현 및 자동 PR 실행 스크립트입니다 (Cursor 연동):\n\n\`\`\`bash\n# 1. 격리 브랜치 생성 및 커밋\ngit checkout -b council/governance-sync\ngit commit -m "feat(council): AI Council 실체 연동 및 무장애 파이프라인 가동"\n\n# 2. GitHub 원격 푸시 및 PR 발행\ngit push -u origin council/governance-sync\ngh pr create --title "[AI Council] 무장애 관제 거버넌스 연동" --body "AI 의회 4대 AI 합의 완료 후 발행된 PR입니다."\n\`\`\`\n\n현재 환경에서 위 명령으로 실제 GitHub PR이 즉시 발행 가능합니다.`
-          : `실무 코드 패치안을 작성했습니다 (Cursor Editor 작성):\n\n\`\`\`typescript\n// SafeNex 무장애 비동기 분리 패치\nexport async function executeSafeTask(taskId: string) {\n  const res = await updateStatusImmediate(taskId);\n  queueMicrotask(async () => {\n    try { await runBackgroundWork(taskId); } catch (e) { console.error(e); }\n  });\n  return res;\n}\n\`\`\`\n\n지연 시간 0ms 및 0-regression 무장애를 보장합니다.`;
+        // Turn 3: this Cursor cloud agent, not a scripted reply.
+        setTypingStatus("⚡ Cursor가 이 대화의 에이전트에게 의견을 묻고 있습니다...");
+        let cursorText = "";
+        try {
+          cursorText = await askCouncilCursor({
+            agenda: text,
+            prior: `Gemini:\n${geminiText}\n\nClaude:\n${claudeText}`,
+          });
+        } catch (e) {
+          cursorText = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
+        }
 
         setMessages((prev) => [
           ...prev,
@@ -283,7 +266,6 @@ export function AiCouncilChatPane() {
         ]);
 
         // Turn 5: Final RFC
-        setConsensusScore(100);
         setMessages((prev) => [
           ...prev,
           {
@@ -293,7 +275,7 @@ export function AiCouncilChatPane() {
             avatar: "📜",
             color: "#818CF8",
             isRfc: true,
-            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **검증된 테스트**: \`bun test\` 9 pass, 0 fail (100% 무장애 승인)\n3. **실제 깃허브 연동**: [GitHub PR #646 바로가기](https://github.com/ParkSeoro/risk-guard-express/pull/646)\n4. **합의 일치율**: **100% (4대 AI 전원 합의 완료)**`,
+            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **Cursor 발언**: 위 메시지가 이 대화의 Cursor 답변입니다.\n3. **합의**: 자동 점수로 계산하지 않습니다.`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           },
         ]);
@@ -501,13 +483,10 @@ export function AiCouncilChatPane() {
 
               {/* Cursor */}
               <div className="space-y-1 p-2.5 rounded-xl border bg-card">
-                <span className="font-bold text-sky-400">⚡ Cursor Builder</span>
-                <Input
-                  value={config.cursorModel}
-                  onChange={(e) => setConfig({ ...config, cursorModel: e.target.value })}
-                  placeholder="anthropic/claude-3.7-sonnet"
-                  className="text-xs h-7 font-mono"
-                />
+                <span className="font-bold text-sky-400">⚡ Cursor</span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  OpenRouter 모델이 아닙니다. 마스터 계정으로 이 대화의 Cursor 에이전트에게 묻고, 그 답변을 그대로 보여 줍니다.
+                </p>
               </div>
 
               {/* Claude */}

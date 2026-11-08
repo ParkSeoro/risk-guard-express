@@ -5,17 +5,25 @@ import { councilMemoryBrief } from "@/lib/councilMemory";
 describe("council director gate", () => {
   it("opens only for the director account", () => {
     expect(canOpenCouncil({
+      id: "51c291bd-b434-4872-8995-e78f495b2e01",
+      email: "seoro.park@airliquide.com",
+    })).toBe(true);
+    expect(canOpenCouncil({
       id: "5e780ffb-81c8-42ef-8eed-b27815785fd1",
       email: "PSR1579@gmail.com",
     })).toBe(true);
     expect(canOpenCouncil({
       id: "5e780ffb-81c8-42ef-8eed-b27815785fd1",
       email: "other@example.com",
+    })).toBe(true);
+    expect(canOpenCouncil({
+      id: "00000000-0000-0000-0000-000000000000",
+      email: "other@example.com",
     })).toBe(false);
     expect(canOpenCouncil({
       id: "00000000-0000-0000-0000-000000000000",
-      email: "psr1579@gmail.com",
-    })).toBe(false);
+      email: "seoro.park@airliquide.com",
+    })).toBe(true);
     expect(canOpenCouncil(null)).toBe(false);
   });
 });

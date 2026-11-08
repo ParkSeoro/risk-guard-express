@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
+import { runRealCouncilPipeline } from './src/lib/councilOrchestrator';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -146,6 +147,21 @@ app.post('/api/ai/safety-assistant', async (req, res) => {
 
     res.json({ reply: response.text });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4-1. AI Council 실체형 오케스트레이터 API (실제 코드/테스트/GitHub 연동)
+app.post('/api/council/debate', async (req, res) => {
+  try {
+    const { prompt, autoPr } = req.body;
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'prompt is required' });
+    }
+    const result = await runRealCouncilPipeline(prompt, { autoPr: !!autoPr });
+    res.json(result);
+  } catch (err: any) {
+    console.error('[AI Council API Error]:', err);
     res.status(500).json({ error: err.message });
   }
 });

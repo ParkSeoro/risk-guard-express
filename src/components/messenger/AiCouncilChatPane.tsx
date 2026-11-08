@@ -148,94 +148,46 @@ export function AiCouncilChatPane() {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      // 1. Gemini Arbiter
-      setTypingStatus("🔷 Gemini Arbiter가 요구사항 및 원인을 분석 중입니다...");
-      const geminiReply = await callOpenRouter(
-        config.geminiModel,
-        "당신은 SafeNex의 원탁 회의 의장(Gemini Arbiter)입니다. 사용자의 목표를 분석하고 근본 원인과 작업 의제를 명확하고 간결하게 3~4줄로 정리하세요.",
-        `사용자 지시: "${text}"`,
-        config.customGeminiKey
-      );
-      setMessages(prev => [...prev, {
-        id: `gemini-${Date.now()}`,
-        sender: "Gemini Arbiter",
-        role: "원탁 의장 & 총괄 분석",
-        avatar: "🔷",
-        color: "#4285F4",
-        text: geminiReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      }]);
+      setTypingStatus("🏛️ 4대 AI 의회가 코드베이스 분석 및 실제 테스트·PR 파이프라인을 가동 중입니다...");
+      
+      const res = await fetch("/api/council/debate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text, autoPr: true }),
+      });
 
-      // 2. Claude Architect
-      setTypingStatus("📐 Claude Architect가 비동기 큐 및 시스템 데이터 파이프라인을 설계 중입니다...");
-      const claudeReply = await callOpenRouter(
-        config.claudeModel,
-        "당신은 SafeNex의 시스템 아키텍트(Claude Architect)입니다. 안정성 및 비동기 파이프라인 관점에서 시스템 아키텍처 설계를 제시하세요.",
-        `의제: "${text}"\nGemini 분석: "${geminiReply}"`,
-        config.customClaudeKey
-      );
-      setMessages(prev => [...prev, {
-        id: `claude-${Date.now()}`,
-        sender: "Claude Architect",
-        role: "시스템 아키텍트",
-        avatar: "📐",
-        color: "#D97706",
-        text: claudeReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      }]);
-
-      // 3. Cursor Builder
-      setTypingStatus("⚡ Cursor Builder가 실무 TypeScript 코드 패치(Unified Diff)를 작성 중입니다...");
-      const cursorReply = await callOpenRouter(
-        config.cursorModel,
-        "당신은 SafeNex의 실무 코드 구현 전문가(Cursor Builder)입니다. 아키텍트의 설계를 바탕으로 실제 TypeScript 코드 블록과 구체적인 패치 내용을 작성하세요.",
-        `의제: "${text}"\nClaude 아키텍처: "${claudeReply}"`,
-        config.customCursorKey
-      );
-      setMessages(prev => [...prev, {
-        id: `cursor-${Date.now()}`,
-        sender: "Cursor Builder",
-        role: "실무 코드 장인",
-        avatar: "⚡",
-        color: "#38BDF8",
-        text: cursorReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      }]);
-
-      // 4. GPT Guardian
-      setTypingStatus("🛡️ GPT Guardian이 Golden Rules(접속·결재·메신저 무장애)를 검증하고 있습니다...");
-      const gptReply = await callOpenRouter(
-        config.gptModel,
-        "당신은 SafeNex의 무장애 안전성 감사관(GPT Guardian)입니다. Golden Rules(로그인 무장애, 결재 무결성, 메신저 소켓 연결 안정성)를 엄격히 감사하고 승인 여부를 밝히세요.",
-        `Cursor 작성 코드:\n${cursorReply}`,
-        config.customGptKey
-      );
-      setMessages(prev => [...prev, {
-        id: `gpt-${Date.now()}`,
-        sender: "GPT Guardian",
-        role: "무장애 안전성 감사관",
-        avatar: "🛡️",
-        color: "#10B981",
-        text: gptReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      }]);
-
-      // 5. Final RFC
-      setConsensusScore(95);
-      setMessages(prev => [...prev, {
-        id: `rfc-${Date.now()}`,
-        sender: "AI Council 의장단",
-        role: "최종 합의서 (Consensus RFC)",
-        avatar: "📜",
-        color: "#6366F1",
-        isRfc: true,
-        text: `🎯 **[최종 합의서 - Consensus RFC 완료]**\n\n- **과제 요약**: ${text}\n- **Cursor 구현 패치**: 백그라운드 비동기 분리 완료 및 UI 블로킹 제거.\n- **Golden Rules 감사**: 🛡️ 로그인/결재/메신저 소켓 100% 무장애 승인!\n- **의견 일치율**: **95% (전원 합의 도달)**\n\n*박서로 디렉터님의 최종 확인 후 코드가 안전하게 적용될 수 있습니다.*`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      }]);
-
-      toast.success("4대 AI의 원탁 합의안(RFC)이 도출되었습니다!");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.turns && Array.isArray(data.turns)) {
+          for (let i = 0; i < data.turns.length; i++) {
+            const turn = data.turns[i];
+            await new Promise((r) => setTimeout(r, 600));
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `turn-${Date.now()}-${i}`,
+                sender: turn.agentName,
+                role: turn.role,
+                avatar: turn.avatar,
+                color: turn.color,
+                text: turn.content,
+                isRfc: turn.agentName.includes("합의"),
+                timestamp: turn.timestamp || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              },
+            ]);
+          }
+        }
+        setConsensusScore(100);
+        toast.success(
+          data.githubPrUrl
+            ? "GitHub PR 생성 및 4대 AI 합의 완료!"
+            : "4대 AI 실체형 의회 합의(RFC) 완료!"
+        );
+      } else {
+        throw new Error(`서버 응답 오류 (${res.status})`);
+      }
     } catch (err: any) {
-      toast.error(`토론 중 오류 발생: ${err.message}`);
+      toast.error(`실행 중 오류 발생: ${err.message}`);
     } finally {
       setIsDebating(false);
       setTypingStatus(null);

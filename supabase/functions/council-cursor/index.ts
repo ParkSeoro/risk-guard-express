@@ -1,4 +1,4 @@
-// Cursor seat of the AI Council. Master-only.
+// Cursor seat of the AI Council. The director account only.
 // The browser never sees the Cursor API key. This function sends one follow-up
 // to the cloud agent the director already uses, then the client polls for the reply.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -32,7 +32,8 @@ function clip(value: unknown, max: number) {
 function councilPrompt(agenda: string, prior: string) {
   return [
     "이 메시지는 SafeNex AI Council 관제실의 Cursor 차례다.",
-    "코드 수정, 커밋, 푸시, 풀 리퀘스트는 하지 말고 한국어로 토론 답변만 작성한다.",
+    "코드 수정, 커밋, 푸시, 풀 리퀘스트 생성, 머지는 하지 말고 한국어로 토론 답변만 작성한다.",
+    "풀 리퀘스트와 머지는 디렉터만 한다.",
     "너는 저장소의 실제 코드, 동작, 이미 정해 둔 규칙을 보고 앞선 안을 판정한다.",
     "걸리는 점이 여러 가지면 모두 적고 하나로 줄이지 않는다. 각 항목에 된다 또는 안 된다와 근거를 같이 적는다.",
     "마지막 줄은 '판정: 된다' 또는 '판정: 안된다'만 적는다. 하나라도 규칙이나 실제 동작에 어긋나면 안된다.",
@@ -78,9 +79,9 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: isMaster, error: roleErr } = await admin.rpc("is_master", { _user_id: callerId });
-  if (roleErr || !isMaster) {
-    return fail("마스터 계정만 Cursor 관제실 자리를 부를 수 있습니다.", "forbidden");
+  const { data: isDirector, error: roleErr } = await admin.rpc("is_council_director", { _user_id: callerId });
+  if (roleErr || !isDirector) {
+    return fail("디렉터 계정만 Cursor 관제실 자리를 부를 수 있습니다.", "forbidden");
   }
 
   if (!apiKey) {

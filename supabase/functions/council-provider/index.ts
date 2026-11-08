@@ -1,4 +1,4 @@
-// Gemini, Claude, and GPT seats of the AI Council. Master-only.
+// Gemini, Claude, and GPT seats of the AI Council. The director account only.
 // The browser never sees the provider keys. One call returns that seat's reply.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveGeminiApiKey } from "./geminiKey.ts";
@@ -139,9 +139,9 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: isMaster, error: roleErr } = await admin.rpc("is_master", { _user_id: callerId });
-  if (roleErr || !isMaster) {
-    return fail("마스터 계정만 관제실의 Gemini, Claude, GPT를 부를 수 있습니다.", "forbidden");
+  const { data: isDirector, error: roleErr } = await admin.rpc("is_council_director", { _user_id: callerId });
+  if (roleErr || !isDirector) {
+    return fail("디렉터 계정만 관제실의 Gemini, Claude, GPT를 부를 수 있습니다.", "forbidden");
   }
 
   let body: { seat?: string; agenda?: string; prior?: string };

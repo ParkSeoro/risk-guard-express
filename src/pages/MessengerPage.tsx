@@ -9,6 +9,7 @@ import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
+import { canOpenCouncil } from "@/lib/councilAccess";
 import { MessageSquare } from "lucide-react";
 
 export default function MessengerPage() {
@@ -40,10 +41,15 @@ export default function MessengerPage() {
 
   // URL query 파라미터 변경 시 선택된 방 동기화
   useEffect(() => {
+    if (initialRoomId === "dev-ai-council" && !canOpenCouncil(user)) {
+      setSelectedRoomId(null);
+      setSearchParams({}, { replace: true });
+      return;
+    }
     if (initialRoomId) {
       setSelectedRoomId(initialRoomId);
     }
-  }, [initialRoomId]);
+  }, [initialRoomId, user, setSearchParams]);
 
   // 실시간 변경 감지
   useEffect(() => {
@@ -120,7 +126,7 @@ export default function MessengerPage() {
           selectedRoomId ? "flex" : "hidden md:flex"
         }`}
       >
-        {selectedRoomId === "dev-ai-council" ? (
+        {selectedRoomId === "dev-ai-council" && canOpenCouncil(user) ? (
           <AiCouncilChatPane onBack={handleBackToList} />
         ) : selectedRoom ? (
           <MessengerChatPane

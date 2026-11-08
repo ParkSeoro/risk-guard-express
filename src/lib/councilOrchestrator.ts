@@ -35,7 +35,7 @@ export interface CouncilResult {
 
 export async function runRealCouncilPipeline(
   userGoal: string,
-  options: { autoPr?: boolean } = {}
+  _options: { autoPr?: boolean } = {}
 ): Promise<CouncilResult> {
   const env = getEnrichedEnv();
   const repoCwd = path.resolve(__dirname, "../../");
@@ -59,9 +59,6 @@ export async function runRealCouncilPipeline(
     gitStatusText = `git 상태 확인 오류: ${err.message}`;
   }
 
-  const isGithubPrRequested =
-    /pr|pull request|깃허브|github|깃|푸시|push/i.test(userGoal);
-
   // Turn 1: 🔷 Gemini Arbiter (Antigravity Orchestrator)
   const geminiContent = [
     `사용자님의 지시사항을 분석하고 현재 SafeNex 프로젝트 환경을 정밀 진단했습니다: "${userGoal}"`,
@@ -71,9 +68,7 @@ export async function runRealCouncilPipeline(
     `   - 워크스페이스 상태: ${gitStatusText.includes("\n") ? `${gitStatusText.split("\n").length}개 변경 감지` : gitStatusText}`,
     "",
     `2. 요구사항 및 문제 진단:`,
-    isGithubPrRequested
-      ? `   - 현재 시스템에 gh CLI(계정: ParkSeoro) 및 git이 완전히 연동되어 있어 실제 브랜치 생성 및 GitHub PR 발행이 100% 즉시 가능합니다.`
-      : `   - 무장애 아키텍처 원칙에 따라 메인 트랜잭션과 비동기 작업을 분리하고, 4대 AI 교차 검증을 개시합니다.`,
+    `   - 풀 리퀘스트를 만들거나 머지하지 않는다. 그 일은 디렉터만 한다.`,
     "",
     `3. 의제 제안: Claude에게 시스템 아키텍처 설계를, Cursor에게 실제 TypeScript 패치 코드 작성을 지시합니다.`,
   ].join("\n");
@@ -95,7 +90,7 @@ export async function runRealCouncilPipeline(
     `  - 메인 UI 루프 및 결재 커밋에 영향을 주지 않도록 이벤트 기반 비동기 마이크로태스크(\`queueMicrotask\`) 파이프라인 채택`,
     `  - 실시간 메신저 WebSocket 소켓 채널과 백엔드 비즈니스 로직의 명확한 경계(Isolation Boundary) 수립`,
     `- 무장애 롤백 규격:`,
-    `  - GitHub PR 발행 시 변경 사항을 원자적(Atomic) 단위로 격리하여 1분 이내 무장애 revert 가능성 보장`,
+    `  - 회의는 코드를 고치지 않는다. 풀 리퀘스트와 머지는 디렉터만 한다.`,
   ].join("\n");
 
   turns.push({
@@ -108,21 +103,7 @@ export async function runRealCouncilPipeline(
   });
 
   // Turn 3: ⚡ Cursor Builder (Code Craftsman)
-  const cursorCodePatch = isGithubPrRequested
-    ? [
-        "```bash",
-        "# 1. 실체형 작업 브랜치 생성",
-        "git checkout -b council/governance-sync",
-        "",
-        "# 2. 변경사항 스테이징 및 커밋",
-        'git commit -m "feat(council): AI Council 실체 연동 및 무장애 파이프라인 가동"',
-        "",
-        "# 3. GitHub 원격 저장소 푸시 및 자동 PR 생성",
-        "git push -u origin council/governance-sync",
-        'gh pr create --title "[AI Council] 무장애 관제 거버넌스 연동" --body "AI 의회 4대 AI 합의 완료 후 발행된 PR입니다."',
-        "```",
-      ].join("\n")
-    : [
+  const cursorCodePatch = [
         "```typescript",
         "// SafeNex 무장애 비동기 분리 패치 (Cursor 작성)",
         "export async function executeSafeTask<T>(taskId: string, immediateWork: () => Promise<T>): Promise<T> {",
@@ -185,7 +166,7 @@ export async function runRealCouncilPipeline(
     `✓ 2. 결재 데이터 무결성: 승인 트랜잭션 선행 커밋 보증 (PASS)`,
     `✓ 3. 메신저 소켓 안정성: WebSocket 브로드캐스트 이벤트 독립 유지 (PASS)`,
     "",
-    `👉 감사 판정: ${testPassed ? "장애 위험도 0%. GitHub PR 발행 및 프로덕션 배포를 최종 승인합니다." : "테스트 미통과로 재작성 지시"}`,
+    `👉 감사 판정: ${testPassed ? "회의는 여기서 끝난다. 풀 리퀘스트와 머지는 디렉터만 한다." : "테스트 미통과로 재작성 지시"}`,
   ].join("\n");
 
   turns.push({
@@ -197,36 +178,12 @@ export async function runRealCouncilPipeline(
     timestamp: now(),
   });
 
-  // Turn 5: Consensus RFC & Real GitHub PR Execution
-  let githubPrUrl: string | undefined;
-  let branchName: string | undefined;
-
-  if (isGithubPrRequested || options.autoPr) {
-    try {
-      // Check for existing open PRs
-      const { stdout: prListOut } = await execAsync("gh pr list --limit 1 --json url,number", {
-        cwd: repoCwd,
-        env,
-      });
-      const parsedPrs = JSON.parse(prListOut || "[]");
-      if (parsedPrs.length > 0) {
-        githubPrUrl = parsedPrs[0].url;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   const rfcSummary = [
     `🎯 **[최종 합의서 - Consensus RFC]**`,
     "",
     `1. **과제**: ${userGoal}`,
-    `2. **검증된 테스트**: \`bun test\` 9 pass, 0 fail (100% 무장애 승인)`,
-    `3. **실제 깃허브 연동 상태**:`,
-    githubPrUrl
-      ? `   - 🔗 **활성 GitHub PR**: [PR 바로가기](${githubPrUrl})`
-      : `   - 🔗 **GitHub CLI 연동**: 계정 \`ParkSeoro\`, 원격지 \`ParkSeoro/risk-guard-express\` 검증 완료`,
-    `4. **합의 일치율**: **100% (4대 AI 전원 서명 완료)**`,
+    `2. **검증된 테스트**: \`bun test\` 결과만 적는다.`,
+    `3. **풀 리퀘스트와 머지**: 디렉터만 한다. 이 회의는 만들지 않는다.`,
   ].join("\n");
 
   turns.push({
@@ -243,7 +200,7 @@ export async function runRealCouncilPipeline(
     rfcSummary,
     testPassed,
     testOutput,
-    githubPrUrl,
-    branchName,
+    githubPrUrl: undefined,
+    branchName: undefined,
   };
 }

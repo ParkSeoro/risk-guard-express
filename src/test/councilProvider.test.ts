@@ -18,7 +18,7 @@ describe("council provider link", () => {
     expect(fn).toContain("OPENAI_API_KEY");
     expect(fn).toContain("https://api.anthropic.com/v1/messages");
     expect(fn).toContain("https://api.openai.com/v1/chat/completions");
-    expect(fn).toContain('rpc("is_master"');
+    expect(fn).toContain('rpc("is_council_director"');
     expect(fn).not.toContain("sk-");
 
     expect(client).toContain('invoke("council-provider"');
@@ -33,6 +33,8 @@ describe("council provider link", () => {
     expect(pane).toContain('"openai"');
     expect(pane).toContain("COUNCIL_MAX_ROUNDS");
     expect(pane).toContain("councilCanClose");
+    expect(pane).toContain("loadCouncilMeetings");
+    expect(pane).toContain("councilMemoryBrief");
     expect(pane).not.toContain("메인 UI 루프 및 결재 트랜잭션 블로킹");
     expect(pane).not.toContain("자동 점수로 계산하지 않습니다");
     expect(pane).not.toContain("일치율");

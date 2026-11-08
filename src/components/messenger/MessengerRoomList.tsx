@@ -31,6 +31,17 @@ import {
 import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+
+export const DEV_COUNCIL_ROOM: ChatRoom = {
+  id: "dev-ai-council",
+  title: "AI Council 무장애 관제실",
+  type: "group",
+  created_at: new Date().toISOString(),
+  last_message: "4대 AI(Gemini, Cursor, Claude, GPT) 무장애 관제 가동 중",
+  last_message_at: new Date().toISOString(),
+  unread_count: 0
+} as any;
 
 interface MessengerRoomListProps {
   rooms: ChatRoom[];
@@ -61,6 +72,13 @@ export function MessengerRoomList({
   hideHeader = false,
   hideTopTabs = false,
 }: MessengerRoomListProps) {
+  const { user, roles } = useAuth();
+  const isMasterDeveloper =
+    roles?.includes("master") ||
+    user?.email?.toLowerCase().includes("seoro") ||
+    user?.user_metadata?.full_name?.includes("서로") ||
+    user?.email?.includes("ParkSeoro");
+
   const [internalTab, setInternalTab] = useState<"rooms" | "directory">("rooms");
   const activeTab = forcedTab ?? internalTab;
   const setActiveTab = (next: "rooms" | "directory") => {
@@ -334,6 +352,41 @@ export function MessengerRoomList({
       {/* 본문 영역: 대화방 목록 또는 현장 조직도 */}
       {activeTab === "rooms" ? (
         <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-border/60">
+          {/* 박서로 디렉터 마스터 전용 AI Council 무장애 의회 관제실 */}
+          {isMasterDeveloper && (
+            <div className="p-2 bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-card/60 border-b">
+              <button
+                type="button"
+                onClick={() => onSelectRoom(DEV_COUNCIL_ROOM)}
+                className={cn(
+                  "w-full p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all shadow-xs",
+                  selectedRoomId === "dev-ai-council"
+                    ? "bg-indigo-600 text-white border-indigo-400 shadow-md"
+                    : "bg-card/90 hover:bg-card border-indigo-500/40 text-foreground"
+                )}
+              >
+                <div className="relative shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-sm shadow">
+                    🏛️
+                  </div>
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border-2 border-background"></span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs truncate flex items-center gap-1.5">
+                      <span>AI Council 관제실</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono font-bold">DEV</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold">95%</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                    Gemini • Cursor • Claude • GPT 4대 AI 무장애 관제
+                  </p>
+                </div>
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-12 text-center text-xs text-muted-foreground">
               대화방 목록을 불러오는 중...
@@ -401,16 +454,14 @@ export function MessengerRoomList({
                           </span>
                         )}
                         {room.notifications_enabled === false && (
-                          <BellOff
-                            className="h-3 w-3 text-muted-foreground/70 shrink-0"
-                            title="알림 꺼짐"
-                          />
+                          <span title="알림 꺼짐">
+                            <BellOff className="h-3 w-3 text-muted-foreground/70 shrink-0" />
+                          </span>
                         )}
                         {room.pinned_message_id && (
-                          <Megaphone
-                            className="h-3 w-3 text-amber-500 shrink-0"
-                            title="고정 공지 있음"
-                          />
+                          <span title="고정 공지 있음">
+                            <Megaphone className="h-3 w-3 text-amber-500 shrink-0" />
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">

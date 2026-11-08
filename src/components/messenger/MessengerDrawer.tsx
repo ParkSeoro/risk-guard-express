@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "./MessengerRoomList";
 import { MessengerChatPane } from "./MessengerChatPane";
+import { AiCouncilChatPane } from "./AiCouncilChatPane";
 import { NewChatDialog } from "./NewChatDialog";
 import { Button } from "@/components/ui/button";
 import { Maximize2, X } from "lucide-react";
@@ -137,7 +138,9 @@ export function MessengerDrawer({
 
         {/* 본문 (목록 또는 채팅방) */}
         <div className="flex-1 min-h-0 flex flex-col">
-          {selectedRoom ? (
+          {selectedRoomId === "dev-ai-council" ? (
+            <AiCouncilChatPane />
+          ) : selectedRoom ? (
             <MessengerChatPane
               room={selectedRoom}
               onBack={() => {

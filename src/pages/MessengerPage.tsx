@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
-import { MessengerRoomList } from "@/components/messenger/MessengerRoomList";
+import { MessengerRoomList, DEV_COUNCIL_ROOM } from "@/components/messenger/MessengerRoomList";
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";
+import { AiCouncilChatPane } from "@/components/messenger/AiCouncilChatPane";
 import { NewChatDialog } from "@/components/messenger/NewChatDialog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -119,7 +120,9 @@ export default function MessengerPage() {
           selectedRoomId ? "flex" : "hidden md:flex"
         }`}
       >
-        {selectedRoom ? (
+        {selectedRoomId === "dev-ai-council" ? (
+          <AiCouncilChatPane />
+        ) : selectedRoom ? (
           <MessengerChatPane
             room={selectedRoom}
             onBack={handleBackToList}

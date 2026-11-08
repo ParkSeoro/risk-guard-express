@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { askCouncilCursor } from "@/lib/councilCursor";
+import { askCouncilProvider } from "@/lib/councilProvider";
 
 interface CouncilMessage {
   id: string;
@@ -36,7 +37,6 @@ interface CouncilMessage {
 
 interface CouncilConfig {
   openrouterApiKey: string;
-  anthropicApiKey?: string;
   geminiModel: string;
   claudeModel: string;
   cursorModel: string;
@@ -49,7 +49,6 @@ interface CouncilConfig {
 
 const DEFAULT_CONFIG: CouncilConfig = {
   openrouterApiKey: (import.meta as any).env?.VITE_OPENROUTER_API_KEY || "",
-  anthropicApiKey: (import.meta as any).env?.VITE_ANTHROPIC_API_KEY || "",
   geminiModel: "google/gemini-2.0-flash-001",
   claudeModel: "claude-sonnet-4-20250514",
   cursorModel: "anthropic/claude-3.7-sonnet",
@@ -98,49 +97,18 @@ export function AiCouncilChatPane() {
     setIsSettingsOpen(false);
   };
 
-  const askAnthropicClaude = async (agenda: string, prior: string): Promise<string | null> => {
-    const rawKey = (config.anthropicApiKey || config.customClaudeKey || "").trim();
-    if (!rawKey) return null;
-
-    let modelId = (config.claudeModel || "claude-sonnet-4-20250514").trim();
-    if (modelId.startsWith("anthropic/")) {
-      modelId = modelId.replace(/^anthropic\//, "");
+  const askSeat = async (
+    seat: "anthropic" | "openai",
+    agenda: string,
+    prior: string,
+    status: string,
+  ) => {
+    setTypingStatus(status);
+    try {
+      return await askCouncilProvider({ seat, agenda, prior });
+    } catch (e) {
+      return e instanceof Error ? e.message : "연결에 실패했습니다.";
     }
-    if (modelId === "claude-3.7-sonnet" || modelId === "claude-3-7-sonnet") {
-      modelId = "claude-3-7-sonnet-latest";
-    }
-
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": rawKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        max_tokens: 1024,
-        system:
-          "당신은 SafeNex AI Council 관제실의 시스템 아키텍트(Claude Architect)입니다. 박서로 디렉터님의 의제와 앞선 발언을 바탕으로 데이터 흐름, 비동기 분리, 무장애 아키텍처 설계 의견을 한국어로 명확하고 핵심적으로 작성하세요.",
-        messages: [
-          {
-            role: "user",
-            content: `의제:\n${agenda}\n\n앞선 발언:\n${prior || "(없음)"}`,
-          },
-        ],
-      }),
-    });
-
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const errMsg = payload?.error?.message || `Anthropic API 오류 (${res.status})`;
-      throw new Error(errMsg);
-    }
-    const textBlock = Array.isArray(payload?.content)
-      ? payload.content.find((b: { type?: string; text?: string }) => b.type === "text")
-      : null;
-    return (textBlock?.text || "").trim() || "(Claude 응답 없음)";
   };
 
   const handleSend = async () => {
@@ -191,14 +159,13 @@ export function AiCouncilChatPane() {
               const claudeTurn = data.turns.find((turn: { agentName?: string }) =>
                 String(turn.agentName || "").includes("Claude"),
               );
-              if (claudeTurn && (config.anthropicApiKey || config.customClaudeKey)?.trim()) {
-                setTypingStatus("📐 Claude Architect (Anthropic API)가 아키텍처를 직접 설계 중입니다...");
-                try {
-                  const directClaude = await askAnthropicClaude(text, geminiTurn?.content || "");
-                  if (directClaude) claudeTurn.content = directClaude;
-                } catch (e) {
-                  claudeTurn.content = e instanceof Error ? `Anthropic 연결 오류: ${e.message}` : "Anthropic 연결에 실패했습니다.";
-                }
+              if (claudeTurn) {
+                claudeTurn.content = await askSeat(
+                  "anthropic",
+                  text,
+                  geminiTurn?.content || "",
+                  "📐 Claude가 Anthropic API에 설계 의견을 묻고 있습니다...",
+                );
               }
 
               const prior = data.turns
@@ -216,6 +183,21 @@ export function AiCouncilChatPane() {
                 String(turn.agentName || "").includes("Cursor"),
               );
               if (cursorTurn) cursorTurn.content = cursorReply;
+              const gptTurn = data.turns.find((turn: { agentName?: string }) =>
+                /GPT|Guardian/i.test(String(turn.agentName || "")),
+              );
+              if (gptTurn) {
+                const gptPrior = data.turns
+                  .filter((turn: { agentName?: string }) => !/GPT|Guardian/i.test(String(turn.agentName || "")))
+                  .map((turn: { agentName?: string; content?: string }) => `${turn.agentName}: ${turn.content || ""}`)
+                  .join("\n\n");
+                gptTurn.content = await askSeat(
+                  "openai",
+                  text,
+                  gptPrior,
+                  "🛡️ GPT가 OpenAI API에 감사 의견을 묻고 있습니다...",
+                );
+              }
               for (let i = 0; i < data.turns.length; i++) {
                 const turn = data.turns[i];
                 await new Promise((r) => setTimeout(r, 600));
@@ -267,19 +249,13 @@ export function AiCouncilChatPane() {
           },
         ]);
 
-        // Turn 2: Claude Architect (Anthropic Direct API when configured)
-        setTypingStatus("📐 Claude Architect가 비동기 큐 및 시스템 데이터 파이프라인을 설계 중입니다...");
-        let claudeText = "";
-        if ((config.anthropicApiKey || config.customClaudeKey)?.trim()) {
-          try {
-            claudeText = (await askAnthropicClaude(text, geminiText)) || "";
-          } catch (e) {
-            claudeText = e instanceof Error ? `Anthropic 연결 오류: ${e.message}` : "Anthropic 연결에 실패했습니다.";
-          }
-        } else {
-          await new Promise((r) => setTimeout(r, 700));
-          claudeText = `시스템 아키텍트 분석 의견입니다.\n\n- 트랜잭션 분리: 결재 DB 승인 시 즉시 HTTP 200 반환 후 부가 작업은 queueMicrotask로 안전 위임.\n- 소켓 안정성: WebSocket 브로드캐스트 이벤트 독립 유지로 연결 끊김 0건 보장.\n- 무장애 롤백: 격리 브랜치를 통한 원자적 커밋 구성.\n*(참고: [AI 설정]에서 Anthropic API 키를 입력하시면 Claude 공식 API로 직접 답변합니다.)*`;
-        }
+        // Turn 2: Claude through Anthropic, on the server.
+        const claudeText = await askSeat(
+          "anthropic",
+          text,
+          geminiText,
+          "📐 Claude가 Anthropic API에 설계 의견을 묻고 있습니다...",
+        );
 
         setMessages((prev) => [
           ...prev,
@@ -319,10 +295,13 @@ export function AiCouncilChatPane() {
           },
         ]);
 
-        // Turn 4: GPT Guardian
-        setTypingStatus("🛡️ GPT Guardian이 Golden Rules(접속·결재·메신저 무장애)를 검증하고 있습니다...");
-        await new Promise((r) => setTimeout(r, 700));
-        const gptText = `🛡️ [Golden Rules 무장애 안전성 감사 결과]\n\n🧪 단위 테스트 (bun test):\n   ✓ 9 pass, 0 fail (전원 통과 완료)\n\n✓ 1. 로그인/세션 무장애: 인증 헤더 및 JWT 토큰 처리 로직 불변 (PASS)\n✓ 2. 결재 데이터 무결성: 승인 트랜잭션 선행 커밋 보증 (PASS)\n✓ 3. 메신저 소켓 안정성: WebSocket 연결 유지 (PASS)\n\n👉 감사 판정: 장애 위험도 0%. GitHub PR 발행 및 배포를 적극 승인합니다.`;
+        // Turn 4: GPT through OpenAI, on the server.
+        const gptText = await askSeat(
+          "openai",
+          text,
+          `Gemini:\n${geminiText}\n\nClaude:\n${claudeText}\n\nCursor:\n${cursorText}`,
+          "🛡️ GPT가 OpenAI API에 감사 의견을 묻고 있습니다...",
+        );
 
         setMessages((prev) => [
           ...prev,
@@ -347,7 +326,7 @@ export function AiCouncilChatPane() {
             avatar: "📜",
             color: "#818CF8",
             isRfc: true,
-            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **Cursor 발언**: 위 메시지가 이 대화의 Cursor 답변입니다.\n3. **합의**: 자동 점수로 계산하지 않습니다.`,
+            text: `🎯 **[최종 합의서 - Consensus RFC]**\n\n1. **과제**: ${text}\n2. **Claude, Cursor, GPT 발언**: 위 메시지가 각 회사 API의 답변입니다.\n3. **합의**: 자동 점수로 계산하지 않습니다.`,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           },
         ]);
@@ -525,29 +504,6 @@ export function AiCouncilChatPane() {
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
-            {/* Anthropic Direct Key */}
-            <div className="space-y-1.5 p-3 rounded-xl bg-amber-950/20 border border-amber-500/30">
-              <label className="font-bold flex items-center justify-between text-amber-400">
-                <span>📐 Anthropic (Claude) 공식 API Key 직접 연결</span>
-                <span className="text-[10px] text-amber-300">
-                  {(config.anthropicApiKey || config.customClaudeKey)?.trim() ? "직접 연결 활성" : "미설정 (sk-ant-... 입력)"}
-                </span>
-              </label>
-              <Input
-                type="password"
-                value={config.anthropicApiKey ?? config.customClaudeKey ?? ""}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    anthropicApiKey: e.target.value,
-                    customClaudeKey: e.target.value,
-                  })
-                }
-                placeholder="sk-ant-api03-..."
-                className="font-mono text-xs h-8"
-              />
-            </div>
-
             {/* OpenRouter Unified Key */}
             <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
               <label className="font-bold flex items-center justify-between">
@@ -588,24 +544,18 @@ export function AiCouncilChatPane() {
 
               {/* Claude */}
               <div className="space-y-1 p-2.5 rounded-xl border bg-card">
-                <span className="font-bold text-amber-400">📐 Claude Architect (Anthropic 모델)</span>
-                <Input
-                  value={config.claudeModel}
-                  onChange={(e) => setConfig({ ...config, claudeModel: e.target.value })}
-                  placeholder="claude-sonnet-4-20250514"
-                  className="text-xs h-7 font-mono"
-                />
+                <span className="font-bold text-amber-400">📐 Claude</span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  브라우저 키가 아닙니다. 서버의 ANTHROPIC_API_KEY로 Anthropic에 묻고, 그 답변을 그대로 보여 줍니다.
+                </p>
               </div>
 
               {/* GPT */}
               <div className="space-y-1 p-2.5 rounded-xl border bg-card">
-                <span className="font-bold text-emerald-400">🛡️ GPT Guardian</span>
-                <Input
-                  value={config.gptModel}
-                  onChange={(e) => setConfig({ ...config, gptModel: e.target.value })}
-                  placeholder="openai/gpt-4o"
-                  className="text-xs h-7 font-mono"
-                />
+                <span className="font-bold text-emerald-400">🛡️ GPT</span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  브라우저 키가 아닙니다. 서버의 OPENAI_API_KEY로 OpenAI에 묻고, 그 답변을 그대로 보여 줍니다.
+                </p>
               </div>
             </div>
           </div>

@@ -12,7 +12,8 @@ import {
   FileCode, 
   CheckCheck,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,7 +58,7 @@ const DEFAULT_CONFIG: CouncilConfig = {
 
 const STORAGE_KEY = "safenex_ai_council_config";
 
-export function AiCouncilChatPane() {
+export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
   const [messages, setMessages] = useState<CouncilMessage[]>([
     {
       id: "welcome-1",
@@ -348,26 +349,39 @@ export function AiCouncilChatPane() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-background select-none overflow-hidden">
+    <div className="flex-1 flex flex-col h-full min-h-0 w-full min-w-0 bg-background select-none overflow-hidden relative overscroll-contain">
       
       {/* Header */}
-      <div className="h-14 px-4 border-b bg-card/60 backdrop-blur flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-base shadow shrink-0">
+      <div className="px-3 pt-[max(0.625rem,var(--sat))] pb-2.5 border-b bg-card/60 backdrop-blur flex items-center justify-between gap-2 shrink-0 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {onBack && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={onBack}
+              title="대화방 목록으로 돌아가기"
+              aria-label="뒤로가기"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-sm sm:text-base shadow shrink-0">
             🏛️
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold tracking-tight">SafeNex AI Council 관제실</h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 font-bold border border-emerald-800">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h2 className="text-sm font-bold tracking-tight truncate">SafeNex AI Council 관제실</h2>
+              <span className="hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 font-bold border border-emerald-800 shrink-0">
                 일치율 {consensusScore}%
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 text-indigo-300 font-mono">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 text-indigo-300 font-mono shrink-0">
                 MASTER
               </span>
             </div>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-              <span>참여 AI:</span>
+            <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1 sm:gap-1.5 mt-0.5">
+              <span className="hidden sm:inline">참여 AI:</span>
               <span className="text-blue-400 font-medium">🔷 Gemini</span>
               <span>•</span>
               <span className="text-sky-400 font-medium">⚡ Cursor</span>
@@ -379,12 +393,12 @@ export function AiCouncilChatPane() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setIsSettingsOpen(true)}
-            className="h-8 gap-1.5 text-xs"
+            className="h-8 px-2.5 gap-1.5 text-xs shrink-0"
           >
             <Settings className="h-3.5 w-3.5" />
             <span>AI 설정</span>
@@ -393,39 +407,39 @@ export function AiCouncilChatPane() {
       </div>
 
       {/* Messages Scroll Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll">
+      <div ref={scrollRef} className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 sm:p-4 space-y-4 custom-scroll">
         {messages.map((m) => (
           <div
             key={m.id}
             className={cn(
-              "flex items-start gap-2.5",
+              "flex items-start gap-2 sm:gap-2.5 min-w-0 w-full",
               m.isUser ? "justify-end" : "justify-start"
             )}
           >
             {!m.isUser && (
-              <div className="w-8 h-8 rounded-xl bg-muted border flex items-center justify-center text-sm shrink-0 mt-0.5 shadow-xs">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-muted border flex items-center justify-center text-xs sm:text-sm shrink-0 mt-0.5 shadow-xs">
                 {m.avatar}
               </div>
             )}
 
-            <div className={cn("flex flex-col max-w-3xl", m.isUser ? "items-end" : "items-start")}>
-              <div className="flex items-center gap-1.5 mb-1 text-[11px] text-muted-foreground">
-                <span className="font-bold text-foreground">{m.sender}</span>
+            <div className={cn("flex flex-col min-w-0 max-w-[85%] sm:max-w-[80%] lg:max-w-3xl", m.isUser ? "items-end" : "items-start")}>
+              <div className="flex flex-wrap items-center gap-1.5 mb-1 text-[11px] text-muted-foreground min-w-0">
+                <span className="font-bold text-foreground truncate">{m.sender}</span>
                 {!m.isUser && (
                   <span
-                    className="text-[10px] px-1.5 py-0.2 rounded-full"
+                    className="text-[10px] px-1.5 py-0.2 rounded-full shrink-0"
                     style={{ background: `${m.color}22`, color: m.color, border: `1px solid ${m.color}44` }}
                   >
                     {m.role}
                   </span>
                 )}
                 <span>•</span>
-                <span>{m.timestamp}</span>
+                <span className="shrink-0">{m.timestamp}</span>
               </div>
 
               <div
                 className={cn(
-                  "p-3.5 rounded-2xl text-xs leading-relaxed select-text shadow-xs whitespace-pre-wrap",
+                  "p-3 sm:p-3.5 rounded-2xl text-xs leading-relaxed select-text shadow-xs whitespace-pre-wrap break-words overflow-x-auto max-w-full",
                   m.isUser
                     ? "bg-primary text-primary-foreground rounded-tr-xs"
                     : m.isRfc
@@ -438,7 +452,7 @@ export function AiCouncilChatPane() {
             </div>
 
             {m.isUser && (
-              <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-xs">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-purple-600 flex items-center justify-center text-[11px] sm:text-xs font-bold text-white shrink-0 shadow-xs">
                 서로
               </div>
             )}
@@ -446,16 +460,16 @@ export function AiCouncilChatPane() {
         ))}
 
         {typingStatus && (
-          <div className="flex items-center gap-2 p-2.5 rounded-xl bg-muted/40 border text-xs text-indigo-400 animate-pulse max-w-md">
-            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            <span>{typingStatus}</span>
+          <div className="flex items-center gap-2 p-2.5 rounded-xl bg-muted/40 border text-xs text-indigo-400 animate-pulse max-w-full sm:max-w-md min-w-0">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
+            <span className="truncate">{typingStatus}</span>
           </div>
         )}
       </div>
 
       {/* Input Area */}
-      <div className="p-3 border-t bg-card/40 shrink-0 space-y-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+      <div className="p-2.5 sm:p-3 pb-[max(0.625rem,var(--sab))] border-t bg-card/40 shrink-0 space-y-2 min-w-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs min-w-0">
           <span className="text-[11px] text-muted-foreground shrink-0">추천 의제:</span>
           <button
             type="button"
@@ -473,7 +487,7 @@ export function AiCouncilChatPane() {
           </button>
         </div>
 
-        <div className="flex items-end gap-2 bg-background border rounded-2xl p-2 focus-within:ring-1 focus-within:ring-primary shadow-xs">
+        <div className="flex items-end gap-1.5 sm:gap-2 bg-background border rounded-2xl p-1.5 sm:p-2 focus-within:ring-1 focus-within:ring-primary shadow-xs min-w-0">
           <Textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
@@ -483,15 +497,15 @@ export function AiCouncilChatPane() {
                 handleSend();
               }
             }}
-            placeholder="박서로 디렉터님의 지시사항 또는 아이디어를 입력하세요... (Enter: 원탁 소집, Shift+Enter: 줄바꿈)"
-            className="min-h-[44px] max-h-28 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-relaxed"
+            placeholder="박서로 디렉터님의 의제를 입력하세요... (Enter: 원탁 소집)"
+            className="flex-1 min-w-0 min-h-[40px] sm:min-h-[44px] max-h-28 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-relaxed"
             rows={1}
           />
           <Button
             type="button"
             onClick={handleSend}
             disabled={!inputText.trim() || isDebating}
-            className="h-9 px-4 rounded-xl shrink-0 font-bold gap-1.5 shadow-sm"
+            className="h-9 px-3 sm:px-4 rounded-xl shrink-0 font-bold gap-1.5 shadow-sm text-xs"
           >
             <Send className="h-3.5 w-3.5" />
             <span>원탁 소집</span>

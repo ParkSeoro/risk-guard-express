@@ -121,7 +121,7 @@ export default function MessengerPage() {
         }`}
       >
         {selectedRoomId === "dev-ai-council" ? (
-          <AiCouncilChatPane />
+          <AiCouncilChatPane onBack={handleBackToList} />
         ) : selectedRoom ? (
           <MessengerChatPane
             room={selectedRoom}

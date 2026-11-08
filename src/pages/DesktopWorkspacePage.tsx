@@ -141,9 +141,15 @@ export default function DesktopWorkspacePage() {
     return <Navigate to="/app/worker/today" replace />;
   }
 
+  const isRoomViewOpen =
+    selectedRoomId === "dev-ai-council" ||
+    messengerTab === "council" ||
+    Boolean(selectedRoom && messengerTab === "rooms");
+
   return (
-    <div className="flex-1 min-w-0 h-full flex flex-col bg-background overflow-hidden select-none">
-      {/* 상단 컴팩트 바 (현장 선택 + 대화상대/대화목록 탭 + 새 대화 버튼) */}
+    <div className="flex-1 min-w-0 h-full min-h-0 w-full flex flex-col bg-background overflow-hidden select-none">
+      {/* 상단 컴팩트 바 (목록 화면에서만 표시하여 대화방/관제실 진입 시 웹·앱 화면 높이를 100% 일치시킴) */}
+      {!isRoomViewOpen && (
       <header className="px-3 pt-2.5 pb-2 border-b bg-card flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -250,9 +256,10 @@ export default function DesktopWorkspacePage() {
           </button>
         </div>
       </header>
+      )}
 
       {/* 본문: AI Council 또는 대화상대/대화목록 또는 선택된 채팅방 */}
-      <div className="flex-1 min-h-0 flex overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 w-full flex overflow-hidden">
         {selectedRoomId === "dev-ai-council" || messengerTab === "council" ? (
           <AiCouncilChatPane
             onBack={() => {

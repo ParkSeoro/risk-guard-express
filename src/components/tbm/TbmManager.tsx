@@ -18,6 +18,7 @@ import { ensureTbmForPermit, TBM_ISSUE_STATUSES } from '@/lib/tbmFromPermit';
 import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
+import { tbmListQueryBlock } from '@/lib/tbmListQuery';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
 import { useAuth } from '@/contexts/AuthContext';
@@ -55,6 +56,8 @@ const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
   const access = useGlobalProjectAccessOptional();
+  const scopeStatus = access?.scopeStatus;
+  const loadSeq = useRef(0);
   const { profile } = useAuth();
   const { toast } = useToast();
   const { softDelete } = useSoftDelete();
@@ -106,9 +109,19 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   });
 
   const load = async () => {
+    const requestId = ++loadSeq.current;
+    const block = tbmListQueryBlock({
+      projectId,
+      scopeStatus: access ? access.scopeStatus : 'ready',
+    });
+    if (block === 'scope-pending') {
+      if (requestId === loadSeq.current) setLoading(true);
+      return;
+    }
     setLoading(true);
     // Past-dated sessions → 종료 (idempotent)
     await closeExpiredTbmSessions(projectId);
+    if (requestId !== loadSeq.current) return;
     let q = supabase.from('tbm_sessions' as any)
       .select('*')
       .eq('project_id', projectId)
@@ -118,6 +131,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     if (runId) q = q.eq('run_id', runId);
     if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
     const { data } = await q;
+    if (requestId !== loadSeq.current) return;
     const list = ((data as any) || []) as TbmSession[];
     setSessions(list);
     // fetch participant counts in one shot
@@ -127,6 +141,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         .from('tbm_participations' as any)
         .select('tbm_session_id')
         .in('tbm_session_id', ids);
+      if (requestId !== loadSeq.current) return;
       const counts: Record<string, number> = {};
       ((parts as any[]) || []).forEach((p) => {
         counts[p.tbm_session_id] = (counts[p.tbm_session_id] || 0) + 1;
@@ -136,7 +151,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       setParticipantCounts({});
     }
     const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+    if (requestId !== loadSeq.current) return;
     const cs = await fetchProjectCompanies(projectId);
+    if (requestId !== loadSeq.current) return;
     setCompanies(cs.map(c => ({ id: c.id, name: c.name, type: c.type })));
     setLoading(false);
   };
@@ -149,14 +166,21 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
 
   useEffect(() => {
-    load();
+    void load();
+    const block = tbmListQueryBlock({
+      projectId,
+      scopeStatus: access ? access.scopeStatus : 'ready',
+    });
+    if (block) return;
     const ch = supabase
       .channel(`tbm-rt-${projectId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_sessions', filter: `project_id=eq.${projectId}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_participations' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_sessions', filter: `project_id=eq.${projectId}` }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_participations' }, () => { void load(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [projectId, runId]);
+    // Reload when company scope finishes. The date box filters rows already loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, runId, scopeStatus, access?.applyCompanyFilter]);
 
   const resetForm = () => {
     setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));

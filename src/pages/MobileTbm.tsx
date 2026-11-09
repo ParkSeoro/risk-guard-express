@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMobileSubpageBack, useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +30,7 @@ import { z } from "zod";
 import { correctTerms } from "@/lib/termCorrection";
 import { todayKst } from "@/lib/permitWorkDate";
 import { closeExpiredTbmSessions } from "@/lib/tbmLifecycle";
+import { tbmListQueryBlock } from "@/lib/tbmListQuery";
 import { TbmSessionPhotos } from "@/components/tbm/TbmSessionPhotos";
 import { parseTbmPhotoUrls, tbmPhotoCountLabel } from "@/lib/tbmPhotos";
 
@@ -61,7 +62,7 @@ export default function MobileTbm() {
   const goMobileHome = useNavigateMobileHome();
   const leavePage = useMobileSubpageBack("/app/worker/tasks");
   const { profile } = useAuth();
-  const { projectId, companyId, applyCompanyFilter, role, isMaster } = useMobileAccess();
+  const { projectId, companyId, applyCompanyFilter, role, isMaster, scopeStatus } = useMobileAccess();
   const preview = usePreview();
   const { log: logAudit } = useAuditLog();
 
@@ -80,57 +81,74 @@ export default function MobileTbm() {
   const [form, setForm] = useState({ title: "", location: "", summary: "" });
   const [myParticipatedIds, setMyParticipatedIds] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState(() => todayKst());
+  const [listVersion, setListVersion] = useState(0);
+  const loadSeq = useRef(0);
 
   const today = useMemo(() => todayKst(), []);
   const portalUrl = session?.qr_token ? tbmPublicUrl(session.qr_token) : "";
   const viewingToday = selectedDate === today;
+  const profilePhone = (profile as { phone?: string | null } | null)?.phone || "";
 
-  const loadSessions = async () => {
-    if (!projectId) {
+  useEffect(() => {
+    const requestId = ++loadSeq.current;
+    const block = tbmListQueryBlock({ projectId, scopeStatus });
+    if (block === "no-project") {
       setSessions([]);
+      setMyParticipatedIds(new Set());
       setLoading(false);
       return;
     }
-    setLoading(true);
-    await closeExpiredTbmSessions(projectId);
-    let q: any = supabase
-      .from("tbm_sessions" as any)
-      .select("id, title, location, briefing_summary, leader_name, qr_token, tbm_date, is_active, created_at, photo_urls")
-      .eq("project_id", projectId)
-      .eq("tbm_date", selectedDate)
-      .or("is_deleted.is.null,is_deleted.eq.false")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    q = applyCompanyFilter(q);
-    const { data, error } = await q;
-    if (error) toast.error("TBM 목록 로드 실패: " + error.message);
-    const rows = ((data as any[]) || []) as TbmSession[];
-    setSessions(rows);
-
-    // Worker: mark already participated (match by phone digits when available)
-    const phone = (profile as any)?.phone?.replace(/\D/g, "") || "";
-    if (!isManager && phone && rows.length) {
-      const ids = rows.map((s) => s.id);
-      const { data: parts } = await supabase
-        .from("tbm_participations" as any)
-        .select("tbm_session_id, worker_phone")
-        .in("tbm_session_id", ids);
-      const done = new Set<string>();
-      for (const p of (parts as any[]) || []) {
-        const pPhone = String(p.worker_phone || "").replace(/\D/g, "");
-        if (pPhone && pPhone === phone) done.add(p.tbm_session_id);
-      }
-      setMyParticipatedIds(done);
-    } else {
-      setMyParticipatedIds(new Set());
+    if (block === "scope-pending") {
+      setLoading(true);
+      return;
     }
-    setLoading(false);
-  };
 
-  useEffect(() => {
-    loadSessions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, selectedDate, isManager, profile?.user_id]);
+    let active = true;
+    const current = () => active && loadSeq.current === requestId;
+    void (async () => {
+      setLoading(true);
+      await closeExpiredTbmSessions(projectId);
+      if (!current()) return;
+      let q: any = supabase
+        .from("tbm_sessions" as any)
+        .select("id, title, location, briefing_summary, leader_name, qr_token, tbm_date, is_active, created_at, photo_urls")
+        .eq("project_id", projectId)
+        .eq("tbm_date", selectedDate)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      q = applyCompanyFilter(q);
+      const { data, error } = await q;
+      if (!current()) return;
+      if (error) toast.error("TBM 목록 로드 실패: " + error.message);
+      const rows = ((data as any[]) || []) as TbmSession[];
+      setSessions(rows);
+
+      // Worker: mark already participated (match by phone digits when available)
+      const phone = profilePhone.replace(/\D/g, "");
+      if (!isManager && phone && rows.length) {
+        const ids = rows.map((s) => s.id);
+        const { data: parts } = await supabase
+          .from("tbm_participations" as any)
+          .select("tbm_session_id, worker_phone")
+          .in("tbm_session_id", ids);
+        if (!current()) return;
+        const done = new Set<string>();
+        for (const p of (parts as any[]) || []) {
+          const pPhone = String(p.worker_phone || "").replace(/\D/g, "");
+          if (pPhone && pPhone === phone) done.add(p.tbm_session_id);
+        }
+        setMyParticipatedIds(done);
+      } else {
+        setMyParticipatedIds(new Set());
+      }
+      setLoading(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [projectId, selectedDate, isManager, profile?.user_id, profilePhone, scopeStatus, applyCompanyFilter, listVersion]);
 
   useEffect(() => {
     if (!portalUrl) {
@@ -227,7 +245,7 @@ export default function MobileTbm() {
       setMode("qr");
       await logAudit("create", "tbm_session", created.id, projectId, { title: payload.title });
       toast.success("TBM 세션이 생성되었습니다");
-      loadSessions();
+      setListVersion((n) => n + 1);
     } catch (e: any) {
       toast.error("생성 실패: " + e.message);
     } finally {

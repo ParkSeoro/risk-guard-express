@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { councilCanClose, readVerdict } from "@/lib/councilDebate";
+import { councilCanClose, councilTurnForNextSeat, readVerdict } from "@/lib/councilDebate";
 
 const manyPoints = [
   "1. 결재 버튼은 바로 끝나는 편이 맞다.",
@@ -18,6 +18,14 @@ describe("council debate verdicts", () => {
   it("does not treat a missing line as agreement", () => {
     expect(readVerdict(manyPoints)).toBeNull();
     expect(councilCanClose([manyPoints, manyPoints, manyPoints], `${manyPoints}\n판정: 된다`)).toBe(false);
+  });
+
+  it("hands the next seat the start of a speech and its verdict", () => {
+    const long = `${"가".repeat(800)}\n판정: 계속`;
+    const brief = councilTurnForNextSeat(long, 100);
+    expect(brief.endsWith("판정: 계속")).toBe(true);
+    expect(brief.length).toBeLessThan(long.length);
+    expect(councilTurnForNextSeat("짧은 반대\n판정: 합의가능")).toBe("짧은 반대\n판정: 합의가능");
   });
 
   it("closes only when Cursor says the proposal works and the other seats have no remaining objection", () => {

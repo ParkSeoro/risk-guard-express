@@ -12,27 +12,36 @@ const corsHeaders = {
 
 const GEMINI_MODELS = ["gemini-4-argon", "gemini-3.8-flash"] as const;
 
+/** Shared rule for the three seats. They never see the repository. */
+const SEAT_RULE = [
+  "저장소는 열 수 없다. 코드와 된다·안된다의 근거는 Cursor 발언만 쓴다. Cursor가 적지 않은 구조, 제품, 수치는 만들지 않는다.",
+  "지난 회의의 미합의 안건으로 이번 주제를 바꾸지 않는다.",
+  "답은 짧게 쓴다. 동의한 항목은 다시 늘어놓지 않는다. 반대는 이유 한 줄만 남긴다. 확인하지 않은 질문으로 판정을 열지 않는다.",
+  "실행하지 않은 테스트, 합의율, 점수는 만들지 않는다.",
+  "Cursor 판정이 된다이고 남는 반대가 없으면 마지막 줄은 판정: 합의가능이다. 남는 반대가 있으면 그 한 줄 뒤에 판정: 계속이다.",
+].join(" ");
+
 const SEATS = {
   gemini: {
     secret: "GEMINI_API_KEY",
     modelEnv: "GEMINI_COUNCIL_MODEL",
     model: GEMINI_MODELS[0],
     missing: "Supabase의 GEMINI_API_KEY가 없습니다. Vault 또는 Edge Function 시크릿에 그 이름으로 넣어 주세요.",
-    role: "당신은 SafeNex AI Council의 의장 Gemini다. 의제와 앞선 발언만 보고 한국어로 답한다. 의견은 있는 그대로 여러 가지를 적고 하나로 줄이지 않는다. 앞선 각 포인트에 동의 또는 반대를 이유와 함께 답하고, 질문은 있는 대로 적는다. 실행하지 않은 테스트, 합의율, 점수는 만들지 않는다. 마지막 줄은 '판정: 합의가능' 또는 '판정: 계속'만 적는다. 남는 반대나 확인되지 않은 질문이 있으면 계속이다.",
+    role: `당신은 SafeNex AI Council의 의장 Gemini다. ${SEAT_RULE}`,
   },
   anthropic: {
     secret: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_COUNCIL_MODEL",
     model: "claude-sonnet-5-5",
     missing: "Supabase 시크릿 ANTHROPIC_API_KEY가 없습니다. Anthropic 콘솔에서 만든 키를 그 이름으로 넣어 주세요.",
-    role: "당신은 SafeNex AI Council의 시스템 아키텍트 Claude다. 의제와 앞선 발언만 보고 한국어로 답한다. 의견은 있는 그대로 여러 가지를 적고 하나로 줄이지 않는다. 앞선 각 포인트에 동의 또는 반대를 이유와 함께 답하고, 질문은 있는 대로 적는다. 실행하지 않은 테스트, 합의율, 점수는 만들지 않는다. 마지막 줄은 '판정: 합의가능' 또는 '판정: 계속'만 적는다. 남는 반대나 확인되지 않은 질문이 있으면 계속이다.",
+    role: `당신은 SafeNex AI Council의 시스템 아키텍트 Claude다. ${SEAT_RULE}`,
   },
   openai: {
     secret: "OPENAI_API_KEY",
     modelEnv: "OPENAI_COUNCIL_MODEL",
     model: "gpt-4o",
     missing: "Supabase 시크릿 OPENAI_API_KEY가 없습니다. OpenAI 대시보드에서 만든 키를 그 이름으로 넣어 주세요.",
-    role: "당신은 SafeNex AI Council의 감사 GPT다. 의제와 앞선 발언만 보고 한국어로 답한다. 의견은 있는 그대로 여러 가지를 적고 하나로 줄이지 않는다. 앞선 각 포인트에 동의 또는 반대를 이유와 함께 답하고, 질문은 있는 대로 적는다. 실행하지 않은 테스트, 합의율, 점수는 만들지 않는다. 마지막 줄은 '판정: 합의가능' 또는 '판정: 계속'만 적는다. 남는 반대나 확인되지 않은 질문이 있으면 계속이다.",
+    role: `당신은 SafeNex AI Council의 감사 GPT다. ${SEAT_RULE}`,
   },
 } as const;
 
@@ -92,7 +101,7 @@ async function callGemini(apiKey: string, model: string, role: string, userText:
           systemInstruction: { parts: [{ text: role }] },
           contents: [{ role: "user", parts: [{ text: userText }] }],
           generationConfig: {
-            maxOutputTokens: 2048,
+            maxOutputTokens: 600,
             thinkingConfig: { thinkingLevel: "low" },
           },
         }),
@@ -196,7 +205,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2048,
+        max_tokens: 600,
         system: seat.role,
         messages: [{ role: "user", content: userText }],
       }),
@@ -209,7 +218,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2048,
+        max_tokens: 600,
         messages: [
           { role: "system", content: seat.role },
           { role: "user", content: userText },

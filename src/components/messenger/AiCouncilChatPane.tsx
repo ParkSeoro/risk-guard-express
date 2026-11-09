@@ -22,7 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { askCouncilCursor } from "@/lib/councilCursor";
-import { COUNCIL_MAX_CURSOR_TURNS, COUNCIL_MAX_ROUNDS, councilCanClose, readVerdict } from "@/lib/councilDebate";
+import { COUNCIL_MAX_CURSOR_TURNS, COUNCIL_MAX_ROUNDS, councilCanClose, councilTurnForNextSeat, readVerdict } from "@/lib/councilDebate";
 import {
   appendCouncilTurn,
   closeCouncilMeeting,
@@ -93,7 +93,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
       role: "시스템 안내",
       avatar: "🏛️",
       color: "#6366F1",
-      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\n주제를 던지면 Gemini, Claude, GPT가 의견을 있는 그대로 여러 가지 주고받습니다. Cursor는 실제 코드와 정해 둔 규칙을 보고 된다 또는 안된다를 판정합니다. 그 판정이 되고, 남는 반대가 없을 때만 합의합니다. 회의 중에는 코드를 고치지 않고, 풀 리퀘스트와 머지는 디렉터만 합니다. 발언은 다음 회의가 참고하도록 남습니다.",
+      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\nGemini, Claude, GPT는 저장소를 열지 않습니다. Cursor가 코드와 규칙을 보고 된다 또는 안된다를 판정하면, 세 자리는 남는 반대만 짧게 답합니다. 반대가 없으면 합의합니다. 회의 중에는 코드를 고치지 않고, 풀 리퀘스트와 머지는 디렉터만 합니다.",
       timestamp: "방금 전"
     }
   ]);
@@ -225,7 +225,9 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
         }).catch(() => undefined);
       };
       const priorFor = (instruction: string) => {
-        const body = spoken.map((turn) => `${turn.name}:\n${turn.text}`).join("\n\n");
+        const body = spoken
+          .map((turn) => `${turn.name}:\n${councilTurnForNextSeat(turn.text)}`)
+          .join("\n\n");
         return [instruction, memory, body].filter(Boolean).join("\n\n");
       };
       let cursorText = "";
@@ -235,15 +237,15 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
 
       for (let round = 1; round <= COUNCIL_MAX_ROUNDS && !closed; round++) {
         const followUp = round === 1
-          ? "첫 바퀴다. 이번 주제를 보고 의견을 있는 그대로 모두 적어라. 지난 회의는 이미 끝난 결론만 참고하라."
+          ? "이번 주제만 본다. 지난 회의는 끝난 결론만 참고한다. 짧게 답한다."
           : readVerdict(cursorText) === "된다"
-            ? "Cursor가 된다라고 한 안은 유지한 채, 남는 반대와 질문만 풀어라. 안을 바꾸면 마지막 줄은 판정: 계속이다."
-            : "Cursor 판정과 앞선 반대에 답하라. 고친 안과 아직 남는 의견을 있는 그대로 적어라.";
+            ? "Cursor가 된다라고 한 안은 유지한다. 남는 반대가 없으면 마지막 줄만 판정: 합의가능이다. 반대가 있으면 이유 한 줄과 판정: 계속이다. 안을 바꾸거나 질문으로 판정을 열지 않는다."
+            : "Cursor가 안된다라고 한 항목만 고친다. 고친 안은 짧게 적고 새 주제를 더하지 않는다. 마지막 줄은 판정: 계속이다.";
 
         latest.gemini = await askSeat(
           "gemini",
           text,
-          priorFor(`${followUp}\n너는 Gemini다. 네 의견을 여러 가지면 그대로 적고, 앞선 각 포인트에 답하라.`),
+          priorFor(`${followUp}\n너는 Gemini다. 저장소는 없다. Cursor 발언만 근거로 쓴다.`),
           `🔷 ${round}바퀴 Gemini가 의견을 말하고 있습니다...`,
         );
         spoken.push({ name: "Gemini", text: latest.gemini });
@@ -258,7 +260,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
         latest.claude = await askSeat(
           "anthropic",
           text,
-          priorFor(`${followUp}\n너는 Claude다. Gemini와 다른 자리의 각 포인트에 동의 또는 반대를 말하고, 네 의견도 더하라.`),
+          priorFor(`${followUp}\n너는 Claude다. 저장소는 없다. Cursor 발언만 근거로 쓴다.`),
           `📐 ${round}바퀴 Claude가 앞선 의견에 답하고 있습니다...`,
         );
         spoken.push({ name: "Claude", text: latest.claude });
@@ -273,7 +275,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
         latest.gpt = await askSeat(
           "openai",
           text,
-          priorFor(`${followUp}\n너는 GPT다. 앞선 각 포인트에 동의 또는 반대를 말하고, 네 의견도 더하라.`),
+          priorFor(`${followUp}\n너는 GPT다. 저장소는 없다. Cursor 발언만 근거로 쓴다.`),
           `🛡️ ${round}바퀴 GPT가 앞선 의견에 답하고 있습니다...`,
         );
         spoken.push({ name: "GPT", text: latest.gpt });
@@ -292,7 +294,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
           try {
             cursorText = await askCouncilCursor({
               agenda: text,
-              prior: priorFor("너는 Cursor다. 실제 코드와 정해 둔 규칙을 보고, 걸리는 점을 모두 적어라."),
+              prior: priorFor("너는 Cursor다. 실제 코드와 정해 둔 규칙을 보고 걸리는 점을 모두 적되, 항목마다 근거 한 줄만 써라."),
             });
           } catch (e) {
             cursorText = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";

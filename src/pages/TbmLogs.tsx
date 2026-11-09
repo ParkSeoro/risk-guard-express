@@ -3,9 +3,9 @@ import { ClipboardList } from 'lucide-react';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 export default function TbmLogs() {
-  const { selectedProject: projectId, loading } = useGlobalProjectAccess();
+  const { selectedProject: projectId, loading, scopeStatus } = useGlobalProjectAccess();
 
-  if (loading) {
+  if (loading || scopeStatus !== 'ready') {
     return <div className="p-6 text-sm text-muted-foreground">로딩 중...</div>;
   }
 

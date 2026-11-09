@@ -147,6 +147,28 @@ describe('applyOwnCompanyFilter', () => {
     expect(calls[0][0]).toBe('or');
     expect(calls[0][1]).toBe('company_id.in.(gc-a,c1),company_id.is.null');
   });
+
+  it('matches nothing while mobile scope is still the default viewer with no company', () => {
+    const calls: string[][] = [];
+    const q = {
+      eq: (k: string, v: string) => {
+        calls.push([k, v]);
+        return q;
+      },
+      in: (k: string, v: string[]) => {
+        calls.push([k, v.join(',')]);
+        return q;
+      },
+    };
+    applyOwnCompanyFilter(q, {
+      role: 'viewer',
+      companyType: null,
+      companyId: null,
+      isMaster: false,
+      accessibleCompanyIds: [],
+    });
+    expect(calls).toEqual([['company_id', '00000000-0000-0000-0000-000000000000']]);
+  });
 });
 
 describe('filterRunsByCompanyScope', () => {

@@ -12,8 +12,10 @@ describe("council provider link", () => {
     expect(fn).toContain("gemini-3.8-flash");
     expect(fn).toContain("https://generativelanguage.googleapis.com/v1beta/models/");
     expect(fn).toContain("resolveGeminiApiKey");
-    expect(fn).toContain("있는 그대로");
+    expect(fn).toContain("저장소는 열 수 없다");
     expect(fn).toContain("판정: 합의가능");
+    expect(fn).not.toContain("있는 그대로");
+    expect(fn).not.toContain("하나로 줄이지 않는다");
     expect(fn).toContain("ANTHROPIC_API_KEY");
     expect(fn).toContain("OPENAI_API_KEY");
     expect(fn).toContain("https://api.anthropic.com/v1/messages");

@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  composerMenuState,
   keyboardCoveredPixels,
   messengerComposerPlaceholder,
+  spliceComposerText,
 } from "@/lib/messengerComposer";
 
 const sql = readFileSync(
@@ -18,6 +20,36 @@ describe("messenger composer layout", () => {
   it("keeps a one-line placeholder on a phone", () => {
     expect(messengerComposerPlaceholder(true)).toBe("메시지 입력");
     expect(messengerComposerPlaceholder(false)).toContain("Enter");
+  });
+
+  it("enables cut and copy only when text is selected", () => {
+    expect(composerMenuState("", 0, 0)).toEqual({
+      canCut: false,
+      canCopy: false,
+      canSelectAll: false,
+      canClear: false,
+    });
+    expect(composerMenuState("안녕", 0, 0).canCopy).toBe(false);
+    expect(composerMenuState("안녕", 0, 0).canClear).toBe(true);
+    expect(composerMenuState("안녕", 0, 2)).toMatchObject({ canCut: true, canCopy: true, canSelectAll: true });
+  });
+
+  it("inserts, cuts, and clears around the caret", () => {
+    expect(spliceComposerText({ value: "가나다", selectionStart: 1, selectionEnd: 1, insert: "X" })).toEqual({
+      value: "가X나다",
+      cursor: 2,
+      removed: "",
+    });
+    expect(spliceComposerText({ value: "가나다", selectionStart: 1, selectionEnd: 3, insert: "" })).toEqual({
+      value: "가",
+      cursor: 1,
+      removed: "나다",
+    });
+    expect(spliceComposerText({ value: "가나다", selectionStart: 0, selectionEnd: 3, insert: "" })).toEqual({
+      value: "",
+      cursor: 0,
+      removed: "가나다",
+    });
   });
 
   it("measures only the part of the column hidden under the keyboard", () => {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type PointerEvent } from "react";
 import type { ChatRoomMessage, ChatAttachment } from "@/lib/messengerApi";
 import {
   parseSafetyDocMessage,
@@ -32,8 +32,14 @@ import {
 } from "@/lib/notificationReadHelper";
 import { toast } from "sonner";
 import { ReadReceiptModal } from "./ReadReceiptModal";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
 
@@ -102,11 +108,11 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [showReceipts, setShowReceipts] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [approvingCardId, setApprovingCardId] = useState<string | null>(null);
   const [approvedCardIds, setApprovedCardIds] = useState<Set<string>>(() => new Set());
   const pressTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
+  const bubbleRef = useRef<HTMLDivElement>(null);
 
   const handleQuickApprove = async (card: SafetyDocCardPayload) => {
     if (approvingCardId || approvedCardIds.has(card.id)) return;
@@ -157,12 +163,23 @@ export function MessageBubble({
     else setLightboxUrl(url);
   };
 
-  const startPress = () => {
+  const startPress = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse") return;
     longPressed.current = false;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    const x = event.clientX;
+    const y = event.clientY;
     pressTimer.current = window.setTimeout(() => {
       longPressed.current = true;
-      setActionsOpen(true);
+      bubbleRef.current?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          button: 2,
+        }),
+      );
     }, 450);
   };
 
@@ -300,8 +317,11 @@ export function MessageBubble({
               </div>
             )}
 
-            {/* 실제 메시지 말풍선 */}
+            {/* 실제 메시지 말풍선. 메뉴는 우클릭(휴대폰은 길게 누르기)으로만 연다. */}
+            <ContextMenu>
+            <ContextMenuTrigger asChild>
             <div
+              ref={bubbleRef}
               className={cn(
                 "relative px-3.5 py-2.5 rounded-2xl break-words shadow-2xs",
                 messengerType.body,
@@ -314,14 +334,11 @@ export function MessageBubble({
               onPointerUp={endPress}
               onPointerLeave={endPress}
               onPointerCancel={endPress}
-              onClick={(event) => {
-                const target = event.target as HTMLElement;
-                if (longPressed.current) {
-                  longPressed.current = false;
-                  return;
-                }
-                if (target.closest("a, button, img")) return;
-                setActionsOpen(true);
+              onClickCapture={(event) => {
+                if (!longPressed.current) return;
+                longPressed.current = false;
+                event.preventDefault();
+                event.stopPropagation();
               }}
             >
               {/* 첨부파일 렌더링 */}
@@ -469,6 +486,53 @@ export function MessageBubble({
               )}
 
             </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="min-w-[11rem]">
+              {onToggleReaction && (
+                <>
+                  <div className="flex gap-1 px-1 py-1">
+                    {QUICK_CHAT_REACTIONS.map((item) => (
+                      <ContextMenuItem
+                        key={item.emoji}
+                        className="px-2 py-1"
+                        title={item.label}
+                        onSelect={() => onToggleReaction(message.id, item.emoji)}
+                      >
+                        {item.emoji}
+                      </ContextMenuItem>
+                    ))}
+                  </div>
+                  <ContextMenuSeparator />
+                </>
+              )}
+              {onReply && (
+                <ContextMenuItem onSelect={() => onReply(message)}>
+                  <CornerDownLeft className="mr-2 h-4 w-4" /> 답장
+                </ContextMenuItem>
+              )}
+              <ContextMenuItem onSelect={handleCopy}>
+                <Copy className="mr-2 h-4 w-4" /> 복사
+              </ContextMenuItem>
+              {onPinMessage && (
+                <ContextMenuItem onSelect={() => onPinMessage(message)}>
+                  <Pin className="mr-2 h-4 w-4" /> {isPinned ? "공지 해제" : "공지"}
+                </ContextMenuItem>
+              )}
+              {onForward && (
+                <ContextMenuItem onSelect={() => onForward(message)}>
+                  <Forward className="mr-2 h-4 w-4" /> 전달
+                </ContextMenuItem>
+              )}
+              {isMe && onDeleteMessage && (
+                <ContextMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => onDeleteMessage(message)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> 삭제
+                </ContextMenuItem>
+              )}
+            </ContextMenuContent>
+            </ContextMenu>
 
             {/* 이모지 리액션 배지 목록 */}
             {reactionGroups.length > 0 && (
@@ -532,57 +596,6 @@ export function MessageBubble({
           </div>
         </div>
       )}
-
-      <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className={messengerType.title}>메시지</DialogTitle>
-          </DialogHeader>
-          {onToggleReaction && (
-            <div className="flex flex-wrap gap-2">
-              {QUICK_CHAT_REACTIONS.map((item) => (
-                <Button
-                  key={item.emoji}
-                  type="button"
-                  variant="outline"
-                  className={messengerType.preview}
-                  onClick={() => {
-                    setActionsOpen(false);
-                    onToggleReaction(message.id, item.emoji);
-                  }}
-                >
-                  {item.emoji} {item.label}
-                </Button>
-              ))}
-            </div>
-          )}
-          <div className="grid gap-2">
-            {onReply && (
-              <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); onReply(message); }}>
-                <CornerDownLeft className="h-4 w-4" /> 답장
-              </Button>
-            )}
-            <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); handleCopy(); }}>
-              <Copy className="h-4 w-4" /> 복사
-            </Button>
-            {onPinMessage && (
-              <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); onPinMessage(message); }}>
-                <Pin className="h-4 w-4" /> {isPinned ? "공지 해제" : "공지"}
-              </Button>
-            )}
-            {onForward && (
-              <Button type="button" variant="outline" className={cn("justify-start", messengerType.body)} onClick={() => { setActionsOpen(false); onForward(message); }}>
-                <Forward className="h-4 w-4" /> 전달
-              </Button>
-            )}
-            {isMe && onDeleteMessage && (
-              <Button type="button" variant="outline" className={cn("justify-start text-destructive", messengerType.body)} onClick={() => { setActionsOpen(false); onDeleteMessage(message); }}>
-                <Trash2 className="h-4 w-4" /> 삭제
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* 라인웍스 읽음 확인 및 미확인자 재알림 모달 */}
       <ReadReceiptModal

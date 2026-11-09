@@ -40,6 +40,7 @@ const tbmSchema = z.object({
 });
 
 import { tbmInAppPath, tbmPublicUrl } from "@/lib/tbmUrls";
+import { markOpenDocumentNotifications } from "@/lib/notificationReadHelper";
 
 type TbmSession = {
   id: string;
@@ -529,6 +530,7 @@ export default function MobileTbm() {
                             toast.error("QR 토큰이 아직 없습니다. 관리자에게 문의하세요.");
                             return;
                           }
+                          void markOpenDocumentNotifications(s.id);
                           navigate(tbmInAppPath(token));
                         }}
                       >

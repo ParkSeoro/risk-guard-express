@@ -8,8 +8,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, Check, Inbox, Search, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
+import { toast } from "sonner";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
-import { notificationTitle } from "@/lib/notificationText";
+import { notificationKindLabel, notificationTitle } from "@/lib/notificationText";
+import { applyChatReadMarks } from "@/lib/notificationReadHelper";
 import { decorateWorkStopNotificationPreview, fetchRevealedWorkStopNames, workStopIdsFromNotifications } from "@/lib/workStopReveal";
 import { fetchProjectNames } from "@/lib/projectNames";
 
@@ -32,7 +34,8 @@ export default function NotificationInbox() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(300);
-    const rows = data || [];
+    let rows = data || [];
+    rows = await applyChatReadMarks(user.id, rows);
     setItems(rows);
     const revealed = await fetchRevealedWorkStopNames(workStopIdsFromNotifications(rows));
     setNames(revealed);
@@ -59,13 +62,25 @@ export default function NotificationInbox() {
   }, [items, tab, q, names, projects]);
 
   const markRead = async (id: string) => {
-    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    if (error) {
+      toast.error("읽음 처리에 실패했습니다.");
+      return;
+    }
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
   };
 
   const markAll = async () => {
     if (!user) return;
-    await supabase.from("notifications").update({ is_read: true }).eq("user_id", user.id).eq("is_read", false);
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", user.id)
+      .eq("is_read", false);
+    if (error) {
+      toast.error("읽음 처리에 실패했습니다.");
+      return;
+    }
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
   };
 
@@ -76,7 +91,7 @@ export default function NotificationInbox() {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-3xl" data-testid="notification-inbox">
+    <div className="p-4 sm:p-6 space-y-4 w-full" data-testid="notification-inbox">
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -120,17 +135,22 @@ export default function NotificationInbox() {
             <button
               key={n.id}
               type="button"
-              className={`w-full text-left px-4 py-3 hover:bg-muted/40 ${!n.is_read ? "bg-primary/5" : ""}`}
+              className={`w-full text-left px-4 py-4 hover:bg-muted/40 ${!n.is_read ? "bg-primary/5" : ""}`}
               onClick={() => void openItem(n)}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className={`text-sm ${!n.is_read ? "font-semibold" : ""}`}>{notificationTitle(n)}</div>
-                {!n.is_read && <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {notificationKindLabel(n) && (
+                    <div className="text-xs font-semibold text-primary mb-1">{notificationKindLabel(n)}</div>
+                  )}
+                  <div className={`text-base leading-snug ${!n.is_read ? "font-semibold" : ""}`}>{notificationTitle(n)}</div>
+                </div>
+                {!n.is_read && <span className="h-2.5 w-2.5 rounded-full bg-primary mt-1.5 shrink-0" />}
               </div>
               {previewOf(n) && (
-                <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">{previewOf(n)}</div>
+                <div className="text-sm text-muted-foreground mt-1 whitespace-pre-line">{previewOf(n)}</div>
               )}
-              <div className="text-[11px] text-muted-foreground mt-1">
+              <div className="text-xs text-muted-foreground mt-1.5">
                 {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ko })}
               </div>
             </button>

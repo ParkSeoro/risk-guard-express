@@ -6,6 +6,7 @@ import { flushSync } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { markOpenDocumentNotifications } from '@/lib/notificationReadHelper';
 import { useToast } from '@/hooks/use-toast';
 import { canCancelPermitExtension, mapPermitExtendRequestError } from '@/lib/permitExtend';
 import { Button } from '@/components/ui/button';
@@ -113,6 +114,9 @@ export default function WorkPermitDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, profile } = useAuth();
+  useEffect(() => {
+    if (id) void markOpenDocumentNotifications(id);
+  }, [id]);
   const { userCompanyId, userCompanyType, userRole, isMaster } = useGlobalProjectAccess();
 
   const [permit, setPermit] = useState<any>(null);

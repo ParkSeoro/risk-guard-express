@@ -81,6 +81,7 @@ export default function MobileTbm() {
   const [form, setForm] = useState({ title: "", location: "", summary: "" });
   const [myParticipatedIds, setMyParticipatedIds] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState(() => todayKst());
+  const [listVersion, setListVersion] = useState(0);
   const loadSeq = useRef(0);
 
   const today = useMemo(() => todayKst(), []);
@@ -147,7 +148,7 @@ export default function MobileTbm() {
     return () => {
       active = false;
     };
-  }, [projectId, selectedDate, isManager, profile?.user_id, profilePhone, scopeStatus, applyCompanyFilter]);
+  }, [projectId, selectedDate, isManager, profile?.user_id, profilePhone, scopeStatus, applyCompanyFilter, listVersion]);
 
   useEffect(() => {
     if (!portalUrl) {
@@ -244,7 +245,7 @@ export default function MobileTbm() {
       setMode("qr");
       await logAudit("create", "tbm_session", created.id, projectId, { title: payload.title });
       toast.success("TBM 세션이 생성되었습니다");
-      loadSessions();
+      setListVersion((n) => n + 1);
     } catch (e: any) {
       toast.error("생성 실패: " + e.message);
     } finally {

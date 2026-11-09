@@ -110,7 +110,7 @@ import {
   isManagedResidualHigh,
   assessmentCompanyChainMatch,
   listManualPreviousCandidates,
-  writingCompanyId,
+  chainCompanyId,
   mergeFeedbackChainPrevious,
   parseAssessmentFeedbackChain,
   pickPreviousApprovedRun,
@@ -651,7 +651,7 @@ const AssessmentRunDetail = () => {
       if (cancelled) return;
       const companyIds = new Set<string>();
       for (const row of [run as WeeklyLinkRun, ...rows]) {
-        const id = writingCompanyId(row, authorCompanyByUser);
+        const id = chainCompanyId(row, authorCompanyByUser);
         if (id) companyIds.add(id);
       }
       const companyLabelById: Record<string, string> = {};

@@ -25,8 +25,11 @@ import {
   type SafetyDocCardPayload,
 } from "@/lib/chatMessages";
 import {
+  composerMenuState,
   keyboardCoveredPixels,
   messengerComposerPlaceholder,
+  spliceComposerText,
+  type ComposerMenuState,
 } from "@/lib/messengerComposer";
 import { formatBytes } from "@/lib/compressUploadFile";
 import {
@@ -48,6 +51,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   ArrowLeft,
   Bell,
   BellOff,
@@ -63,6 +73,11 @@ import {
   Search,
   PanelRightOpen,
   FileCheck2,
+  Scissors,
+  Copy,
+  ClipboardPaste,
+  TextSelect,
+  Eraser,
   UploadCloud,
   ExternalLink,
   ChevronLeft,
@@ -537,6 +552,146 @@ export function MessengerChatPane({
     const file = e.target.files?.[0];
     if (!file) return;
     attachFile(file);
+  };
+
+  const [composerMenu, setComposerMenu] = useState<ComposerMenuState>(() => composerMenuState("", 0, 0));
+
+  const syncComposerMenu = () => {
+    const el = inputRef.current;
+    const value = el?.value ?? inputText;
+    setComposerMenu(composerMenuState(value, el?.selectionStart ?? 0, el?.selectionEnd ?? 0));
+  };
+
+  const placeComposerCursor = (cursor: number) => {
+    window.requestAnimationFrame(() => {
+      const node = inputRef.current;
+      if (!node) return;
+      node.focus();
+      const pos = Math.min(Math.max(0, cursor), node.value.length);
+      node.setSelectionRange(pos, pos);
+    });
+  };
+
+  const writeClipboardText = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // The page may block the async clipboard. Fall through to the older copy command.
+    }
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.left = "-9999px";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(area);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const readComposerClipboard = async (): Promise<{ text: string; image: File | null }> => {
+    let text = "";
+    let image: File | null = null;
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((type) => type.startsWith("image/"));
+          if (imageType && !image) {
+            const blob = await item.getType(imageType);
+            const ext = imageType.split("/")[1]?.replace("jpeg", "jpg") || "png";
+            image = new File([blob], `clipboard_${Date.now()}.${ext}`, { type: imageType });
+          }
+          if (!text && item.types.includes("text/plain")) {
+            text = await (await item.getType("text/plain")).text();
+          }
+        }
+        if (image || text) return { text, image };
+      }
+    } catch {
+      // Permission or an unsupported clipboard. Try plain text next.
+    }
+    try {
+      if (navigator.clipboard?.readText) text = await navigator.clipboard.readText();
+    } catch {
+      text = "";
+    }
+    return { text, image };
+  };
+
+  const copyComposerSelection = async () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const selected = el.value.slice(Math.min(start, end), Math.max(start, end));
+    if (!selected) return;
+    const ok = await writeClipboardText(selected);
+    if (!ok) toast.error("복사하지 못했습니다.");
+  };
+
+  const cutComposerSelection = async () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const next = spliceComposerText({
+      value: el.value,
+      selectionStart: el.selectionStart ?? 0,
+      selectionEnd: el.selectionEnd ?? 0,
+      insert: "",
+    });
+    if (!next.removed) return;
+    const ok = await writeClipboardText(next.removed);
+    if (!ok) {
+      toast.error("잘라내지 못했습니다.");
+      return;
+    }
+    setInputText(next.value);
+    placeComposerCursor(next.cursor);
+  };
+
+  const pasteIntoComposer = async () => {
+    const payload = await readComposerClipboard();
+    if (payload.image) {
+      attachFile(payload.image);
+      toast.info("클립보드 이미지가 첨부되었습니다.");
+      return;
+    }
+    if (!payload.text) {
+      toast.error("붙여넣지 못했습니다. 입력창에서 Ctrl+V를 사용해 주세요.");
+      return;
+    }
+    const el = inputRef.current;
+    const value = el?.value ?? inputText;
+    const next = spliceComposerText({
+      value,
+      selectionStart: el?.selectionStart ?? value.length,
+      selectionEnd: el?.selectionEnd ?? value.length,
+      insert: payload.text,
+    });
+    setInputText(next.value);
+    placeComposerCursor(next.cursor);
+    handleTyping();
+  };
+
+  const selectAllComposer = () => {
+    const el = inputRef.current;
+    if (!el || !el.value) return;
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+    syncComposerMenu();
+  };
+
+  const clearComposer = () => {
+    setInputText("");
+    window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   // 클립보드 이미지 붙여넣기 (Ctrl+V)
@@ -1197,28 +1352,59 @@ export function MessengerChatPane({
             <FileCheck2 className="h-4 w-4" />
           </Button>
 
-          <Textarea
-            ref={inputRef}
-            value={inputText}
-            onChange={(e) => {
-              setInputText(e.target.value);
-              handleTyping();
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onFocus={() => {
-              window.setTimeout(() => {
-                window.visualViewport?.dispatchEvent(new Event("resize"));
-              }, 60);
-            }}
-            placeholder={
-              selectedFile
-                ? "설명 메시지를 입력하세요 (선택)..."
-                : messengerComposerPlaceholder(compactComposer)
-            }
-            className={cn("min-h-[44px] max-h-32 resize-none border-0 shadow-none focus-visible:ring-0 p-1.5 overflow-hidden", messengerType.input)}
-            rows={1}
-          />
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <Textarea
+                ref={inputRef}
+                value={inputText}
+                onChange={(e) => {
+                  setInputText(e.target.value);
+                  handleTyping();
+                  setComposerMenu(composerMenuState(
+                    e.target.value,
+                    e.target.selectionStart ?? 0,
+                    e.target.selectionEnd ?? 0,
+                  ));
+                }}
+                onKeyDown={handleKeyDown}
+                onKeyUp={syncComposerMenu}
+                onSelect={syncComposerMenu}
+                onClick={syncComposerMenu}
+                onContextMenu={syncComposerMenu}
+                onPaste={handlePaste}
+                onFocus={() => {
+                  window.setTimeout(() => {
+                    window.visualViewport?.dispatchEvent(new Event("resize"));
+                  }, 60);
+                }}
+                placeholder={
+                  selectedFile
+                    ? "설명 메시지를 입력하세요 (선택)..."
+                    : messengerComposerPlaceholder(compactComposer)
+                }
+                className={cn("min-h-[44px] max-h-32 resize-none border-0 shadow-none focus-visible:ring-0 p-1.5 overflow-hidden", messengerType.input)}
+                rows={1}
+              />
+            </ContextMenuTrigger>
+            <ContextMenuContent className="min-w-[11rem]">
+              <ContextMenuItem disabled={!composerMenu.canCut} onSelect={() => void cutComposerSelection()}>
+                <Scissors className="mr-2 h-4 w-4" /> 잘라내기
+              </ContextMenuItem>
+              <ContextMenuItem disabled={!composerMenu.canCopy} onSelect={() => void copyComposerSelection()}>
+                <Copy className="mr-2 h-4 w-4" /> 복사
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => void pasteIntoComposer()}>
+                <ClipboardPaste className="mr-2 h-4 w-4" /> 붙여넣기
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem disabled={!composerMenu.canSelectAll} onSelect={selectAllComposer}>
+                <TextSelect className="mr-2 h-4 w-4" /> 모두 선택
+              </ContextMenuItem>
+              <ContextMenuItem disabled={!composerMenu.canClear} onSelect={clearComposer}>
+                <Eraser className="mr-2 h-4 w-4" /> 입력 지우기
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
 
           <Button
             type="button"

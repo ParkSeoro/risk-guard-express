@@ -2,6 +2,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 
+if (typeof globalThis.DOMRect === "undefined") {
+  class DOMRectPolyfill {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+      this.left = x;
+      this.top = y;
+      this.right = x + width;
+      this.bottom = y + height;
+    }
+    static fromRect(rect?: { x?: number; y?: number; width?: number; height?: number }) {
+      return new DOMRectPolyfill(rect?.x ?? 0, rect?.y ?? 0, rect?.width ?? 0, rect?.height ?? 0);
+    }
+    toJSON() {
+      return { x: this.x, y: this.y, width: this.width, height: this.height };
+    }
+  }
+  (globalThis as unknown as { DOMRect: typeof DOMRectPolyfill }).DOMRect = DOMRectPolyfill;
+}
+
 const { fetchRoomMessages, markChatRoomRead, setChatNotificationEnabled, touchChatRoomPresence, clearChatRoomPresence } = vi.hoisted(() => ({
   fetchRoomMessages: vi.fn(),
   markChatRoomRead: vi.fn(async () => undefined),
@@ -225,8 +255,20 @@ describe("MessengerChatPane history and mute", () => {
     await act(async () => {
       bubble?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    expect(document.body.textContent).not.toContain("답장");
+
+    await act(async () => {
+      bubble?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    });
     expect(document.body.textContent).toContain("답장");
     expect(document.body.textContent).toContain("복사");
     expect(document.body.textContent).toContain("전달");
+
+    const input = document.querySelector("textarea");
+    await act(async () => {
+      input?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    });
+    expect(document.body.textContent).toContain("붙여넣기");
+    expect(document.body.textContent).toContain("입력 지우기");
   });
 });

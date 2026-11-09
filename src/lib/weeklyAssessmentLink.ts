@@ -11,9 +11,9 @@ export type WeeklyLinkRun = {
   target_company_ids?: string[] | null;
   author_user_id?: string | null;
   created_by?: string | null;
-  /** 작성자 소속회사. 전회차 목록은 이 값이 같은 회차만 고른다. */
+  /** Author's company. Used only when the document has no target company. */
   writing_company_id?: string | null;
-  /** Display only. Stamped from the writing company before the picker renders. */
+  /** Display only. Stamped from the chain company before the picker renders. */
   company_label?: string | null;
   period_label?: string | null;
   is_deleted?: boolean | null;
@@ -64,7 +64,7 @@ export function effectiveCompanyIds(
   return id ? [id] : [];
 }
 
-/** 작성자 소속회사. 대상 업체 태그는 쓰지 않는다. 사람 id가 아니라 회사 id다. */
+/** Author's company. Blank-target documents use this. A filled target list does not. */
 export function writingCompanyId(
   run: WeeklyLinkRun,
   authorCompanyByUser?: Record<string, string | null | undefined> | null,
@@ -77,14 +77,22 @@ export function writingCompanyId(
   return String(run.writing_company_id || '').trim();
 }
 
+/** Company that owns this document's weekly chain. Target company, else the author. */
+export function chainCompanyId(
+  run: WeeklyLinkRun,
+  authorCompanyByUser?: Record<string, string | null | undefined> | null,
+): string {
+  return effectiveCompanyIds(run, authorCompanyByUser)[0] || '';
+}
+
 export function stampRunCompany<T extends WeeklyLinkRun>(
   run: T,
   authorCompanyByUser?: Record<string, string | null | undefined> | null,
   companyLabelById?: Record<string, string | null | undefined> | null,
 ): T {
-  const id = writingCompanyId(run, authorCompanyByUser);
+  const id = chainCompanyId(run, authorCompanyByUser);
   const label = String((id && companyLabelById?.[id]) || '').trim();
-  return { ...run, writing_company_id: id || null, company_label: label || null };
+  return { ...run, company_label: label || run.company_label || null };
 }
 
 function periodKey(run: WeeklyLinkRun): string | null {
@@ -102,18 +110,21 @@ function isSameProjectCandidate(current: WeeklyLinkRun, candidate: WeeklyLinkRun
 }
 
 /**
- * Same chain when both documents were written by the same company.
- * Several people in that company share one list. The viewer does not matter.
- * A different target-company tag does not split or join the list.
+ * Same chain when both documents name the same target company.
+ * Several authors can write that company's list. The viewer's company does not matter.
+ * A shared author (for example one GC supervisor) does not join two target companies.
+ * A blank target falls back to the author's company, and two blanks are not the same.
  */
 export function assessmentCompanyChainMatch(
   a: WeeklyLinkRun,
   b: WeeklyLinkRun,
   authorCompanyByUser?: Record<string, string | null | undefined> | null,
 ): boolean {
-  const left = writingCompanyId(a, authorCompanyByUser);
-  const right = writingCompanyId(b, authorCompanyByUser);
-  return !!(left && right && left === right);
+  const left = effectiveCompanyIds(a, authorCompanyByUser);
+  const right = effectiveCompanyIds(b, authorCompanyByUser);
+  if (left.length === 0 || right.length === 0 || left.length !== right.length) return false;
+  const other = new Set(right);
+  return left.every((id) => other.has(id));
 }
 
 function isEligiblePrevious(
@@ -153,7 +164,7 @@ function rankPreviousPool(current: WeeklyLinkRun, pool: WeeklyLinkRun[]): Weekly
   return ranked[0] || null;
 }
 
-/** Same project + same company + 승인완료. Prefer same type, then latest period before current start. */
+/** Same project + same target company + 승인완료. Prefer same type, then latest period before current start. */
 export function pickPreviousApprovedRun(
   current: WeeklyLinkRun,
   candidates: WeeklyLinkRun[],
@@ -175,8 +186,8 @@ export function pickPreviousApprovedRun(
 const MANUAL_PREVIOUS_STATUSES = new Set(['승인완료', '결재진행']);
 
 /**
- * Picker list: 결재진행·승인완료 written by the same company.
- * Another person at that company is included. Another company is not.
+ * Picker list: 결재진행·승인완료 for the same target company.
+ * Another author of that company is included. Another target company is not.
  */
 export function listManualPreviousCandidates(
   current: WeeklyLinkRun,

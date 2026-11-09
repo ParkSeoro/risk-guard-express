@@ -316,33 +316,33 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(resolvePreviousRun(current, [matching], current.id)?.id).toBe('match');
   });
 
-  it('links coworkers even when target tags differ, and skips another company', () => {
+  it('links the same target company even when authors differ, and skips another target', () => {
     const authors = { 'user-gc': 'co-hitech', 'user-coworker': 'co-hitech', 'user-jinnam': 'co-jinnam' };
     const current = run({
       id: 'next',
       status: '작성중',
       start_date: '2026-08-25',
       created_at: '2026-08-19T00:00:00Z',
-      target_company_ids: ['co-hitech'],
+      target_company_ids: ['co-woori'],
       author_user_id: 'user-gc',
     });
-    const coworker = run({
-      id: 'coworker',
+    const otherTargetSameAuthor = run({
+      id: 'other-target',
       start_date: '2026-08-18',
       created_at: '2026-08-10T00:00:00Z',
-      target_company_ids: ['co-partner'],
+      target_company_ids: ['co-taeyoung'],
       author_user_id: 'user-coworker',
     });
-    const otherCompany = run({
-      id: 'other-author',
-      start_date: '2026-08-20',
-      created_at: '2026-08-17T00:00:00Z',
-      target_company_ids: ['co-hitech'],
+    const sameTargetOtherAuthor = run({
+      id: 'same-target',
+      start_date: '2026-08-18',
+      created_at: '2026-08-11T00:00:00Z',
+      target_company_ids: ['co-woori'],
       author_user_id: 'user-jinnam',
     });
-    expect(assessmentCompanyChainMatch(current, coworker, authors)).toBe(true);
-    expect(assessmentCompanyChainMatch(current, otherCompany, authors)).toBe(false);
-    expect(pickPreviousApprovedRun(current, [otherCompany, coworker], authors)?.id).toBe('coworker');
+    expect(assessmentCompanyChainMatch(current, otherTargetSameAuthor, authors)).toBe(false);
+    expect(assessmentCompanyChainMatch(current, sameTargetOtherAuthor, authors)).toBe(true);
+    expect(pickPreviousApprovedRun(current, [otherTargetSameAuthor, sameTargetOtherAuthor], authors)?.id).toBe('same-target');
   });
 
   it('links by work period, not by the typed title, and lists that company history', () => {
@@ -354,8 +354,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       end_date: '2026-10-18',
       created_at: '2026-10-02T00:00:00Z',
       period_label: '사용자가 아무렇게나 적은 제목',
-      writing_company_id: 'co-cheongwon',
-      target_company_ids: ['somewhere-else'],
+      writing_company_id: 'co-hitech',
+      target_company_ids: ['co-cheongwon'],
     });
     const earlier = run({
       id: 'oct-1',
@@ -364,8 +364,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       end_date: '2026-10-11',
       created_at: '2026-09-28T00:00:00Z',
       period_label: 'ZZZ 나중 제목',
-      writing_company_id: 'co-cheongwon',
-      target_company_ids: ['another-tag'],
+      writing_company_id: 'co-hitech',
+      target_company_ids: ['co-cheongwon'],
     });
     const laterSameCompany = run({
       id: 'later',
@@ -375,7 +375,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       end_date: '2026-10-25',
       created_at: '2026-10-03T00:00:00Z',
       period_label: 'AAA 먼저 정렬될 제목',
-      writing_company_id: 'co-cheongwon',
+      writing_company_id: 'co-hitech',
+      target_company_ids: ['co-cheongwon'],
     });
     const otherCompany = run({
       id: 'other-co',
@@ -384,7 +385,8 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       end_date: '2026-10-11',
       created_at: '2026-09-27T00:00:00Z',
       period_label: '2026년 10월 01주차',
-      writing_company_id: 'co-other',
+      writing_company_id: 'co-hitech',
+      target_company_ids: ['co-other'],
     });
     expect(pickPreviousApprovedRun(current, [laterSameCompany, otherCompany, earlier])?.id).toBe('oct-1');
     expect(listManualPreviousCandidates(current, [laterSameCompany, otherCompany, earlier]).map((c) => c.id))
@@ -397,7 +399,7 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
     expect(ids).toEqual(['pending', 'match']);
   });
 
-  it('lists the same company including another person and 결재진행', () => {
+  it('lists the same target company, including another author and 결재진행', () => {
     const authors = { 'user-gc': 'co-hitech', 'user-other': 'co-hitech', 'user-jinnam': 'co-jinnam' };
     const current = run({
       id: 'next',
@@ -407,25 +409,53 @@ describe('resolvePreviousRun / listManualPreviousCandidates', () => {
       target_company_ids: ['co-site-a'],
       author_user_id: 'user-gc',
     });
-    const coworkerPending = run({
-      id: 'coworker-pending',
+    const otherTargetPending = run({
+      id: 'other-target-pending',
       status: '결재진행',
       start_date: '2026-08-18',
       created_at: '2026-08-12T00:00:00Z',
       target_company_ids: ['co-site-b'],
       author_user_id: 'user-other',
     });
-    const peer = run({
-      id: 'peer',
+    const sameTarget = run({
+      id: 'same-target',
       status: '승인완료',
       start_date: '2026-08-18',
       created_at: '2026-08-11T00:00:00Z',
       target_company_ids: ['co-site-a'],
       author_user_id: 'user-jinnam',
     });
-    const ids = listManualPreviousCandidates(current, [peer, coworkerPending], authors).map((c) => c.id);
-    expect(ids).toEqual(['coworker-pending']);
-    expect(resolvePreviousRun(current, [peer, coworkerPending], 'peer', authors)?.id).not.toBe('peer');
+    const ids = listManualPreviousCandidates(current, [sameTarget, otherTargetPending], authors).map((c) => c.id);
+    expect(ids).toEqual(['same-target']);
+    expect(resolvePreviousRun(current, [sameTarget, otherTargetPending], 'other-target-pending', authors)?.id).toBe('same-target');
+  });
+
+  it('keeps a GC author from attaching one partner photo slot to another partner', () => {
+    const authors = { 'user-hitech': 'co-hitech' };
+    const hanil = run({
+      id: 'hanil-3',
+      status: '승인완료',
+      start_date: '2026-11-16',
+      created_at: '2026-11-10T00:00:00Z',
+      target_company_ids: ['co-hanil'],
+      author_user_id: 'user-hitech',
+    });
+    const jinnam = run({
+      id: 'jinnam-2',
+      start_date: '2026-11-09',
+      created_at: '2026-11-08T00:00:00Z',
+      target_company_ids: ['co-jinnam'],
+      author_user_id: 'user-hitech',
+    });
+    const hanilPrev = run({
+      id: 'hanil-2',
+      start_date: '2026-11-09',
+      created_at: '2026-11-03T00:00:00Z',
+      target_company_ids: ['co-hanil'],
+      author_user_id: 'user-hitech',
+    });
+    expect(pickPreviousApprovedRun(hanil, [jinnam, hanilPrev], authors)?.id).toBe('hanil-2');
+    expect(resolvePreviousRun(hanil, [jinnam, hanilPrev], 'jinnam-2', authors)?.id).toBe('hanil-2');
   });
 
   it('does not clear an own-company previous when the chain lookup is empty', () => {

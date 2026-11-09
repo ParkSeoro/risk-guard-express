@@ -39,7 +39,7 @@ export const DEV_COUNCIL_ROOM: ChatRoom = {
   title: "AI Council 무장애 관제실",
   type: "group",
   created_at: new Date().toISOString(),
-  last_message: "4대 AI(Gemini, Cursor, Claude, GPT) 무장애 관제 가동 중",
+  last_message: "Gemini와 Cursor가 이야기합니다",
   last_message_at: new Date().toISOString(),
   unread_count: 0
 } as any;
@@ -377,7 +377,7 @@ export function MessengerRoomList({
                     <span className="text-[10px] text-emerald-400 font-mono font-bold">95%</span>
                   </div>
                   <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                    Gemini • Cursor • Claude • GPT 4대 AI 무장애 관제
+                    Gemini • Cursor
                   </p>
                 </div>
               </button>

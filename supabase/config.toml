@@ -40,6 +40,6 @@ verify_jwt = false
 [functions.council-cursor]
 verify_jwt = false
 
-# AI Council Gemini, Claude, and GPT seats. Verifies the caller JWT and is_council_director, then calls each company API.
+# AI Council Gemini seat. Verifies the caller JWT and is_council_director. Claude and GPT are not called.
 [functions.council-provider]
 verify_jwt = false

@@ -13,9 +13,11 @@ describe("council provider link", () => {
     expect(fn).toContain("https://generativelanguage.googleapis.com/v1beta/models/");
     expect(fn).toContain("resolveGeminiApiKey");
     expect(fn).toContain("저장소는 열 수 없다");
-    expect(fn).toContain("판정: 합의가능");
+    expect(fn).toContain("채점 줄은 쓰지 않는다");
+    expect(fn).toContain("seat_retired");
     expect(fn).not.toContain("있는 그대로");
     expect(fn).not.toContain("하나로 줄이지 않는다");
+    expect(fn).not.toContain("판정: 합의가능");
     expect(fn).toContain("ANTHROPIC_API_KEY");
     expect(fn).toContain("OPENAI_API_KEY");
     expect(fn).toContain("https://api.anthropic.com/v1/messages");
@@ -30,11 +32,11 @@ describe("council provider link", () => {
     expect(client).not.toContain("OPENAI_API_KEY");
 
     expect(pane).toContain('askCouncilProvider');
-    expect(pane).toContain('"gemini"');
-    expect(pane).toContain('"anthropic"');
-    expect(pane).toContain('"openai"');
-    expect(pane).toContain("COUNCIL_MAX_ROUNDS");
-    expect(pane).toContain("councilCanClose");
+    expect(pane).toContain("너는 Gemini다");
+    expect(pane).toContain("너는 Cursor다");
+    expect(pane).not.toContain("너는 Claude다");
+    expect(pane).not.toContain("너는 GPT다");
+    expect(pane).not.toContain("councilCanClose");
     expect(pane).toContain("loadCouncilMeetings");
     expect(pane).toContain("councilMemoryBrief");
     expect(pane).not.toContain("메인 UI 루프 및 결재 트랜잭션 블로킹");

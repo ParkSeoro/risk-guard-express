@@ -16,9 +16,11 @@ function clip(text: string, max: number) {
 }
 
 function lineFor(meeting: CouncilMemoryMeeting) {
+  const gemini = [...meeting.turns].reverse().find((turn) => turn.seat === "gemini");
   const cursor = [...meeting.turns].reverse().find((turn) => turn.seat === "cursor");
   const chair = [...meeting.turns].reverse().find((turn) => turn.seat === "chair");
   const parts = [`[${meeting.status}] ${clip(meeting.agenda, 180)}`];
+  if (gemini?.body.trim()) parts.push(`Gemini: ${clip(gemini.body, 220)}`);
   if (cursor?.body.trim()) parts.push(`Cursor: ${clip(cursor.body, 320)}`);
   if (chair?.body.trim()) parts.push(`의장: ${clip(chair.body, 180)}`);
   return parts.join("\n");
@@ -31,7 +33,7 @@ export function councilMemoryBrief(meetings: CouncilMemoryMeeting[], maxChars = 
     .slice(-6);
   if (!rows.length) return "";
   const text = [
-    "지난 회의. 이미 끝난 결론만 참고하고, 이번 주제를 그 회의로 바꾸지 마라.",
+    "지난 이야기입니다. 이번 말의 배경으로만 참고합니다.",
     "",
     rows.map(lineFor).join("\n\n"),
   ].join("\n");

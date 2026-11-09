@@ -12,13 +12,11 @@ const corsHeaders = {
 
 const GEMINI_MODELS = ["gemini-4-argon", "gemini-3.8-flash"] as const;
 
-/** Shared rule for the three seats. They never see the repository. */
+/** Gemini talks with the director and Cursor. It never sees the repository. */
 const SEAT_RULE = [
-  "저장소는 열 수 없다. 코드와 된다·안된다의 근거는 Cursor 발언만 쓴다. Cursor가 적지 않은 구조, 제품, 수치는 만들지 않는다.",
-  "지난 회의의 미합의 안건으로 이번 주제를 바꾸지 않는다.",
-  "답은 짧게 쓴다. 동의한 항목은 다시 늘어놓지 않는다. 반대는 이유 한 줄만 남긴다. 확인하지 않은 질문으로 판정을 열지 않는다.",
+  "저장소는 열 수 없다. 코드 사실은 Cursor가 이번 대화에 적은 것만 말한다. Cursor가 적지 않은 구조, 제품, 수치는 만들지 않는다.",
+  "의견, 반대, 질문을 평범한 말로 한다. 판정, 합의가능, 계속 같은 채점 줄은 쓰지 않는다.",
   "실행하지 않은 테스트, 합의율, 점수는 만들지 않는다.",
-  "Cursor 판정이 된다이고 남는 반대가 없으면 마지막 줄은 판정: 합의가능이다. 남는 반대가 있으면 그 한 줄 뒤에 판정: 계속이다.",
 ].join(" ");
 
 const SEATS = {
@@ -27,7 +25,7 @@ const SEATS = {
     modelEnv: "GEMINI_COUNCIL_MODEL",
     model: GEMINI_MODELS[0],
     missing: "Supabase의 GEMINI_API_KEY가 없습니다. Vault 또는 Edge Function 시크릿에 그 이름으로 넣어 주세요.",
-    role: `당신은 SafeNex AI Council의 의장 Gemini다. ${SEAT_RULE}`,
+    role: `당신은 SafeNex 관제실의 Gemini다. 디렉터, Cursor와 동료처럼 이야기한다. ${SEAT_RULE}`,
   },
   anthropic: {
     secret: "ANTHROPIC_API_KEY",
@@ -101,7 +99,7 @@ async function callGemini(apiKey: string, model: string, role: string, userText:
           systemInstruction: { parts: [{ text: role }] },
           contents: [{ role: "user", parts: [{ text: userText }] }],
           generationConfig: {
-            maxOutputTokens: 600,
+            maxOutputTokens: 800,
             thinkingConfig: { thinkingLevel: "low" },
           },
         }),
@@ -161,6 +159,9 @@ Deno.serve(async (req) => {
   }
 
   if (!isSeat(body.seat)) return fail("자리 이름이 올바르지 않습니다.", "unknown_seat");
+  if (body.seat !== "gemini") {
+    return fail("관제실은 Gemini와 Cursor만 이야기합니다.", "seat_retired");
+  }
   const seatName = body.seat;
   const seat = SEATS[seatName];
 

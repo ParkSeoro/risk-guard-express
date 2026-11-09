@@ -22,10 +22,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { askCouncilCursor } from "@/lib/councilCursor";
-import { COUNCIL_MAX_CURSOR_TURNS, COUNCIL_MAX_ROUNDS, councilCanClose, councilTurnForNextSeat, readVerdict } from "@/lib/councilDebate";
+import { councilTurnForNextSeat } from "@/lib/councilDebate";
 import {
   appendCouncilTurn,
-  closeCouncilMeeting,
   loadCouncilMeetings,
   startCouncilMeeting,
   type CouncilLogMeeting,
@@ -79,7 +78,7 @@ function seatFace(seat: string): Pick<CouncilMessage, "sender" | "role" | "avata
     case "gpt":
       return { sender: "GPT Guardian (무장애 안전 감사)", role: "의견", avatar: "🛡️", color: "#10B981" };
     case "cursor":
-      return { sender: "Cursor Builder (실무 코드 장인)", role: "판정", avatar: "⚡", color: "#38BDF8" };
+      return { sender: "Cursor Builder (실무 코드 장인)", role: "의견", avatar: "⚡", color: "#38BDF8" };
     default:
       return { sender: "AI Council 의장단", role: "기록", avatar: "📜", color: "#818CF8", isRfc: true };
   }
@@ -93,7 +92,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
       role: "시스템 안내",
       avatar: "🏛️",
       color: "#6366F1",
-      text: "👋 안녕하세요, 박서로 디렉터님! SafeNex 통합 AI Council 관제실입니다.\n\nGemini, Claude, GPT는 저장소를 열지 않습니다. Cursor가 코드와 규칙을 보고 된다 또는 안된다를 판정하면, 세 자리는 남는 반대만 짧게 답합니다. 반대가 없으면 합의합니다. 회의 중에는 코드를 고치지 않고, 풀 리퀘스트와 머지는 디렉터만 합니다.",
+      text: "안녕하세요, 박서로 디렉터님. 이 방은 Gemini와 Cursor 둘입니다.\n\nGemini는 저장소를 열지 않고, 의견과 질문을 말합니다. Cursor가 코드와 규칙을 보고 같이 이야기합니다. 채점표로 끝내지 않습니다. 회의 중에는 코드를 고치지 않고, 풀 리퀘스트와 머지는 디렉터만 합니다.",
       timestamp: "방금 전"
     }
   ]);
@@ -205,7 +204,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
     }
 
     try {
-      setMeetingLabel("토론 중");
+      setMeetingLabel("대화 중");
       const spoken: { name: string; text: string }[] = [];
       const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       let seq = 0;
@@ -230,115 +229,41 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
           .join("\n\n");
         return [instruction, memory, body].filter(Boolean).join("\n\n");
       };
+
+      const geminiText = await askSeat(
+        "gemini",
+        text,
+        priorFor("너는 Gemini다. 디렉터와 Cursor와 동료처럼 이야기한다. 의견, 반대, 질문을 평범한 말로 한다. 저장소는 열 수 없다. 코드 사실은 Cursor가 이번 대화에 적은 것만 말한다. 없는 구조와 수치는 만들지 않는다. 판정이나 합의가능 같은 채점 줄은 쓰지 않는다."),
+        "🔷 Gemini가 의견을 말하고 있습니다...",
+      );
+      spoken.push({ name: "Gemini", text: geminiText });
+      await speak({
+        sender: "Gemini Arbiter (원탁 의장 / Antigravity)",
+        role: "의견",
+        avatar: "🔷",
+        color: "#4285F4",
+        text: geminiText,
+      }, "gemini", 1);
+
+      setTypingStatus("⚡ Cursor가 코드와 규칙을 보고 있습니다...");
       let cursorText = "";
-      let cursorCalls = 0;
-      let latest = { gemini: "", claude: "", gpt: "" };
-      let closed = false;
-
-      for (let round = 1; round <= COUNCIL_MAX_ROUNDS && !closed; round++) {
-        const followUp = round === 1
-          ? "이번 주제만 본다. 지난 회의는 끝난 결론만 참고한다. 짧게 답한다."
-          : readVerdict(cursorText) === "된다"
-            ? "Cursor가 된다라고 한 안은 유지한다. 남는 반대가 없으면 마지막 줄만 판정: 합의가능이다. 반대가 있으면 이유 한 줄과 판정: 계속이다. 안을 바꾸거나 질문으로 판정을 열지 않는다."
-            : "Cursor가 안된다라고 한 항목만 고친다. 고친 안은 짧게 적고 새 주제를 더하지 않는다. 마지막 줄은 판정: 계속이다.";
-
-        latest.gemini = await askSeat(
-          "gemini",
-          text,
-          priorFor(`${followUp}\n너는 Gemini다. 저장소는 없다. Cursor 발언만 근거로 쓴다.`),
-          `🔷 ${round}바퀴 Gemini가 의견을 말하고 있습니다...`,
-        );
-        spoken.push({ name: "Gemini", text: latest.gemini });
-        await speak({
-          sender: "Gemini Arbiter (원탁 의장 / Antigravity)",
-          role: `${round}바퀴 의견`,
-          avatar: "🔷",
-          color: "#4285F4",
-          text: latest.gemini,
-        }, "gemini", round);
-
-        latest.claude = await askSeat(
-          "anthropic",
-          text,
-          priorFor(`${followUp}\n너는 Claude다. 저장소는 없다. Cursor 발언만 근거로 쓴다.`),
-          `📐 ${round}바퀴 Claude가 앞선 의견에 답하고 있습니다...`,
-        );
-        spoken.push({ name: "Claude", text: latest.claude });
-        await speak({
-          sender: "Claude Architect (시스템 설계)",
-          role: `${round}바퀴 의견`,
-          avatar: "📐",
-          color: "#D97706",
-          text: latest.claude,
-        }, "claude", round);
-
-        latest.gpt = await askSeat(
-          "openai",
-          text,
-          priorFor(`${followUp}\n너는 GPT다. 저장소는 없다. Cursor 발언만 근거로 쓴다.`),
-          `🛡️ ${round}바퀴 GPT가 앞선 의견에 답하고 있습니다...`,
-        );
-        spoken.push({ name: "GPT", text: latest.gpt });
-        await speak({
-          sender: "GPT Guardian (무장애 안전 감사)",
-          role: `${round}바퀴 의견`,
-          avatar: "🛡️",
-          color: "#10B981",
-          text: latest.gpt,
-        }, "gpt", round);
-
-        const threeAgreed = councilCanClose([latest.gemini, latest.claude, latest.gpt], cursorText);
-        const askCursor = cursorCalls < COUNCIL_MAX_CURSOR_TURNS && (cursorCalls === 0 || !threeAgreed);
-        if (askCursor) {
-          setTypingStatus(`⚡ ${round}바퀴 Cursor가 코드와 규칙을 보고 있습니다...`);
-          try {
-            cursorText = await askCouncilCursor({
-              agenda: text,
-              prior: priorFor("너는 Cursor다. 실제 코드와 정해 둔 규칙을 보고 걸리는 점을 모두 적되, 항목마다 근거 한 줄만 써라."),
-            });
-          } catch (e) {
-            cursorText = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
-          }
-          cursorCalls += 1;
-          spoken.push({ name: "Cursor", text: cursorText });
-          await speak({
-            sender: "Cursor Builder (실무 코드 장인)",
-            role: `${round}바퀴 판정`,
-            avatar: "⚡",
-            color: "#38BDF8",
-            text: cursorText,
-          }, "cursor", round);
-        }
-
-        if (councilCanClose([latest.gemini, latest.claude, latest.gpt], cursorText)) {
-          closed = true;
-          setMeetingLabel("합의");
-          await speak({
-            sender: "AI Council 의장단",
-            role: "합의",
-            avatar: "📜",
-            color: "#818CF8",
-            isRfc: true,
-            text: `합의했다.\n\n주제: ${text}\nCursor 판정: 된다\n\n위 마지막 발언이 합의된 안이다. 회의 중에는 코드를 고치지 않았고, 풀 리퀘스트와 머지는 하지 않았다.`,
-          }, "chair", round);
-          if (meetingId) await closeCouncilMeeting(meetingId, "합의").catch(() => undefined);
-          toast.success("관제실이 합의했습니다. 코드는 아직 고치지 않았습니다.");
-        }
+      try {
+        cursorText = await askCouncilCursor({
+          agenda: text,
+          prior: priorFor("너는 Cursor다. 저장소를 보고 동료처럼 답한다. 맞는 점과 다른 점을 평범한 말로 적는다. 코드를 고치거나 풀 리퀘스트를 만들지 않는다. 판정 줄로 끝내지 않는다."),
+        });
+      } catch (e) {
+        cursorText = e instanceof Error ? e.message : "Cursor 연결에 실패했습니다.";
       }
-
-      if (!closed) {
-        setMeetingLabel("미합의");
-        await speak({
-          sender: "AI Council 의장단",
-          role: "미합의",
-          avatar: "📜",
-          color: "#D97706",
-          isRfc: true,
-          text: `아직 합의하지 못했다.\n\n주제: ${text}\nCursor를 ${cursorCalls}번 불렀고, 마지막 판정은 위 Cursor 발언에 있다.\n남는 반대도 위 발언에 있다. 합의로 닫지 않았고, 풀 리퀘스트와 머지는 하지 않았다.`,
-        }, "chair", null);
-        if (meetingId) await closeCouncilMeeting(meetingId, "미합의").catch(() => undefined);
-        toast("관제실이 합의하지 못했습니다. 남는 반대는 위 발언에 있습니다.");
-      }
+      spoken.push({ name: "Cursor", text: cursorText });
+      await speak({
+        sender: "Cursor Builder (실무 코드 장인)",
+        role: "의견",
+        avatar: "⚡",
+        color: "#38BDF8",
+        text: cursorText,
+      }, "cursor", 1);
+      setMeetingLabel("대기");
       if (meetingId) {
         const fresh = await loadCouncilMeetings().catch(() => null);
         if (fresh) savedMeetingsRef.current = fresh;
@@ -381,7 +306,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
                   "hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full font-bold border shrink-0",
                   meetingLabel === "합의" && "bg-emerald-950 text-emerald-400 border-emerald-800",
                   meetingLabel === "미합의" && "bg-amber-950 text-amber-300 border-amber-800",
-                  meetingLabel === "토론 중" && "bg-sky-950 text-sky-300 border-sky-800",
+                  (meetingLabel === "토론 중" || meetingLabel === "대화 중") && "bg-sky-950 text-sky-300 border-sky-800",
                   meetingLabel === "대기" && "bg-muted text-muted-foreground border-border",
                 )}
               >
@@ -396,10 +321,6 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
               <span className="text-blue-400 font-medium">🔷 Gemini</span>
               <span>•</span>
               <span className="text-sky-400 font-medium">⚡ Cursor</span>
-              <span>•</span>
-              <span className="text-amber-400 font-medium">📐 Claude</span>
-              <span>•</span>
-              <span className="text-emerald-400 font-medium">🛡️ GPT</span>
             </p>
           </div>
         </div>
@@ -508,7 +429,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
                 handleSend();
               }
             }}
-            placeholder="박서로 디렉터님의 의제를 입력하세요... (Enter: 원탁 소집)"
+            placeholder="이야기할 내용을 입력하세요. Enter로 보냅니다."
             className="flex-1 min-w-0 min-h-[40px] sm:min-h-[44px] max-h-28 resize-none border-0 shadow-none focus-visible:ring-0 text-xs p-1.5 leading-relaxed"
             rows={1}
           />
@@ -519,7 +440,7 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
             className="h-9 px-3 sm:px-4 rounded-xl shrink-0 font-bold gap-1.5 shadow-sm text-xs"
           >
             <Send className="h-3.5 w-3.5" />
-            <span>원탁 소집</span>
+            <span>보내기</span>
           </Button>
         </div>
       </div>
@@ -567,22 +488,6 @@ export function AiCouncilChatPane({ onBack }: { onBack?: () => void } = {}) {
                 <span className="font-bold text-sky-400">⚡ Cursor</span>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   OpenRouter 모델이 아닙니다. 마스터 계정으로 이 대화의 Cursor 에이전트에게 묻고, 그 답변을 그대로 보여 줍니다.
-                </p>
-              </div>
-
-              {/* Claude */}
-              <div className="space-y-1 p-2.5 rounded-xl border bg-card">
-                <span className="font-bold text-amber-400">📐 Claude</span>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  브라우저 키가 아닙니다. 서버의 ANTHROPIC_API_KEY로 Anthropic에 묻고, 그 답변을 그대로 보여 줍니다.
-                </p>
-              </div>
-
-              {/* GPT */}
-              <div className="space-y-1 p-2.5 rounded-xl border bg-card">
-                <span className="font-bold text-emerald-400">🛡️ GPT</span>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  브라우저 키가 아닙니다. 서버의 OPENAI_API_KEY로 OpenAI에 묻고, 그 답변을 그대로 보여 줍니다.
                 </p>
               </div>
             </div>

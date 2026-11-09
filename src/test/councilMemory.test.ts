@@ -40,7 +40,7 @@ describe("council memory", () => {
         ],
       },
     ]);
-    expect(brief).toContain("지난 회의");
+    expect(brief).toContain("지난 이야기");
     expect(brief).toContain("[합의] 화면은 디렉터만");
     expect(brief).toContain("Cursor: 판정: 된다");
     expect(brief).toContain("의장: 합의했다.");

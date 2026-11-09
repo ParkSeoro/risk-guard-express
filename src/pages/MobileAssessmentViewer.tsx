@@ -16,6 +16,7 @@ import { bundleRiskItems, reviewBundleForStatus } from "@/lib/approvalReviewBund
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { useTranslatedDocFields } from "@/hooks/useTranslatedDocFields";
 import { isNonKoreanLocale } from "@/lib/i18n/workerLocale";
+import { markOpenDocumentNotifications } from "@/lib/notificationReadHelper";
 
 type RiskCard = {
   id: string;
@@ -54,6 +55,9 @@ export default function MobileAssessmentViewer({
 } = {}) {
   const params = useParams<{ runId: string }>();
   const runId = propRunId || params.runId;
+  useEffect(() => {
+    if (runId) void markOpenDocumentNotifications(runId);
+  }, [runId]);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);

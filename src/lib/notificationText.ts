@@ -16,6 +16,53 @@ export function localizeNotificationText(text: string): string {
   return out;
 }
 
+const KIND_BY_TYPE: Record<string, string> = {
+  chat_message: "메신저",
+  approval_request: "결재",
+  approval_result: "결재",
+  approval_rejected: "결재",
+  approval_approved: "결재",
+  return_request: "결재",
+  announcement: "공지",
+  assessment_share: "위험성평가",
+  incident: "사고",
+  incident_report: "사고",
+  tbm: "TBM",
+  tbm_sign_due: "TBM",
+  work_permit: "허가서",
+  permit_expiry: "허가서",
+  work_plan_due: "작업계획서",
+  safety_inspection: "안전점검",
+  inspection_fail: "안전점검",
+  work_stop: "작업중지",
+  work_stop_request: "작업중지",
+  danger_zone_entry: "위험구역",
+  todo_due: "할 일",
+  signup_pending: "가입",
+};
+
+const KIND_BY_RELATED: Record<string, string> = {
+  chat_room: "메신저",
+  work_permit: "허가서",
+  assessment_run: "위험성평가",
+  assessment_run_feedback: "위험성평가",
+  work_plan: "작업계획서",
+  announcement: "공지",
+  tbm_session: "TBM",
+  incident_report: "사고",
+  safety_inspection: "안전점검",
+};
+
+/** Short kind shown in the inbox. Unknown types stay blank instead of showing a raw key. */
+export function notificationKindLabel(
+  n: { type?: string | null; related_type?: string | null } | null | undefined,
+): string {
+  const type = String(n?.type || "").trim().toLowerCase();
+  if (KIND_BY_TYPE[type]) return KIND_BY_TYPE[type];
+  const related = String(n?.related_type || "").trim().toLowerCase();
+  return KIND_BY_RELATED[related] || "";
+}
+
 export function notificationTitle(
   n: { title?: string | null } | null | undefined,
 ): string {

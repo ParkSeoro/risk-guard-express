@@ -21,6 +21,7 @@ import { todayKst } from '@/lib/permitWorkDate';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
 import { useAuth } from '@/contexts/AuthContext';
+import { markOpenDocumentNotifications } from '@/lib/notificationReadHelper';
 import { TbmSessionPhotos } from '@/components/tbm/TbmSessionPhotos';
 import { parseTbmPhotoUrls, tbmPhotoCountLabel } from '@/lib/tbmPhotos';
 
@@ -363,6 +364,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const openParts = async (s: TbmSession) => {
     setShowParts(s);
+    void markOpenDocumentNotifications(s.id);
     const [{ data }, { data: acks }] = await Promise.all([
       supabase.from('tbm_participations' as any).select('*').eq('tbm_session_id', s.id).order('participated_at'),
       supabase

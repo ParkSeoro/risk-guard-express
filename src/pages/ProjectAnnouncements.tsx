@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { useToast } from "@/hooks/use-toast";
+import { markAnnouncementNotificationsRead } from "@/lib/notificationReadHelper";
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
 import { isGcType } from "@/lib/companyTypes";
 import {
@@ -114,6 +115,7 @@ export default function ProjectAnnouncements() {
     if (error) toast({ title: "공지 조회 실패", description: error.message, variant: "destructive" });
     const list = (data || []) as Row[];
     setRows(list);
+    if (!error && list.length) void markAnnouncementNotificationsRead(list.map((row) => row.id));
     if (list.length) {
       const ids = list.map((r) => r.id);
       const { data: acks } = await supabase

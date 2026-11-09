@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { bundleRiskItems, reviewBundleForStatus } from '@/lib/approvalReviewBundle';
 import { useAuth } from '@/contexts/AuthContext';
+import { markOpenDocumentNotifications } from '@/lib/notificationReadHelper';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -149,6 +150,9 @@ const AssessmentRunDetail = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, profile, isAdmin, roles } = useAuth();
+  useEffect(() => {
+    if (runId) void markOpenDocumentNotifications(runId);
+  }, [runId]);
   const { userRole, userCompanyId, userCompanyType, userPosition, isMaster, accessibleCompanyIds } = useGlobalProjectAccess();
   const isMobile = useIsMobile();
   const { log } = useAuditLog();

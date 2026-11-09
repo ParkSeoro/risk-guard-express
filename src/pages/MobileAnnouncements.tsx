@@ -21,6 +21,7 @@ import {
   type FieldAnnouncement,
 } from "@/hooks/useMyFieldAnnouncements";
 import { ackProjectAnnouncement } from "@/hooks/usePendingAnnouncements";
+import { markAnnouncementNotificationsRead } from "@/lib/notificationReadHelper";
 import { AnnouncementRow } from "@/components/announcements/TodayFieldAnnouncements";
 
 export default function MobileAnnouncements() {
@@ -40,12 +41,15 @@ export default function MobileAnnouncements() {
   );
 
   useEffect(() => {
-    if (focused) setOpen(focused);
+    if (!focused) return;
+    setOpen(focused);
+    void markAnnouncementNotificationsRead([focused.id]);
   }, [focused]);
 
   const openItem = (item: FieldAnnouncement) => {
     setOpen(item);
     setParams({ id: item.id }, { replace: true });
+    void markAnnouncementNotificationsRead([item.id]);
   };
 
   const close = () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   localizeNotificationText,
+  notificationKindLabel,
   notificationPreview,
   notificationTitle,
 } from "@/lib/notificationText";
@@ -29,6 +30,15 @@ describe("notificationPreview", () => {
     ).toBe("결재 요청: 위험성평가 · 이행 확인이(가) 도착했습니다.");
     expect(localizeNotificationText("assessment_run 결재 요청")).toBe("위험성평가 · 위평 작성 결재 요청");
     expect(localizeNotificationText("위험성평가 피드백(조치) 반려")).toBe("위험성평가 · 이행 확인 반려");
+  });
+});
+
+describe("notification kind label", () => {
+  it("names messenger, approval, and documents, and hides unknown keys", () => {
+    expect(notificationKindLabel({ type: "chat_message" })).toBe("메신저");
+    expect(notificationKindLabel({ type: "approval_request" })).toBe("결재");
+    expect(notificationKindLabel({ related_type: "work_permit" })).toBe("허가서");
+    expect(notificationKindLabel({ type: "custom_event" })).toBe("");
   });
 });
 

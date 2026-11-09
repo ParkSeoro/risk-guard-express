@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { markChatRoomNotificationsRead } from "@/lib/notificationReadHelper";
 import {
   CHAT_MESSAGE_PAGE_SIZE,
   olderChatMessagesFilter,
@@ -657,7 +658,9 @@ export async function markChatRoomRead(
 
   if (error) {
     console.error("markChatRoomRead error:", error);
+    return;
   }
+  await markChatRoomNotificationsRead(roomId);
 }
 
 /**

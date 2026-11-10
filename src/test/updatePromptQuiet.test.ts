@@ -20,10 +20,13 @@ describe("isAutoCheckThrottled", () => {
   });
 });
 
-describe("update prompts stay off the launch path", () => {
-  it("does not paint the store splash during boot", () => {
+describe("launch checks the store app before the screen bundle", () => {
+  it("asks the store first and continues to the screen bundle only after a pass", () => {
     const main = src("src/main.tsx");
-    expect(main).not.toContain("runBootStoreGate");
+    const bootFn = main.slice(main.indexOf("async function boot"));
+    expect(bootFn.indexOf("runBootOtaGate")).toBeLessThan(bootFn.indexOf("runBootStoreGate"));
+    expect(bootFn.indexOf("runBootStoreGate")).toBeLessThan(bootFn.indexOf("runPreLoginOta"));
+    expect(bootFn.indexOf("runPreLoginOta")).toBeLessThan(bootFn.indexOf('import("./App.tsx")'));
   });
 
   it("does not mount the blocking store dialog", () => {
@@ -57,9 +60,9 @@ describe("AAB build keeps Play release notes", () => {
   it("describes the changed and added behavior", () => {
     const notes = src("android/play-release-notes-ko.txt");
     expect(notes).toContain("변경");
-    expect(notes).toContain("배터리 제한 없음 요청을 설정 검색에서 허용 버튼으로 바꿨습니다.");
+    expect(notes).toContain("앱을 켜면 로그인 전에 스토어 앱 번호와 화면 버전을 확인합니다.");
     expect(notes).toContain("추가");
-    expect(notes).toContain("허용 창이 뜨지 않는 이전 설치본에 나중에 버튼을 넣었습니다.");
+    expect(notes).toContain("스토어 앱이 오래되면 Play 스토어로 가는 안내를 띄웁니다.");
     expect(notes).not.toContain("할 수 있습니다");
     expect(notes).not.toContain("있습니다");
   });

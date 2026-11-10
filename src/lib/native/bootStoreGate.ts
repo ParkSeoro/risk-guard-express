@@ -46,7 +46,6 @@ function paintStoreSplash(state: NativeStoreUpdateState): Promise<"play" | "snoo
     `;
     document.getElementById("boot-store-play")?.addEventListener("click", () => {
       openPlayStore();
-      resolve("play");
     });
     document.getElementById("boot-store-later")?.addEventListener("click", () => {
       snoozeStoreUpdateToday();
@@ -56,14 +55,44 @@ function paintStoreSplash(state: NativeStoreUpdateState): Promise<"play" | "snoo
   });
 }
 
-/** Returns after the user snoozes, or immediately if no store update is required. */
+/** Version lookup only. The splash waits for a tap and has its own exit. */
+export const BOOT_STORE_CHECK_MS = 5_000;
+
+/** True only when the installed app is actually older and the user has not skipped today. */
+export function shouldOfferStoreUpdate(needed: boolean, snoozed: boolean): boolean {
+  return needed === true && snoozed === false;
+}
+
+function failAfter(ms: number): Promise<never> {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error("store version check timeout")), ms);
+  });
+}
+
+function clearStoreSplash(): void {
+  const root = document.getElementById("root");
+  if (!root?.dataset.bootStore) return;
+  delete root.dataset.bootStore;
+  root.innerHTML = "";
+}
+
+/**
+ * Silent store check before login.
+ * Returns when the app is new enough, the check failed, or the user skipped today.
+ * While the store screen is up, this function does not return, so the screen bundle is not downloaded.
+ * The Play button leaves this screen in place.
+ */
 export async function runBootStoreGate(): Promise<void> {
   if (!isNativeApp() || nativePlatform() !== "android") return;
   try {
-    const state = await fetchNativeStoreUpdateState();
-    if (!state.needed || isStoreUpdateSnoozed()) return;
+    const state = await Promise.race([
+      fetchNativeStoreUpdateState(),
+      failAfter(BOOT_STORE_CHECK_MS),
+    ]);
+    if (!shouldOfferStoreUpdate(state.needed, isStoreUpdateSnoozed())) return;
     await paintStoreSplash(state);
+    clearStoreSplash();
   } catch {
-    /* non-fatal — continue to login */
+    clearStoreSplash();
   }
 }

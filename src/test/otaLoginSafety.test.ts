@@ -89,8 +89,8 @@ describe("OTA stays off login for workers and managers", () => {
     expect(main).not.toContain("checkAndDownloadOta");
     const bootFn = main.slice(main.indexOf("async function boot"));
     expect(bootFn.indexOf("runBootOtaGate")).toBeGreaterThan(-1);
-    expect(bootFn.indexOf("runBootOtaGate")).toBeLessThan(bootFn.indexOf("runPreLoginOta"));
+    expect(bootFn.indexOf("runBootOtaGate")).toBeLessThan(bootFn.indexOf("runBootStoreGate"));
+    expect(bootFn.indexOf("runBootStoreGate")).toBeLessThan(bootFn.indexOf("runPreLoginOta"));
     expect(bootFn.indexOf("runPreLoginOta")).toBeLessThan(bootFn.indexOf('import("./App.tsx")'));
-    expect(main).not.toContain("runBootStoreGate");
   });
 });

@@ -19,6 +19,25 @@ export function cmpOtaVersion(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * A fresh store install reports "builtin" / "내장" / "0.0.0".
+ * Compare that against the version baked into the install so an older
+ * screen bundle cannot replace a newer store app.
+ */
+export function isNewerScreenRelease(
+  latestVersion: string | null | undefined,
+  currentVersion: string | null | undefined,
+  bakedVersion: string,
+): boolean {
+  const current = (currentVersion || "").trim();
+  const baked = bakedVersion.trim();
+  const base =
+    !current || current === "내장" || current.toLowerCase() === "builtin" || current === "0.0.0"
+      ? baked
+      : current;
+  return isOtaUpdateAvailable(latestVersion, base);
+}
+
 /** True when latest should replace current. A lower number never replaces a higher install. */
 export function isOtaUpdateAvailable(
   latestVersion: string | null | undefined,

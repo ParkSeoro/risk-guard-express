@@ -8,6 +8,7 @@ if (typeof window !== "undefined" && window.location.hostname === "risk-guard-ex
 import { registerSWSafely } from "./lib/registerServiceWorker";
 import { initOtaUpdater } from "./lib/native/otaUpdater";
 import { runBootOtaGate } from "./lib/native/bootOtaGate";
+import { runBootStoreGate } from "./lib/native/bootStoreGate";
 import { runPreLoginOta } from "./lib/native/preLoginOta";
 import { isNativeApp } from "./lib/native/platform";
 import { installStaleChunkAutoReload } from "./lib/staleChunkError";
@@ -37,11 +38,12 @@ function showBootError(err: unknown) {
 
 async function boot() {
   try {
-    // 네이티브: 먼저 Capgo 준비 신호(3초). 그다음 새 화면이 있을 때만
-    // "업데이트 중"을 띄우고 받는다. 조회·받기·적용은 시간을 넘기면 로그인으로 넘긴다.
-    // 로그인 화면이 올라온 뒤에는 여기서 받지 않는다.
+    // 네이티브: 준비 신호 후 스토어 앱 번호를 조용히 확인한다.
+    // 앱이 오래됐을 때만 안내가 뜬다. 통과하면 화면 묶음을 확인하고, 새 화면일 때만 "업데이트 중".
+    // 확인이 실패하거나 시간을 넘기면 로그인으로 간다. 스토어로 이동한 뒤에는 화면을 받지 않는다.
     if (isNativeApp()) {
       await runBootOtaGate({ paint: false });
+      await runBootStoreGate();
       await runPreLoginOta();
     }
 

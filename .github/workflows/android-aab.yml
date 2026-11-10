@@ -239,10 +239,11 @@ jobs:
       - name: Resolve version
         id: ver
         run: |
+          # 저장소 package.json 이 기준이다. 시크릿에 남은 1.1.0 / 478 이 다시 나가지 않게 한다.
           VN="${{ github.event.inputs.version_name }}"
-          [ -z "$VN" ] && VN="${{ secrets.ANDROID_VERSION_NAME }}"
           [ -z "$VN" ] && VN="$(node -p "require('./package.json').version || '1.0.0'")"
           VC="${{ github.event.inputs.version_code }}"
+          [ -z "$VC" ] && VC="$(node -p "require('./package.json').androidVersionCode || ''")"
           [ -z "$VC" ] && VC="${{ secrets.ANDROID_VERSION_CODE }}"
           [ -z "$VC" ] && VC="${{ github.run_number }}"
           echo "version_name=$VN" >> "$GITHUB_OUTPUT"

@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { ANDROID_VERSION_CODE, APP_VERSION } from "@/lib/appVersion";
+import { shouldOfferStoreUpdate, BOOT_STORE_CHECK_MS } from "@/lib/native/bootStoreGate";
 import { cmpVersion } from "@/lib/native/otaUpdater";
+import { isNewerScreenRelease } from "@/lib/otaVersion";
 
 describe("cmpVersion — OTA 1.0.0-timestamp builds", () => {
   it("orders CI date-suffix versions", () => {
@@ -39,5 +43,30 @@ describe("cmpVersion — OTA 1.0.0-timestamp builds", () => {
     expect(cmpVersion("1.1.5-202611050559", "1.1.5")).toBeGreaterThan(0);
     expect(cmpVersion("1.1.5-202611050559", "1.1.5-202611050541")).toBeGreaterThan(0);
     expect(cmpVersion("1.1.4-202611059999", "1.1.5")).toBeLessThan(0);
+  });
+});
+
+describe("store app 1.2.0 and screen updates", () => {
+  it("keeps package.json on the same phone version and the next Play code", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(APP_VERSION).toBe("1.2.0");
+    expect(pkg.version).toBe(APP_VERSION);
+    expect(pkg.androidVersionCode).toBe(ANDROID_VERSION_CODE);
+    expect(ANDROID_VERSION_CODE).toBe(479);
+  });
+
+  it("does not replace a newer store app with an older screen bundle", () => {
+    expect(isNewerScreenRelease("1.1.8-202611100454", "builtin", APP_VERSION)).toBe(false);
+    expect(isNewerScreenRelease("1.1.8-202611100454", "내장", APP_VERSION)).toBe(false);
+    expect(isNewerScreenRelease("1.2.0-202611100600", "builtin", APP_VERSION)).toBe(true);
+    expect(isNewerScreenRelease("1.2.0-202611100600", "1.2.0-202611100500", APP_VERSION)).toBe(true);
+    expect(isNewerScreenRelease("1.1.8-202611100454", "1.1.8-202611100500", APP_VERSION)).toBe(false);
+  });
+
+  it("shows the store screen only when the install is older and was not skipped today", () => {
+    expect(shouldOfferStoreUpdate(false, false)).toBe(false);
+    expect(shouldOfferStoreUpdate(true, true)).toBe(false);
+    expect(shouldOfferStoreUpdate(true, false)).toBe(true);
+    expect(BOOT_STORE_CHECK_MS).toBeLessThanOrEqual(5_000);
   });
 });

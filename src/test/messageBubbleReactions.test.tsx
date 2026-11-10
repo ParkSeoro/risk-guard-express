@@ -65,7 +65,11 @@ describe("MessageBubble reaction menu", () => {
 
     openMenu();
 
-    expect(screen.getByRole("tab", { name: "현장", selected: true })).toBeTruthy();
+    expect(screen.getByText("난간 확인 바랍니다").closest(".select-none")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "⛑️", selected: true })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "표정" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "손짓" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "재미" })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "확인" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "완료" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "검토중" })).toBeTruthy();
@@ -74,9 +78,9 @@ describe("MessageBubble reaction menu", () => {
     expect(screen.getByRole("menuitem", { name: "답장" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "복사" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "표정" }));
+    fireEvent.click(screen.getByRole("tab", { name: "🙂" }));
 
-    expect(screen.getByRole("tab", { name: "표정", selected: true })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "🙂", selected: true })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "웃음" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "확인" })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "답장" })).toBeTruthy();

@@ -32,6 +32,35 @@ describe("mergeChatMessages", () => {
     expect(mergeChatMessages(newest, older)[1]?.content).toBe("mid-fresh");
   });
 
+  it("keeps the text already on screen and the longer attachment or reaction list", () => {
+    const onScreen = {
+      id: "b",
+      created_at: "2026-11-02T00:00:00.000Z",
+      content: "mid-fresh",
+      attachments: [{ id: "photo" }],
+      reactions: [],
+    };
+    const incoming = {
+      id: "b",
+      created_at: "2026-11-02T00:00:00.000Z",
+      content: "mid",
+      attachments: [],
+      reactions: [{ id: "rx" }],
+    };
+
+    const kept = mergeChatMessages([onScreen], [incoming])[0];
+    expect(kept?.content).toBe("mid-fresh");
+    expect(kept?.attachments).toEqual([{ id: "photo" }]);
+    expect(kept?.reactions).toEqual([{ id: "rx" }]);
+
+    const filled = mergeChatMessages(
+      [{ ...onScreen, attachments: [] }],
+      [{ ...incoming, attachments: [{ id: "photo" }], reactions: [] }],
+    )[0];
+    expect(filled?.content).toBe("mid-fresh");
+    expect(filled?.attachments).toEqual([{ id: "photo" }]);
+  });
+
   it("orders rows that share a timestamp by id", () => {
     const merged = mergeChatMessages(
       [{ id: "b", created_at: "2026-11-04T00:00:00.000Z" }],
@@ -147,7 +176,7 @@ const ALCOHOL_EMOJI = ["🍺", "🍻", "🍷", "🥂", "🥃", "🍸", "🍹", "
 
 describe("chat reaction choices", () => {
   it("keeps the original four site reactions first and gives each tab 24 unique emoji", () => {
-    expect(CHAT_REACTION_TABS.map((tab) => tab.label)).toEqual(["현장", "표정", "손짓", "재미"]);
+    expect(CHAT_REACTION_TABS.map((tab) => tab.icon)).toEqual(["⛑️", "🙂", "✋", "✨"]);
     expect(QUICK_CHAT_REACTIONS.map((item) => item.emoji)).toEqual(["✅", "👍", "👀", "🚨"]);
     expect(CHAT_REACTION_CHOICES.site.slice(0, 4).map((item) => item.label)).toEqual([
       "확인",

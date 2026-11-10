@@ -17,6 +17,7 @@ export type TbmParticipantPrint = {
   worker_id?: string | null;
   worker_name?: string | null;
   company_name?: string | null;
+  job_type?: string | null;
   worker_phone?: string | null;
   participated_at?: string | null;
   signature_data?: string | null;
@@ -141,6 +142,7 @@ export default function PermitWorkersPrintPage({
                 <th className="border p-1 w-8">#</th>
                 <th className="border p-1">성명</th>
                 <th className="border p-1">소속</th>
+                <th className="border p-1">직종</th>
                 <th className="border p-1">연락처</th>
                 <th className="border p-1 w-28">확인/서명</th>
               </tr>
@@ -154,6 +156,7 @@ export default function PermitWorkersPrintPage({
                     {w.isManager ? " (관리)" : ""}
                   </td>
                   <td className="border p-1 permit-crew-company">{w.company_name || "-"}</td>
+                  <td className="border p-1 permit-crew-job">{w.job_type || "-"}</td>
                   <td className="border p-1">{formatWorkerPhone(w.phone)}</td>
                   <td className="border p-1 h-11 permit-crew-sign text-center">
                     {isRenderableSignature(w.signature_data) ? (
@@ -183,6 +186,7 @@ export default function PermitWorkersPrintPage({
                 <th className="border p-1 w-8">#</th>
                 <th className="border p-1">성명</th>
                 <th className="border p-1">소속</th>
+                <th className="border p-1">직종</th>
                 <th className="border p-1">참여시각</th>
                 <th className="border p-1 w-28">서명</th>
               </tr>
@@ -193,6 +197,7 @@ export default function PermitWorkersPrintPage({
                   <td className="border p-1 text-center">{i + 1}</td>
                   <td className="border p-1 permit-crew-name">{p.worker_name || "-"}</td>
                   <td className="border p-1 permit-crew-company">{p.company_name || "-"}</td>
+                  <td className="border p-1 permit-crew-job">{p.job_type || "-"}</td>
                   <td className="border p-1">
                     {p.participated_at
                       ? new Date(p.participated_at).toLocaleString("ko-KR")

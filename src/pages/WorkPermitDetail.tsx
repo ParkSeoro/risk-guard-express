@@ -25,6 +25,7 @@ import PermitWorkersPrintPage, {
   type TbmParticipantPrint,
 } from '@/components/permits/PermitWorkersPrintPage';
 import type { PermitWorkerRow } from '@/lib/permitWorkers';
+import { fetchWorkerJobTypeIndex, jobTypeForSigner } from '@/lib/printJobType';
 import {
   attachCrewPrintSignatures,
   fillMissingTbmSignatures,
@@ -179,7 +180,7 @@ export default function WorkPermitDetail() {
         const chunk = ids.slice(i, i + 100);
         const { data: ws } = await supabase
           .from('workers')
-          .select('id, name, phone, company_name')
+          .select('id, name, phone, company_name, job_type')
           .in('id', chunk);
         for (const w of (ws as any[]) || []) byId.set(w.id, w);
       }
@@ -191,6 +192,7 @@ export default function WorkPermitDetail() {
           name: w.name || '-',
           phone: w.phone,
           company_name: w.company_name,
+          job_type: w.job_type || null,
         }));
     }
 
@@ -210,6 +212,19 @@ export default function WorkPermitDetail() {
       ]);
       tbmTitleNext = (sess as any)?.title || null;
       tbmParts = ((parts as any[]) || []) as TbmParticipantPrint[];
+    }
+
+    const jobProjectId = ctx?.projectId;
+    if (jobProjectId && tbmParts.length > 0) {
+      try {
+        const jobIndex = await fetchWorkerJobTypeIndex(jobProjectId, tbmParts);
+        tbmParts = tbmParts.map((part) => ({
+          ...part,
+          job_type: jobTypeForSigner(jobIndex, part) || null,
+        }));
+      } catch (err) {
+        console.warn('[permit-print] job type lookup failed', err);
+      }
     }
 
     let dailyAcks: CrewAckSignature[] = [];

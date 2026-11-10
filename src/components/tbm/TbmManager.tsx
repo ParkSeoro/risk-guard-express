@@ -25,6 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { markOpenDocumentNotifications } from '@/lib/notificationReadHelper';
 import { TbmSessionPhotos } from '@/components/tbm/TbmSessionPhotos';
 import { parseTbmPhotoUrls, tbmPhotoCountLabel } from '@/lib/tbmPhotos';
+import { fetchWorkerJobTypeIndex, jobTypeForSigner } from '@/lib/printJobType';
 
 
 interface Props {
@@ -482,6 +483,12 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     const risks: Array<{ hazard?: string; grade?: string; measure?: string }> =
       Array.isArray(risksRaw) ? risksRaw : (risksRaw ? (() => { try { return JSON.parse(risksRaw); } catch { return []; } })() : []);
     const partsList = fillMissingTbmSignatures((parts as any[]) || [], (acks as any[]) || []);
+    let jobIndex = new Map<string, string>();
+    try {
+      jobIndex = await fetchWorkerJobTypeIndex(projectId, partsList);
+    } catch (err) {
+      console.warn('[tbm-print] job type lookup failed', err);
+    }
     const photoUrls = parseTbmPhotoUrls(sAny.photo_urls);
 
     const w = window.open('', '_blank');
@@ -499,12 +506,13 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         </tr>`).join('');
 
     const partsHtml = partsList.length === 0
-      ? `<tr><td colspan="6" class="muted center">참여자 없음</td></tr>`
+      ? `<tr><td colspan="7" class="muted center">참여자 없음</td></tr>`
       : partsList.map((p, i) => `<tr>
           <td class="center">${i + 1}</td>
           <td>${esc(p.worker_name)}</td>
           <td>${esc(p.worker_phone)}</td>
           <td>${esc(p.company_name || '-')}</td>
+          <td>${esc(jobTypeForSigner(jobIndex, p) || '-')}</td>
           <td class="center">${tbmParticipationTimeLabel(p)}</td>
           <td class="center">${isRenderableSignature(p.signature_data) ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
         </tr>`).join('');
@@ -575,12 +583,13 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       <h2>9. 근로자 서명</h2>
       <table>
         <thead><tr>
-          <th style="width:8%" class="center">No</th>
-          <th style="width:14%">성명</th>
-          <th style="width:18%">전화번호</th>
-          <th style="width:18%">소속</th>
-          <th style="width:18%" class="center">참여시간</th>
-          <th style="width:24%" class="center">전자서명</th>
+          <th style="width:6%" class="center">No</th>
+          <th style="width:10%">성명</th>
+          <th style="width:16%">전화번호</th>
+          <th style="width:14%">소속</th>
+          <th style="width:12%">직종</th>
+          <th style="width:20%" class="center">참여시간</th>
+          <th style="width:22%" class="center">전자서명</th>
         </tr></thead>
         <tbody>${partsHtml}</tbody>
       </table>

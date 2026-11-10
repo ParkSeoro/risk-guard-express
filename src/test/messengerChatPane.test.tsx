@@ -277,7 +277,7 @@ describe("MessengerChatPane history and mute", () => {
     expect(document.body.textContent).toContain("입력 지우기");
   });
 
-  it("provides separate photo and file inputs and marks picker state active when clicked", async () => {
+  it("provides direct camera capture and file attachment buttons without duplicate gallery button", async () => {
     fetchRoomMessages.mockResolvedValue({ messages: [], hasMore: false });
 
     host = document.createElement("div");
@@ -290,17 +290,20 @@ describe("MessengerChatPane history and mute", () => {
       await Promise.resolve();
     });
 
-    const photoBtn = host.querySelector("[aria-label='사진 올리기']") as HTMLButtonElement;
+    const cameraBtn = host.querySelector("[aria-label='카메라 촬영']") as HTMLButtonElement;
     const fileBtn = host.querySelector("[aria-label='첨부파일']") as HTMLButtonElement;
-    expect(photoBtn).toBeTruthy();
+    const duplicateGalleryBtn = host.querySelector("[aria-label='사진 올리기']");
+    expect(cameraBtn).toBeTruthy();
     expect(fileBtn).toBeTruthy();
+    expect(duplicateGalleryBtn).toBeNull();
 
     const inputs = Array.from(host.querySelectorAll("input[type='file']")) as HTMLInputElement[];
     expect(inputs.length).toBe(2);
     expect(inputs[0].getAttribute("accept")).toBe("image/*");
+    expect(inputs[0].getAttribute("capture")).toBe("environment");
 
     await act(async () => {
-      photoBtn.click();
+      fileBtn.click();
     });
     expect(readMessengerPickerState()?.roomId).toBe("room-1");
   });

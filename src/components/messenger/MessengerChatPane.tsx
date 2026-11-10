@@ -47,6 +47,7 @@ import { MessengerForwardDialog } from "./MessengerForwardDialog";
 import { MessengerRoomDrawer } from "./MessengerRoomDrawer";
 import { EmergencyAlertBanner } from "./EmergencyAlertBanner";
 import { ShareSafetyDocModal } from "./ShareSafetyDocModal";
+import { MessengerCameraDialog } from "./MessengerCameraDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -67,7 +68,7 @@ import {
   X,
   ShieldCheck,
   Paperclip,
-  ImagePlus,
+  Camera,
   Loader2,
   FileText,
   Megaphone,
@@ -139,12 +140,13 @@ export function MessengerChatPane({
   const [galleryUrl, setGalleryUrl] = useState<string | null>(null);
   const [readMarkerAt, setReadMarkerAt] = useState<string | null>(null);
 
-  // 파일 첨부 상태
+  // 파일 첨부 및 카메라 촬영 상태
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -569,9 +571,17 @@ export function MessengerChatPane({
     attachFile(file);
   };
 
-  const openPhotoPicker = () => {
+  const openCameraFallbackInput = () => {
     markMessengerPickerActive(room.id);
-    photoInputRef.current?.click();
+    cameraInputRef.current?.click();
+  };
+
+  const openCameraCapture = () => {
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      setIsCameraOpen(true);
+      return;
+    }
+    openCameraFallbackInput();
   };
 
   const openFilePicker = () => {
@@ -1346,9 +1356,10 @@ export function MessengerChatPane({
       >
         <input
           type="file"
-          ref={photoInputRef}
+          ref={cameraInputRef}
           onChange={handleFileSelect}
           accept="image/*"
+          capture="environment"
           className="sr-only"
           tabIndex={-1}
         />
@@ -1362,21 +1373,21 @@ export function MessengerChatPane({
         />
 
         <div className="flex items-end gap-1 bg-background border rounded-xl p-1.5 shadow-2xs focus-within:ring-1 focus-within:ring-primary">
-          {/* 사진 올리기 버튼 (모바일 갤러리·카메라 전용) */}
+          {/* 카메라 바로 촬영 버튼 */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            onClick={openPhotoPicker}
+            onClick={openCameraCapture}
             disabled={sending}
             className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 mb-0.5 rounded-lg"
-            title="사진 올리기"
-            aria-label="사진 올리기"
+            title="카메라로 바로 사진 찍기"
+            aria-label="카메라 촬영"
           >
-            <ImagePlus className="h-4 w-4" />
+            <Camera className="h-4 w-4" />
           </Button>
 
-          {/* 파일 첨부 버튼 */}
+          {/* 갤러리 사진 및 파일 첨부 버튼 */}
           <Button
             type="button"
             variant="ghost"
@@ -1384,7 +1395,7 @@ export function MessengerChatPane({
             onClick={openFilePicker}
             disabled={sending}
             className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 mb-0.5 rounded-lg"
-            title="사진 또는 파일 첨부 (드래그 앤 드롭 / Ctrl+V 지원)"
+            title="갤러리 사진 또는 파일 첨부 (드래그 앤 드롭 / Ctrl+V 지원)"
             aria-label="첨부파일"
           >
             <Paperclip className="h-4 w-4" />
@@ -1543,6 +1554,14 @@ export function MessengerChatPane({
         onClose={() => setIsShareDocOpen(false)}
         projectId={room.project_id}
         onSelectDoc={(doc) => void handleShareSafetyDoc(doc)}
+      />
+
+      {/* 채팅창 내 직접 카메라 촬영 모달 */}
+      <MessengerCameraDialog
+        open={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onCapture={(file) => attachFile(file)}
+        onFallbackInput={openCameraFallbackInput}
       />
     </div>
   );

@@ -180,7 +180,7 @@ export function MessengerChatPane({
     setReplyTarget(null);
     setSelectedFile(null);
     setFilePreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
+      if (prev && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(prev);
       return null;
     });
   }, [room.id, user?.id]);
@@ -429,17 +429,31 @@ export function MessengerChatPane({
               .eq("message_id", newMsg.id),
           ]);
 
+          let resolvedAttachments = (attRes.data as any[]) || [];
+          if (
+            resolvedAttachments.length === 0 &&
+            (newMsg.message_type === "IMAGE" || newMsg.message_type === "FILE")
+          ) {
+            await new Promise((r) => setTimeout(r, 350));
+            const retryAtt = await supabase
+              .from("chat_attachments" as any)
+              .select("*")
+              .eq("message_id", newMsg.id);
+            if (Array.isArray(retryAtt.data) && retryAtt.data.length > 0) {
+              resolvedAttachments = retryAtt.data;
+            }
+          }
+
           const formattedMsg: ChatRoomMessage = {
             ...newMsg,
             sender_name: profileRes.data?.display_name || "사용자",
             sender_company: profileRes.data?.company || null,
             sender_role: profileRes.data?.position || null,
-            attachments: (attRes.data as any) || [],
+            attachments: resolvedAttachments,
             reactions: [],
           };
 
           setMessages((prev) => {
-            if (prev.some((m) => m.id === formattedMsg.id)) return prev;
             const parent = newMsg.parent_id
               ? prev.find((m) => m.id === newMsg.parent_id)
               : null;
@@ -556,8 +570,10 @@ export function MessengerChatPane({
       file.type.startsWith("image/") ||
       /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(file.name || "");
     setFilePreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return isPreviewableImage ? URL.createObjectURL(file) : null;
+      if (prev && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(prev);
+      return isPreviewableImage && typeof URL.createObjectURL === "function"
+        ? URL.createObjectURL(file)
+        : null;
     });
   }, []);
 
@@ -775,11 +791,11 @@ export function MessengerChatPane({
     clearMessengerPickerActive();
     setSelectedFile(null);
     setFilePreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
+      if (prev && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(prev);
       return null;
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
-    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
   const handleSend = async (overrideContent?: string) => {
@@ -791,12 +807,12 @@ export function MessengerChatPane({
     const parentId = parentSnapshot?.id || null;
     const file = overrideContent !== undefined ? null : selectedFile;
 
+    setSending(true);
     if (overrideContent === undefined) {
       setInputText("");
       setReplyTarget(null);
       handleClearFile();
     }
-    setSending(true);
 
     try {
       let uploadedAttachment: any = null;
@@ -820,11 +836,13 @@ export function MessengerChatPane({
       const res = await sendChatMessage(room.id, text, parentId, uploadedAttachment);
       if (!res) {
         toast.error("메시지 전송에 실패했습니다.");
-        if (overrideContent === undefined) setInputText(text);
+        if (overrideContent === undefined) {
+          setInputText(text);
+          if (file) attachFile(file);
+        }
       } else {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === res.id)) return prev;
-          return mergeChatMessages(prev, [
+        setMessages((prev) =>
+          mergeChatMessages(prev, [
             {
               ...res,
               sender_name: profile?.display_name || "나",
@@ -838,14 +856,17 @@ export function MessengerChatPane({
                   }
                 : res.parent_message ?? null,
             },
-          ]);
-        });
+          ]),
+        );
         stickToBottomRef.current = true;
         onRoomUpdatedRef.current?.();
       }
     } catch (err: any) {
       toast.error(err?.message || "오류가 발생했습니다.");
-      if (overrideContent === undefined) setInputText(text);
+      if (overrideContent === undefined) {
+        setInputText(text);
+        if (file) attachFile(file);
+      }
     } finally {
       setSending(false);
       setUploadingFile(false);

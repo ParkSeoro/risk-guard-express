@@ -175,14 +175,28 @@ export const CHAT_REACTION_CHOICES: Record<ChatReactionTabId, readonly ChatReact
 /** 예전 네 개. 현장 탭의 앞자리와 같다. */
 export const QUICK_CHAT_REACTIONS = CHAT_REACTION_CHOICES.site.slice(0, 4);
 
-export function mergeChatMessages<T extends ChatMessageIdentity>(
+export function mergeChatMessages<T extends ChatMessageIdentity & { attachments?: unknown[]; reactions?: unknown[] }>(
   existing: readonly T[],
   incoming: readonly T[],
 ): T[] {
   const byId = new Map<string, T>();
   for (const message of existing) byId.set(message.id, message);
   for (const message of incoming) {
-    if (!byId.has(message.id)) byId.set(message.id, message);
+    const prev = byId.get(message.id);
+    if (!prev) {
+      byId.set(message.id, message);
+    } else {
+      const prevAtt = Array.isArray(prev.attachments) ? prev.attachments : [];
+      const nextAtt = Array.isArray(message.attachments) ? message.attachments : [];
+      const prevRx = Array.isArray(prev.reactions) ? prev.reactions : [];
+      const nextRx = Array.isArray(message.reactions) ? message.reactions : [];
+      byId.set(message.id, {
+        ...prev,
+        ...message,
+        attachments: nextAtt.length >= prevAtt.length ? nextAtt : prevAtt,
+        reactions: nextRx.length >= prevRx.length ? nextRx : prevRx,
+      });
+    }
   }
   return Array.from(byId.values()).sort((a, b) => {
     const byTime = a.created_at.localeCompare(b.created_at);

@@ -32,8 +32,18 @@ if (typeof globalThis.DOMRect === "undefined") {
   (globalThis as unknown as { DOMRect: typeof DOMRectPolyfill }).DOMRect = DOMRectPolyfill;
 }
 
-const { fetchRoomMessages, markChatRoomRead, setChatNotificationEnabled, touchChatRoomPresence, clearChatRoomPresence } = vi.hoisted(() => ({
+const {
+  fetchRoomMessages,
+  sendChatMessage,
+  uploadChatFile,
+  markChatRoomRead,
+  setChatNotificationEnabled,
+  touchChatRoomPresence,
+  clearChatRoomPresence,
+} = vi.hoisted(() => ({
   fetchRoomMessages: vi.fn(),
+  sendChatMessage: vi.fn(),
+  uploadChatFile: vi.fn(),
   markChatRoomRead: vi.fn(async () => undefined),
   setChatNotificationEnabled: vi.fn(async () => true),
   touchChatRoomPresence: vi.fn(async () => undefined),
@@ -73,8 +83,8 @@ vi.mock("@/lib/messengerApi", async (importOriginal) => {
   return {
     ...actual,
     fetchRoomMessages: (...args: unknown[]) => fetchRoomMessages(...args),
-    sendChatMessage: vi.fn(),
-    uploadChatFile: vi.fn(),
+    sendChatMessage: (...args: unknown[]) => sendChatMessage(...args),
+    uploadChatFile: (...args: unknown[]) => uploadChatFile(...args),
     markChatRoomRead: (...args: unknown[]) => markChatRoomRead(...args),
     setChatNotificationEnabled: (...args: unknown[]) => setChatNotificationEnabled(...args),
     touchChatRoomPresence: (...args: unknown[]) => touchChatRoomPresence(...args),
@@ -306,5 +316,65 @@ describe("MessengerChatPane history and mute", () => {
       fileBtn.click();
     });
     expect(readMessengerPickerState()?.roomId).toBe("room-1");
+
+    // Simulate capturing/selecting a photo and clicking Send (전송)
+    uploadChatFile.mockResolvedValueOnce({
+      fileName: "camera_test.jpg",
+      fileSize: 1024,
+      mimeType: "image/jpeg",
+      publicUrl: "https://example.com/camera_test.jpg",
+      isImage: true,
+    });
+    sendChatMessage.mockResolvedValueOnce({
+      id: "msg-photo-1",
+      room_id: "room-1",
+      sender_id: "me",
+      parent_id: null,
+      message_type: "IMAGE",
+      content: "사진을 보냈습니다.",
+      is_deleted: false,
+      created_at: "2026-11-10T03:00:00.000Z",
+      updated_at: "2026-11-10T03:00:00.000Z",
+      attachments: [
+        {
+          id: "att-1",
+          message_id: "msg-photo-1",
+          file_name: "camera_test.jpg",
+          file_size: 1024,
+          mime_type: "image/jpeg",
+          storage_provider: "SUPABASE",
+          gcs_bucket: "attachments",
+          gcs_blob_name: "https://example.com/camera_test.jpg",
+          public_url: "https://example.com/camera_test.jpg",
+          thumbnail_url: "https://example.com/camera_test.jpg",
+          created_at: "2026-11-10T03:00:00.000Z",
+        },
+      ],
+      reactions: [],
+    });
+
+    const photoFile = new File(["img"], "camera_test.jpg", { type: "image/jpeg" });
+    await act(async () => {
+      Object.defineProperty(inputs[0], "files", {
+        value: [photoFile],
+        configurable: true,
+      });
+      inputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(host.textContent).toContain("camera_test.jpg");
+
+    const sendBtn = host.querySelector("button[title='전송']") as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(false);
+    await act(async () => {
+      sendBtn.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(uploadChatFile).toHaveBeenCalledWith(photoFile, "room-1");
+    expect(sendChatMessage).toHaveBeenCalled();
+    expect(host.textContent).toContain("사진을 보냈습니다.");
+    expect(host.querySelector("img[alt='camera_test.jpg']")).toBeTruthy();
   });
 });

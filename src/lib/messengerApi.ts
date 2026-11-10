@@ -575,6 +575,25 @@ export async function sendChatMessage(
 
     if (!attErr && attData) {
       savedAttachments = [attData as ChatAttachment];
+    } else {
+      if (attErr) {
+        console.error("chat_attachments insert error:", attErr);
+      }
+      savedAttachments = [
+        {
+          id: `local-${(newMsg as any).id}`,
+          message_id: (newMsg as any).id,
+          file_name: attachment.fileName,
+          file_size: attachment.fileSize,
+          mime_type: attachment.mimeType,
+          storage_provider: "SUPABASE",
+          gcs_bucket: "attachments",
+          gcs_blob_name: attachment.publicUrl,
+          public_url: attachment.publicUrl,
+          thumbnail_url: attachment.isImage ? attachment.publicUrl : null,
+          created_at: (newMsg as any).created_at || new Date().toISOString(),
+        },
+      ];
     }
   }
 

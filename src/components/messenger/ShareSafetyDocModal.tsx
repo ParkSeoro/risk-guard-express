@@ -43,9 +43,20 @@ export function ShareSafetyDocModal({
   const [docs, setDocs] = useState<SafetyDocCardPayload[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterKind, setFilterKind] = useState<"all" | SafetyDocCardPayload["kind"]>("all");
+  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "all">("all");
   const [query, setQuery] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<SafetyDocCardPayload | null>(null);
   const [note, setNote] = useState("");
+
+  const isPendingStatus = (status?: string | null) => {
+    const s = String(status || "").trim();
+    return s === "검토중" || s === "대기" || s === "승인대기" || s === "결재대기" || s === "제출";
+  };
+
+  const isApprovedStatus = (status?: string | null) => {
+    const s = String(status || "").trim();
+    return s === "승인" || s === "승인완료" || s === "결재완료" || s === "완료";
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -56,13 +67,24 @@ export function ShareSafetyDocModal({
     }
     setLoading(true);
     fetchShareableSafetyDocs(projectId)
-      .then((res) => setDocs(res))
+      .then((res) => {
+        // 작성중(미제출 초안)은 제외하고, 결재 대기 문서를 상단에 우선 배치
+        const valid = res.filter((d) => String(d.statusLabel || "").trim() !== "작성중");
+        valid.sort((a, b) => {
+          const aPend = isPendingStatus(a.statusLabel) ? 0 : isApprovedStatus(a.statusLabel) ? 1 : 2;
+          const bPend = isPendingStatus(b.statusLabel) ? 0 : isApprovedStatus(b.statusLabel) ? 1 : 2;
+          return aPend - bPend;
+        });
+        setDocs(valid);
+      })
       .finally(() => setLoading(false));
   }, [isOpen, projectId]);
 
   const filtered = useMemo(() => {
     return docs.filter((d) => {
       if (filterKind !== "all" && d.kind !== filterKind) return false;
+      if (statusFilter === "pending" && !isPendingStatus(d.statusLabel)) return false;
+      if (statusFilter === "approved" && !isApprovedStatus(d.statusLabel)) return false;
       if (!query.trim()) return true;
       const q = query.trim().toLowerCase();
       return (
@@ -70,7 +92,7 @@ export function ShareSafetyDocModal({
         (d.subtitle || "").toLowerCase().includes(q)
       );
     });
-  }, [docs, filterKind, query]);
+  }, [docs, filterKind, statusFilter, query]);
 
   const handleConfirm = () => {
     if (!selectedDoc) return;
@@ -90,7 +112,7 @@ export function ShareSafetyDocModal({
             안전문서 카드로 공유하기
           </DialogTitle>
           <DialogDescription className="text-xs">
-            현장의 작업허가서, 위험성평가, 작업계획서를 대화방에 즉시 공유하여 검토·결재를 요청합니다.
+            결재 대기 문서는 <strong>검토·승인 요청</strong> 카드로, 승인 완료 문서는 <strong>현장 열람·공유</strong> 카드로 대화방에 전송합니다. (작성중인 임시 문서는 제외됩니다)
           </DialogDescription>
         </DialogHeader>
 
@@ -103,6 +125,32 @@ export function ShareSafetyDocModal({
               onChange={(e) => setQuery(e.target.value)}
               className="pl-8 text-xs h-8"
             />
+          </div>
+
+          <div className="flex items-center justify-between gap-1 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
+              {(
+                [
+                  { key: "all", label: "전체 문서" },
+                  { key: "pending", label: "결재 대기(요청용)" },
+                  { key: "approved", label: "승인 완료(공유용)" },
+                ] as const
+              ).map((st) => (
+                <button
+                  key={st.key}
+                  type="button"
+                  onClick={() => setStatusFilter(st.key)}
+                  className={cn(
+                    "text-[11px] px-2.5 py-1 rounded-md font-semibold transition-colors border",
+                    statusFilter === st.key
+                      ? "bg-primary/15 text-primary border-primary/40"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted",
+                  )}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center gap-1 flex-wrap">

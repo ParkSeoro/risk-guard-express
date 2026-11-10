@@ -420,6 +420,18 @@ export function MessageBubble({
                       const meta = DOC_KIND_META[parsedDoc.card.kind] || DOC_KIND_META.work_permit;
                       const Icon = meta.Icon;
                       const docPath = safetyDocAppPath(parsedDoc.card);
+                      const rawStatus = String(parsedDoc.card.statusLabel || "").trim();
+                      const isPendingApproval =
+                        rawStatus === "검토중" ||
+                        rawStatus === "대기" ||
+                        rawStatus === "승인대기" ||
+                        rawStatus === "결재대기" ||
+                        rawStatus === "제출";
+                      const isAlreadyApproved =
+                        approvedCardIds.has(parsedDoc.card.id) ||
+                        rawStatus === "승인" ||
+                        rawStatus === "승인완료" ||
+                        rawStatus === "결재완료";
                       return (
                         <>
                           <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -433,9 +445,13 @@ export function MessageBubble({
                               <Icon className="h-3 w-3" />
                               {meta.label}
                             </span>
-                            {approvedCardIds.has(parsedDoc.card.id) ? (
+                            {isAlreadyApproved ? (
                               <span className={cn("px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30", messengerType.meta)}>
                                 승인 완료
+                              </span>
+                            ) : isPendingApproval ? (
+                              <span className={cn("px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold border border-amber-500/30", messengerType.meta)}>
+                                결재 대기 ({rawStatus})
                               </span>
                             ) : parsedDoc.card.statusLabel ? (
                               <span className={cn("px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium", messengerType.meta)}>
@@ -461,7 +477,7 @@ export function MessageBubble({
                                 <ArrowUpRight className="h-3.5 w-3.5" />
                               </a>
                             )}
-                            {!approvedCardIds.has(parsedDoc.card.id) && (
+                            {isPendingApproval && !isAlreadyApproved && (
                               <button
                                 type="button"
                                 disabled={approvingCardId === parsedDoc.card.id}

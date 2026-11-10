@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CHAT_HISTORY_JUMP_MAX_PAGES,
   CHAT_MESSAGE_PAGE_SIZE,
+  CHAT_REACTION_CHOICES,
+  CHAT_REACTION_TABS,
+  QUICK_CHAT_REACTIONS,
   annotateTimelineMessages,
   computeMessageUnreadCount,
   dedupeChatContacts,
@@ -137,6 +140,35 @@ describe("SafetyDocCard encoding & parsing", () => {
     expect(safetyDocAppPath(parsed.card || { kind: "work_permit", id })).toBe(`/app/admin/work-permits/${id}`);
     expect(safetyDocAppPath({ kind: "work_permit", id: "not-a-uuid" })).toBeNull();
     expect(safetyDocAppPath({ kind: "tbm_session", id })).toBeNull();
+  });
+});
+
+const ALCOHOL_EMOJI = ["🍺", "🍻", "🍷", "🥂", "🥃", "🍸", "🍹", "🍶", "🍾"];
+
+describe("chat reaction choices", () => {
+  it("keeps the original four site reactions first and gives each tab 24 unique emoji", () => {
+    expect(CHAT_REACTION_TABS.map((tab) => tab.label)).toEqual(["현장", "표정", "손짓", "재미"]);
+    expect(QUICK_CHAT_REACTIONS.map((item) => item.emoji)).toEqual(["✅", "👍", "👀", "🚨"]);
+    expect(CHAT_REACTION_CHOICES.site.slice(0, 4).map((item) => item.label)).toEqual([
+      "확인",
+      "완료",
+      "검토중",
+      "주의",
+    ]);
+
+    const seen = new Set<string>();
+    for (const tab of CHAT_REACTION_TABS) {
+      const choices = CHAT_REACTION_CHOICES[tab.id];
+      expect(choices).toHaveLength(24);
+      for (const choice of choices) {
+        expect(choice.emoji.length).toBeGreaterThan(0);
+        expect([...choice.emoji].length).toBeLessThanOrEqual(20);
+        expect(choice.label.trim().length).toBeGreaterThan(0);
+        expect(ALCOHOL_EMOJI).not.toContain(choice.emoji);
+        expect(seen.has(choice.emoji)).toBe(false);
+        seen.add(choice.emoji);
+      }
+    }
   });
 });
 

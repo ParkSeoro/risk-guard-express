@@ -56,10 +56,10 @@ export interface ChatReactionChoice {
 }
 
 export const CHAT_REACTION_TABS = [
-  { id: "site", label: "현장" },
-  { id: "face", label: "표정" },
-  { id: "hand", label: "손짓" },
-  { id: "fun", label: "재미" },
+  { id: "site", icon: "⛑️" },
+  { id: "face", icon: "🙂" },
+  { id: "hand", icon: "✋" },
+  { id: "fun", icon: "✨" },
 ] as const;
 
 export type ChatReactionTabId = (typeof CHAT_REACTION_TABS)[number]["id"];

@@ -147,7 +147,7 @@ const ALCOHOL_EMOJI = ["🍺", "🍻", "🍷", "🥂", "🥃", "🍸", "🍹", "
 
 describe("chat reaction choices", () => {
   it("keeps the original four site reactions first and gives each tab 24 unique emoji", () => {
-    expect(CHAT_REACTION_TABS.map((tab) => tab.label)).toEqual(["현장", "표정", "손짓", "재미"]);
+    expect(CHAT_REACTION_TABS.map((tab) => tab.icon)).toEqual(["⛑️", "🙂", "✋", "✨"]);
     expect(QUICK_CHAT_REACTIONS.map((item) => item.emoji)).toEqual(["✅", "👍", "👀", "🚨"]);
     expect(CHAT_REACTION_CHOICES.site.slice(0, 4).map((item) => item.label)).toEqual([
       "확인",

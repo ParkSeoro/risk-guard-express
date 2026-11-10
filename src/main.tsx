@@ -8,6 +8,7 @@ if (typeof window !== "undefined" && window.location.hostname === "risk-guard-ex
 import { registerSWSafely } from "./lib/registerServiceWorker";
 import { initOtaUpdater } from "./lib/native/otaUpdater";
 import { runBootOtaGate } from "./lib/native/bootOtaGate";
+import { runPreLoginOta } from "./lib/native/preLoginOta";
 import { isNativeApp } from "./lib/native/platform";
 import { installStaleChunkAutoReload } from "./lib/staleChunkError";
 import { installIosShareableGuard } from "./lib/iosShareableGuard";
@@ -36,10 +37,12 @@ function showBootError(err: unknown) {
 
 async function boot() {
   try {
-    // Native: Capgo ready handshake only — never block login on OTA download.
-    // (Download during boot froze WebView timers → infinite "업데이트 받는 중" splash.)
+    // 네이티브: 먼저 Capgo 준비 신호(3초). 그다음 새 화면이 있을 때만
+    // "업데이트 중"을 띄우고 받는다. 조회·받기·적용은 시간을 넘기면 로그인으로 넘긴다.
+    // 로그인 화면이 올라온 뒤에는 여기서 받지 않는다.
     if (isNativeApp()) {
       await runBootOtaGate({ paint: false });
+      await runPreLoginOta();
     }
 
     const { default: App } = await import("./App.tsx");

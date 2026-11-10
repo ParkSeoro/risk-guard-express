@@ -1,8 +1,9 @@
 /**
  * Pre-login Capgo handshake only.
- * Do NOT download/apply OTA here — CapacitorUpdater.download can stall the WebView
- * so JS timers never fire and a splash with "업데이트가 있으면 받는 중…" hangs forever
- * (seen on fresh Play 474 installs). OTA runs after React mounts via initOtaUpdater.
+ * Do NOT download or apply a bundle here. This function only sends the Capgo ready
+ * signal, and it gives up after a few seconds.
+ * A newer bundle is handled by runPreLoginOta before the login screen mounts.
+ * That path has its own deadline and never stays on the splash forever.
  */
 import { isNativeApp } from "./platform";
 

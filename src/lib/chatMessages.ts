@@ -50,12 +50,130 @@ export function safetyDocAppPath(card: { kind?: string | null; id?: string | nul
   }
 }
 
-export const QUICK_CHAT_REACTIONS = [
-  { emoji: "✅", label: "확인" },
-  { emoji: "👍", label: "완료" },
-  { emoji: "👀", label: "검토중" },
-  { emoji: "🚨", label: "주의" },
+export interface ChatReactionChoice {
+  emoji: string;
+  label: string;
+}
+
+export const CHAT_REACTION_TABS = [
+  { id: "site", label: "현장" },
+  { id: "face", label: "표정" },
+  { id: "hand", label: "손짓" },
+  { id: "fun", label: "재미" },
 ] as const;
+
+export type ChatReactionTabId = (typeof CHAT_REACTION_TABS)[number]["id"];
+
+/** 우클릭 반응. chat_reactions.emoji 는 varchar(20)이라 그림 파일 주소는 넣지 않는다. */
+export const CHAT_REACTION_CHOICES: Record<ChatReactionTabId, readonly ChatReactionChoice[]> = {
+  site: [
+    { emoji: "✅", label: "확인" },
+    { emoji: "👍", label: "완료" },
+    { emoji: "👀", label: "검토중" },
+    { emoji: "🚨", label: "주의" },
+    { emoji: "⚠️", label: "경고" },
+    { emoji: "🛑", label: "중지" },
+    { emoji: "⛑️", label: "안전모" },
+    { emoji: "🦺", label: "안전조끼" },
+    { emoji: "🚧", label: "통제" },
+    { emoji: "🔥", label: "화기" },
+    { emoji: "⚡", label: "전기" },
+    { emoji: "🚑", label: "응급" },
+    { emoji: "📋", label: "서류" },
+    { emoji: "📝", label: "기록" },
+    { emoji: "📌", label: "중요" },
+    { emoji: "📸", label: "사진" },
+    { emoji: "🔧", label: "보수" },
+    { emoji: "🏗️", label: "공사" },
+    { emoji: "📞", label: "연락" },
+    { emoji: "📅", label: "일정" },
+    { emoji: "🔁", label: "재확인" },
+    { emoji: "❗", label: "필수" },
+    { emoji: "❓", label: "문의" },
+    { emoji: "🤝", label: "협의" },
+  ],
+  face: [
+    { emoji: "😀", label: "웃음" },
+    { emoji: "😁", label: "활짝" },
+    { emoji: "😂", label: "폭소" },
+    { emoji: "🙂", label: "미소" },
+    { emoji: "😉", label: "윙크" },
+    { emoji: "😊", label: "기분좋음" },
+    { emoji: "😍", label: "좋음" },
+    { emoji: "😎", label: "여유" },
+    { emoji: "🤔", label: "생각" },
+    { emoji: "😐", label: "무표정" },
+    { emoji: "😑", label: "시큰둥" },
+    { emoji: "😮", label: "놀람" },
+    { emoji: "😯", label: "헉" },
+    { emoji: "😲", label: "깜짝" },
+    { emoji: "😢", label: "속상" },
+    { emoji: "😭", label: "울음" },
+    { emoji: "😤", label: "답답" },
+    { emoji: "😠", label: "화남" },
+    { emoji: "😱", label: "겁남" },
+    { emoji: "😰", label: "긴장" },
+    { emoji: "😴", label: "피곤" },
+    { emoji: "🙄", label: "어이없음" },
+    { emoji: "🫡", label: "경례" },
+    { emoji: "😌", label: "안심" },
+  ],
+  hand: [
+    { emoji: "👎", label: "아쉬움" },
+    { emoji: "👌", label: "오케이" },
+    { emoji: "✌️", label: "브이" },
+    { emoji: "🤞", label: "기대" },
+    { emoji: "🤘", label: "록" },
+    { emoji: "🤙", label: "전화" },
+    { emoji: "👈", label: "왼쪽" },
+    { emoji: "👉", label: "오른쪽" },
+    { emoji: "👆", label: "위" },
+    { emoji: "👇", label: "아래" },
+    { emoji: "☝️", label: "여기" },
+    { emoji: "✋", label: "정지" },
+    { emoji: "🤚", label: "손바닥" },
+    { emoji: "🖐️", label: "펼침" },
+    { emoji: "👋", label: "손인사" },
+    { emoji: "👏", label: "박수" },
+    { emoji: "🙌", label: "만세" },
+    { emoji: "👐", label: "양손" },
+    { emoji: "🙏", label: "부탁" },
+    { emoji: "💪", label: "힘" },
+    { emoji: "✊", label: "주먹" },
+    { emoji: "👊", label: "주먹인사" },
+    { emoji: "✍️", label: "서명" },
+    { emoji: "🖖", label: "인사" },
+  ],
+  fun: [
+    { emoji: "🤣", label: "빵터짐" },
+    { emoji: "😆", label: "키득" },
+    { emoji: "😅", label: "민망" },
+    { emoji: "🙃", label: "뒤집힘" },
+    { emoji: "😜", label: "메롱" },
+    { emoji: "🤪", label: "장난" },
+    { emoji: "😝", label: "장난스러움" },
+    { emoji: "🤓", label: "공부" },
+    { emoji: "🧐", label: "살핌" },
+    { emoji: "😏", label: "능글" },
+    { emoji: "😒", label: "시큰" },
+    { emoji: "😬", label: "어색" },
+    { emoji: "🤭", label: "킥킥" },
+    { emoji: "🤫", label: "조용" },
+    { emoji: "🤥", label: "거짓말" },
+    { emoji: "🤡", label: "광대" },
+    { emoji: "👻", label: "유령" },
+    { emoji: "💀", label: "골때림" },
+    { emoji: "🙈", label: "안 봄" },
+    { emoji: "🙉", label: "안 들음" },
+    { emoji: "🙊", label: "안 말함" },
+    { emoji: "🎉", label: "축하" },
+    { emoji: "💯", label: "백점" },
+    { emoji: "⭐", label: "별" },
+  ],
+};
+
+/** 예전 네 개. 현장 탭의 앞자리와 같다. */
+export const QUICK_CHAT_REACTIONS = CHAT_REACTION_CHOICES.site.slice(0, 4);
 
 export function mergeChatMessages<T extends ChatMessageIdentity>(
   existing: readonly T[],

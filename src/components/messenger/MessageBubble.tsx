@@ -2,8 +2,10 @@ import { useMemo, useRef, useState, type PointerEvent } from "react";
 import type { ChatRoomMessage, ChatAttachment } from "@/lib/messengerApi";
 import {
   parseSafetyDocMessage,
-  QUICK_CHAT_REACTIONS,
+  CHAT_REACTION_CHOICES,
+  CHAT_REACTION_TABS,
   safetyDocAppPath,
+  type ChatReactionTabId,
   type SafetyDocCardPayload,
 } from "@/lib/chatMessages";
 import { canonicalizeAppPath } from "@/lib/notificationRoutes";
@@ -107,6 +109,7 @@ export function MessageBubble({
   onOpenImage,
 }: MessageBubbleProps) {
   const [showReceipts, setShowReceipts] = useState(false);
+  const [reactionTab, setReactionTab] = useState<ChatReactionTabId>("site");
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [approvingCardId, setApprovingCardId] = useState<string | null>(null);
   const [approvedCardIds, setApprovedCardIds] = useState<Set<string>>(() => new Set());
@@ -318,7 +321,7 @@ export function MessageBubble({
             )}
 
             {/* 실제 메시지 말풍선. 메뉴는 우클릭(휴대폰은 길게 누르기)으로만 연다. */}
-            <ContextMenu>
+            <ContextMenu onOpenChange={(open) => { if (open) setReactionTab("site"); }}>
             <ContextMenuTrigger asChild>
             <div
               ref={bubbleRef}
@@ -487,15 +490,36 @@ export function MessageBubble({
 
             </div>
             </ContextMenuTrigger>
-            <ContextMenuContent className="min-w-[11rem]">
+            <ContextMenuContent className="w-[17.5rem]">
               {onToggleReaction && (
                 <>
-                  <div className="flex gap-1 px-1 py-1">
-                    {QUICK_CHAT_REACTIONS.map((item) => (
+                  <div className="grid grid-cols-4 gap-1 px-1 pt-1" role="tablist" aria-label="반응 종류">
+                    {CHAT_REACTION_TABS.map((tab) => (
+                      <ContextMenuItem
+                        key={tab.id}
+                        role="tab"
+                        aria-selected={reactionTab === tab.id}
+                        className={cn(
+                          "h-7 justify-center px-1",
+                          messengerType.meta,
+                          reactionTab === tab.id && "bg-primary/15 font-semibold text-primary",
+                        )}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          setReactionTab(tab.id);
+                        }}
+                      >
+                        {tab.label}
+                      </ContextMenuItem>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-8 gap-0.5 px-1 py-1">
+                    {CHAT_REACTION_CHOICES[reactionTab].map((item) => (
                       <ContextMenuItem
                         key={item.emoji}
-                        className="px-2 py-1"
+                        className="h-8 w-8 justify-center p-0 text-lg"
                         title={item.label}
+                        aria-label={item.label}
                         onSelect={() => onToggleReaction(message.id, item.emoji)}
                       >
                         {item.emoji}

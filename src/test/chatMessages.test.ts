@@ -32,6 +32,35 @@ describe("mergeChatMessages", () => {
     expect(mergeChatMessages(newest, older)[1]?.content).toBe("mid-fresh");
   });
 
+  it("keeps the text already on screen and the longer attachment or reaction list", () => {
+    const onScreen = {
+      id: "b",
+      created_at: "2026-11-02T00:00:00.000Z",
+      content: "mid-fresh",
+      attachments: [{ id: "photo" }],
+      reactions: [],
+    };
+    const incoming = {
+      id: "b",
+      created_at: "2026-11-02T00:00:00.000Z",
+      content: "mid",
+      attachments: [],
+      reactions: [{ id: "rx" }],
+    };
+
+    const kept = mergeChatMessages([onScreen], [incoming])[0];
+    expect(kept?.content).toBe("mid-fresh");
+    expect(kept?.attachments).toEqual([{ id: "photo" }]);
+    expect(kept?.reactions).toEqual([{ id: "rx" }]);
+
+    const filled = mergeChatMessages(
+      [{ ...onScreen, attachments: [] }],
+      [{ ...incoming, attachments: [{ id: "photo" }], reactions: [] }],
+    )[0];
+    expect(filled?.content).toBe("mid-fresh");
+    expect(filled?.attachments).toEqual([{ id: "photo" }]);
+  });
+
   it("orders rows that share a timestamp by id", () => {
     const merged = mergeChatMessages(
       [{ id: "b", created_at: "2026-11-04T00:00:00.000Z" }],

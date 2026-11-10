@@ -190,9 +190,10 @@ export function mergeChatMessages<T extends ChatMessageIdentity & { attachments?
       const nextAtt = Array.isArray(message.attachments) ? message.attachments : [];
       const prevRx = Array.isArray(prev.reactions) ? prev.reactions : [];
       const nextRx = Array.isArray(message.reactions) ? message.reactions : [];
+      // 이미 있는 본문은 그대로 두고, 첨부와 반응은 더 긴 목록을 남긴다.
       byId.set(message.id, {
-        ...prev,
         ...message,
+        ...prev,
         attachments: nextAtt.length >= prevAtt.length ? nextAtt : prevAtt,
         reactions: nextRx.length >= prevRx.length ? nextRx : prevRx,
       });

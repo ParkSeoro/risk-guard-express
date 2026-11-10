@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { ChatRoomMessage, ChatAttachment } from "@/lib/messengerApi";
 import {
   parseSafetyDocMessage,
@@ -174,6 +174,7 @@ export function MessageBubble({
     const y = event.clientY;
     pressTimer.current = window.setTimeout(() => {
       longPressed.current = true;
+      window.getSelection()?.removeAllRanges();
       bubbleRef.current?.dispatchEvent(
         new MouseEvent("contextmenu", {
           bubbles: true,
@@ -183,6 +184,7 @@ export function MessageBubble({
           button: 2,
         }),
       );
+      window.setTimeout(() => window.getSelection()?.removeAllRanges(), 40);
     }, 450);
   };
 
@@ -190,6 +192,14 @@ export function MessageBubble({
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
   };
+
+  useEffect(() => {
+    const node = bubbleRef.current;
+    if (!node) return;
+    const blockSelect = (event: Event) => event.preventDefault();
+    node.addEventListener("selectstart", blockSelect);
+    return () => node.removeEventListener("selectstart", blockSelect);
+  }, []);
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
@@ -321,12 +331,18 @@ export function MessageBubble({
             )}
 
             {/* 실제 메시지 말풍선. 메뉴는 우클릭(휴대폰은 길게 누르기)으로만 연다. */}
-            <ContextMenu onOpenChange={(open) => { if (open) setReactionTab("site"); }}>
+            <ContextMenu
+              onOpenChange={(open) => {
+                if (!open) return;
+                setReactionTab("site");
+                window.getSelection()?.removeAllRanges();
+              }}
+            >
             <ContextMenuTrigger asChild>
             <div
               ref={bubbleRef}
               className={cn(
-                "relative px-3.5 py-2.5 rounded-2xl break-words shadow-2xs",
+                "relative select-none px-3.5 py-2.5 rounded-2xl break-words shadow-2xs [-webkit-touch-callout:none] [-webkit-user-select:none]",
                 messengerType.body,
                 isMe
                   ? "bg-primary text-primary-foreground rounded-br-xs"
@@ -490,34 +506,37 @@ export function MessageBubble({
 
             </div>
             </ContextMenuTrigger>
-            <ContextMenuContent className="w-[17.5rem]">
+            <ContextMenuContent
+              collisionPadding={12}
+              className="flex w-[min(16.5rem,calc(100vw-1.5rem))] max-h-[min(70dvh,var(--radix-context-menu-content-available-height,70dvh))] flex-col overflow-hidden p-1"
+            >
               {onToggleReaction && (
                 <>
-                  <div className="grid grid-cols-4 gap-1 px-1 pt-1" role="tablist" aria-label="반응 종류">
+                  <div className="grid shrink-0 grid-cols-4 gap-1 px-1 pt-1" role="tablist" aria-label="반응 종류">
                     {CHAT_REACTION_TABS.map((tab) => (
                       <ContextMenuItem
                         key={tab.id}
                         role="tab"
+                        aria-label={tab.icon}
                         aria-selected={reactionTab === tab.id}
                         className={cn(
-                          "h-7 justify-center px-1",
-                          messengerType.meta,
-                          reactionTab === tab.id && "bg-primary/15 font-semibold text-primary",
+                          "h-8 justify-center px-1 text-lg",
+                          reactionTab === tab.id && "bg-primary/15",
                         )}
                         onSelect={(event) => {
                           event.preventDefault();
                           setReactionTab(tab.id);
                         }}
                       >
-                        {tab.label}
+                        {tab.icon}
                       </ContextMenuItem>
                     ))}
                   </div>
-                  <div className="grid grid-cols-8 gap-0.5 px-1 py-1">
+                  <div className="grid min-h-0 grid-cols-6 content-start gap-0.5 overflow-y-auto px-0.5 py-1">
                     {CHAT_REACTION_CHOICES[reactionTab].map((item) => (
                       <ContextMenuItem
                         key={item.emoji}
-                        className="h-8 w-8 justify-center p-0 text-lg"
+                        className="h-9 justify-center p-0 text-xl"
                         title={item.label}
                         aria-label={item.label}
                         onSelect={() => onToggleReaction(message.id, item.emoji)}
@@ -526,9 +545,10 @@ export function MessageBubble({
                       </ContextMenuItem>
                     ))}
                   </div>
-                  <ContextMenuSeparator />
+                  <ContextMenuSeparator className="shrink-0" />
                 </>
               )}
+              <div className="shrink-0">
               {onReply && (
                 <ContextMenuItem onSelect={() => onReply(message)}>
                   <CornerDownLeft className="mr-2 h-4 w-4" /> 답장
@@ -555,6 +575,7 @@ export function MessageBubble({
                   <Trash2 className="mr-2 h-4 w-4" /> 삭제
                 </ContextMenuItem>
               )}
+              </div>
             </ContextMenuContent>
             </ContextMenu>
 

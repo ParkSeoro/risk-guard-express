@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { isAdminShellUser, isPureWorkerUser, MOBILE_ADMIN_HOME, WORKER_HOME } from "@/components/AuthGuard";
 import { toMobileShellPath } from "@/lib/notificationRoutes";
+import { consumeMessengerPickerReturnPath } from "@/lib/messengerPath";
 
 // Re-export for existing callers (MobileHome, AssessmentRunDetail, …)
 export { setForceDesktop, isForceDesktop };
@@ -40,6 +41,7 @@ const MOBILE_EXCLUDE = [
 
 const REMAP_PREFIXES = [
   "/app/admin",
+  "/messenger",
   "/assessment-run",
   "/work-plan",
   "/approvals",
@@ -75,6 +77,17 @@ export default function MobileRedirectGuard() {
     if (isAuthLoading || (user && !rolesReady)) return;
 
     const path = location.pathname;
+    if (
+      user &&
+      !isPureWorkerUser(roles) &&
+      (path === MOBILE_ADMIN_HOME || path === "/app/worker" || path === "/app/worker/")
+    ) {
+      const pickerReturn = consumeMessengerPickerReturnPath({ mobileShell: true });
+      if (pickerReturn) {
+        navigate(pickerReturn, { replace: true });
+        return;
+      }
+    }
     if (MOBILE_EXCLUDE.some((re) => re.test(path))) return;
 
     const needsRemap = REMAP_PREFIXES.some(

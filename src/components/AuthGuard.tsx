@@ -16,6 +16,7 @@ import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 import { needsWorkerLocaleChoice, WORKER_LANGUAGE_PATH } from "@/lib/i18n/workerLocale";
 import { AuthErrorScreen } from "@/components/AuthErrorScreen";
 import { isWindowsDesktopApp, loadDesktopSettings } from "@/lib/desktopBridge";
+import { consumeMessengerPickerReturnPath } from "@/lib/messengerPath";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -179,6 +180,10 @@ export function afterConsentHomePath(
   if (dest.startsWith("/app/worker") && needsWorkerLocaleChoice(profile ?? null)) {
     return WORKER_LANGUAGE_PATH;
   }
+  if (!isPureWorkerUser(roles)) {
+    const pickerReturn = consumeMessengerPickerReturnPath();
+    if (pickerReturn) return pickerReturn;
+  }
   return dest;
 }
 
@@ -234,22 +239,30 @@ function AccountBlockedScreen({
 export default function AuthGuard({ children, shell, allowAnonymous = false }: AuthGuardProps) {
   const { user, session, isAuthLoading, roles, rolesReady, profileReady, profile } = useAuth();
   const location = useLocation();
-  const [nativePermsChecked, setNativePermsChecked] = useState(() => !isNativeApp());
+  const activeUserId = user?.id ?? session?.user?.id ?? null;
+  const [nativePermsChecked, setNativePermsChecked] = useState(
+    () => !isNativeApp() || hasCompletedNativePermissions(),
+  );
   const [nativePermsDone, setNativePermsDone] = useState(() => hasCompletedNativePermissions());
 
   // Re-open OS permission onboarding when location was revoked after "done".
+  // Keyed on activeUserId (primitive) and never resets nativePermsChecked to false once
+  // already checked, so returning from the OS file/photo picker (which fires TOKEN_REFRESHED /
+  // SIGNED_IN with a new session object reference) never unmounts the route tree or <input type="file">.
   useEffect(() => {
     if (!isNativeApp()) {
       setNativePermsChecked(true);
       return;
     }
-    if (!session && !user) {
+    if (!activeUserId) {
       setNativePermsDone(hasCompletedNativePermissions());
       setNativePermsChecked(true);
       return;
     }
     let cancelled = false;
-    setNativePermsChecked(false);
+    if (!hasCompletedNativePermissions()) {
+      setNativePermsChecked(false);
+    }
     void syncNativePermissionsFlagWithOs().then((done) => {
       if (cancelled) return;
       setNativePermsDone(done);
@@ -258,7 +271,7 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return () => {
       cancelled = true;
     };
-  }, [session, user]);
+  }, [activeUserId]);
 
   // ① Global auth bootstrap
   if (isAuthLoading) return <LoadingSpinner />;

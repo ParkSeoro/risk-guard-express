@@ -416,6 +416,36 @@ export async function fetchRoomMessages(
   };
 }
 
+const IMAGE_EXT_MIME_MAP: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+};
+
+export function inferChatFileMimeType(file: Pick<File, "name" | "type">): string {
+  const rawType = String(file.type || "").trim().toLowerCase();
+  if (rawType) return rawType;
+  const ext = String(file.name || "")
+    .split(".")
+    .pop()
+    ?.trim()
+    .toLowerCase();
+  if (ext && IMAGE_EXT_MIME_MAP[ext]) {
+    return IMAGE_EXT_MIME_MAP[ext];
+  }
+  return "application/octet-stream";
+}
+
+export function isChatImageFile(file: Pick<File, "name" | "type">): boolean {
+  return inferChatFileMimeType(file).startsWith("image/");
+}
+
 /**
  * 대화방 파일 업로드 (스마트폰 사진 자동 압축 및 안전한 Storage 저장)
  */
@@ -429,10 +459,11 @@ export async function uploadChatFile(
   publicUrl: string;
   isImage: boolean;
 } | null> {
-  const isImage = isCompressibleImage(file);
+  const isImage = isChatImageFile(file);
+  const compressible = isCompressibleImage(file);
   let fileToUpload = file;
 
-  if (isImage) {
+  if (compressible) {
     try {
       const compressed = await compressUploadFile(file);
       fileToUpload = compressed.file;
@@ -441,7 +472,15 @@ export async function uploadChatFile(
     }
   }
 
-  const safeName = sanitizeStorageFileName(file.name);
+  const resolvedMimeType =
+    fileToUpload.type || inferChatFileMimeType(file) || (isImage ? "image/jpeg" : "application/octet-stream");
+  let safeName = sanitizeStorageFileName(fileToUpload.name || file.name);
+  if (
+    resolvedMimeType === "image/jpeg" &&
+    !/\.jpe?g$/i.test(safeName)
+  ) {
+    safeName = `${safeName.replace(/\.[^.]+$/, "") || "photo"}.jpg`;
+  }
   const objectPath = `chat/${roomId}/${Date.now()}_${safeName}`;
 
   const { error: upErr } = await supabase.storage
@@ -449,6 +488,7 @@ export async function uploadChatFile(
     .upload(objectPath, fileToUpload, {
       cacheControl: "3600",
       upsert: false,
+      contentType: resolvedMimeType,
     });
 
   if (upErr) {
@@ -461,9 +501,9 @@ export async function uploadChatFile(
     .getPublicUrl(objectPath);
 
   return {
-    fileName: file.name,
+    fileName: file.name || safeName,
     fileSize: fileToUpload.size,
-    mimeType: file.type || (isImage ? "image/jpeg" : "application/octet-stream"),
+    mimeType: resolvedMimeType,
     publicUrl: pubData.publicUrl,
     isImage,
   };

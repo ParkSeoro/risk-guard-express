@@ -9,6 +9,7 @@ import { prefersMobileAppShell, setForceDesktop } from "@/hooks/use-mobile";
 import {
   canonicalizeAppPath,
   resolveNotificationRoute,
+  toAdminShellPath,
   toMobileShellPath,
 } from "@/lib/notificationRoutes";
 import { resolveMobileHomePath, mobileEntityPath, mobileDocumentPath } from "@/lib/mobileNav";
@@ -128,6 +129,9 @@ describe("notification + entity mobile routes", () => {
       "/app/worker/messenger?room=room-1",
     );
     expect(toMobileShellPath("/messenger")).toBe("/app/worker/messenger");
+    expect(toAdminShellPath("/app/worker/messenger?room=room-1")).toBe(
+      "/app/admin/messenger?room=room-1",
+    );
   });
 
   it("toMobileShellPath maps zone-events and settings to worker pages", () => {

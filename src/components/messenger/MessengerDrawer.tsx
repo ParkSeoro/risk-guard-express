@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList } from "./MessengerRoomList";
 import { MessengerChatPane } from "./MessengerChatPane";
@@ -29,6 +29,7 @@ export function MessengerDrawer({
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const cachedRoomRef = useRef<ChatRoom | null>(null);
 
   // loadRooms: 의존성 없는 완전한 불변 함수로 무한 리렌더링 제거
   const loadRooms = useCallback(async () => {
@@ -73,11 +74,23 @@ export function MessengerDrawer({
   }, [isOpen, user, loadRooms]);
 
   const selectedRoom = useMemo(() => {
-    if (!selectedRoomId) return null;
-    return rooms.find((r) => r.id === selectedRoomId) || null;
+    if (!selectedRoomId) {
+      cachedRoomRef.current = null;
+      return null;
+    }
+    const found = rooms.find((r) => r.id === selectedRoomId) || null;
+    if (found) {
+      cachedRoomRef.current = found;
+      return found;
+    }
+    if (cachedRoomRef.current?.id === selectedRoomId) {
+      return cachedRoomRef.current;
+    }
+    return null;
   }, [rooms, selectedRoomId]);
 
   const handleSelectRoom = (room: ChatRoom) => {
+    cachedRoomRef.current = room;
     setSelectedRoomId(room.id);
   };
 

@@ -20,8 +20,8 @@ const ROOTS = new Set([
 export default function NativeAndroidBack() {
   const navigate = useNavigate();
   const location = useLocation();
-  const pathRef = useRef(location.pathname);
-  pathRef.current = location.pathname;
+  const locRef = useRef({ pathname: location.pathname, search: location.search });
+  locRef.current = { pathname: location.pathname, search: location.search };
 
   useEffect(() => {
     if (!Capacitor?.isNativePlatform?.()) return;
@@ -35,7 +35,14 @@ export default function NativeAndroidBack() {
         const { App } = await import("@capacitor/app");
         if (cancelled) return;
         handle = await App.addListener("backButton", ({ canGoBack }) => {
-          const path = pathRef.current;
+          const { pathname: path, search } = locRef.current;
+          if (
+            (path === "/app/worker/messenger" || path === "/app/admin/messenger") &&
+            new URLSearchParams(search).has("room")
+          ) {
+            navigate(path, { replace: true });
+            return;
+          }
           if (ROOTS.has(path)) {
             void App.minimizeApp();
             return;

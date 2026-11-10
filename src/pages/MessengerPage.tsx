@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { fetchMyChatRooms, type ChatRoom } from "@/lib/messengerApi";
 import { MessengerRoomList, DEV_COUNCIL_ROOM } from "@/components/messenger/MessengerRoomList";
@@ -10,18 +10,20 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import { canOpenCouncil } from "@/lib/councilAccess";
+import { clearMessengerPickerActive, readMessengerPickerState } from "@/lib/messengerPath";
 import { MessageSquare } from "lucide-react";
 
 export default function MessengerPage() {
   const { user, roles, rolesReady } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialRoomId = searchParams.get("room");
+  const initialRoomId = searchParams.get("room") || readMessengerPickerState()?.roomId || null;
   const projectAccess = useGlobalProjectAccessOptional();
 
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialRoomId);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const cachedRoomRef = useRef<ChatRoom | null>(null);
 
   // 불변 loadRooms 함수로 무한 깜박임 루프 제거
   const loadRooms = useCallback(async () => {
@@ -39,17 +41,28 @@ export default function MessengerPage() {
     loadRooms();
   }, [loadRooms]);
 
-  // URL query 파라미터 변경 시 선택된 방 동기화
+  // URL query 파라미터 변경 시 선택된 방 동기화 (뒤로가기로 ?room= 해제 시 목록으로 복귀)
+  const urlRoomId = searchParams.get("room");
   useEffect(() => {
-    if (initialRoomId === "dev-ai-council" && !canOpenCouncil(user)) {
+    if (urlRoomId === "dev-ai-council" && !canOpenCouncil(user)) {
       setSelectedRoomId(null);
       setSearchParams({}, { replace: true });
       return;
     }
-    if (initialRoomId) {
-      setSelectedRoomId(initialRoomId);
+    if (urlRoomId) {
+      clearMessengerPickerActive();
+      setSelectedRoomId(urlRoomId);
+      return;
     }
-  }, [initialRoomId, user, setSearchParams]);
+    const pickerRoomId = readMessengerPickerState()?.roomId;
+    if (pickerRoomId) {
+      clearMessengerPickerActive();
+      setSelectedRoomId(pickerRoomId);
+      setSearchParams({ room: pickerRoomId }, { replace: true });
+      return;
+    }
+    setSelectedRoomId(null);
+  }, [urlRoomId, user, setSearchParams]);
 
   // 실시간 변경 감지
   useEffect(() => {
@@ -76,16 +89,31 @@ export default function MessengerPage() {
   }, [user, loadRooms]);
 
   const selectedRoom = useMemo(() => {
-    if (!selectedRoomId) return null;
-    return rooms.find((r) => r.id === selectedRoomId) || null;
+    if (!selectedRoomId) {
+      cachedRoomRef.current = null;
+      return null;
+    }
+    const found = rooms.find((r) => r.id === selectedRoomId) || null;
+    if (found) {
+      cachedRoomRef.current = found;
+      return found;
+    }
+    if (cachedRoomRef.current?.id === selectedRoomId) {
+      return cachedRoomRef.current;
+    }
+    return null;
   }, [rooms, selectedRoomId]);
 
   const handleSelectRoom = (room: ChatRoom) => {
+    const wasInRoom = Boolean(selectedRoomId);
+    cachedRoomRef.current = room;
     setSelectedRoomId(room.id);
-    setSearchParams({ room: room.id }, { replace: true });
+    setSearchParams({ room: room.id }, { replace: wasInRoom });
   };
 
   const handleBackToList = () => {
+    clearMessengerPickerActive();
+    cachedRoomRef.current = null;
     setSelectedRoomId(null);
     setSearchParams({}, { replace: true });
     loadRooms();
@@ -134,6 +162,10 @@ export default function MessengerPage() {
             onBack={handleBackToList}
             onRoomUpdated={loadRooms}
           />
+        ) : loading && selectedRoomId ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-sm text-muted-foreground bg-muted/10">
+            대화방을 불러오는 중...
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground bg-muted/10">
             <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-3">

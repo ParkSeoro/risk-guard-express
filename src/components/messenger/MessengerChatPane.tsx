@@ -67,6 +67,7 @@ import {
   X,
   ShieldCheck,
   Paperclip,
+  ImagePlus,
   Loader2,
   FileText,
   Megaphone,
@@ -86,6 +87,7 @@ import {
 import { toast } from "sonner";
 import { isDesktopShellActive, openDesktopPopoutWindow } from "@/lib/desktopBridge";
 import { playMessengerChime } from "@/lib/messengerSound";
+import { clearMessengerPickerActive, markMessengerPickerActive } from "@/lib/messengerPath";
 
 interface MessengerChatPaneProps {
   room: ChatRoom;
@@ -142,6 +144,7 @@ export function MessengerChatPane({
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -172,6 +175,12 @@ export function MessengerChatPane({
     setReadMarkerAt(mine?.last_read_at || null);
     setForwardMessage(null);
     setGalleryUrl(null);
+    setReplyTarget(null);
+    setSelectedFile(null);
+    setFilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
   }, [room.id, user?.id]);
 
   // 고정 공지 메시지 로드
@@ -534,24 +543,40 @@ export function MessengerChatPane({
   };
 
   const attachFile = useCallback((file: File) => {
+    clearMessengerPickerActive();
     if (file.size > 50 * 1024 * 1024) {
       toast.error("50MB 이하의 파일만 전송할 수 있습니다.");
       return;
     }
 
     setSelectedFile(file);
-    if (file.type.startsWith("image/")) {
-      const url = URL.createObjectURL(file);
-      setFilePreviewUrl(url);
-    } else {
-      setFilePreviewUrl(null);
-    }
+    const isPreviewableImage =
+      file.type.startsWith("image/") ||
+      /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(file.name || "");
+    setFilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return isPreviewableImage ? URL.createObjectURL(file) : null;
+    });
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    e.target.value = "";
+    if (!file) {
+      clearMessengerPickerActive();
+      return;
+    }
     attachFile(file);
+  };
+
+  const openPhotoPicker = () => {
+    markMessengerPickerActive(room.id);
+    photoInputRef.current?.click();
+  };
+
+  const openFilePicker = () => {
+    markMessengerPickerActive(room.id);
+    fileInputRef.current?.click();
   };
 
   const [composerMenu, setComposerMenu] = useState<ComposerMenuState>(() => composerMenuState("", 0, 0));
@@ -737,10 +762,14 @@ export function MessengerChatPane({
   };
 
   const handleClearFile = () => {
+    clearMessengerPickerActive();
     setSelectedFile(null);
-    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
-    setFilePreviewUrl(null);
+    setFilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (photoInputRef.current) photoInputRef.current.value = "";
   };
 
   const handleSend = async (overrideContent?: string) => {
@@ -771,7 +800,7 @@ export function MessengerChatPane({
           toast.error("파일 업로드에 실패했습니다.");
           if (overrideContent === undefined) {
             setInputText(text);
-            setSelectedFile(file);
+            attachFile(file);
           }
           setSending(false);
           return;
@@ -1317,19 +1346,42 @@ export function MessengerChatPane({
       >
         <input
           type="file"
+          ref={photoInputRef}
+          onChange={handleFileSelect}
+          accept="image/*"
+          className="sr-only"
+          tabIndex={-1}
+        />
+        <input
+          type="file"
           ref={fileInputRef}
           onChange={handleFileSelect}
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp,.zip"
-          className="hidden"
+          accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,.pdf,.doc,.docx,.xls,.xlsx,.hwp,.hwpx,.zip,.txt,.csv"
+          className="sr-only"
+          tabIndex={-1}
         />
 
         <div className="flex items-end gap-1 bg-background border rounded-xl p-1.5 shadow-2xs focus-within:ring-1 focus-within:ring-primary">
-          {/* 사진 및 파일 첨부 버튼 */}
+          {/* 사진 올리기 버튼 (모바일 갤러리·카메라 전용) */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openPhotoPicker}
+            disabled={sending}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 mb-0.5 rounded-lg"
+            title="사진 올리기"
+            aria-label="사진 올리기"
+          >
+            <ImagePlus className="h-4 w-4" />
+          </Button>
+
+          {/* 파일 첨부 버튼 */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={openFilePicker}
             disabled={sending}
             className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 mb-0.5 rounded-lg"
             title="사진 또는 파일 첨부 (드래그 앤 드롭 / Ctrl+V 지원)"

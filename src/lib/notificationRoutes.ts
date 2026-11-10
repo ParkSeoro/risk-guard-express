@@ -270,7 +270,10 @@ export function toAdminShellPath(path: string): string {
   if (p.startsWith("/distribution")) return `${ADMIN}/worker-distribution`;
   if (p.startsWith("/announcements")) return `${ADMIN}/announcements`;
   if (p.startsWith("/vision-events") || p.startsWith("/vision-fleet")) return `${ADMIN}/vision-fleet`;
-  if (p.startsWith("/messenger")) return `${ADMIN}/messenger`;
+  if (p === "/messenger" || p.startsWith("/messenger/") || p.startsWith("/messenger?")) {
+    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
+    return `${ADMIN}/messenger${q}`;
+  }
   if (p.startsWith("/account") || p.startsWith("/settings")) return `${ADMIN}/settings`;
 
   return `${ADMIN}/dashboard`;

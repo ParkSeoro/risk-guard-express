@@ -68,18 +68,23 @@ vi.mock("@/integrations/supabase/client", () => {
   };
 });
 
-vi.mock("@/lib/messengerApi", () => ({
-  fetchRoomMessages: (...args: unknown[]) => fetchRoomMessages(...args),
-  sendChatMessage: vi.fn(),
-  uploadChatFile: vi.fn(),
-  markChatRoomRead: (...args: unknown[]) => markChatRoomRead(...args),
-  setChatNotificationEnabled: (...args: unknown[]) => setChatNotificationEnabled(...args),
-  touchChatRoomPresence: (...args: unknown[]) => touchChatRoomPresence(...args),
-  clearChatRoomPresence: (...args: unknown[]) => clearChatRoomPresence(...args),
-}));
+vi.mock("@/lib/messengerApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/messengerApi")>();
+  return {
+    ...actual,
+    fetchRoomMessages: (...args: unknown[]) => fetchRoomMessages(...args),
+    sendChatMessage: vi.fn(),
+    uploadChatFile: vi.fn(),
+    markChatRoomRead: (...args: unknown[]) => markChatRoomRead(...args),
+    setChatNotificationEnabled: (...args: unknown[]) => setChatNotificationEnabled(...args),
+    touchChatRoomPresence: (...args: unknown[]) => touchChatRoomPresence(...args),
+    clearChatRoomPresence: (...args: unknown[]) => clearChatRoomPresence(...args),
+  };
+});
 
 import { MessengerChatPane } from "@/components/messenger/MessengerChatPane";
 import type { ChatRoom } from "@/lib/messengerApi";
+import { readMessengerPickerState } from "@/lib/messengerPath";
 
 const room: ChatRoom = {
   id: "room-1",
@@ -270,5 +275,33 @@ describe("MessengerChatPane history and mute", () => {
     });
     expect(document.body.textContent).toContain("붙여넣기");
     expect(document.body.textContent).toContain("입력 지우기");
+  });
+
+  it("provides separate photo and file inputs and marks picker state active when clicked", async () => {
+    fetchRoomMessages.mockResolvedValue({ messages: [], hasMore: false });
+
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(<MessengerChatPane room={room} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const photoBtn = host.querySelector("[aria-label='사진 올리기']") as HTMLButtonElement;
+    const fileBtn = host.querySelector("[aria-label='첨부파일']") as HTMLButtonElement;
+    expect(photoBtn).toBeTruthy();
+    expect(fileBtn).toBeTruthy();
+
+    const inputs = Array.from(host.querySelectorAll("input[type='file']")) as HTMLInputElement[];
+    expect(inputs.length).toBe(2);
+    expect(inputs[0].getAttribute("accept")).toBe("image/*");
+
+    await act(async () => {
+      photoBtn.click();
+    });
+    expect(readMessengerPickerState()?.roomId).toBe("room-1");
   });
 });

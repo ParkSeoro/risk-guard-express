@@ -2,6 +2,7 @@
 // - 네이티브만. 웹/프리뷰는 no-op.
 // - 로그인·가입 화면에서는 받지 않는다. 다운로드가 로그인 요청과 겹치면
 //   관리자 signInWithPassword / 근로자 전화 로그인이 "처리 중…"에서 멈춘다.
+// - 로그인 화면을 그리기 전 받기는 preLoginOta.ts 가 맡는다. 여기서는 앱 안에서만 받는다.
 // - 앱(/app)에 들어온 뒤에만 받고, 화면은 그대로 둔다.
 // - 앱을 벗어날 때 받은 묶음으로 바꾼다. 다음에 열면 새 화면이다.
 // - Release lookup uses otaAnonClient (no auth Preferences) so boot splash cannot hang.
@@ -286,6 +287,15 @@ async function runAutoCheck(
 ) {
   if (!isNativeApp()) return;
   if (checking) return;
+  try {
+    const { shouldSkipAutoOta } = await import("./preLoginOta");
+    if (shouldSkipAutoOta(Date.now())) {
+      console.info(`[ota:${reason}] skipped — pre-login download still settling`);
+      return;
+    }
+  } catch {
+    /* pre-login helper unavailable */
+  }
   // Path first: do not touch the auth client while login or signup is on screen.
   if (!isAppShellPath(window.location.pathname)) {
     console.info(`[ota:${reason}] skipped — outside app shell`);

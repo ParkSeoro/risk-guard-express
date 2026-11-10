@@ -76,11 +76,11 @@ describe("PermitWorkersPrintPage", () => {
     await act(async () => {
       root.render(
         <PermitWorkersPrintPage
-          workers={[{ id: "w1", name: "홍길동", company_name: "A" }]}
+          workers={[{ id: "w1", name: "홍길동", company_name: "A", job_type: "용접공" }]}
           tbmTitle="아침 TBM"
           tbmParticipants={[
-            { id: "t1", worker_name: "홍길동", company_name: "A" },
-            { id: "t2", worker_name: "김철수", company_name: "A" },
+            { id: "t1", worker_name: "홍길동", company_name: "A", job_type: "용접공" },
+            { id: "t2", worker_name: "김철수", company_name: "A", job_type: "배관공" },
           ]}
         />,
       );
@@ -89,6 +89,9 @@ describe("PermitWorkersPrintPage", () => {
     expect(host.querySelectorAll(".permit-crew-sheet")).toHaveLength(2);
     expect(host.querySelectorAll("table")).toHaveLength(2);
     expect(host.textContent).toContain("TBM 참여·서명");
+    expect(host.textContent).toContain("직종");
+    const jobs = [...host.querySelectorAll(".permit-crew-job")].map((cell) => cell.textContent);
+    expect(jobs).toEqual(["용접공", "용접공", "배관공"]);
 
     await act(async () => {
       root.unmount();

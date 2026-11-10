@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { parseTbmPhotoUrls } from '@/lib/tbmPhotos';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
+import { fetchWorkerJobTypeIndex, jobTypeForSigner } from '@/lib/printJobType';
 import { WorkStopPhotos } from '@/components/work-stop/WorkStopPhotos';
 
 /**
@@ -21,7 +22,22 @@ export default function TbmPrintSection({ runId }: { runId: string }) {
         const { data: parts } = await supabase
           .from('tbm_participations' as any)
           .select('*').eq('tbm_session_id', s.id).order('participated_at');
-        return { session: s, participants: (parts as any) || [] };
+        const participants = (parts as any[]) || [];
+        let jobIndex = new Map<string, string>();
+        if (s.project_id && participants.length > 0) {
+          try {
+            jobIndex = await fetchWorkerJobTypeIndex(s.project_id, participants);
+          } catch (err) {
+            console.warn('[tbm-print] job type lookup failed', err);
+          }
+        }
+        return {
+          session: s,
+          participants: participants.map((p) => ({
+            ...p,
+            job_type: jobTypeForSigner(jobIndex, p) || '',
+          })),
+        };
       }));
       setData(result);
     })();
@@ -73,6 +89,7 @@ export default function TbmPrintSection({ runId }: { runId: string }) {
                   <th className="border p-1 w-8">#</th>
                   <th className="border p-1">성명</th>
                   <th className="border p-1">소속</th>
+                  <th className="border p-1">직종</th>
                   <th className="border p-1">전화</th>
                   <th className="border p-1">참여시각</th>
                   <th className="border p-1 w-32">서명</th>
@@ -84,6 +101,7 @@ export default function TbmPrintSection({ runId }: { runId: string }) {
                     <td className="border p-1 text-center">{i + 1}</td>
                     <td className="border p-1">{p.worker_name}</td>
                     <td className="border p-1">{p.company_name || '-'}</td>
+                    <td className="border p-1">{p.job_type || '-'}</td>
                     <td className="border p-1">{p.worker_phone}</td>
                     <td className="border p-1">{tbmParticipationTimeLabel(p)}</td>
                     <td className="border p-1 text-center">

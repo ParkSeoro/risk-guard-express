@@ -9,6 +9,8 @@ export type PermitWorkerRow = {
   phone?: string | null;
   company_name?: string | null;
   company_id?: string | null;
+  /** 서명표 소속 옆. 근로자 직종. 없으면 빈 칸. */
+  job_type?: string | null;
   /** 을지 명단에서 관리자로 표시 */
   isManager?: boolean;
   /** 출근 전자서명. 없으면 을지 인쇄 시 빈 칸(수기). */

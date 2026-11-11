@@ -59,7 +59,12 @@ import {
 import { presentPermitBriefing, type PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks, fetchPermitLinkedAssessments, discoverPermitDateValidRuns } from '@/lib/safetyWorkBundle';
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
-import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
+import {
+  canRequestPermitClosureOnDate,
+  formatPermitDayLabel,
+  syncPermitDateFromWorkStart,
+  resolvePermitWorkDate,
+} from '@/lib/permitWorkDate';
 import {
   normalizeDisplayTemplate,
   parseLayoutJson,
@@ -678,16 +683,22 @@ export default function WorkPermitDetail() {
     !data.work_extend_requested_until;
 
   /** 발행 완료: 관리감독자→SM 작업완료(종료) 결재 수동 요청 (가스측정 비필수) */
-  const canRequestClosure =
+  const closureWorkDate = permit ? resolvePermitWorkDate(permit) : null;
+  const closureDateAllowed = canRequestPermitClosureOnDate(closureWorkDate);
+  const closureStatusReady =
     !!permit &&
     !isVoided &&
     APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
     !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
     !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
     !data.work_extend_requested_until;
+  const canRequestClosure = closureStatusReady && closureDateAllowed;
+  const closureDayLabel = closureWorkDate ? formatPermitDayLabel(closureWorkDate) : '';
 
   const requestClosure = async () => {
-    if (!id || !canRequestClosure) return;
+    if (!id || !canRequestClosure || !closureDayLabel) return;
+    const ok = window.confirm(`${closureDayLabel} 허가서를 종료 결재로 보냅니다.`);
+    if (!ok) return;
     setRequestingClosure(true);
     try {
       const { data: res, error } = await (supabase as any).rpc('request_work_permit_closure', {
@@ -703,6 +714,8 @@ export default function WorkPermitDetail() {
           : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
           : code === 'NOT_APPROVED' ? '승인(발행)된 허가서만 요청할 수 있습니다.'
           : code === 'FORBIDDEN' ? '권한이 없습니다.'
+          : code === 'TOO_EARLY' ? '작업일이 되기 전에는 종료할 수 없습니다.'
+          : code === 'WORK_DATE_MISSING' ? '작업일을 확인할 수 없어 종료할 수 없습니다.'
           : code === 'GAS_MEASUREMENT_REQUIRED'
             ? '서버에 구 가스측정 필수 로직이 남아 있습니다. SQL(optional_permit_gas_closure)을 적용해 주세요.'
           : String(code);
@@ -846,13 +859,25 @@ export default function WorkPermitDetail() {
           {canRequestClosure && (
             <Button
               size="sm"
+              className="h-auto py-1.5"
               onClick={requestClosure}
               disabled={requestingClosure || saving}
-              title="작업 완료(종료) 결재를 요청합니다"
+              title={`${closureDayLabel} 작업 완료(종료) 결재를 요청합니다`}
             >
-              <CheckCircle2 className="h-4 w-4 mr-1" />
-              {requestingClosure ? '요청 중…' : '작업완료 결재 요청'}
+              <CheckCircle2 className="h-4 w-4 mr-1 shrink-0" />
+              <span className="text-left leading-tight">
+                <span className="block text-base font-bold">{closureDayLabel}</span>
+                <span className="block text-[11px] font-medium">
+                  {requestingClosure ? '요청 중…' : '작업완료 결재 요청'}
+                </span>
+              </span>
             </Button>
+          )}
+          {closureStatusReady && !closureDateAllowed && closureDayLabel && (
+            <p className="text-sm text-muted-foreground self-center">
+              <span className="text-base font-bold text-foreground">{closureDayLabel}</span>
+              {' '}작업일입니다. 그날부터 종료할 수 있습니다.
+            </p>
           )}
           {canSubmit && (
             <Button size="sm" variant="outline" onClick={async () => {

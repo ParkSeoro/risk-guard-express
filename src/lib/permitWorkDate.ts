@@ -112,6 +112,22 @@ export function syncPermitDateFromWorkStart(
 
 export type PermitValidityKind = 'expired' | 'today' | 'scheduled' | null;
 
+/** 작업일(한국시간)이 오늘이거나 지난 날일 때만 종료 결재를 받는다. */
+export function canRequestPermitClosureOnDate(
+  workDate: string | null | undefined,
+  today: string = todayKst(),
+): boolean {
+  if (!workDate) return false;
+  return workDate <= today;
+}
+
+/** 버튼에 크게 보여줄 "M월 D일". */
+export function formatPermitDayLabel(workDate: string): string {
+  const match = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return workDate;
+  return `${Number(match[2])}월 ${Number(match[3])}일`;
+}
+
 export function permitValidityKind(
   workDate: string | null | undefined,
   today: string = todayKst(),

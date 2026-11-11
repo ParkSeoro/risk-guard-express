@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
+  canRequestPermitClosureOnDate,
+  formatPermitDayLabel,
   todayKst,
   datePartFromDateTime,
   resolvePermitWorkDate,
@@ -175,5 +179,27 @@ describe('resolvePermitCompanyName', () => {
         new Map([['co-1', '정엔지니어링(주)']]),
       ),
     ).toBe('정엔지니어링(주)');
+  });
+});
+
+describe('permit closure date', () => {
+  it('allows closure on the work date and after, and refuses a future date', () => {
+    expect(canRequestPermitClosureOnDate('2026-11-12', '2026-11-12')).toBe(true);
+    expect(canRequestPermitClosureOnDate('2026-11-11', '2026-11-12')).toBe(true);
+    expect(canRequestPermitClosureOnDate('2026-11-12', '2026-11-11')).toBe(false);
+    expect(canRequestPermitClosureOnDate(null, '2026-11-12')).toBe(false);
+    expect(formatPermitDayLabel('2026-11-12')).toBe('11월 12일');
+  });
+
+  it('keeps the screen and the server on the same rule', () => {
+    const page = readFileSync(resolve(process.cwd(), 'src/pages/WorkPermitDetail.tsx'), 'utf8');
+    const sql = readFileSync(
+      resolve(process.cwd(), 'supabase/migrations/20261112073000_permit_closure_not_before_work_date.sql'),
+      'utf8',
+    );
+    expect(page).toContain('canRequestPermitClosureOnDate');
+    expect(page).toContain('허가서를 종료 결재로 보냅니다.');
+    expect(sql).toContain("'TOO_EARLY'");
+    expect(sql).toContain('permit_work_date');
   });
 });

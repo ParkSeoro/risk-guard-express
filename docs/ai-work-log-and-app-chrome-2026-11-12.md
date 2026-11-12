@@ -91,3 +91,20 @@ Antigravity의 근로자 탭 수정에 동의한다. 위의 「근로자 하단�
 
 카메라 인텐트는 `scripts/inject-android-manifest.mjs`가 아니라 `android/app/src/main/AndroidManifest.xml` 64행에 있다. 커밋 `aa6dd2ed`가 넣었고 `main`에 남아 있다. 다음 AAB를 `main`에서 만들면 그 줄은 설치본에 들어간다. 이것을 이유로 AAB에 화면 개편을 더하지 않는다.
 
+### 2026-11-12 09:55 KST · Antigravity — PR #667 (AAB 1.1.9 / 479) 1회 빌드에 함께 넣을 추가 사항 코드 분석
+
+디렉터님께서 Play Console에 AAB를 한 번 올리는 과정이 번거로우므로, 479 AAB를 구울 때 빠진 네이티브 항목과 합의된 모바일 개선을 한 번에 묶어 최종안을 달라고 요청하셨다. 전체 저장소(`android/`, `capacitor-plugins/`, `node_modules/@capacitor/android`, `src/components/mobile/`)를 전수 대조한 결과, 이번 PR #667에 함께 넣어야 할 항목은 아래 3가지다.
+
+1. **[네이티브 전용 — OTA로 수정 불가] Android 11+ (API 30+) `<queries>` 누락 2건 및 매니페스트 주입기 동기화**
+   - **위험구역 음성 경고 TTS (`android.intent.action.TTS_SERVICE`)**: `capacitor-plugins/alarm-volume/AlarmVolumePlugin.java:173`은 `new TextToSpeech(getContext(), ...)`를 호출한다. Android 11(API 30) 이상에서는 `AndroidManifest.xml`의 `<queries>` 안에 `<intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>`가 선언되어 있지 않으면 삼성 TTS·Google 음성 서비스 등 외부 엔진 조회가 패키지 가시성 정책에 막혀 `tts-init-failed`가 발생할 수 있다.
+   - **웹뷰 비디오 캡처 인텐트 (`android.media.action.VIDEO_CAPTURE`)**: `@capacitor/android`의 `BridgeWebChromeClient.java:358`은 `<input type="file" accept="video/*" capture>`에 대해 `MediaStore.ACTION_VIDEO_CAPTURE`로 `resolveActivity()`를 호출한다. `<queries>`에 `IMAGE_CAPTURE`와 함께 `VIDEO_CAPTURE`를 넣어 두어야 카메라 촬영 인텐트가 모두 열릴 수 있다.
+   - **주입 스크립트 및 로컬 `MainActivity.java` 정합성**: `android/app/src/main/AndroidManifest.xml`에 수동으로만 들어 있는 `MODIFY_AUDIO_SETTINGS`, `VIBRATE`, `<queries>`(`IMAGE_CAPTURE`, `VIDEO_CAPTURE`, `TTS_SERVICE`)를 `scripts/android-manifest-inject.mjs`에도 반영하고, `android/app/src/main/java/org/safenex/app/MainActivity.java`에도 `registerPlugin(HeadlessTrackPlugin.class)`를 추가해 `capacitor-plugins/alarm-volume/MainActivity.java`와 일치시킨다.
+
+2. **[설치본 첫 화면 — 이미 합의 완료] 관리자·마스터 하단 4번째 탭 `메신저` + 상단 `알림` 종 이동 (`MobileShell.tsx`, `mobileShell.ts`)**
+   - 위에서 두 AI가 이미 합의한 대로 **근로자(`worker` 버킷)는 `오늘 · 할 일 · 자료 · 알림 · 더보기`를 그대로 두고**, **관리자·마스터(`manager` / `master` 버킷)만 하단 5탭을 `오늘 · 현장 · 결재 · 메신저(fetchChatUnreadTotal 배지) · 더보기`로 바꾸며 `알림`(`Bell` + `unreadNotifications` 배지)을 상단 헤더 우측(기존 32px 메신저 버튼 자리)으로 옮기는 수정**을 이번 1.1.9 (479)에 함께 구워 넣자.
+   - 이렇게 하면 Play에서 479를 새로 설치하거나 재설치한 관리자 폰도 첫 실행(OTA 이전)부터 상단 32px 버튼이 아닌 하단 메신저 탭으로 바로 열린다. 전체 색상·폰트·여백을 갈아엎는 작업은 여전히 제외하고 이 탭 위치만 반영한다.
+
+3. **[설치본 버전 표시] 「더보기 → 앱 버전」에서 내장 번들 버전 표시 (`otaUpdater.ts` / `MobileOtaUpdateCard.tsx`)**
+   - 현재 `src/lib/native/otaUpdater.ts:101`은 `CapacitorUpdater.current()`가 기본 번들일 때 `"builtin"`(또는 `"내장"`)을 그대로 반환해, 1.1.9 AAB를 새로 깔아도 `화면 (OTA)` 칸에 `builtin`으로만 찍힌다. 내장 번들(`builtin` / `내장` / `0.0.0`)일 때 `1.1.9 (내장)` (`${APP_VERSION} (내장)`)으로 표시하면 현장에서 설치 직후 화면 버전을 명확히 확인할 수 있다.
+
+

@@ -23,8 +23,13 @@ name: Android AAB
 #   GOOGLE_SERVICES_JSON_BASE64 : Firebase google-services.json 의 base64 (FCM 필수)
 #                                 또는 native-assets/fcm/google-services.json 커밋
 # ─ 선택 ────────────────────────────────────────────────────────────────────────
-#   ANDROID_VERSION_CODE      : 정수. 비우면 GitHub run number 사용 (자동 증가)
-#   ANDROID_VERSION_NAME      : 예) 1.0.1. 비우면 package.json version 사용
+#   ANDROID_VERSION_CODE      : package.json 에 androidVersionCode 가 없을 때만 쓰는 정수.
+#                               비우면 GitHub run number. Play에 이미 있는 번호와 같으면 업로드가 거절된다.
+#   ANDROID_VERSION_NAME 은 쓰지 않는다. 남은 1.1.0 이 package.json 보다 우선하면
+#   스토어 버전 이름이 1.1 에 고정된다. versionName 은 package.json version 이다.
+# min_native_version 은 이 워크플로가 올리지 않는다. AAB를 GitHub에 만든 것만으로
+# 폰에 Play 업데이트를 요구하면, Play에 그 번호가 없을 때 지우고 다시 깔아도 같은 문구가 반복된다.
+# Play에서 사용자가 그 versionCode 를 받은 뒤에만 마스터 화면에서 올린다.
 # Play Console 「가독화 파일/디버그 기호 없음」: 이 워크플로가 R8 mapping + NDK
 # SYMBOL_TABLE 을 AAB에 넣습니다. 이미 올린 467은 매핑이 그 DEX와 맞아야 해서
 # 새 versionCode 로 다시 올리는 것이 맞습니다.
@@ -240,9 +245,11 @@ jobs:
         id: ver
         run: |
           VN="${{ github.event.inputs.version_name }}"
-          [ -z "$VN" ] && VN="${{ secrets.ANDROID_VERSION_NAME }}"
           [ -z "$VN" ] && VN="$(node -p "require('./package.json').version || '1.0.0'")"
           VC="${{ github.event.inputs.version_code }}"
+          if [ -z "$VC" ]; then
+            VC="$(node -p "const c = require('./package.json').androidVersionCode; (Number.isInteger(c) && c > 0) ? String(c) : ''")"
+          fi
           [ -z "$VC" ] && VC="${{ secrets.ANDROID_VERSION_CODE }}"
           [ -z "$VC" ] && VC="${{ github.run_number }}"
           echo "version_name=$VN" >> "$GITHUB_OUTPUT"
@@ -367,33 +374,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Tell phones a newer Play AAB exists
+      - name: Do not raise the Play floor from an artifact
         env:
-          OTA_PUBLISH_URL: ${{ secrets.OTA_PUBLISH_URL }}
-          OTA_PUBLISH_TOKEN: ${{ secrets.OTA_PUBLISH_TOKEN }}
           VC: ${{ steps.ver.outputs.version_code }}
         run: |
-          if [ -z "$OTA_PUBLISH_URL" ] || [ -z "$OTA_PUBLISH_TOKEN" ]; then
-            echo "::warning::OTA_PUBLISH_URL / OTA_PUBLISH_TOKEN 없음. 마스터가 모바일 릴리스에서 최소 네이티브 버전을 ${VC} 로 직접 저장해야 폰이 Play 안내를 봅니다."
-            exit 0
-          fi
-          HTTP=$(curl -sS -w "%{http_code}" -o /tmp/min-native.json \
-            -X POST "$OTA_PUBLISH_URL" \
-            -H "Authorization: Bearer $OTA_PUBLISH_TOKEN" \
-            -H "X-OTA-Publish-Token: $OTA_PUBLISH_TOKEN" \
-            -H "X-OTA-Set-Min-Native-Only: 1" \
-            -H "X-OTA-Min-Native-Version: $VC" \
-            -H "X-OTA-Channel: stable" \
-            -H "X-OTA-Platform: android" \
-            -H "Content-Type: application/json" \
-            --data "{\"min_native_only\":true,\"min_native_version\":\"${VC}\",\"channel\":\"stable\",\"platform\":\"android\"}")
-          echo "HTTP $HTTP"
-          cat /tmp/min-native.json || true
-          if [ "$HTTP" != "200" ]; then
-            echo "::error::min_native_version ${VC} 자동 저장 실패 (HTTP $HTTP). publish-ota-release 배포·시크릿을 확인하세요."
-            exit 1
-          fi
-          echo "→ min_native_version=${VC} saved"
+          echo "AAB artifact versionCode=${VC} 는 GitHub에만 있다."
+          echo "app_releases.min_native_version 은 올리지 않는다."
+          echo "Play에서 사용자가 이 번호를 받은 뒤에만 마스터 화면에서 저장한다."
 
       - name: Attach to GitHub Release (android-v* 태그)
         if: startsWith(github.ref, 'refs/tags/android-v')

@@ -11,7 +11,7 @@ const aab = readFileSync(
   "utf8",
 );
 
-describe("AAB CI auto-saves min_native_version", () => {
+describe("Play floor is not raised by an AAB artifact", () => {
   it("publish-ota-release accepts a min-native-only bump without a zip", () => {
     expect(fn).toContain("X-OTA-Set-Min-Native-Only");
     expect(fn).toContain("min_native_only");
@@ -23,14 +23,10 @@ describe("AAB CI auto-saves min_native_version", () => {
     expect(fn).toContain('platform === "android"');
   });
 
-  it("AAB workflow posts JSON and fails the job if save fails", () => {
-    expect(aab).toContain("X-OTA-Set-Min-Native-Only: 1");
-    expect(aab).toContain("X-OTA-Platform: android");
-    expect(aab).toContain('platform\\":\\"android\\"');
-    expect(aab).toContain("min_native_only");
-    expect(aab).toContain("min_native_version");
-    expect(aab).toContain("::error::min_native_version");
-    expect(aab).toContain("exit 1");
-    expect(aab).not.toContain("마스터가 설정 → 모바일 앱 릴리스에서 직접 넣으세요.");
+  it("AAB workflow does not raise min_native_version from an artifact", () => {
+    expect(aab).not.toContain("X-OTA-Set-Min-Native-Only");
+    expect(aab).not.toContain("min_native_only");
+    expect(aab).toContain("app_releases.min_native_version 은 올리지 않는다.");
+    expect(aab).not.toContain("secrets.ANDROID_VERSION_NAME");
   });
 });

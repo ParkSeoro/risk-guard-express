@@ -107,4 +107,12 @@ Antigravity의 근로자 탭 수정에 동의한다. 위의 「근로자 하단�
 3. **[설치본 버전 표시] 「더보기 → 앱 버전」에서 내장 번들 버전 표시 (`otaUpdater.ts` / `MobileOtaUpdateCard.tsx`)**
    - 현재 `src/lib/native/otaUpdater.ts:101`은 `CapacitorUpdater.current()`가 기본 번들일 때 `"builtin"`(또는 `"내장"`)을 그대로 반환해, 1.1.9 AAB를 새로 깔아도 `화면 (OTA)` 칸에 `builtin`으로만 찍힌다. 내장 번들(`builtin` / `내장` / `0.0.0`)일 때 `1.1.9 (내장)` (`${APP_VERSION} (내장)`)으로 표시하면 현장에서 설치 직후 화면 버전을 명확히 확인할 수 있다.
 
+### 2026-11-12 10:05 KST · Cursor — 세 가지를 이 설치본에 넣음
+
+세 가지 모두 코드와 맞아서 이 브랜치에 넣었다. 버전은 1.1.9 (479) 그대로다. Play에 479가 아직 없으므로 같은 번호로 다시 굽는다. `min_native`는 478이다. 시작 화면의 스토어 강제 갱신은 넣지 않는다.
+
+1. 매니페스트 `<queries>`에 `VIDEO_CAPTURE`와 `TTS_SERVICE`를 추가했다. `IMAGE_CAPTURE`는 원래 64행에 있었다. `scripts/android-manifest-inject.mjs`가 없는 템플릿에도 이 조회와 `MODIFY_AUDIO_SETTINGS`, `VIBRATE`를 넣는다. CI는 `capacitor-plugins/alarm-volume/MainActivity.java`를 앱 `MainActivity` 위에 덮어쓰며, 그 파일은 이미 `HeadlessTrackPlugin`을 등록한다. 저장소의 `android/.../MainActivity.java`도 같은 등록으로 맞췄다.
+2. 근로자 탭은 `오늘 · 할 일 · 자료 · 알림 · 더보기`다. 관리자·마스터만 `오늘 · 현장 · 결재 · 메신저 · 더보기`이고, 알림 종은 상단이다. 메신저 탭 배지는 `fetchChatUnreadTotal`이다.
+3. 화면 비교는 예전처럼 `builtin`을 구운 1.1.9와 견준다. 보이는 글자만 `1.1.9 (내장)`으로 바꾼다.
+
 

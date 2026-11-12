@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { APP_VERSION, ANDROID_VERSION_CODE } from "@/lib/appVersion";
+import { APP_VERSION, ANDROID_VERSION_CODE, formatBundledScreenLabel } from "@/lib/appVersion";
 import { isNewerScreenRelease } from "@/lib/otaVersion";
 import { cmpVersion } from "@/lib/native/otaUpdater";
 import { readFileSync } from "node:fs";
@@ -55,6 +55,9 @@ describe("cmpVersion — OTA 1.0.0-timestamp builds", () => {
     expect(isNewerScreenRelease("1.1.8-202611112336", "0.0.0", APP_VERSION)).toBe(false);
     expect(isNewerScreenRelease("1.1.9-202611120930", "builtin", APP_VERSION)).toBe(true);
     expect(isNewerScreenRelease("1.1.9-202611120930", "1.1.9", APP_VERSION)).toBe(true);
+    expect(formatBundledScreenLabel("builtin", APP_VERSION)).toBe("1.1.9 (내장)");
+    expect(formatBundledScreenLabel("0.0.0", APP_VERSION)).toBe("1.1.9 (내장)");
+    expect(formatBundledScreenLabel("1.1.9-202611120930", APP_VERSION)).toBe("1.1.9-202611120930");
   });
 
   it("does not let an older number with a timestamp replace a newer install", () => {

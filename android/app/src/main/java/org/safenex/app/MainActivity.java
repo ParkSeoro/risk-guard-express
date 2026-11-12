@@ -6,8 +6,9 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
   @Override
   public void onCreate(Bundle savedInstanceState) {
-    // Local plugin: Android STREAM_ALARM max-volume danger siren
+    // Local plugins: STREAM_ALARM siren + swipe-away GPS → track-location
     registerPlugin(AlarmVolumePlugin.class);
+    registerPlugin(HeadlessTrackPlugin.class);
     super.onCreate(savedInstanceState);
   }
 }

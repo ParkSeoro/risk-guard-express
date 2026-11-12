@@ -29,6 +29,11 @@ describe("injectAndroidManifest", () => {
     );
     expect(out).toContain('tools:replace="android:screenOrientation"');
     expect(out).toContain('android:screenOrientation="fullSensor"');
+    expect(out).toContain("android.permission.MODIFY_AUDIO_SETTINGS");
+    expect(out).toContain("android.permission.VIBRATE");
+    expect(out).toContain("android.media.action.IMAGE_CAPTURE");
+    expect(out).toContain("android.media.action.VIDEO_CAPTURE");
+    expect(out).toContain("android.intent.action.TTS_SERVICE");
   });
 
   it("is idempotent", () => {

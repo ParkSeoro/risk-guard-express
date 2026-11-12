@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { APP_VERSION, ANDROID_VERSION_CODE } from "@/lib/appVersion";
+import { isNewerScreenRelease } from "@/lib/otaVersion";
 import { cmpVersion } from "@/lib/native/otaUpdater";
+import { readFileSync } from "node:fs";
 
 describe("cmpVersion — OTA 1.0.0-timestamp builds", () => {
   it("orders CI date-suffix versions", () => {
@@ -33,6 +36,25 @@ describe("cmpVersion — OTA 1.0.0-timestamp builds", () => {
     expect(oldCmp("1.1.0-202608040600", "1.0.0")).toBeGreaterThan(0);
     expect(oldCmp("1.0.1-202608040505", "1.0.0")).toBe(0); // still stuck
     expect(cmpVersion("1.1.0-202608040600", "1.0.0")).toBeGreaterThan(0);
+  });
+
+  it("keeps package.json and the baked phone version on 1.1.9 / 479", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
+      version: string;
+      androidVersionCode: number;
+    };
+    expect(APP_VERSION).toBe("1.1.9");
+    expect(ANDROID_VERSION_CODE).toBe(479);
+    expect(pkg.version).toBe(APP_VERSION);
+    expect(pkg.androidVersionCode).toBe(ANDROID_VERSION_CODE);
+  });
+
+  it("does not replace a 1.1.9 install with the older 1.1.8 screen", () => {
+    expect(isNewerScreenRelease("1.1.8-202611112336", "builtin", APP_VERSION)).toBe(false);
+    expect(isNewerScreenRelease("1.1.8-202611112336", "내장", APP_VERSION)).toBe(false);
+    expect(isNewerScreenRelease("1.1.8-202611112336", "0.0.0", APP_VERSION)).toBe(false);
+    expect(isNewerScreenRelease("1.1.9-202611120930", "builtin", APP_VERSION)).toBe(true);
+    expect(isNewerScreenRelease("1.1.9-202611120930", "1.1.9", APP_VERSION)).toBe(true);
   });
 
   it("does not let an older number with a timestamp replace a newer install", () => {

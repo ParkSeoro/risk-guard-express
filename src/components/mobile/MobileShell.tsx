@@ -6,6 +6,7 @@ import {
   FolderOpen,
   Home,
   Menu,
+  MessageSquare,
   OctagonAlert,
 } from "lucide-react";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -19,13 +20,13 @@ import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { GpsStatusChip, useGpsUi } from "@/lib/tracking/gpsStatusUi";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPureWorkerUser } from "@/components/AuthGuard";
 import { useWorkerLocale } from "@/hooks/useWorkerLocale";
 import { localeHtmlLang } from "@/lib/i18n/workerLocale";
-import { MessengerButton } from "@/components/messenger/MessengerButton";
+import { fetchChatUnreadTotal } from "@/lib/messengerApi";
+import { supabase } from "@/integrations/supabase/client";
 
 const ICONS: Record<string, typeof Home> = {
   today: Home,
@@ -33,12 +34,13 @@ const ICONS: Record<string, typeof Home> = {
   approvals: FileCheck2,
   docs: FolderOpen,
   alerts: Bell,
+  messenger: MessageSquare,
   more: Menu,
 };
 
 export default function MobileShell({ children }: { children: ReactNode }) {
   const { role, isMaster, projectId, loading } = useMobileAccess();
-  const { roles } = useAuth();
+  const { user } = useAuth();
   const preview = usePreview();
   const location = useLocation();
   const navigate = useNavigate();
@@ -53,6 +55,43 @@ export default function MobileShell({ children }: { children: ReactNode }) {
     document.documentElement.lang = localeHtmlLang(locale);
   }, [locale]);
   const unread = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
+  const staffShell = bucket !== "worker";
+  const [chatUnread, setChatUnread] = useState(0);
+  useEffect(() => {
+    if (!staffShell || !user?.id) {
+      setChatUnread(0);
+      return;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      void fetchChatUnreadTotal().then((count) => {
+        if (!cancelled) setChatUnread(count);
+      });
+    };
+    refresh();
+    const channel = supabase
+      .channel(`mobile-shell-chat-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_room_messages" },
+        refresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_participants",
+          filter: `user_id=eq.${user.id}`,
+        },
+        refresh,
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [staffShell, user?.id, projectId]);
   const gpsUi = useGpsUi();
 
   const hideChrome =
@@ -61,7 +100,6 @@ export default function MobileShell({ children }: { children: ReactNode }) {
     location.pathname.includes("/work-plans/");
   const isMessenger = location.pathname.includes("/messenger");
   const messengerRoomOpen = isMessenger && new URLSearchParams(location.search).has("room");
-  const showMessenger = bucket !== "worker" && !isPureWorkerUser(roles);
 
   // Legal CTA for field workers; managers process via Today / 현장
   const showWorkStopFab = !hideChrome && bucket === "worker";
@@ -99,11 +137,21 @@ export default function MobileShell({ children }: { children: ReactNode }) {
             block={gpsUi.block}
             accuracyM={gpsUi.accuracyM}
           />
-          {showMessenger && (
-            <MessengerButton
-              currentProjectId={projectId}
-              className="text-primary-foreground hover:text-primary-foreground/90 hover:bg-primary-foreground/10 h-8 w-8 shrink-0"
-            />
+          {staffShell && (
+            <button
+              type="button"
+              className="relative h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md text-primary-foreground hover:bg-primary-foreground/10"
+              aria-label={t("tabAlerts")}
+              onClick={() => navigate("/app/worker/alerts")}
+              data-testid="header-alerts"
+            >
+              <Bell className="h-5 w-5" />
+              {unread > 0 && (
+                <span className="absolute top-0 right-0 min-w-[14px] h-[14px] px-0.5 rounded-full bg-destructive text-destructive-foreground text-[9px] leading-[14px] text-center font-semibold">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+            </button>
           )}
           <Badge variant="secondary" className="text-[10px] shrink-0">
             {bucket === "worker" ? t("bucketWorker") : bucket === "master" ? t("bucketMaster") : t("bucketManager")}
@@ -167,6 +215,11 @@ export default function MobileShell({ children }: { children: ReactNode }) {
                           {unread > 99 ? "99+" : unread}
                         </span>
                       )}
+                      {tab.key === "messenger" && chatUnread > 0 && (
+                        <span className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-destructive text-destructive-foreground text-[9px] leading-[14px] text-center font-semibold">
+                          {chatUnread > 99 ? "99+" : chatUnread}
+                        </span>
+                      )}
                     </span>
                     {tab.key === "today"
                       ? t("tabToday")
@@ -177,8 +230,10 @@ export default function MobileShell({ children }: { children: ReactNode }) {
                           : tab.key === "docs"
                             ? t("tabDocs")
                             : tab.key === "alerts"
-                              ? t("tabAlerts")
-                              : t("tabMore")}
+                          ? t("tabAlerts")
+                          : tab.key === "messenger"
+                            ? t("tabMessenger")
+                            : t("tabMore")}
                   </NavLink>
                 </li>
               );

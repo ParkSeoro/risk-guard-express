@@ -57,9 +57,11 @@ describe("AAB build keeps Play release notes", () => {
   it("describes the changed and added behavior", () => {
     const notes = src("android/play-release-notes-ko.txt");
     expect(notes).toContain("변경");
-    expect(notes).toContain("배터리 제한 없음 요청을 설정 검색에서 허용 버튼으로 바꿨습니다.");
+    expect(notes).toContain("메신저에서 카메라로 바로 찍도록 설치본을 1.1.9로 올렸습니다.");
+    expect(notes).toContain("관리자 하단 네 번째는 메신저이고, 알림은 위쪽 종입니다.");
     expect(notes).toContain("추가");
-    expect(notes).toContain("허용 창이 뜨지 않는 이전 설치본에 나중에 버튼을 넣었습니다.");
+    expect(notes).toContain("새 설치본이 더 낮은 화면 묶음으로 되돌아가지 않습니다.");
+    expect(notes).toContain("음성 안내와 영상 촬영이 막히지 않도록 설치본에 조회를 넣었습니다.");
     expect(notes).not.toContain("할 수 있습니다");
     expect(notes).not.toContain("있습니다");
   });

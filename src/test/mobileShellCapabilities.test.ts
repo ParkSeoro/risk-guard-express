@@ -32,8 +32,11 @@ describe("mobile shell role buckets", () => {
     expect(workerTabs).not.toContain("approvals");
     expect(managerTabs).toContain("approvals");
     expect(workerTabs).toContain("alerts");
-    expect(managerTabs).toContain("alerts");
-    expect(masterTabs).toContain("alerts");
+    expect(workerTabs).not.toContain("messenger");
+    expect(managerTabs).not.toContain("alerts");
+    expect(managerTabs).toContain("messenger");
+    expect(masterTabs).toContain("messenger");
+    expect(managerTabs).toEqual(["today", "tasks", "approvals", "messenger", "more"]);
     expect(workerTabs).toContain("today");
     expect(managerTabs).toContain("today");
     expect(mobileTabsForBucket("manager").find((t) => t.key === "tasks")?.label).toBe("현장");

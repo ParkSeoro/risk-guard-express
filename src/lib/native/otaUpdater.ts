@@ -7,7 +7,8 @@
 // - 앱을 벗어날 때 받은 묶음으로 바꾼다. 다음에 열면 새 화면이다.
 // - Release lookup uses otaAnonClient (no auth Preferences) so boot splash cannot hang.
 import { supabase } from "@/integrations/supabase/client";
-import { cmpOtaVersion } from "@/lib/otaVersion";
+import { APP_VERSION, formatBundledScreenLabel } from "@/lib/appVersion";
+import { cmpOtaVersion, isNewerScreenRelease } from "@/lib/otaVersion";
 import { getOtaAnonClient } from "./otaAnonClient";
 import { isNativeApp } from "./platform";
 
@@ -108,7 +109,7 @@ export async function getOtaStatus(): Promise<OtaStatus> {
       return {
         native: true,
         channel,
-        currentVersion,
+        currentVersion: formatBundledScreenLabel(currentVersion, APP_VERSION),
         latestVersion: null,
         mandatory: false,
         hasUpdate: false,
@@ -119,12 +120,12 @@ export async function getOtaStatus(): Promise<OtaStatus> {
     const latestVersion = release?.version ? String(release.version) : null;
     const mandatory = !!release?.mandatory;
     const hasUpdate =
-      !!latestVersion &&
-      cmpVersion(latestVersion, currentVersion === "내장" ? "0.0.0" : currentVersion) > 0;
+      !!latestVersion && isNewerScreenRelease(latestVersion, currentVersion, APP_VERSION);
+    const shownVersion = formatBundledScreenLabel(currentVersion, APP_VERSION);
     return {
       native: true,
       channel,
-      currentVersion,
+      currentVersion: shownVersion,
       latestVersion,
       mandatory,
       hasUpdate,
@@ -180,7 +181,7 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
     if (!release?.bundle_url || !release?.version) {
       return { ok: true, message: "게시된 업데이트가 없습니다.", apply: "none" };
     }
-    if (cmpVersion(String(release.version), currentVersion) <= 0) {
+    if (!isNewerScreenRelease(String(release.version), currentVersion, APP_VERSION)) {
       return {
         ok: true,
         message: `이미 최신입니다 (${release.version})`,

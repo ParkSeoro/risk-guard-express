@@ -25,7 +25,14 @@ export function isManagerMobileRole(role: string, isMaster?: boolean): boolean {
   return b === "manager" || b === "master";
 }
 
-export type MobileTabKey = "today" | "tasks" | "approvals" | "docs" | "alerts" | "more";
+export type MobileTabKey =
+  | "today"
+  | "tasks"
+  | "approvals"
+  | "docs"
+  | "alerts"
+  | "messenger"
+  | "more";
 
 export type MobileTab = {
   key: MobileTabKey;
@@ -45,12 +52,12 @@ export function mobileTabsForBucket(bucket: MobileShellBucket): MobileTab[] {
       { key: "more", label: "더보기", path: `${BASE}/more` },
     ];
   }
-  // manager + master — 「현장」= 관제·점검·사람·환경. 알림 탭 유지.
+  // manager + master — 알림은 상단 종. 하단 4번째는 메신저.
   return [
     { key: "today", label: "오늘", path: `${BASE}/today` },
     { key: "tasks", label: "현장", path: `${BASE}/tasks` },
     { key: "approvals", label: "결재", path: `${BASE}/approvals` },
-    { key: "alerts", label: "알림", path: `${BASE}/alerts` },
+    { key: "messenger", label: "메신저", path: `${BASE}/messenger` },
     { key: "more", label: "더보기", path: `${BASE}/more` },
   ];
 }

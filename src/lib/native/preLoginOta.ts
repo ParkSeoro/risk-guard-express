@@ -13,7 +13,8 @@
  * 조회가 실패하거나 시간이 넘으면 업데이트가 없는 것으로 보고 로그인을 연다.
  * Play 스토어 강제 화면은 여기서 띄우지 않는다.
  */
-import { isOtaUpdateAvailable } from "@/lib/otaVersion";
+import { APP_VERSION } from "@/lib/appVersion";
+import { isNewerScreenRelease } from "@/lib/otaVersion";
 import { getOtaAnonClient } from "./otaAnonClient";
 import { OTA_DOWNLOAD_TIMEOUT_MS } from "./otaUpdater";
 import { isNativeApp } from "./platform";
@@ -119,7 +120,7 @@ async function findNewerRelease(): Promise<PreLoginRelease | null> {
   const version = release?.version ? String(release.version) : "";
   if (!version || !release?.bundle_url) return null;
   if (alreadyApplied(version)) return null;
-  if (!isOtaUpdateAvailable(version, currentVersion)) return null;
+  if (!isNewerScreenRelease(version, currentVersion, APP_VERSION)) return null;
 
   let downloadUrl = String(release.bundle_url);
   if (downloadUrl.startsWith("storage:")) {

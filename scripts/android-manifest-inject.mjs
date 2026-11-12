@@ -10,6 +10,17 @@ export const ANDROID_RUNTIME_PERMS = [
   "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
 ];
 
+const SHELL_PERMS = [
+  "android.permission.MODIFY_AUDIO_SETTINGS",
+  "android.permission.VIBRATE",
+];
+
+const QUERY_ACTIONS = [
+  "android.media.action.IMAGE_CAPTURE",
+  "android.media.action.VIDEO_CAPTURE",
+  "android.intent.action.TTS_SERVICE",
+];
+
 const HEADLESS_SERVICE = `        <service
             android:name="org.safenex.app.HeadlessTrackService"
             android:exported="false"
@@ -26,6 +37,27 @@ const MLKIT_SCANNER_OVERRIDE = `        <activity
             tools:replace="android:screenOrientation" />
 `;
 
+function ensurePackageQueries(xml) {
+  const missing = QUERY_ACTIONS.filter((action) => !xml.includes(action));
+  if (missing.length === 0) return xml;
+  const intents = missing
+    .map(
+      (action) =>
+        `        <intent>\n            <action android:name="${action}" />\n        </intent>`,
+    )
+    .join("\n");
+  if (xml.includes("</queries>")) {
+    return xml.replace("</queries>", `${intents}\n    </queries>`);
+  }
+  if (!xml.includes("</manifest>")) {
+    throw new Error("Cannot add <queries>: AndroidManifest has no </manifest>");
+  }
+  return xml.replace(
+    "</manifest>",
+    `    <queries>\n${intents}\n    </queries>\n</manifest>`,
+  );
+}
+
 function ensureToolsNamespace(xml) {
   if (xml.includes("xmlns:tools=")) return xml;
   const androidNs = 'xmlns:android="http://schemas.android.com/apk/res/android"';
@@ -41,7 +73,7 @@ function ensureToolsNamespace(xml) {
 /** Insert GPS / camera / FCM permissions + HeadlessTrack into the app manifest. */
 export function injectAndroidManifest(xml) {
   let next = ensureToolsNamespace(xml);
-  for (const p of ANDROID_RUNTIME_PERMS) {
+  for (const p of [...ANDROID_RUNTIME_PERMS, ...SHELL_PERMS]) {
     if (next.includes(p)) continue;
     const tag = `    <uses-permission android:name="${p}" />\n`;
     if (!/<application\b/.test(next)) {
@@ -70,5 +102,5 @@ export function injectAndroidManifest(xml) {
     }
     next = next.replace("</application>", `${MLKIT_SCANNER_OVERRIDE}    </application>`);
   }
-  return next;
+  return ensurePackageQueries(next);
 }

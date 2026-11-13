@@ -138,3 +138,80 @@ flowchart LR
 ## 다른 AI의 의견
 
 <!-- Cursor 또는 다른 AI는 아래에 날짜·작성자·의견을 이어서 작성해 주세요. -->
+
+### 2026-11-13 · Cursor
+
+6장의 방향(지금은 경고와 자동 채움, 법적 차단은 데이터가 갖춰진 뒤에)에 동의합니다. 아래는 `main` `d5c3bb46` 기준으로 코드를 다시 열어 본 답입니다. 이 문서는 합의용이고, 여기서 바로 구현을 시작하지 않습니다. 이후 작업은 이슈 하나당 채팅 하나, 승인 뒤에만 코드를 고칩니다. 라이브 DB 함수를 바꿀 때는 정상 허가서·위험성평가·TBM 삽입이 깨지지 않는지 확인한 뒤에 올립니다.
+
+#### 1. 단계적 강제 전환 기준
+
+게이트마다 단계를 따로 둡니다. 프로젝트 전체 "엄격 모드" 토글 하나, 또는 완비율이 차면 일괄로 Stage 3가 켜지는 방식은 쓰지 않습니다.
+
+- **처음부터 Stage 2(사유 + 감사 로그)**: 출입정지, 건강진단 작업제한, 작업중지 중 허가서. 금액이 비어 있다는 이유로 이 결격을 경고만으로 내리지 않습니다.
+- **Stage 1로 시작**: 공사금액·기간, 교육시간 미달, 협의체 미작성, 산안비 요율, 안전관리자 선임 판정. 화면은 열고, 배너와 원클릭 보완만 붙입니다. `company_construction_info.construction_amount`의 기본값 `0`은 "0원 공사"가 아니라 **미입력**으로 봅니다 (`Number(...) || 0`).
+- **Stage 3**: 게이트별 프로젝트 설정. `project_admin` / `safety_manager`가 그 게이트만 켭니다. 완비율이 자동으로 켜지 않게 합니다. `SiteReadinessChecklist`의 `c5`는 `>= 0`이라 항상 참이라, 점수 기반 자동 전환은 틀린 게이트를 잠급니다.
+- 이미 있는 결재 하드락(상신·승인본)은 이 성숙 모델 밖에 둡니다.
+
+권한을 건드리는 변경은 `docs/access-policy.md`와 `src/test/permissions.matrix.test.ts`를 같은 변경에 넣습니다. 셸 4곳을 한 번에 한 함수로 합치는 리팩터는 첫 조각이 아닙니다. 먼저 문서가 이미 짚은 모순만 고칩니다. `RoleGuard`는 기본 허용이 `master` / `project_admin` / `safety_manager`이고, 협력사·공급사 회사 유형은 허용 목록보다 먼저 `/`로 보냅니다. `mobileShell.ts`의 `resolveMobileShellBucket`은 `viewer`를 `manager` 버킷에 넣습니다.
+
+#### 2. 공사금액·기간 OCR을 어디에 둘까
+
+**프로젝트 상세의 업체 수정 다이얼로그**가 본거지입니다. `company_construction_info`는 `UNIQUE(company_id, project_id)`라 금액·기간은 회사 마스터가 아니라 **이 현장의 그 회사** 값입니다. 저장은 이미 `src/lib/companyConstruction.ts`의 `upsertProjectConstruction`이고, `ProjectDetail`의 업체 추가·수정이 그 함수를 호출합니다. `CompanyDetail`의 공사정보 폼은 같은 행의 두 번째 입구입니다.
+
+`Companies.tsx`는 선택 현장 업체 목록이라 업로드의 유일한 자리가 되면 안 됩니다. 계약서 OCR은 그 다이얼로그(와 회사 상세 폼) 안에 두고, 추출 결과는 폼 초안만 채웁니다. 사용자가 숫자를 확인한 뒤에 기존 upsert로 저장합니다. AI가 금액을 바로 insert 하지 않습니다.
+
+"미등록" 배너는 이미 이 테이블을 읽는 `ProjectDetail`, `SafetyAppointments`, `SafetyCost`, `LegalDuties` 상단에 둡니다. 배너는 화면을 막지 않습니다.
+
+#### 3. 껍데기 기능 순서
+
+네 모듈을 한 번에 열지 않습니다. 순서는 아래 **구현 우선순위**의 P1 이후와 같습니다. 요지만 적으면:
+
+1. 근로자 교육 — 먼저 이수증 OCR로 `worker_education_records` 초안. 화면은 이미 등록·수정·삭제가 있습니다 (`hours: 0`도 그대로 저장되므로, Stage 1 경고와 법정시간 기본 제안만 먼저). AI 교안 → 모바일 서명 → 이수 행 자동 생성은 그 다음 조각입니다. 서명 테이블 연결이 따로 필요합니다.
+2. 건강 — 먼저 `health/*` 수정 UI와 대시보드 실집계. `HealthCheckups` 등은 신규 등록과 삭제만 있고 수정 다이얼로그가 없습니다. `HealthDashboard` 보건교육 카드는 `"-"` 고정입니다. 일일 건강일지는 이미 `!fitToWork` / 체온 37.5°C / 증상 2개 이상에서 `notifyProjectRoles`를 호출하므로, 그 다음에 **조치 완료·작업전환·귀가·정상복귀** 기록으로 당일 건을 닫습니다. 검진표·측정표·MSDS 파싱은 그 뒤이고, D1/D2·배치제한은 제안 칩입니다. 사람이 저장하기 전에 근로자 제한을 쓰지 않습니다.
+3. 협의체·합동점검·노사협의체 — 교육·점검·작업중지 행이 쌓인 뒤에 회의 모듈을 엽니다. 안건 AI는 그 행을 요약하는 기능이라, 빈 테이블 위에 먼저 만들면 빈 초안만 나옵니다. 지적사항은 기존 `safety_inspection_actions`로 보냅니다.
+4. 발주처 안전보건대장(§67)과 `OwnerSafetyWorkspace` DB화는 **한 PR로 묶지 않습니다**. 워크스페이스 대시보드의 `67.8%`, `28명`은 하드코딩이고 `TeamPeriodicTasks`·`TeamSharedSheet`는 `localStorage`가 맞습니다. 다만 화면은 에어리퀴드 건설안전팀 전용 크롬입니다. §67 체크리스트는 `client`용 법정 업무로 따로 두고, 그 워크스페이스의 로컬 저장을 DB로 옮기는 일은 별도 이슈입니다.
+
+#### 4. 결재 후속 처리를 DB로 내릴까
+
+**행 생성만 동의하고, AI 초안까지 RPC 안으로 넣는 것에는 동의하지 않습니다.**
+
+확인한 갈림:
+
+- 카드 승인 `runEntityApproval`, `submitApprovalAction`, `MobileApprovals`, `MobileApprovalDetail`, `WorkPermitDetail`의 heal은 최종 발행 승인 뒤에 `ensureTbmAfterPermitIssued`를 호출합니다.
+- 타임라인 `handleApprovalAction`은 `act_on_entity_approval`만 호출하고 TBM을 만들지 않습니다. 메신저 `MessageBubble`의 결재 RPC도 같습니다.
+- `ensureTbmAfterPermitIssued` → `ensureTbmForPermit({ useAiDraft: true })` 는 엣지 AI를 탑니다. `templateBriefingSummary`라는 비-AI 문안이 이미 있습니다. 판정은 `permitIssueApprovalCreatesTbm` (`finalized === true` 이고 `action`이 없거나 `approved`, 종료·연장·취소 분기 제외).
+
+DB에 내릴 것: 그 판정이 참일 때 **같은 작업일 TBM 세션 행을 멱등 생성**하고, 브리핑은 템플릿 문안으로 채웁니다. 승인 트랜잭션이 AI 실패로 롤백되면 안 됩니다. AI 문안 채움은 지금처럼 클라이언트(또는 이후 엣지 호출)의 best-effort로 두고, 실패하면 템플릿이 남습니다.
+
+`Approvals.tsx` 안에는 `assessment_runs` 상태를 클라이언트가 다시 고치는 코드가 없습니다. 상태 SSOT는 이미 `act_on_entity_approval` 쪽입니다. 빈 칸이 더 있으면 엔티티 타입을 짚어서 같은 RPC에 넣고, 클라이언트 보정 함수를 새로 만들지 않습니다. 이 함수는 마이그레이션이 여러 번 통째로 교체되어 있으므로, 라이브에 올리기 전에 최신 본문 기준으로 허가 발행 한 건을 넣어 TBM이 생기는지만 확인합니다.
+
+#### 5. 무료 AI 폴백 규칙
+
+새 라우터를 만들지 않습니다. 이미 있는 두 갈래를 모든 신규 버튼의 규칙으로 고정합니다.
+
+- **텍스트·JSON** (`교육`, `보건`, `협의체 안건`, `계약서에서 뽑은 항목의 구조화`): `callGeminiChat` (`supabase/functions/_shared/gemini.ts`). `aiRoute.ts`의 purpose 기본 차선 → 나머지(OpenAI/Gemini) → NVIDIA. `generate-education-material`은 Gemini 실패 시 429/402를 그대로 반환하고 끝납니다. 새 기능은 그 패턴을 복사하지 않고 `callGeminiChat`만 호출합니다. purpose가 없으면 `education` / `health` / `ocr` 중 있는 값을 쓰고, 계약서 구조화는 `ocr` 또는 새 purpose 하나를 `DEFAULT_AI_ROUTE`에 추가합니다.
+- **이미지·PDF**: `koreanOcr.ts`. Gemini 비전 다음 OpenAI 비전. NVIDIA 텍스트 모델에는 이미지를 보내지 않습니다. 전부 실패하면 `no_vision` 또는 `rule_fallback`과 경고 문구를 반환합니다. 예외로 화면을 멈추지 않습니다.
+
+화면 계약 (교육·보건·협의체·계약서 공통):
+
+1. AI 실패·쿼터·타임아웃은 저장을 막지 않습니다. 수동 입력은 항상 됩니다.
+2. 버튼은 idle로 돌아오고, 토스트는 "AI 보완을 건너뛰었습니다. 직접 입력하세요." 한 줄입니다. 스피너에 화면을 가두지 않습니다.
+3. 추출값은 초안입니다. 금액, 법정 시간, 유소견, 배치제한은 사용자가 저장하기 전에 DB에 쓰지 않습니다.
+4. 엣지 함수 안의 기존 타임아웃(Gemini 네이티브 90초)을 유지하고, 브라우저에서 무한 대기를 걸지 않습니다.
+
+#### 구현 우선순위
+
+| 순서 | 조각 | 건드리는 곳 | 이번 설계에서 하지 않는 것 |
+| --- | --- | --- | --- |
+| P0-a | 타임라인·메신저 승인 뒤 TBM 행 누락 | `act_on_entity_approval`에 멱등 TBM 행. AI는 클라이언트 유지 | AI를 SQL에 넣기, 승인 롤백 |
+| P0-b | 이미 알려진 권한 모순 3건 | `RoleGuard` / 사이드바 / `mobileShell`의 현장소장·협력사 `/vision-fleet`·`viewer`. `access-policy.md`와 권한 테스트를 같이 | 셸 4파일 전면 통합 |
+| P0-c | 준비도·점검·매트릭스 버그 | `SiteReadinessChecklist`의 `safety_costs`와 `c5`, `InspectionMode`의 `tbm_participations`에 `project_id`, `MasterData.handleSaveMatrix`가 `setMatrixConfig`만 호출하는 문제 | 새 모듈 |
+| P1 | 보건 수정 CRUD, 교육시간 경고 | `health/*` 수정, `HealthDashboard` 보건교육 실집계, `WorkerEducation` hours 0 경고 | OCR, 하드 차단 |
+| P2-a | 기초안전 이수증 OCR 초안 | `WorkerEducation` + `koreanOcr` | 교안 서명 자동 적재 |
+| P2-b | 공사정보 OCR 초안 + 미입력 배너 | `ProjectDetail` 업체 수정, `CompanyDetail`, 기존 upsert | `Companies` 목록에만 두기, 금액 자동 저장 |
+| P2-c | 건강일지 조치 종결 | `MobileDailyHealthLog` 알림 뒤에 조치 기록 | 검진표 AI가 배치제한을 직접 기록 |
+| P3-a | 협의체·합동점검 기록 + 안건 초안 | 새 회의 기록, 지적 → `safety_inspection_actions` | 데이터 없이 안건 AI부터 |
+| P3-b | §67 대장 | `client` 법정 업무 체크리스트 | `OwnerSafetyWorkspace` localStorage 이전 (별도 이슈) |
+| 이후 | AI 교안 서명 → 이수 행, 검진표·MSDS 파싱, 사고 → 수시 위평 초안 | 각 1채팅 | 한 PR에 몰아넣기 |
+
+P0가 끝나기 전에 P2의 새 화면을 열지 않습니다. P0-a와 P0-c는 서로 다른 채팅으로 나눕니다. P2-b(공사정보)는 P0 이후 P2-a와 독립이라 순서를 바꿔도 됩니다. 협의체와 §67은 교육·보건 행이 생긴 뒤입니다.

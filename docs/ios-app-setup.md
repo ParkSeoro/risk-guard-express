@@ -12,7 +12,10 @@
 | 표시 이름 | Safenex |
 | 번들 아이디 | `org.safenex.app` |
 | 버전 | `1.1.9` (빌드 번호 `479`, 안드로이드 `androidVersionCode`와 같음) |
-| 권한 문구 | `ios/App/App/Info.plist` (위치, 카메라, 사진, 백그라운드 위치·알림) |
+| 권한 문구 | `ios/App/App/Info.plist` (위치, 카메라, 사진, 백그라운드 위치·알림, 한국어, 수출 규정 아니오) |
+| 개인정보 목록 | `ios/App/App/PrivacyInfo.xcprivacy` (추적 없음) |
+| 앱 아이콘 | `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png` (1024×1024) |
+| 콘솔에 붙여 넣을 답 | `docs/app-store-connect-fill.md` |
 | 로컬 주소 방식 | `capacitor.config.ts`의 `iosScheme: 'https'` |
 
 웹 묶음(`ios/App/App/public`)은 Mac에서 `cap sync`할 때 다시 복사됩니다. 저장소에는 넣지 않습니다.
@@ -41,9 +44,11 @@
 
 ## 4. App Store Connect에 앱 만들기
 
+콘솔 칸에 붙여 넣을 이름, 설명, 개인정보 답, 심사 메모는 [`docs/app-store-connect-fill.md`](./app-store-connect-fill.md)에 있습니다.
+
 1. [App Store Connect 앱 목록](https://appstoreconnect.apple.com/apps)에서 새 앱을 만듭니다.
-2. 플랫폼 iOS, 이름 Safenex, 기본 언어 한국어, 번들 ID `org.safenex.app`, SKU는 `safenex-ios`처럼 고유한 글자입니다.
-3. 개인정보 처리방침 URL은 지금 쓰는 주소입니다. [https://safenex.org/privacy](https://safenex.org/privacy)
+2. 플랫폼 iOS, 이름 Safenex, 기본 언어 한국어, 번들 ID `org.safenex.app`, SKU는 `safenex-ios`입니다.
+3. 개인정보 처리방침 URL은 [https://safenex.org/privacy](https://safenex.org/privacy)입니다.
 
 ## 5. Mac에서 빌드
 
@@ -78,13 +83,11 @@ Xcode에서:
 
 ## 7. 심사에 적을 내용
 
-카테고리는 비즈니스, 연령은 18세 이상, 광고 없음으로 맞춥니다. 안드로이드 스토어 문구와 같습니다.
+붙여 넣을 문장은 [`docs/app-store-connect-fill.md`](./app-store-connect-fill.md) 4절입니다. 카테고리는 비즈니스, 연령은 18세 이상, 광고와 앱 내 구입은 없습니다.
 
-위치는 출근과 현장 위험구역용입니다. 백그라운드 위치는 심사가 엄격합니다. 심사 메모에 현장 안전 관리이며 사용자가 출근 화면에서 직접 켠다고 적습니다. 안내: [위치 권한 심사](https://developer.apple.com/app-store/review/guidelines/#location), [백그라운드 위치](https://developer.apple.com/documentation/corelocation/handling-location-updates-in-the-background)
+위치는 출근과 현장 위험구역용입니다. 백그라운드 위치는 심사가 엄격합니다. 안내: [위치 권한 심사](https://developer.apple.com/app-store/review/guidelines/#location), [백그라운드 위치](https://developer.apple.com/documentation/corelocation/handling-location-updates-in-the-background)
 
-개인정보 질문: [App Privacy](https://developer.apple.com/app-store/app-privacy-details/). 안드로이드 데이터 보안과 같이 위치, 사진, 이름, 이메일, 전화, 앱 활동을 수집한다고 표시합니다. 판매 목적 공유는 아닙니다.
-
-스크린샷은 6.7인치 아이폰이 필수입니다. 근로자 홈과 출근 화면이면 됩니다.
+개인정보 질문: [App Privacy](https://developer.apple.com/app-store/app-privacy-details/). 스크린샷은 아이폰에 설치한 화면으로 6.7인치 세로 2장 이상입니다.
 
 ## 8. 푸시와 QR은 첫 설치 뒤에 이어서
 

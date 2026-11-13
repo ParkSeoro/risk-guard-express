@@ -20,6 +20,10 @@ import { fetchWorkHourRows, hoursDisclaimer, syncWorkerProfileIdentity } from "@
 import type { WorkHourRow } from "@/lib/workHours";
 import { toast } from "sonner";
 import type { StandardJobType } from "@/lib/jobCategories";
+import { WorkerRepresentativeLine } from "@/components/workers/WorkerRepresentativeLine";
+import { ADMIN_PROJECT_ROLES } from "@/lib/permissions";
+import { useAuditLog } from "@/hooks/useAuditLog";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 
 const statusBadge = (status: string, due?: string) => {
   if (status === "done") return <Badge variant="outline" className="bg-success/10 text-success border-success/40">완료</Badge>;
@@ -31,9 +35,14 @@ const statusBadge = (status: string, due?: string) => {
   return <Badge variant="secondary">대기</Badge>;
 };
 
+const REP_EDIT_ROLES = new Set<string>(ADMIN_PROJECT_ROLES);
+
 export default function WorkerDetail() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const access = useGlobalProjectAccessOptional();
+  const { log } = useAuditLog();
+  const canEditRep = REP_EDIT_ROLES.has(String(access?.userRole || "")) || !!access?.isMaster;
   const [eduTick, setEduTick] = useState(0);
   const refreshWorker = () => {
     setEduTick((n) => n + 1);
@@ -230,6 +239,27 @@ export default function WorkerDetail() {
             </div>
           ) : (
             <Button size="sm" variant="outline" onClick={() => setEditing(true)}>명부 수정</Button>
+          )}
+          {w.project_id && w.company_id ? (
+            <div className="mt-3 border-t pt-3">
+              <WorkerRepresentativeLine
+                projectId={w.project_id}
+                companyId={w.company_id}
+                companies={[{ id: w.company_id, name: w.company_name || "소속" }]}
+                companiesReady
+                companyLocked
+                workers={[{ id: w.id, name: w.name, company_id: w.company_id }]}
+                assignWorker={{ id: w.id, name: w.name }}
+                canEdit={canEditRep}
+                onChanged={(action, details) => {
+                  void log(action, "worker_representative", w.company_id, w.project_id, details);
+                }}
+              />
+            </div>
+          ) : (
+            <p className="mt-3 border-t pt-3 text-sm text-muted-foreground">
+              소속이 있어야 근로자 대표로 지정할 수 있습니다.
+            </p>
           )}
         </CardContent>
       </Card>

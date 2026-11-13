@@ -69,6 +69,7 @@ export default function WorkerManagement() {
   const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [companiesReady, setCompaniesReady] = useState(false);
   const [companyId, setCompanyId] = useState<string>("");
   const [companyLocked, setCompanyLocked] = useState(false);
   const [workers, setWorkers] = useState<any[]>([]);
@@ -139,11 +140,18 @@ export default function WorkerManagement() {
   }, []);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setCompaniesReady(false);
+      return;
+    }
     setCompanyId("");
     setCompanyLocked(false);
+    setCompaniesReady(false);
     import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
-      fetchProjectCompanies(projectId).then((rows) => setCompanies(rows.map(c => ({ id: c.id, name: c.name }))))
+      fetchProjectCompanies(projectId).then((rows) => {
+        setCompanies(rows.map(c => ({ id: c.id, name: c.name })));
+        setCompaniesReady(true);
+      })
     );
     // 관리자 소속사 자동 지정 — 협력사 권한이면 잠금, 전체권한이면 기본값만 채우고 변경 가능
     (async () => {
@@ -314,10 +322,14 @@ export default function WorkerManagement() {
       <h1 className="text-2xl font-bold flex items-center gap-2">
         <HardHat className="h-6 w-6" /> 근로자 관리
       </h1>
-      {projectId && companyId && (
+      {projectId && (
         <WorkerRepresentativeLine
           projectId={projectId}
           companyId={companyId}
+          companies={companies}
+          companiesReady={companiesReady}
+          companyLocked={companyLocked}
+          onCompanyChange={companyLocked ? undefined : setCompanyId}
           workers={workers.map((w) => ({ id: w.id, name: w.name, company_id: (w as any).company_id }))}
           canEdit={ADMIN_ROLE_SET.has(String(access?.userRole || "")) || !!(access as any)?.isMaster}
           onChanged={(action, details) => { void log(action, "worker_representative", companyId, projectId, details); }}

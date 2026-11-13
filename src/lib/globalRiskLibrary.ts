@@ -5,6 +5,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { calculateRiskGrade, deriveResidualGrades, isFlattenedResidualPlaceholder, type RiskGrade } from '@/lib/riskGrade';
+import {
+  buildTradePreview,
+  likeToken,
+  type LibraryNameRow,
+  type TradePreview,
+} from '@/lib/tradeLibraryPreview';
 
 export function normalizeProcessKey(raw: string): string {
   return (raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -139,6 +145,34 @@ export async function fetchGlobalRiskLibraryItems(
     .map((x) => mapGlobalLibraryRow(x.row));
 
   return scored;
+}
+
+/** 넣기 전에 건수와 가까운 공종만 본다. 0건이어도 예외로 삼지 않는다. */
+export async function previewTradeLibrary(processName: string): Promise<TradePreview> {
+  const typed = (processName || '').trim();
+  const key = normalizeProcessKey(typed);
+  if (!key) return buildTradePreview(typed, [], []);
+
+  const exact = await supabase
+    .from('global_risk_library' as any)
+    .select('process_key, process_label')
+    .eq('is_active', true)
+    .eq('process_key', key)
+    .limit(80);
+  if (exact.error) throw new Error(exact.error.message);
+  const exactRows = (exact.data || []) as LibraryNameRow[];
+  if (exactRows.length > 0) return buildTradePreview(typed, exactRows, []);
+
+  const token = likeToken(key);
+  if (token.length < 2) return buildTradePreview(typed, [], []);
+  const fuzzy = await supabase
+    .from('global_risk_library' as any)
+    .select('process_key, process_label')
+    .eq('is_active', true)
+    .or(`process_key.ilike.%${token}%,process_label.ilike.%${token}%`)
+    .limit(80);
+  if (fuzzy.error) throw new Error(fuzzy.error.message);
+  return buildTradePreview(typed, [], (fuzzy.data || []) as LibraryNameRow[]);
 }
 
 export async function ingestApprovedRunsToLibrary(limit = 30): Promise<{ runs: number; upserted: number }> {

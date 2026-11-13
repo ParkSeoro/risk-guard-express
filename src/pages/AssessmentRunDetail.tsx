@@ -53,6 +53,13 @@ import {
   subscribeRiskAutoGenJob,
   type RiskAutoGenJobState,
 } from '@/lib/riskAutoGenJob';
+import { previewTradeLibrary } from '@/lib/globalRiskLibrary';
+import {
+  chosenProcessKey,
+  tradeFillBlockReason,
+  tradePreviewLine,
+  type TradePreview,
+} from '@/lib/tradeLibraryPreview';
 import {
   isAiPendingRiskItem,
   isAiFailedRiskItem,
@@ -185,6 +192,9 @@ const AssessmentRunDetail = () => {
   const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
   const [autoGenEquipmentTags, setAutoGenEquipmentTags] = useState<string[]>([]);
   const [autoGenUseAI, setAutoGenUseAI] = useState(true);
+  const [tradePreview, setTradePreview] = useState<TradePreview[] | null>(null);
+  const [tradePicks, setTradePicks] = useState<Record<string, string>>({});
+  const [tradePreviewing, setTradePreviewing] = useState(false);
   const [environmentTags, setEnvironmentTags] = useState<{ id: string; name: string; category: string }[]>([]);
 
   // Validation
@@ -1281,6 +1291,46 @@ const AssessmentRunDetail = () => {
     }
   };
 
+  const collectAutoGenProcesses = () => {
+    const pending = autoGenProcessInput
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return [
+      ...autoGenProcesses,
+      ...pending.filter((p) => !autoGenProcesses.includes(p)),
+    ];
+  };
+
+  const clearTradePreview = () => {
+    setTradePreview(null);
+    setTradePicks({});
+  };
+
+  const handlePreviewTrades = async () => {
+    const processes = collectAutoGenProcesses();
+    if (processes.length === 0) {
+      toast({ title: '공종명을 입력하세요.', variant: 'destructive' });
+      return;
+    }
+    setTradePreviewing(true);
+    try {
+      const previews = await Promise.all(processes.map((name) => previewTradeLibrary(name)));
+      setAutoGenProcesses(processes);
+      setAutoGenProcessInput('');
+      setTradePreview(previews);
+      setTradePicks({});
+    } catch (err: any) {
+      toast({
+        title: '공종 라이브러리를 읽지 못했습니다.',
+        description: err?.message || '다시 시도하세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setTradePreviewing(false);
+    }
+  };
+
   const handleAutoGenerate = async () => {
     console.log('[AutoGen] handleAutoGenerate start', {
       processTags: autoGenProcesses.length,
@@ -1293,15 +1343,30 @@ const AssessmentRunDetail = () => {
     });
 
     try {
-      // Flush typed-but-not-added process names (Enter/추가 없이 제출하는 UX)
       const pending = autoGenProcessInput
         .split(/[,，]/)
         .map((s) => s.trim())
         .filter(Boolean);
-      const processes = [
+      const typed = [
         ...autoGenProcesses,
         ...pending.filter((p) => !autoGenProcesses.includes(p)),
       ];
+
+      if (!tradePreview) {
+        await handlePreviewTrades();
+        return;
+      }
+      const block = tradeFillBlockReason(tradePreview, tradePicks, autoGenUseAI);
+      if (block) {
+        toast({ title: block, variant: 'destructive' });
+        return;
+      }
+      const processes = tradePreview.map((preview) => chosenProcessKey(preview, tradePicks[preview.typed]) || preview.typed);
+      if (typed.join('\n') !== tradePreview.map((preview) => preview.typed).join('\n')) {
+        clearTradePreview();
+        toast({ title: '공종이 바뀌었습니다. 건수를 다시 확인하세요.' });
+        return;
+      }
 
       if (processes.length === 0) {
         console.warn('[AutoGen] blocked: empty processes');
@@ -1389,10 +1454,10 @@ const AssessmentRunDetail = () => {
       setAutoGenProcesses([]);
       setAutoGenProcessInput('');
       toast({
-        title: '위험성평가 초안 생성을 시작했습니다.',
-        description: autoGenUseAI
-          ? '이전 승인 평가를 먼저 반영하고, 부족분만 AI 초안 → 검수 → [나머지 채우기].'
-          : '표준 라이브러리 전용으로 등록합니다.',
+        title: autoGenUseAI
+          ? '라이브러리 행을 가져온 뒤 빈칸만 AI로 채웁니다.'
+          : '공종 라이브러리에서 가져옵니다.',
+        description: tradePreview.map(tradePreviewLine).join(' '),
       });
     } catch (err: any) {
       const msg = err?.message || String(err);
@@ -1412,6 +1477,7 @@ const AssessmentRunDetail = () => {
     const newTags = trimmed.split(/[,，]/).map(s => s.trim()).filter(s => s && !autoGenProcesses.includes(s));
     if (newTags.length > 0) {
       setAutoGenProcesses(prev => [...prev, ...newTags]);
+      clearTradePreview();
     }
     setAutoGenProcessInput('');
   };
@@ -2773,8 +2839,8 @@ const AssessmentRunDetail = () => {
       <div className="flex items-center gap-2 print:hidden flex-wrap">
         {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
           <>
-            <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
-              <Wand2 className="h-3.5 w-3.5" /> 초안 생성
+            <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => { clearTradePreview(); setShowAutoGen(true); }}>
+              <Wand2 className="h-3.5 w-3.5" /> 이 공종 채우기
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5" onClick={handleAddNew}>
               <Plus className="h-3.5 w-3.5" /> 행 추가
@@ -3078,7 +3144,7 @@ const AssessmentRunDetail = () => {
                       <div>등록된 위험성평가 항목이 없습니다.</div>
                       {canEdit && (
                         <div className="flex gap-2 mt-1">
-                          <Button size="sm" variant="outline" onClick={() => setShowAutoGen(true)}>초안 생성</Button>
+                          <Button size="sm" variant="outline" onClick={() => { clearTradePreview(); setShowAutoGen(true); }}>이 공종 채우기</Button>
                           <Button size="sm" variant="outline" onClick={handleAddNew}>수동으로 추가</Button>
                         </div>
                       )}
@@ -3485,6 +3551,7 @@ const AssessmentRunDetail = () => {
       {/* Auto Generate Dialog — compact field-card layout */}
       <Dialog open={showAutoGen} onOpenChange={(open) => {
         // Allow closing during generation — job continues in background with banner
+        if (!open) clearTradePreview();
         setShowAutoGen(open);
       }}>
         <DialogContent
@@ -3504,9 +3571,9 @@ const AssessmentRunDetail = () => {
           }}
         >
           <DialogHeader className="space-y-1 pb-1">
-            <DialogTitle className="text-base">초안 생성</DialogTitle>
+            <DialogTitle className="text-base">이 공종 채우기</DialogTitle>
             <p className="text-[11px] text-muted-foreground leading-snug">
-              작업 순서로 쪼갠 뒤 단계별 위험요인·대책을 촘촘히 도출합니다. (산안법 위험성평가 지침)
+              공종 라이브러리 건수를 먼저 보여 줍니다. 가까운 공종이 있으면 고른 뒤에 가져오고, AI는 빈칸과 부족분만 채웁니다.
             </p>
           </DialogHeader>
 
@@ -3514,12 +3581,12 @@ const AssessmentRunDetail = () => {
             <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2">
               <Switch checked={autoGenUseAI} onCheckedChange={setAutoGenUseAI} />
               <Label className="text-xs font-medium">
-                {autoGenUseAI ? '이전 평가 재사용 + 부족분 AI' : '표준 라이브러리 전용'}
+                {autoGenUseAI ? '라이브러리 행을 가져온 뒤 빈칸만 AI' : '공종 라이브러리만'}
               </Label>
             </div>
             {autoGenUseAI && (
               <p className="text-[10px] text-muted-foreground -mt-1 px-1 leading-snug">
-                회사·프로젝트에서 승인된 같은 공종 항목을 먼저 가져오고, 부족한 세부작업만 AI로 보완합니다.
+                공종 라이브러리에서 가져온 뒤, 비어 있는 칸과 부족한 세부작업만 AI로 채웁니다. 위험도와 결재는 바꾸지 않습니다.
               </p>
             )}
 
@@ -3529,7 +3596,7 @@ const AssessmentRunDetail = () => {
                 <Input
                   className="h-9"
                   value={autoGenProcessInput}
-                  onChange={e => setAutoGenProcessInput(e.target.value)}
+                  onChange={e => { setAutoGenProcessInput(e.target.value); clearTradePreview(); }}
                   placeholder="예: 굴착, 배관, 용접..."
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddProcessTag(); } }}
                 />
@@ -3538,13 +3605,39 @@ const AssessmentRunDetail = () => {
               {autoGenProcesses.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {autoGenProcesses.map(p => (
-                    <Badge key={p} variant="default" className="cursor-pointer text-[11px] h-7 gap-1" onClick={() => setAutoGenProcesses(prev => prev.filter(x => x !== p))}>
+                    <Badge key={p} variant="default" className="cursor-pointer text-[11px] h-7 gap-1" onClick={() => { setAutoGenProcesses(prev => prev.filter(x => x !== p)); clearTradePreview(); }}>
                       {p} ×
                     </Badge>
                   ))}
                 </div>
               )}
             </div>
+
+            {tradePreview && (
+              <div className="rounded-lg border bg-card p-3 space-y-2">
+                {tradePreview.map((preview) => (
+                  <div key={preview.typed} className="space-y-1.5">
+                    <p className="text-xs leading-snug">{tradePreviewLine(preview)}</p>
+                    {preview.exactCount === 0 && preview.candidates.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {preview.candidates.map((candidate) => (
+                          <Button
+                            key={candidate.processKey}
+                            type="button"
+                            size="sm"
+                            variant={tradePicks[preview.typed] === candidate.processKey ? 'default' : 'outline'}
+                            className="h-8 text-[11px]"
+                            onClick={() => setTradePicks((prev) => ({ ...prev, [preview.typed]: candidate.processKey }))}
+                          >
+                            {candidate.processLabel} {candidate.count}건
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {autoGenUseAI && (
               <div className="rounded-lg border bg-card p-3 space-y-3">
@@ -3607,28 +3700,30 @@ const AssessmentRunDetail = () => {
                   onClick={() => setAutoGenDetailLevel('comprehensive')}>상세 항목까지</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                ① 이전 승인 평가 재사용 → 부족분 AI 초안 → 검수 → ② [나머지 채우기] · 사고사례는 별도 버튼
+                ① 공종 라이브러리 건수 확인 → 가져오기 → 빈칸만 AI · 사고사례는 별도 버튼
               </p>
             </div>
 
             <Button
               type="button"
               onClick={() => {
-                console.log('[AutoGen] submit button clicked');
-                void handleAutoGenerate();
+                if (!tradePreview) void handlePreviewTrades();
+                else void handleAutoGenerate();
               }}
               disabled={
                 autoGenLoading ||
+                tradePreviewing ||
                 (autoGenProcesses.length === 0 && !autoGenProcessInput.trim())
               }
               className="w-full h-11"
             >
               {autoGenLoading
                 ? `생성 중… ${autoGenJob.elapsedSec || 0}초 · ${autoGenJob.message || autoGenPhaseLabel || '대기'}`
-                : `초안 생성 · ${
-                    autoGenProcesses.length ||
-                    (autoGenProcessInput.trim() ? autoGenProcessInput.split(/[,，]/).filter((s) => s.trim()).length : 0)
-                  }개 공종`}
+                : tradePreviewing
+                  ? '건수 확인 중…'
+                  : tradePreview
+                    ? '이 공종 채우기'
+                    : '건수 확인'}
             </Button>
             {autoGenLoading && (
               <p className="text-[11px] text-center text-muted-foreground">

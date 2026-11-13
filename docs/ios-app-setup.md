@@ -101,18 +101,16 @@ Xcode에서:
 
 애플은 웹뷰 안의 자바스크립트 갱신을 앱의 목적 안에서 허용합니다. 권한, 플러그인, 번들 아이디는 zip으로 못 바꿉니다. 그건 TestFlight와 앱스토어에 네이티브 빌드를 다시 올립니다. [Capacitor 업데이트 안내](https://capacitorjs.com/docs/guides/deploying-updates), [Capgo Updater](https://capgo.app/docs/plugins/updater/)
 
-### 지금 코드는 아이폰 행을 보지 않는다
+### 아이폰은 안드로이드 바닥을 보지 않는다
 
-폰 조회가 `_platform: "android"`로 고정되어 있습니다. `src/lib/native/otaUpdater.ts`, `src/lib/native/preLoginOta.ts`입니다. 데이터베이스 `app_releases.platform`은 `android`, `desktop`, `shared`만 허용합니다. `ios` 행은 아직 만들 수 없습니다.
+예전 조회는 `_platform: "android"`로 고정되어 있었습니다. 그 상태로 아이폰을 보관하면 화면 zip은 받아도, 플레이 설치 바닥(`min_native_version`)과 아이폰 빌드 번호가 한 칸에 섞입니다. 안드로이드에서 났던 「앱 업데이트가 필요합니다」 루프를 아이폰에 옮기지 않습니다. 규칙은 `docs/update-channels-2026-11-12.md`와 같습니다. 바닥 숫자는 안드로이드 행에만 남기고, 아이폰 행은 비웁니다.
 
-이 껍데기를 그대로 보관하면 아이폰이 안드로이드용 zip을 받습니다. 화면 파일은 같아서 당장은 열려도, 플레이 설치 바닥(`min_native_version`, 지금 478)과 아이폰 빌드 번호가 한 칸에 섞입니다. 안드로이드에서 났던 「앱 업데이트가 필요합니다」 루프를 아이폰에 옮기지 않습니다. 규칙은 `docs/update-channels-2026-11-12.md`와 같습니다.
+### 넣는 순서
 
-### 넣을 순서
-
-1. **데이터베이스.** `platform`에 `ios`를 추가합니다. `get_latest_app_release`는 `ios`를 물으면 `ios` 행을 보고, 없을 때만 `shared`를 봅니다. `android` 행과 `desktop` 행은 보지 않습니다. `android`를 물으면 지금처럼 `android` 다음 `shared`만 봅니다. 기존 안드로이드·PC 행은 고치지 않습니다.
-2. **앱.** 조회 플랫폼을 `nativePlatform()`으로 바꿉니다. 안드로이드 폰은 계속 `android`를 보냅니다. 아이폰만 `ios`를 보냅니다. 이 자바스크립트가 들어간 IPA가 첫 자동 업데이트 대상입니다. 그 전에 만든 IPA는 이 계획의 대상이 아닙니다.
-3. **게시.** 화면 zip은 하나이고, 행은 `android`, `desktop`, `ios` 세 개입니다. 안드로이드 행의 `min_native_version`만 플레이 설치 번호를 가집니다. PC 행은 비어 있습니다. 아이폰 행도 TestFlight나 앱스토어에 그 빌드가 실제로 깔리기 전에는 비웁니다. GitHub에 파일만 만들었다고 아이폰 바닥을 올리지 않습니다.
-4. **스토어 안내.** 설치 빌드가 아이폰 바닥보다 낮을 때만 앱스토어로 보냅니다. 플레이 스토어 버튼은 아이폰에 나오지 않습니다. 바닥이 비어 있으면 안내하지 않습니다. 링크는 앱이 스토어에 올라온 뒤의 주소입니다. [앱스토어 링크 형식](https://developer.apple.com/documentation/storekit/skstoreproductviewcontroller)
-5. **확인.** 안드로이드 폰이 여전히 `android` 행만 받는지, 아이폰이 `android`의 478 바닥으로 막히지 않는지, 로그인 화면에서 zip을 받지 않는지를 테스트로 잠급니다. 이 순서가 끝나기 전에는 라이브 릴리스 함수를 아이폰 행 없이 호출해도 지금 폰은 그대로입니다.
+1. **데이터베이스.** `platform`에 `ios`를 더합니다. `get_latest_app_release`는 `ios`를 물으면 `ios` 행을 보고, 없을 때만 `shared`를 봅니다. `android` 행과 `desktop` 행은 보지 않습니다. `android`를 물으면 지금처럼 `android` 다음 `shared`만 봅니다. 기존 안드로이드·PC 행의 바닥 숫자는 고치지 않습니다. 최신 안드로이드 zip과 같은 파일을 가리키는 `ios` 행만 새로 만들고, 그 행의 바닥은 비웁니다.
+2. **앱.** 조회는 `nativeOtaLookupPlatform`입니다. 안드로이드 폰은 `android`를 보냅니다. 아이폰은 `ios`를 보냅니다. 이 자바스크립트가 들어간 IPA가 첫 자동 업데이트 대상입니다.
+3. **게시.** `both`는 같은 zip을 `android`, `desktop`, `ios`에 둡니다. 바닥 숫자는 안드로이드 행만 잇습니다. 아이폰 바닥에 숫자를 넣는 호출은 거절합니다. 아이폰 행 저장이 실패해도 안드로이드 게시는 남습니다.
+4. **스토어 안내.** 아이폰은 바닥이 비어 있으면 안내하지 않습니다. `VITE_APP_STORE_URL`이 비어 있으면 앱스토어 버튼도 없고, 로그인 전에 화면을 막지 않습니다. 주소는 앱이 스토어에 올라온 뒤에 넣습니다. [앱스토어 링크](https://developer.apple.com/documentation/storekit/skstoreproductviewcontroller)
+5. **확인.** 안드로이드 조회 결과와 바닥 숫자가 이 변경 전과 같은지, 아이폰 행의 바닥이 비었는지, 로그인 화면 코드가 zip을 받지 않는지를 확인합니다.
 
 첫 IPA를 보관하는 시점의 화면 묶음에 2번이 들어 있어야, 그 다음부터 올리는 zip이 아이폰에 적용됩니다.

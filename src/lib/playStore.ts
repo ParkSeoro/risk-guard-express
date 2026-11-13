@@ -12,6 +12,17 @@ export function playStoreMarketUrl(): string {
   return `market://details?id=${PLAY_STORE_PACKAGE_ID}`;
 }
 
+/** Empty until the iPhone app has an App Store listing. An empty URL must not block login. */
+export function appStoreWebUrl(): string {
+  return (import.meta.env.VITE_APP_STORE_URL as string | undefined)?.trim() || "";
+}
+
+export function openAppStore(): void {
+  const web = appStoreWebUrl();
+  if (!web) return;
+  window.location.href = web;
+}
+
 export function openPlayStore(): void {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const isAndroid = /Android/i.test(ua);

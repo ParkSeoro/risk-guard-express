@@ -1,5 +1,6 @@
 import { cmpVersion, getChannel } from "@/lib/native/otaUpdater";
 import { getOtaAnonClient } from "@/lib/native/otaAnonClient";
+import { nativeOtaLookupPlatform } from "@/lib/otaReleasePlatform";
 import { isNativeApp, nativePlatform } from "@/lib/native/platform";
 
 export type NativeIdentity = { version: string; build: string };
@@ -68,7 +69,7 @@ export type NativeStoreUpdateState = {
   minNative: string | null;
 };
 
-/** Android native only — iOS has no Play listing. */
+/** Android reads the Play floor. iOS reads its own floor, which stays empty until a store build is installed. */
 export async function fetchNativeStoreUpdateState(): Promise<NativeStoreUpdateState> {
   const empty: NativeStoreUpdateState = {
     applicable: false,
@@ -76,13 +77,14 @@ export async function fetchNativeStoreUpdateState(): Promise<NativeStoreUpdateSt
     current: null,
     minNative: null,
   };
-  if (!isNativeApp() || nativePlatform() !== "android") return empty;
+  const platform = nativeOtaLookupPlatform(nativePlatform());
+  if (!isNativeApp() || !platform) return empty;
   const current = await getNativeIdentity();
   if (!current) return empty;
   try {
     const { data, error } = await getOtaAnonClient().rpc("get_latest_app_release", {
       _channel: getChannel(),
-      _platform: "android",
+      _platform: platform,
     } as any);
     if (error) return { applicable: true, needed: false, current, minNative: null };
     const release: any = Array.isArray(data) ? data[0] : data;

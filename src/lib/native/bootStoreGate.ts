@@ -4,7 +4,8 @@
  * Play Console uploads do not notify the app unless this field is set.
  */
 import { isNativeApp, nativePlatform } from "./platform";
-import { openPlayStore } from "@/lib/playStore";
+import { appStoreWebUrl, openAppStore, openPlayStore } from "@/lib/playStore";
+import { shouldOfferNativeStoreUpdate } from "@/lib/otaReleasePlatform";
 import {
   fetchNativeStoreUpdateState,
   formatNativeVersionLabel,
@@ -17,7 +18,10 @@ function escapeHtml(s: string): string {
   return s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] as string));
 }
 
-function paintStoreSplash(state: NativeStoreUpdateState): Promise<"play" | "snooze"> {
+function paintStoreSplash(
+  state: NativeStoreUpdateState,
+  platform: "android" | "ios",
+): Promise<"play" | "snooze"> {
   return new Promise((resolve) => {
     const root = document.getElementById("root");
     if (!root) {
@@ -27,16 +31,20 @@ function paintStoreSplash(state: NativeStoreUpdateState): Promise<"play" | "snoo
     root.dataset.bootStore = "1";
     const current = escapeHtml(formatNativeVersionLabel(state.current));
     const need = escapeHtml(state.minNative || "");
+    const storeName = platform === "ios" ? "App Store" : "Play 스토어";
+    const storeBody = platform === "ios"
+      ? "App Store에 새 앱이 있습니다. 화면 업데이트만으로는 권한과 플러그인이 바뀌지 않습니다."
+      : "Play 스토어에 새 앱(AAB)이 있습니다. 화면 OTA만으로는 위치 추적 등 네이티브 기능이 바뀌지 않습니다.";
     root.innerHTML = `
       <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;font-family:system-ui,sans-serif;background:linear-gradient(165deg,#0f172a 0%,#1e293b 55%,#0f172a 100%);color:#f8fafc">
         <div style="max-width:360px;width:100%;text-align:center">
           <div style="font-size:22px;font-weight:700;letter-spacing:-0.02em;margin-bottom:8px">앱 업데이트가 필요합니다</div>
           <p style="margin:0 0 16px;line-height:1.55;color:#cbd5e1;font-size:14px">
-            Play 스토어에 새 앱(AAB)이 있습니다. 화면 OTA만으로는 위치 추적 등 네이티브 기능이 바뀌지 않습니다.
+            ${storeBody}
           </p>
           <p style="margin:0 0 22px;font-size:12px;color:#94a3b8">설치됨 ${current}${need ? ` · 필요 ${need}` : ""}</p>
           <button id="boot-store-play" type="button" style="width:100%;padding:12px 16px;border:0;border-radius:10px;background:#34d399;color:#0f172a;font-weight:700;font-size:15px">
-            Play 스토어에서 업데이트
+            ${storeName}에서 업데이트
           </button>
           <button id="boot-store-later" type="button" style="width:100%;margin-top:10px;padding:10px;border:0;background:transparent;color:#94a3b8;font-size:13px">
             나중에 (오늘만)
@@ -45,7 +53,8 @@ function paintStoreSplash(state: NativeStoreUpdateState): Promise<"play" | "snoo
       </div>
     `;
     document.getElementById("boot-store-play")?.addEventListener("click", () => {
-      openPlayStore();
+      if (platform === "ios") openAppStore();
+      else openPlayStore();
       resolve("play");
     });
     document.getElementById("boot-store-later")?.addEventListener("click", () => {
@@ -58,11 +67,13 @@ function paintStoreSplash(state: NativeStoreUpdateState): Promise<"play" | "snoo
 
 /** Returns after the user snoozes, or immediately if no store update is required. */
 export async function runBootStoreGate(): Promise<void> {
-  if (!isNativeApp() || nativePlatform() !== "android") return;
+  const platform = nativePlatform();
+  if (!isNativeApp() || (platform !== "android" && platform !== "ios")) return;
   try {
     const state = await fetchNativeStoreUpdateState();
-    if (!state.needed || isStoreUpdateSnoozed()) return;
-    await paintStoreSplash(state);
+    const storeUrl = platform === "ios" ? appStoreWebUrl() : "play";
+    if (!shouldOfferNativeStoreUpdate(platform, state.needed, isStoreUpdateSnoozed(), storeUrl)) return;
+    await paintStoreSplash(state, platform);
   } catch {
     /* non-fatal — continue to login */
   }

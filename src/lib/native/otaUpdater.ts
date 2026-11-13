@@ -9,8 +9,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { APP_VERSION, formatBundledScreenLabel } from "@/lib/appVersion";
 import { cmpOtaVersion, isNewerScreenRelease } from "@/lib/otaVersion";
+import { nativeOtaLookupPlatform } from "@/lib/otaReleasePlatform";
 import { getOtaAnonClient } from "./otaAnonClient";
-import { isNativeApp } from "./platform";
+import { isNativeApp, nativePlatform } from "./platform";
 
 const CHANNEL_KEY = "app-update-channel";
 export const MIN_CHECK_INTERVAL_MS = 60_000;
@@ -100,10 +101,22 @@ export async function getOtaStatus(): Promise<OtaStatus> {
     const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
     const current = await CapacitorUpdater.current();
     const currentVersion = String((current as any)?.bundle?.version || "내장");
+    const platform = nativeOtaLookupPlatform(nativePlatform());
+    if (!platform) {
+      return {
+        native: true,
+        channel,
+        currentVersion: formatBundledScreenLabel(currentVersion, APP_VERSION),
+        latestVersion: null,
+        mandatory: false,
+        hasUpdate: false,
+        message: "이 기기에는 OTA 행이 없습니다.",
+      };
+    }
     const ota = getOtaAnonClient();
     const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: channel,
-      _platform: "android",
+      _platform: platform,
     } as any);
     if (error) {
       return {
@@ -171,10 +184,14 @@ export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
       return { ok: true, message: "업데이트 확인이 취소되었습니다.", apply: "none" };
     }
 
+    const platform = nativeOtaLookupPlatform(nativePlatform());
+    if (!platform) {
+      return { ok: true, message: "이 기기에는 OTA 행이 없습니다.", apply: "none" };
+    }
     const ota = getOtaAnonClient();
     const { data, error } = await ota.rpc("get_latest_app_release", {
       _channel: getChannel(),
-      _platform: "android",
+      _platform: platform,
     } as any);
     if (error) return { ok: false, message: "릴리스 조회 실패: " + error.message, apply: "none" };
     const release: any = Array.isArray(data) ? data[0] : data;

@@ -1,5 +1,7 @@
 # SafeNex — 새 채팅용 맥락
 
+2026-11-04 전부개정된 「사업장 위험성평가에 관한 지침」과 시스템 차이는 `docs/risk-assessment-guideline-2026-11-04.md` 이다. 반박은 그 파일에 덧붙인다. 이 문서를 이유로 위험성평가 화면을 바로 고치지 않는다.
+
 의회·메신저 위치·이번 AAB에 넣을 범위에 대한 의견은 `docs/ai-work-log-and-app-chrome-2026-11-12.md` 이다. 반박은 그 파일에 덧붙인다.
 
 업데이트 채널의 현재 결론은 `docs/update-channels-2026-11-12.md` 이다. `min_native_version`은 478이고, Play에서 사용자가 그 번호를 받기 전에는 올리지 않는다.

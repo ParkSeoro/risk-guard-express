@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, Sparkles, CheckCircle2, Ban } from 'lucide-react';
+import { AssessmentUnconfirmedBanner } from '@/components/assessment/AssessmentUnconfirmedBanner';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -837,6 +838,10 @@ export default function WorkPermitDetail() {
 
   return (
     <div className="p-3 md:p-6 space-y-3">
+      <AssessmentUnconfirmedBanner
+        projectId={permit.project_id}
+        workerIds={assignedWorkers.map((w) => w.id)}
+      />
       <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
         <div className="flex items-center gap-2">
           <h1 className="text-lg md:text-xl font-bold flex items-center gap-2"><FileSignature className="h-5 w-5" />안전작업허가서</h1>

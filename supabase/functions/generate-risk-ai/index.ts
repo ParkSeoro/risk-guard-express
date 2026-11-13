@@ -542,6 +542,7 @@ serve(async (req) => {
       section_key,
       section_title,
       process_name,
+      library_hints,
       equipment,
       work_description,
       work_location,
@@ -608,9 +609,12 @@ serve(async (req) => {
         equipment: `다음 공종에 필요한 장비 목록을 JSON 배열로 작성해라:\n공종: ${process_name}\n출력 형식: [{"name":"장비명","model":"모델명","capacity":"정격하중/용량","manufacturer":"","inspection_date":""}]\n최소 3개 이상.`,
       };
 
+      const libraryNote = Array.isArray(library_hints) && library_hints.length
+        ? `\n아래는 공종 라이브러리에 있는 행이다. 위험요인과 대책은 이 문장을 먼저 쓰고, 여기 없는 위험만 새로 적어라. 새 공종 이름은 만들지 마라.\n${JSON.stringify(library_hints).slice(0, 4000)}`
+        : "";
       const prompt =
-        sectionPrompts[section_key || ""] ||
-        `다음 공종의 "${section_title}" 내용을 전문적으로 작성해라:\n공종: ${process_name}\nJSON으로 출력 불가 시 텍스트로 작성.`;
+        (sectionPrompts[section_key || ""] ||
+        `다음 공종의 "${section_title}" 내용을 전문적으로 작성해라:\n공종: ${process_name}\nJSON으로 출력 불가 시 텍스트로 작성.`) + libraryNote;
 
       const sysPrompt =
         `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;

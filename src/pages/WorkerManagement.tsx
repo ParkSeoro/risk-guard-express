@@ -34,6 +34,7 @@ import { companyDocScopeMode } from "@/lib/companyDocScope";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import { WorkerRepresentativeLine } from "@/components/workers/WorkerRepresentativeLine";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
 const ADMIN_ROLE_SET = new Set<string>(ADMIN_PROJECT_ROLES);
@@ -313,6 +314,15 @@ export default function WorkerManagement() {
       <h1 className="text-2xl font-bold flex items-center gap-2">
         <HardHat className="h-6 w-6" /> 근로자 관리
       </h1>
+      {projectId && companyId && (
+        <WorkerRepresentativeLine
+          projectId={projectId}
+          companyId={companyId}
+          workers={workers.map((w) => ({ id: w.id, name: w.name, company_id: (w as any).company_id }))}
+          canEdit={ADMIN_ROLE_SET.has(String(access?.userRole || "")) || !!(access as any)?.isMaster}
+          onChanged={(action, details) => { void log(action, "worker_representative", companyId, projectId, details); }}
+        />
+      )}
 
       <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList className="flex flex-wrap h-auto">

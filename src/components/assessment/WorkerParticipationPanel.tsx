@@ -15,6 +15,8 @@ import { generateAccidentCasesStreaming } from '@/lib/riskAutoGenAI';
 import { getAccidentCasesFromLibrary } from '@/lib/accidentLibraryFallback';
 import { uploadAttachmentFile, buildProjectAttachmentPath } from '@/lib/compressUploadFile';
 import { calculateRiskGrade, derivedResidualFields } from '@/lib/riskGrade';
+import { fetchGlobalRiskLibraryItems } from '@/lib/globalRiskLibrary';
+import { matchOpinionRiskToLibrary } from '@/lib/opinionLibraryMatch';
 
 interface Props {
   runId: string;
@@ -208,10 +210,15 @@ export default function WorkerParticipationPanel({
       });
       if (error) throw new Error(await edgeFnErrorMessage(error, data));
       if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message || '분석 실패');
-      await supabase.from('worker_opinions' as any).update({ analysis_status: 'done', analysis_result: data }).eq('id', op.id);
-      setAiSuggestions({ opinionId: op.id, result: data });
-      // 기본 모두 선택
-      setSelectedSafety(new Set((data.safety_risks || []).map((_: any, i: number) => i)));
+      const library = await fetchGlobalRiskLibraryItems({
+        processName: op.worker_position || '',
+        limit: 20,
+      }).catch(() => []);
+      const safetyRisks = (data.safety_risks || []).map((row: any) => matchOpinionRiskToLibrary(row, library));
+      const next = { ...data, safety_risks: safetyRisks };
+      await supabase.from('worker_opinions' as any).update({ analysis_status: 'done', analysis_result: next }).eq('id', op.id);
+      setAiSuggestions({ opinionId: op.id, result: next });
+      setSelectedSafety(new Set(safetyRisks.map((_: any, i: number) => i)));
       setSelectedHealthAi(new Set((data.health_hazards || []).map((_: any, i: number) => i)));
       await reload();
       toast({ title: 'AI 분석 완료', description: `위험요인 ${data.safety_risks?.length || 0}건, 보건 ${data.health_hazards?.length || 0}건` });
@@ -238,7 +245,7 @@ export default function WorkerParticipationPanel({
         likelihood_grade: s.likelihood_grade || '중', severity_grade: s.severity_grade || '중',
         risk_grade: calculateRiskGrade((s.likelihood_grade || '중') as any, (s.severity_grade || '중') as any),
         ...derivedResidualFields(s.likelihood_grade || '중', s.severity_grade || '중'),
-        status: '미착수', item_category: 'safety', source_type: 'ai_opinion',
+        status: '미착수', item_category: 'safety', source_type: s.fromLibrary ? 'library' : 'ai_opinion',
         source_opinion_id: opinionId, is_user_reviewed: true, created_by: userId,
       }));
       await supabase.from('risk_items').insert(inserts);

@@ -1061,6 +1061,13 @@ export type Database = {
           target_processes: string[] | null
           tbm_images: string[] | null
           type: string
+          occasional_reason: string | null
+          rep_participation_requested: boolean
+          rep_schedule: string | null
+          rep_scope: string | null
+          rep_method: string | null
+          improvement_plan_completed_on: string | null
+          library_promoted_count: number | null
           updated_at: string
           validation_score: number | null
           validation_verdict: string | null
@@ -1090,6 +1097,13 @@ export type Database = {
           target_processes?: string[] | null
           tbm_images?: string[] | null
           type?: string
+          occasional_reason?: string | null
+          rep_participation_requested?: boolean
+          rep_schedule?: string | null
+          rep_scope?: string | null
+          rep_method?: string | null
+          improvement_plan_completed_on?: string | null
+          library_promoted_count?: number | null
           updated_at?: string
           validation_score?: number | null
           validation_verdict?: string | null
@@ -1119,6 +1133,13 @@ export type Database = {
           target_processes?: string[] | null
           tbm_images?: string[] | null
           type?: string
+          occasional_reason?: string | null
+          rep_participation_requested?: boolean
+          rep_schedule?: string | null
+          rep_scope?: string | null
+          rep_method?: string | null
+          improvement_plan_completed_on?: string | null
+          library_promoted_count?: number | null
           updated_at?: string
           validation_score?: number | null
           validation_verdict?: string | null
@@ -4303,6 +4324,7 @@ export type Database = {
           position: string | null
           ui_locale: string
           ui_locale_chosen: boolean
+          ra_guide_hidden: boolean
           updated_at: string
           user_id: string
         }
@@ -4323,6 +4345,7 @@ export type Database = {
           position?: string | null
           ui_locale?: string
           ui_locale_chosen?: boolean
+          ra_guide_hidden?: boolean
           updated_at?: string
           user_id: string
         }
@@ -4343,6 +4366,7 @@ export type Database = {
           position?: string | null
           ui_locale?: string
           ui_locale_chosen?: boolean
+          ra_guide_hidden?: boolean
           updated_at?: string
           user_id?: string
         }

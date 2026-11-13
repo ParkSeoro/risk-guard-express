@@ -5,10 +5,15 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { calculateRiskGrade, deriveResidualGrades, isFlattenedResidualPlaceholder, type RiskGrade } from '@/lib/riskGrade';
+import {
+  buildTradePreview,
+  likeToken,
+  type LibraryNameRow,
+  type TradePreview,
+} from '@/lib/tradeLibraryPreview';
+import { normalizeProcessKey } from '@/lib/processKeyAlias';
 
-export function normalizeProcessKey(raw: string): string {
-  return (raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
-}
+export { normalizeProcessKey };
 
 function normKey(s: string): string {
   return (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -141,6 +146,34 @@ export async function fetchGlobalRiskLibraryItems(
   return scored;
 }
 
+/** 넣기 전에 건수와 가까운 공종만 본다. 0건이어도 예외로 삼지 않는다. */
+export async function previewTradeLibrary(processName: string): Promise<TradePreview> {
+  const typed = (processName || '').trim();
+  const key = normalizeProcessKey(typed);
+  if (!key) return buildTradePreview(typed, [], []);
+
+  const exact = await supabase
+    .from('global_risk_library' as any)
+    .select('process_key, process_label')
+    .eq('is_active', true)
+    .eq('process_key', key)
+    .limit(80);
+  if (exact.error) throw new Error(exact.error.message);
+  const exactRows = (exact.data || []) as unknown as LibraryNameRow[];
+  if (exactRows.length > 0) return buildTradePreview(typed, exactRows, []);
+
+  const token = likeToken(key);
+  if (token.length < 2) return buildTradePreview(typed, [], []);
+  const fuzzy = await supabase
+    .from('global_risk_library' as any)
+    .select('process_key, process_label')
+    .eq('is_active', true)
+    .or(`process_key.ilike.%${token}%,process_label.ilike.%${token}%`)
+    .limit(80);
+  if (fuzzy.error) throw new Error(fuzzy.error.message);
+  return buildTradePreview(typed, [], (fuzzy.data || []) as unknown as LibraryNameRow[]);
+}
+
 export async function ingestApprovedRunsToLibrary(limit = 30): Promise<{ runs: number; upserted: number }> {
   const { data, error } = await supabase.rpc('ingest_approved_runs_to_global_library' as any, {
     _limit: limit,
@@ -204,6 +237,35 @@ export function inferWorkPhase(subTask: string): string {
   const s = subTask || '';
   if (/준비|반입|조립|설치 전|점검|이동|양중 준비/.test(s)) return '준비';
   if (/해체|철수|정리|복구|종료|마감/.test(s)) return '마무리';
-  if (/비상|이상|긴급|대피/.test(s)) return '이상시';
+  if (/이상|비상|긴급/.test(s)) return '이상시';
   return '본작업';
+}
+
+/** 검증·보완이 쓰던 표준 표 모양. 출처는 공종 라이브러리다. */
+export async function fetchTradeLibraryStandardRows(limit = 3000) {
+  const { data, error } = await supabase
+    .from('global_risk_library' as any)
+    .select('process_label, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, likelihood_grade, severity_grade, ppe, legal_basis, equipment_keys, condition_keys')
+    .eq('is_active', true)
+    .limit(limit);
+  if (error) {
+    console.warn('[globalRiskLibrary] standard-shaped fetch failed:', error.message);
+    return [];
+  }
+  return ((data || []) as any[]).map((row) => ({
+    category_large: row.process_label,
+    category_medium: '',
+    sub_task: row.sub_task,
+    hazard: row.hazard,
+    hazard_situation: row.hazard_situation,
+    existing_measure: row.existing_measure,
+    improvement_measure: row.improvement_measure,
+    default_likelihood_grade: row.likelihood_grade,
+    default_severity_grade: row.severity_grade,
+    recommended_ppe: row.ppe,
+    legal_refs: row.legal_basis,
+    equipment: row.equipment_keys,
+    tags: row.condition_keys,
+    is_active: true,
+  }));
 }

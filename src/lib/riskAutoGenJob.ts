@@ -31,6 +31,7 @@ import {
   type LlmCallBudget,
 } from '@/lib/riskAutoGenAI';
 import { generateRiskItems, type GeneratedRiskItem } from '@/lib/riskAutoGen';
+import { LIBRARY_EMPTY_MESSAGE, libraryInsertCap } from '@/lib/tradeLibraryPreview';
 import {
   fetchGlobalRiskLibraryItems,
   inferHazardType,
@@ -641,13 +642,17 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     });
 
     if (!input.useAI) {
-      console.log('[AutoGenJob] library-only path (full rows, no review pause)', proc);
-      const libraryItems = await generateRiskItems({
+      console.log('[AutoGenJob] global library path', proc);
+      const libraryItems = await fetchGlobalRiskLibraryItems({
         processName: proc,
-        tags: input.conditionTags,
-        targetCount: input.detailLevel === 'core' ? 16 : 24,
-        deduplicate: true,
+        equipmentTags: input.equipmentTags,
+        conditionTags: input.conditionTags,
+        limit: libraryInsertCap(input.detailLevel),
       });
+      if (!libraryItems.length) {
+        patch({ message: `${proc}: ${LIBRARY_EMPTY_MESSAGE}` });
+        continue;
+      }
       const rows = libraryItems.map((g) => ({
         project_id: input.projectId,
         run_id: input.runId,
@@ -676,19 +681,15 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         sort_order: sortCursor++,
         source_type: 'library',
       }));
-      if (rows.length) {
-        const { data, error } = await supabase.from('risk_items').insert(rows).select('id');
-        if (error) console.warn('[AutoGenJob] library insert failed:', error.message);
-        else {
-          insertedTotal += data?.length || 0;
-          filledTotal += data?.length || 0;
-        }
-      }
+      const { data, error } = await supabase.from('risk_items').insert(rows).select('id');
+      if (error) throw new Error(error.message);
+      insertedTotal += data?.length || 0;
+      filledTotal += data?.length || 0;
       patch({
         insertedTotal,
         filledTotal,
         receivedTotal: filledTotal,
-        message: `${filledTotal}건 라이브러리 등록`,
+        message: `${filledTotal}건을 가져왔습니다.`,
       });
       continue;
     }
@@ -703,7 +704,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         processName: proc,
         equipmentTags: input.equipmentTags,
         conditionTags: input.conditionTags,
-        limit: input.detailLevel === 'comprehensive' ? 48 : 32,
+        limit: libraryInsertCap(input.detailLevel),
       });
       if (globalItems.length) {
         const rows = globalItems.map((g) => {
@@ -742,7 +743,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
           };
         });
         const { data, error } = await supabase.from('risk_items').insert(rows as any).select('id');
-        if (error) console.warn('[AutoGenJob] global library insert failed:', error.message);
+        if (error) patch({ message: `라이브러리 저장 실패: ${error.message}` });
         else {
           reusedCount += data?.length || 0;
           insertedTotal += data?.length || 0;
@@ -750,7 +751,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         }
       }
     } catch (e: any) {
-      console.warn('[AutoGenJob] global library skipped:', e?.message || e);
+      patch({ message: `라이브러리 조회 실패: ${e?.message || e}` });
     }
 
     // 2) Past approved reuse (same project) — fill gaps only
@@ -926,8 +927,8 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     if (insertedTotal === 0 && filledTotal === 0) {
       patch({
         status: 'error',
-        error: '결과를 생성하지 못했습니다. 공종명을 확인해주세요.',
-        message: '생성 실패',
+        error: LIBRARY_EMPTY_MESSAGE,
+        message: LIBRARY_EMPTY_MESSAGE,
         phase: 'idle',
         pendingIds: [],
       });
@@ -935,7 +936,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     }
     patch({
       status: filledTotal > 0 ? 'done' : 'error',
-      message: `${filledTotal}건 등록 완료 (library)`,
+      message: `${filledTotal}건을 가져왔습니다.`,
       insertedTotal,
       filledTotal,
       receivedTotal: filledTotal,

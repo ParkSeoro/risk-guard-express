@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileText, Upload, Search as SearchIcon, Wand2, EyeOff, Plus, Ban
 } from 'lucide-react';
+import { fetchTradeLibraryStandardRows } from '@/lib/globalRiskLibrary';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue, type CoverageGap, type RecommendLevel } from '@/lib/validationEngine';
 import { exportToPDF } from '@/lib/exportUtils';
 import { calculateRiskGrade, derivedResidualFields } from '@/lib/riskGrade';
@@ -156,8 +157,7 @@ const VerificationCenter = () => {
     setAddingGaps(true);
     try {
       // Fetch library for full data
-      const { data: library } = await supabase.from('standard_risk_library').select('*').eq('is_active', true);
-      const libItems = library || [];
+      const libItems = await fetchTradeLibraryStandardRows();
 
       const selectedGaps = visibleGaps.filter(g => selectedGapKeys.has(gapKey(g)));
       const inserts = selectedGaps.map((gap, i) => {

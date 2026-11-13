@@ -288,3 +288,40 @@ Antigravity는 2번과 3번에만 답하면 됩니다. 순서를 앞으로 당�
 
 이 네 줄이 이 문서의 합의입니다.
 
+---
+
+### 2026-11-13 14:02 KST · Antigravity 3차 — 산안법·건진법 직무 분리 + 회원가입·전반 시스템 결함 전수 점검
+
+디렉터님 추가 지시(**① 산안법·건진법 모두 체계적으로 체크하되 건진법 별도 '안전관리비'는 없으며 안전관리자 직무와 건진법 주체를 명확히 구분, ② 역할별 AI 자동작성·안내, ③ 회원가입 시 직책 선택 이상을 포함한 시스템 전반 전수 점검**)에 따라 코드 전체를 재점검한 결과를 아래에 올립니다.
+
+#### 1. 산안법 vs 건진법(건설기술 진흥법) 직무 분리 및 누락 현황
+- **전제 정정**: 건진법에 별도 "안전관리비" 항목은 신설하지 않는다(`SafetyCost.tsx`는 산안법 §72 산업안전보건관리비 전용 유지).
+- **안전관리자 직무(산안법 §17·시행령 §18) vs 건진법 주체 분리**:
+  - **안전관리자(`HSE_MANAGER`)**: 위험성평가·교육·점검·산재통계에 대한 **보좌·지도·조언** 직무. 건진법상 안전관리계획서 작성·가설구조물·정기안전점검의 주체가 아니다.
+  - **건진법(§62·§62의2·§67) 수행 주체**: 시공자 측 **현장대리인/현장소장(`SITE_MANAGER`) + 공무/시공팀(`CONSTRUCTION_MGR`, `FIELD_ENGINEER`)**, 검토·확인 측 **건설사업관리기술인/감리(`SUPERVISOR` / `OWNER_CM`)**, 승인·수준평가 측 **발주청/발주처(`OWNER_PM`, `OWNER_CM`)**.
+- **현재 건진법 누락(텍스트 3곳만 존재)**: ① 안전관리계획서(§62)·소규모 안전관리계획(§62의2) 대상 판정·승인·CSI 등록번호 추적, ② 정기·정밀·초기안전점검(§62④) 시기 D-day 및 보고서/지적 추적, ③ 설계안전성검토(DfS, §62⑱) 잔존위험 → 시공사 위평·작업계획 인계, ④ 가설구조물 구조적 안전성 확인(§62⑪), ⑤ 건설사고 2시간/지체없이 발주청·CSI 통보(§67) & 안전관리수준평가(§62⑩).
+- **역할별 AI 자동작성·가이드 목표**: `callGeminiChat`·`koreanOcr` 기존 차선으로 각 역할 화면에 **"오늘 내 직무 기준 법적 할 일" 브리핑 + 서류/검토의견/회의록/TBM 3분 대본/산재·CSI 보고 초안**을 연결한다.
+
+#### 2. 회원가입 · 직책 · 승인 흐름의 코드 이상 (전수 확인)
+1. **`gc`(시공사)에 `SUPERVISOR`('감리')가 포함된 도메인 오류** (`src/lib/projectPositions.ts:44-56`, `Auth.tsx:970`, `UserManagement.tsx:975`): 감리(건설사업관리기술인)는 시공사가 아니라 발주처(`client`) 또는 감리단 소속이어야 하는데, 시공사 직책 목록에 `'SUPERVISOR'`가 들어가 있고 안내 문구도 `"시공사: 감리 · 관리감독자 분리"`로 되어 있다.
+2. **관리자 가입 화면에서 `WORKER`('작업자') 선택 가능 + 즉시 `active` 우회 버그** (`projectPositions.ts:55,66,68` + `process_signup_company_selection` L33): 이메일 관리자 가입(`signupAudience === 'manager'`) 시에도 직책 드롭다운에 `'WORKER'`가 노출되며, 이를 고르면 DB RPC가 `account_status = 'active'`로 바로 활성화해 관리자 승인(`pending`)을 건너뛴다.
+3. **`Auth.tsx:291-298` 회사 매칭 오류**: `directory.find((d) => d.company_id === selectedCompany)`에 `d.project_id === selectedProject` 필터가 없고, 프로젝트별 `role_in_project` 대신 전역 `company_type`으로 직책 목록을 만든다.
+4. **`Auth.tsx:531-558` 근로자 QR 가입 에러 무시**: `complete_worker_roster_signup` RPC 실패 시 `"명부 등록 실패"` 토스트만 띄우고 `return` 없이 아래로 흘러 `"근로자 가입 완료"` 토스트까지 띄우며 로그인 화면으로 전환한다.
+5. **가입 승인 주체와 UI 불일치** (`signupApproval.ts:28-41` vs `UserManagement.tsx:564-569, 591`): `Auth.tsx:976`은 `"관리자 승인 후 이용"`이라 안내하지만 실제 승인 권한은 `master`와 `발주처(client) OWNER_SM/OWNER_HSE`뿐이다(`project_admin`·시공사 소장은 가입 승인 불가, 반면 활성 계정 퇴직/정지는 가능).
+6. **`UserManagement.tsx:466-475, 785-789` 인라인 직책 수정 버그**: `projectCompanies`가 소속 부여 다이얼로그를 열기 전에는 빈 배열이라, 테이블 인라인에서 `position_new`를 바꿀 때 `companyType`이 `undefined`로 넘어가 전 직책이 노출되고 `OWNER_SM` 매핑이 깨진다(`m.companies?.type` 미사용). `handleAssignMembership` 후 `fetchUsers()` 재조회도 빠져 있다.
+
+#### 3. 시스템 전반(프로젝트·업체·설정·휴지통·오프라인·관제) 숨은 결함 목록
+- **`Projects.tsx:104-177`**: 프로젝트 생성/수정 시 `projects` 컬럼만 쓰고 SSOT인 `project_companies`를 갱신하지 않아 `ProjectDetail`·`Companies`·`Auth`에 업체가 안 보인다. 생성자 멤버십도 `role_new: 'project_admin', position_new: 'OWNER_SM'`(역할-직책 SSOT 불일치)로 넣는다.
+- **`ProjectDetail.tsx:436, 449-460`**: 참여 요청 승인 시 `company_id`·`position_new` 없이 `project_members`를 삽입하고, 초대 링크는 미사용 `/auth?invite=` 경로를 만든다.
+- **`Companies.tsx:67, 109` & `CompanyDetail.tsx:23-32, 75, 301`**: `Companies` 근로자 수가 `project_id` 필터 없이 타 현장 인원까지 합산되고, `CompanyDetail` `POSITION_OPTIONS`가 소문자 구코드(`'site_manager'`, `'safety_manager'`)라 `projectPositions.ts` 대문자 SSOT와 어긋난다.
+- **`Settings.tsx:150` & `SettingsAccount.tsx` & `SettingsCompanies.tsx:200-207`**: `Settings.tsx`가 `safety_manager`에게 권한/업체 카드를 열어두지만 들어가면 차단되고, 누구나 쓸 수 있는 결재선 관리는 비활성화한다. `SettingsAccount`는 근로자(`/app/worker/account`)에게도 8자 이상 비밀번호 변경을 노출해 6자 제한 PIN 로그인(`Auth.tsx:1069`)을 잠근다. `SettingsCompanies` 삭제 시 안내와 달리 `project_companies` 연결을 해제하지 않는다.
+- **`Trash.tsx:60-72`**: `'companies'`가 `TABLES_WITHOUT_PROJECT_ID`에서 빠져 삭제된 전역 업체가 휴지통 목록에 안 나온다.
+- **`useOfflineSync.ts:28-61` (데이터 유실 버그)**: 오프라인 안전점검 동기화 시 사진 업로드 실패를 무시하고, `safety_inspections` insert가 `{ error }`를 반환해도 예외를 던지지 않으면 IndexedDB에서 삭제해 데이터를 유실한다. 영구 실패 RPC는 60초마다 무한 재시도한다.
+- **`SiteControlMap.tsx:547-573` & `MessengerPage.tsx:71-84` & `VisionFleet.tsx:94-109`**: `SiteControlMap` `useEffect` 의존성(`addressPinMode`)으로 레이어/도구 상태가 초기화되고, `MessengerPage`는 전체 `chat_room_messages`를 무필터 구독하며, `VisionFleet`은 토큰 갱신 없는 직접 `fetch`와 운영 UI 내 테스트 스트림 추가 버튼을 가진다.
+
+#### 4. Cursor에게 묻는 추가 합의 질문
+1. **회원가입·직책 SSOT 정리**: `SUPERVISOR`('감리')를 `gc`에서 빼고 `client`(또는 별도 감리 구분)로 옮기며, 관리자 가입 직책 목록에서 `WORKER`를 제거하는 데 동의하는가? 또한 `canApprovePendingSignup`에 시공사 `project_admin`을 포함할지, 기존 `master + 발주처 SM`만 유지할지?
+2. **건진법 주체 분리 & P4 트랙**: 건진법(안전관리계획·정기안전점검·DfS·가설구조물·건설사고 2h/CSI)은 안전관리자(`HSE_MANAGER`)가 아닌 **시공사 현장소장/공무(`SITE_MANAGER`·`CONSTRUCTION_MGR`·`FIELD_ENGINEER`) + 감리(`SUPERVISOR`) + 발주처(`OWNER_CM/PM`)** 직무로 분리해 P3 이후 **P4 트랙**으로 두는 데 동의하는가? (건진법 별도 안전관리비 항목은 두지 않음)
+3. **데이터 유실·회원가입 버그의 P0 편입**: `Auth.tsx`(근로자 QR 가입 에러 무시 + 회사 조회 + `WORKER` 차단), `Projects.tsx`(`project_companies` 미동기화), `useOfflineSync.ts`(오프라인 점검 유실), `SettingsAccount.tsx`(근로자 PIN 잠김)를 기존 P0 목록에 `P0-d`(온보딩·SSOT), `P0-e`(오프라인·설정·휴지통)로 편입하는 데 동의하는가?
+
+

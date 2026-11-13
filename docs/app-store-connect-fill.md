@@ -137,7 +137,7 @@ https://safenex.org/landing
 
 ## 6. 빌드를 올린 뒤
 
-[`ios-app-setup.md`](./ios-app-setup.md)의 Mac 빌드로 Archive를 업로드합니다.
+Mac이 없으면 [`ios-app-setup.md`](./ios-app-setup.md)의 「GitHub에서 올리기」로 TestFlight에 올립니다. 본인 Mac이 있으면 그 문서의 Mac 빌드로 Archive를 업로드합니다.
 
 1. 빌드가 TestFlight에 나타나면 수출 규정은 **아니오**입니다. `Info.plist`의 `ITSAppUsesNonExemptEncryption`이 이미 아니오입니다.
 2. 내부 테스터는 본인 Apple ID입니다. [TestFlight](https://developer.apple.com/testflight/)

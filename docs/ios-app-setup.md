@@ -2,7 +2,7 @@
 
 지금 웹 화면을 그대로 아이폰 껍데기로 감쌉니다. 새 화면을 만들지 않습니다. 번들 아이디는 안드로이드와 같은 `org.safenex.app`입니다. 웹 서버와 안드로이드 설치본은 이 작업으로 바뀌지 않습니다.
 
-이 저장소에 Xcode 프로젝트 `ios/`가 있습니다. 컴파일, 서명, 앱스토어 업로드는 Mac에서만 됩니다.
+이 저장소에 Xcode 프로젝트 `ios/`가 있습니다. 컴파일과 서명은 Mac의 Xcode가 합니다. 본인 Mac이 없으면 GitHub의 Mac 빌더가 같은 일을 하고 TestFlight로 올립니다. 절차는 아래 「GitHub에서 올리기」입니다.
 
 ## 이미 넣어 둔 것
 
@@ -49,6 +49,27 @@
 1. [App Store Connect 앱 목록](https://appstoreconnect.apple.com/apps)에서 새 앱을 만듭니다.
 2. 플랫폼 iOS, 이름 Safenex, 기본 언어 한국어, 번들 ID `org.safenex.app`, SKU는 `safenex-ios`입니다.
 3. 개인정보 처리방침 URL은 [https://safenex.org/privacy](https://safenex.org/privacy)입니다.
+
+## GitHub에서 올리기
+
+본인 Mac이 없을 때의 경로입니다. 워크플로는 [`.github/workflows/ios-ipa.yml`](../.github/workflows/ios-ipa.yml)이고, Actions에서 **직접 실행할 때만** 돌아갑니다. 일반 push마다 Mac 빌더를 쓰지 않습니다.
+
+윈도우 브라우저에서 키를 만들고, GitHub 시크릿에 넣습니다. `.p8` 내용과 인증서는 채팅이나 저장소에 올리지 않습니다.
+
+1. [App Store Connect → 사용자 및 액세스 → 통합](https://appstoreconnect.apple.com/access/integrations/api)에서 API 키를 만듭니다. 이름은 `GitHub Actions`, 역할은 **관리**입니다. 앱 관리만으로는 서명 인증서를 만들지 못합니다.
+2. 키를 내려받습니다. 파일은 한 번만 받아집니다. 키 ID와, 페이지 위쪽의 발행자 ID를 적어 둡니다.
+3. [멤버십](https://developer.apple.com/account)에서 팀 ID(10자)를 확인합니다.
+4. 저장소 Settings → Secrets and variables → Actions에 다음 네 개를 넣습니다.
+
+| Secret | 값 |
+| --- | --- |
+| `APPLE_API_KEY_P8` | `.p8` 파일 전체. `BEGIN PRIVATE KEY` 줄부터 `END` 줄까지 |
+| `APPLE_API_KEY_ID` | 키 ID |
+| `APPLE_API_ISSUER_ID` | 발행자 ID |
+| `APPLE_TEAM_ID` | 팀 ID |
+
+5. 이 워크플로 파일이 기본 브랜치에 있으면 Actions → **iOS IPA** → Run workflow 입니다. 끝나면 TestFlight에 빌드가 나타나고, 수출 규정은 **아니오**입니다.
+6. 아이폰의 TestFlight 앱으로 설치한 뒤 로그인과 출근을 확인합니다. 6.7인치 세로 스크린샷 2장은 그 화면으로 찍습니다.
 
 ## 5. Mac에서 빌드
 

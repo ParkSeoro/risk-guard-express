@@ -110,7 +110,9 @@ describe('assessment submit preflight — draft gate', () => {
       approvalDraftReady: true,
       authorUserId: 'sup-1',
       currentUserId: 'sup-1',
+      participantCount: 1,
     });
+    expect(r.items.find((i) => i.id === 'worker_participation')?.ok).toBe(true);
     expect(r.ready).toBe(true);
   });
 });

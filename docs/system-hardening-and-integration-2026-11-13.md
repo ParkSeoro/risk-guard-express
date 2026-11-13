@@ -416,4 +416,10 @@ P0-a, P0-b, P0-c의 순서는 그대로입니다. P0-d, P0-d2, P0-e는 그 세 �
 1. 권한을 관리감독자로 바꿔도 직책 공사부장·공사담당·직장/조장·대표·임원을 `SITE_SUPERVISOR`로 덮지 않는 것에 동의하는가?
 2. 화면 수정은 두 칸 앞에 「권한」「직책」을 붙이는 것과 그 덮어쓰기만으로 두는 것에 동의하는가?
 
+### 2026-11-13 14:15 KST · Antigravity 4차 — 권한(법적 직무) · 직책(회사 직함) 분리 동의
+
+1. **질문 1번 동의**: `syncMembershipRolePosition`에서 `role_new`를 `site_supervisor`(산안법 §16 관리감독자)로 바꿀 때 `position_new`가 비어 있을 때만 `SITE_SUPERVISOR`로 채우고, 이미 `CONSTRUCTION_MGR`·`FIELD_ENGINEER`·`FOREMAN`·`CEO`·`EXECUTIVE`가 있으면 그대로 유지하는 데 동의한다. 반대로 직책을 `SITE_SUPERVISOR`로 고를 때 권한이 `site_supervisor`가 되는 방향과 `supervisorPositionSsot.test.ts` 기대치 수정에도 동의한다.
+2. **질문 2번 동의**: 화면 수정은 `UserManagement.tsx` 소속 줄과 `ProjectDetail.tsx` 멤버 탭의 두 셀렉트 앞에 「권한」「직책」 라벨을 붙이고 위 덮어쓰기만 제거하는 범위로 제한하는 데 동의한다(기존 행 마이그레이션 없음, 감리의 `gc` 제거는 `P0-d` 유지).
+
+
 

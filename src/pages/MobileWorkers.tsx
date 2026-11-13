@@ -33,6 +33,12 @@ import {
 } from "@/lib/workerSuspension";
 import { formatWorkHours, workMinutes } from "@/lib/workHours";
 import { resolveMobileWorkersTab, type MobileWorkersTab } from "@/lib/mobileWorkers";
+import { WorkerRepresentativeLine } from "@/components/workers/WorkerRepresentativeLine";
+import { ADMIN_PROJECT_ROLES } from "@/lib/permissions";
+import { useAuditLog } from "@/hooks/useAuditLog";
+
+const REP_COMPANY_LOCK_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
+const REP_EDIT_ROLES = new Set<string>(ADMIN_PROJECT_ROLES);
 
 type AttendanceRow = {
   worker_id: string | null;
@@ -72,7 +78,10 @@ export default function MobileWorkers() {
   const [suspendTarget, setSuspendTarget] = useState<{ id: string; name: string } | null>(null);
   const [showSingle, setShowSingle] = useState(false);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [companiesReady, setCompaniesReady] = useState(false);
+  const [repCompanyId, setRepCompanyId] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const { log } = useAuditLog();
 
   const canSuspend = isManagerMobileRole(
     preview.isPreview ? preview.syntheticRole : role,
@@ -126,13 +135,17 @@ export default function MobileWorkers() {
     }
     loadRoster();
     if (projectId) {
+      setCompaniesReady(false);
       import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
         fetchProjectCompanies(projectId).then((rows) => {
           setCompanies(rows.map((c) => ({ id: c.id, name: c.name })));
           const mine = rows.find((c) => c.id === companyId);
           setCompanyName(mine?.name || "");
+          setCompaniesReady(true);
         }),
       );
+    } else {
+      setCompaniesReady(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, accessibleCompanyIds, scopeStatus, companyId]);
@@ -146,6 +159,17 @@ export default function MobileWorkers() {
     const t = searchParams.get("tab");
     setTab(resolveMobileWorkersTab(t, canSuspend));
   }, [searchParams, canSuspend]);
+
+  useEffect(() => {
+    setRepCompanyId(companyId || "");
+  }, [projectId, companyId]);
+
+  const canEditRep = !preview.isPreview && (isMaster || REP_EDIT_ROLES.has(role));
+  const repCompanyLocked = !!companyId && REP_COMPANY_LOCK_ROLES.has(role);
+  const repCompanies = accessibleCompanyIds === null
+    ? companies
+    : companies.filter((c) => accessibleCompanyIds.includes(c.id));
+  const showRepLine = !!projectId && (canEditRep || !!companyId);
 
   const onTabChange = (v: string) => {
     const next = resolveMobileWorkersTab(v, canSuspend);
@@ -226,6 +250,21 @@ export default function MobileWorkers() {
           </TabsList>
 
           <TabsContent value="roster" className="space-y-3 mt-3">
+            {showRepLine && (
+              <WorkerRepresentativeLine
+                projectId={projectId}
+                companyId={canEditRep && !repCompanyLocked ? repCompanyId : (companyId || "")}
+                companies={repCompanies}
+                companiesReady={companiesReady}
+                companyLocked={repCompanyLocked || !canEditRep}
+                onCompanyChange={canEditRep && !repCompanyLocked ? setRepCompanyId : undefined}
+                workers={workers.map((w) => ({ id: w.id, name: w.name, company_id: w.company_id }))}
+                canEdit={canEditRep}
+                onChanged={(action, details) => {
+                  void log(action, "worker_representative", repCompanyId || companyId || projectId, projectId, details);
+                }}
+              />
+            )}
             <p className="text-xs text-muted-foreground">
               현장 근로자 명부입니다. QR 전용 포털은 종료되었고 계정 로그인이 필요합니다.
               관리자는 출입을 1일·3일·영구 정지할 수 있습니다. 출근은 앱 GPS로 합니다.

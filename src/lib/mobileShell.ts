@@ -12,8 +12,7 @@ export function resolveMobileShellBucket(
     role === "safety_manager" ||
     role === "site_manager" ||
     role === "supervisor" ||
-    role === "site_supervisor" ||
-    role === "viewer"
+    role === "site_supervisor"
   ) {
     return "manager";
   }

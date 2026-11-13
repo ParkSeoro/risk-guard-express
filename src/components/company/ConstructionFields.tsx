@@ -3,6 +3,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CONSTRUCTION_TYPE_OPTIONS } from '@/lib/constructionTypes';
 import type { ConstructionForm } from '@/lib/companyConstruction';
+import { ContractOcrButton } from '@/components/ContractOcrButton';
 
 export default function ConstructionFields({
   value,
@@ -14,7 +15,29 @@ export default function ConstructionFields({
   const known = CONSTRUCTION_TYPE_OPTIONS.includes(value.construction_type as (typeof CONSTRUCTION_TYPE_OPTIONS)[number]);
   return (
     <div className="space-y-2 rounded-md border p-3">
-      <p className="text-xs font-medium">이 현장 공사정보</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium">이 현장 공사정보</p>
+        <ContractOcrButton
+          onDraft={(d) =>
+            onChange({
+              ...value,
+              construction_name: d.work_scope ? String(d.work_scope) : value.construction_name,
+              construction_period_start:
+                d.start_date && /^\d{4}-\d{2}-\d{2}$/.test(d.start_date)
+                  ? d.start_date
+                  : value.construction_period_start,
+              construction_period_end:
+                d.end_date && /^\d{4}-\d{2}-\d{2}$/.test(d.end_date)
+                  ? d.end_date
+                  : value.construction_period_end,
+              construction_amount:
+                typeof d.construction_amount === 'number' && d.construction_amount > 0
+                  ? String(d.construction_amount)
+                  : value.construction_amount,
+            })
+          }
+        />
+      </div>
       <p className="text-[10px] text-muted-foreground">금액과 기간은 이 현장에만 저장됩니다. 비워 두면 연결만 되고 목록에 공사정보 없음이 남습니다.</p>
       <div className="space-y-1">
         <Label className="text-xs">공사명</Label>

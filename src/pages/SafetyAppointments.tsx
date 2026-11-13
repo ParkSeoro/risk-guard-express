@@ -19,6 +19,7 @@ import { differenceInCalendarDays, startOfDay, addDays } from "date-fns";
 import { resolveProjectCompanyType } from "@/lib/companyTypes";
 import { formatKRW } from "@/lib/safetyCost";
 import { isRelationSubcontractorType, safetyScaleHint } from "@/lib/safetyScaleHint";
+import { ConstructionInfoMissingBanner } from "@/components/ConstructionInfoMissingBanner";
 
 type SiteCompany = {
   id: string;
@@ -194,6 +195,8 @@ export default function SafetyAppointments() {
         </div>
         {canEdit('legal_duty') && <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 선임 등록</Button>}
       </header>
+
+      <ConstructionInfoMissingBanner projectId={projectId} contextLabel="안전관리자 선임 기준(공사금액)" />
 
       {!hasManager && !loading && (
         <Card className="border-destructive">

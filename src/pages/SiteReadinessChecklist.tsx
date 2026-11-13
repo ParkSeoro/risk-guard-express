@@ -22,37 +22,38 @@ export default function SiteReadinessChecklist() {
     if (!projectId) return;
     setLoading(true);
     try {
-    const [{ data: runs }, { data: tbms }, { data: parts }, { data: signedRows }, { data: permits }, { data: costs }, { data: insp }, { data: accidents }] = await Promise.all([
+    const [{ data: runs }, { data: tbms }, { data: permits }, { data: costs }, { data: insp }, { data: accidents }] = await Promise.all([
       supabase.from('assessment_runs').select('id, status, start_date, end_date').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId),
-      supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed').limit(1000),
-      supabase.from('tbm_participations' as any).select('id').not('signature_data', 'is', null).limit(1000),
+      supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
-      (supabase.from('safety_costs' as any).select('id').eq('project_id', projectId).limit(1) as any).then((r: any) => r, () => ({ data: [] })),
+      supabase.from('safety_cost_items' as any).select('id').eq('project_id', projectId).eq('is_deleted', false).limit(1),
       supabase.from('inspection_responses' as any).select('id').eq('project_id', projectId),
       supabase.from('assessment_accidents').select('id').eq('project_id', projectId),
     ]);
+
+    const tbmList = tbms || [];
+    const tbmIds = tbmList.map((t: any) => t.id).filter(Boolean);
+    const { data: myPartsRaw } = tbmIds.length > 0
+      ? await supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed, signature_data').in('tbm_session_id', tbmIds).limit(1000)
+      : { data: [] as any[] };
 
     const activeRuns = (runs || []).filter((r: any) => {
       if ((r.start_date && r.start_date > today) || (r.end_date && r.end_date < today)) return false;
       return r.status === '승인완료';
     });
     const approvedRuns = (runs || []).filter((r: any) => r.status === '승인완료');
-    const tbmList = tbms || [];
-    const tbmIds = new Set(tbmList.map((t: any) => t.id));
-    const myParts = (parts || []).filter((p: any) => tbmIds.has(p.tbm_session_id));
+    const myParts = myPartsRaw || [];
     const approvedPermits = (permits || []).filter((p: any) => p.status === '승인').length;
 
     const admin: Item[] = [
       { key: 'a1', label: '위험성평가 적용기간 내 승인본 존재', ok: activeRuns.length > 0, detail: `적용중 ${activeRuns.length}건` },
       { key: 'a2', label: 'TBM 생성 여부', ok: tbmList.length > 0, detail: `${tbmList.length}건` },
-      { key: 'a3', label: 'QR 정상 생성 (활성 TBM 1건 이상)', ok: tbmList.some((t: any) => t.is_active && t.qr_token), detail: `활성 ${tbmList.filter((t: any) => t.is_active).length}건` },
+      { key: 'a3', label: '활성 TBM 세션 운영 (1건 이상)', ok: tbmList.some((t: any) => t.is_active), detail: `활성 ${tbmList.filter((t: any) => t.is_active).length}건` },
       { key: 'a4', label: '작업허가서 승인 1건 이상', ok: approvedPermits > 0, detail: `승인 ${approvedPermits}건` },
-      { key: 'a5', label: '산업안전보건관리비 입력', ok: ((costs as any)?.data?.length || 0) > 0 || ((costs as any)?.length || 0) > 0, detail: '내역 등록 확인' },
+      { key: 'a5', label: '산업안전보건관리비 입력', ok: (costs || []).length > 0, detail: '내역 등록 확인' },
     ];
 
-    const signedIds = new Set((signedRows || []).map((r: any) => r.id));
-    const signed = myParts.filter((p: any) => signedIds.has(p.id) && p.briefing_confirmed).length;
+    const signed = myParts.filter((p: any) => !!p.signature_data && p.briefing_confirmed).length;
     const worker: Item[] = [
       { key: 'w1', label: 'QR 참여자 1명 이상', ok: myParts.length > 0, detail: `${myParts.length}명` },
       { key: 'w2', label: '위험성평가 브리핑 확인 완료', ok: myParts.every((p: any) => p.briefing_confirmed) && myParts.length > 0, detail: `${myParts.filter((p: any) => p.briefing_confirmed).length}/${myParts.length}` },
@@ -64,8 +65,8 @@ export default function SiteReadinessChecklist() {
       { key: 'c1', label: '위험성평가 승인 상태', ok: approvedRuns.length > 0, detail: `승인 ${approvedRuns.length}건 / 전체 ${(runs || []).length}건` },
       { key: 'c2', label: 'TBM 평균 참석률', ok: tbmRate >= 1, detail: `세션당 평균 ${tbmRate}명` },
       { key: 'c3', label: '작업허가 승인', ok: approvedPermits > 0, detail: `${approvedPermits}건` },
-      { key: 'c4', label: '산업안전보건관리비 사용 기록', ok: ((costs as any)?.data?.length || 0) > 0 || ((costs as any)?.length || 0) > 0, detail: '확인' },
-      { key: 'c5', label: '점검/사고 기록 추적 가능', ok: (insp || []).length + (accidents || []).length >= 0, detail: `점검 ${(insp || []).length}건 / 사고 ${(accidents || []).length}건` },
+      { key: 'c4', label: '산업안전보건관리비 사용 기록', ok: (costs || []).length > 0, detail: '확인' },
+      { key: 'c5', label: '점검/사고 기록 추적 가능', ok: (insp || []).length + (accidents || []).length > 0, detail: `점검 ${(insp || []).length}건 / 사고 ${(accidents || []).length}건` },
     ];
 
     setGroups({

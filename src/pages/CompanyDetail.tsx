@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Building2, ChevronLeft, Trash2, Plus, Save, UserPlus } from 'lucide-react';
 import { CONSTRUCTION_TYPE_OPTIONS } from '@/lib/constructionTypes';
 import { upsertProjectConstruction } from '@/lib/companyConstruction';
+import { ContractOcrButton } from '@/components/ContractOcrButton';
 
 interface Company {
   id: string; project_id: string; name: string; type: string;
@@ -171,11 +172,35 @@ function ConstructionTab({ company, canEdit }: { company: Company; canEdit: bool
 
   return (
     <Card><CardContent className="p-4 space-y-4">
-      <p className="text-xs text-muted-foreground">
-        {selectedProject
-          ? '상단에서 선택한 현장의 공사정보입니다. 이미 현장에 연결된 업체도 같은 행을 사용합니다.'
-          : '상단에서 현장을 선택하면 이 업체의 공사정보를 볼 수 있습니다.'}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {selectedProject
+            ? '상단에서 선택한 현장의 공사정보입니다. 이미 현장에 연결된 업체도 같은 행을 사용합니다.'
+            : '상단에서 현장을 선택하면 이 업체의 공사정보를 볼 수 있습니다.'}
+        </p>
+        {canEdit && (
+          <ContractOcrButton
+            onDraft={(d) => {
+              setInfo((prev: any) => ({
+                ...prev,
+                construction_name: d.work_scope ? String(d.work_scope) : prev.construction_name,
+                construction_amount:
+                  typeof d.construction_amount === 'number' && d.construction_amount > 0
+                    ? d.construction_amount
+                    : prev.construction_amount,
+                construction_period_start:
+                  d.start_date && /^\d{4}-\d{2}-\d{2}$/.test(d.start_date)
+                    ? d.start_date
+                    : prev.construction_period_start,
+                construction_period_end:
+                  d.end_date && /^\d{4}-\d{2}-\d{2}$/.test(d.end_date)
+                    ? d.end_date
+                    : prev.construction_period_end,
+              }));
+            }}
+          />
+        )}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1 md:col-span-2">
           <Label className="text-xs">공사명</Label>

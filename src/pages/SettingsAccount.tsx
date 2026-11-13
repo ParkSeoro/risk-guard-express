@@ -329,6 +329,7 @@ const SettingsAccount = () => {
         </CardContent>
       </Card>
 
+      {!location.pathname.startsWith('/app/worker') && (
       <Card>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
@@ -384,6 +385,7 @@ const SettingsAccount = () => {
           </Button>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 };

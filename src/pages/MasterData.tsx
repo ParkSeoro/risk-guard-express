@@ -41,13 +41,14 @@ const MasterData = () => {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [p, pp, lr, d, a, vr] = await Promise.all([
+    const [p, pp, lr, d, a, vr, mc] = await Promise.all([
       supabase.from('master_processes').select('*').eq('is_deleted', false).order('name'),
       supabase.from('master_ppe').select('*').eq('is_deleted', false).order('name'),
       supabase.from('legal_references').select('*').order('law_name'),
       supabase.from('master_departments').select('*').eq('is_deleted', false).order('name'),
       supabase.from('master_assignees').select('*, master_departments(name)').eq('is_deleted', false).order('name'),
       supabase.from('validation_rules').select('*').order('rule_name'),
+      supabase.from('scoring_config' as any).select('config_value').eq('config_key', 'risk_matrix_3x3').maybeSingle(),
     ]);
     setProcesses(p.data || []);
     setPpe(pp.data || []);
@@ -56,6 +57,14 @@ const MasterData = () => {
     setAssignees(a.data || []);
     setValidationRules(vr.data || []);
 
+    const dbVal = (mc.data as any)?.config_value;
+    if (dbVal?.matrix && dbVal?.colors) {
+      setMatrixConfig({
+        matrix: dbVal.matrix,
+        colors: dbVal.colors,
+        labels: dbVal.labels || getMatrixConfig().labels,
+      });
+    }
     const config = getMatrixConfig();
     setMatrix({ ...config.matrix });
     setMatrixColors({ ...config.colors });
@@ -140,8 +149,24 @@ const MasterData = () => {
     setEditDialog({ type, item });
   };
 
-  const handleSaveMatrix = () => {
-    setMatrixConfig({ matrix, colors: matrixColors, labels: getMatrixConfig().labels });
+  const handleSaveMatrix = async () => {
+    const nextConfig = { matrix, colors: matrixColors, labels: getMatrixConfig().labels };
+    setMatrixConfig(nextConfig);
+    const { error } = await supabase
+      .from('scoring_config' as any)
+      .upsert(
+        {
+          config_key: 'risk_matrix_3x3',
+          config_value: nextConfig,
+          description: '3x3 위험도 매트릭스 설정 (가능성×중대성→위험도)',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'config_key' }
+      );
+    if (error) {
+      toast({ title: '위험도 매트릭스 DB 저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
     toast({ title: '위험도 매트릭스가 저장되었습니다.' });
   };
 

@@ -11,17 +11,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, GraduationCap } from "lucide-react";
+import { Plus, GraduationCap, Pencil, Trash2 } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 
 const TYPES = ["정기", "특별", "관리감독자", "MSDS", "신규채용", "작업변경"];
 
 export default function HealthEducation() {
   const handle = useToastError();
   const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<any | null>(null);
   const [form, setForm] = useState<any>({ type: "정기" });
   const [loading, setLoading] = useState(true);
   const [searchParams] = useSearchParams();
@@ -49,23 +52,60 @@ export default function HealthEducation() {
   };
   useEffect(() => { load(); }, [projectId, userCompanyId]);
 
+  const openCreate = () => {
+    setEditingRow(null);
+    setForm({ type: "정기" });
+    setOpen(true);
+  };
+
+  const openEdit = (row: any) => {
+    setEditingRow(row);
+    setForm({
+      worker_id: row.worker_id || "",
+      type: row.type || "정기",
+      title: row.title || "",
+      hours: row.hours ?? "",
+      conducted_at: row.conducted_at ? String(row.conducted_at).slice(0, 16) : "",
+      instructor: row.instructor || "",
+      notes: row.notes || "",
+    });
+    setOpen(true);
+  };
+
+  const onDelete = async (row: any) => {
+    if (!projectId) return;
+    const res = await softDelete("health_education_logs", row.id, {
+      projectId,
+      label: `${row.worker_name || ""} · ${row.title}`,
+    });
+    if (res.ok) await load();
+  };
+
   const submit = async () => {
     if (!projectId || !form.worker_id || !form.title) { toast.error("근로자·제목 필수"); return; }
     try {
       const w = workers.find(x => x.id === form.worker_id);
-      const { error } = await supabase.from("health_education_logs").insert({
-        project_id: projectId,
+      const payload = {
         worker_id: form.worker_id,
-        worker_name: w?.name,
-        company_id: w?.company_id,
+        worker_name: w?.name ?? editingRow?.worker_name ?? "",
+        company_id: w?.company_id ?? editingRow?.company_id ?? null,
         type: form.type,
         title: form.title,
         hours: form.hours ? Number(form.hours) : 0,
         conducted_at: form.conducted_at || new Date().toISOString(),
         instructor: form.instructor || null,
         notes: form.notes || null,
-      });
-      if (error) throw error;
+      };
+      if (editingRow) {
+        const { error } = await supabase.from("health_education_logs").update(payload).eq("id", editingRow.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("health_education_logs").insert({
+          project_id: projectId,
+          ...payload,
+        });
+        if (error) throw error;
+      }
 
       // 특별교육이면 근로자 만료일 갱신(1년)
       if (form.type === "특별" && form.worker_id) {
@@ -73,9 +113,9 @@ export default function HealthEducation() {
         await supabase.from("workers").update({ special_education_required_until: next.toISOString().slice(0, 10) }).eq("id", form.worker_id);
       }
 
-      toast.success("등록되었습니다");
-      setOpen(false); setForm({ type: "정기" }); await load();
-    } catch (e) { handle(e, "보건교육 등록"); }
+      toast.success(editingRow ? "수정되었습니다" : "등록되었습니다");
+      setOpen(false); setEditingRow(null); setForm({ type: "정기" }); await load();
+    } catch (e) { handle(e, editingRow ? "보건교육 수정" : "보건교육 등록"); }
   };
 
   if (!projectId) return <div className="p-6 text-muted-foreground">프로젝트를 선택해주세요.</div>;
@@ -87,7 +127,7 @@ export default function HealthEducation() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><GraduationCap className="h-6 w-6" />보건교육 이력</h1>
           <p className="text-sm text-muted-foreground mt-1">정기·특별·관리감독자·MSDS 교육 (산안법 제29~32조)</p>
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-1" />교육 등록</Button>
+        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />교육 등록</Button>
       </div>
 
       <Card>
@@ -98,7 +138,7 @@ export default function HealthEducation() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>실시일</TableHead><TableHead>근로자</TableHead><TableHead>유형</TableHead>
-                  <TableHead>제목</TableHead><TableHead>시간</TableHead><TableHead>강사</TableHead>
+                  <TableHead>제목</TableHead><TableHead>시간</TableHead><TableHead>강사</TableHead><TableHead></TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {list.map(r => (
@@ -109,9 +149,15 @@ export default function HealthEducation() {
                       <TableCell>{r.title}</TableCell>
                       <TableCell>{r.hours}h</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{r.instructor || "-"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => openEdit(r)} title="수정"><Pencil className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => onDelete(r)} title="삭제"><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
-                  {list.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">교육 이력이 없습니다.</TableCell></TableRow>}
+                  {list.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">교육 이력이 없습니다.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </div>
@@ -121,7 +167,7 @@ export default function HealthEducation() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>보건교육 등록</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingRow ? "보건교육 수정" : "보건교육 등록"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><Label>근로자 *</Label>
               <Select value={form.worker_id || ""} onValueChange={v => setForm({ ...form, worker_id: v })}>
@@ -141,7 +187,7 @@ export default function HealthEducation() {
             <div><Label>강사</Label><Input value={form.instructor || ""} onChange={e => setForm({ ...form, instructor: e.target.value })} /></div>
             <div className="col-span-2"><Label>비고</Label><Input value={form.notes || ""} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>취소</Button><Button onClick={submit}>등록</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>취소</Button><Button onClick={submit}>{editingRow ? "저장" : "등록"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

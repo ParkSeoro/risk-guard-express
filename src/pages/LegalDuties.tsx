@@ -15,6 +15,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Scale, Sparkles, Lock, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { ConstructionInfoMissingBanner } from '@/components/ConstructionInfoMissingBanner';
+import { SafetyCouncilPanel } from '@/components/legal/SafetyCouncilPanel';
+import { ClientSafetyLedgerPanel } from '@/components/legal/ClientSafetyLedgerPanel';
+import { CtpaCompliancePanel } from '@/components/legal/CtpaCompliancePanel';
+import { RoleLegalAiBriefing } from '@/components/legal/RoleLegalAiBriefing';
 
 const categoryLabels: Record<string, string> = {
   daily: '일일 업무',
@@ -184,17 +189,27 @@ const LegalDuties = () => {
   };
 
   const categories = ['daily', 'weekly', 'monthly', 'event'];
+  const CTPA_POSITIONS = new Set(['SITE_MANAGER', 'CONSTRUCTION_MGR', 'FIELD_ENGINEER', 'SUPERVISOR', 'OWNER_CM', 'OWNER_PM']);
+  const canEditClientLedger = access.isMaster || access.userCompanyType === 'client' || access.hasRole('project_admin');
+  const isHseManager = access.userPosition === 'HSE_MANAGER' || (access.hasRole('safety_manager') && !CTPA_POSITIONS.has(access.userPosition || ''));
+  const canEditCtpa = access.isMaster || (CTPA_POSITIONS.has(access.userPosition || '') && access.userPosition !== 'HSE_MANAGER') || (access.hasRole('project_admin') && access.userPosition !== 'HSE_MANAGER');
 
   if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
   return (
     <div className="space-y-4 animate-fade-in">
+      <ConstructionInfoMissingBanner projectId={access.selectedProject} contextLabel="법적의무 체크리스트 자동 판정(공사금액·기간)" />
+      <RoleLegalAiBriefing
+        projectId={access.selectedProject}
+        position={access.userPosition}
+        companyType={access.userCompanyType}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Scale className="h-5 w-5" /> 법적업무 관리
           </h1>
-          <p className="text-xs text-muted-foreground mt-1">산업안전보건법 + KOSHA 기준 안전관리자 법정 업무</p>
+          <p className="text-xs text-muted-foreground mt-1">산업안전보건법 · KOSHA · 건설기술진흥법 역할별 법정 업무</p>
         </div>
         <div className="flex items-center gap-2">
           {access.canCreate('legal_duty') && (
@@ -210,6 +225,15 @@ const LegalDuties = () => {
         </div>
       </div>
 
+      <Tabs defaultValue="duties" className="space-y-4">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="duties" className="text-xs">산안법 법적업무</TabsTrigger>
+          <TabsTrigger value="council" className="text-xs">협의체·합동점검 (§64·§75)</TabsTrigger>
+          <TabsTrigger value="client-ledger" className="text-xs">발주자 안전보건대장 (§67)</TabsTrigger>
+          <TabsTrigger value="ctpa" className="text-xs">건진법 공사관리 (§62·§67)</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="duties" className="space-y-4">
       {duties.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -294,6 +318,26 @@ const LegalDuties = () => {
           ))}
         </Tabs>
       )}
+        </TabsContent>
+
+        <TabsContent value="council">
+          {access.selectedProject && (
+            <SafetyCouncilPanel projectId={access.selectedProject} canEdit={access.canCreate('legal_duty') || access.canEdit('legal_duty')} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="client-ledger">
+          {access.selectedProject && (
+            <ClientSafetyLedgerPanel projectId={access.selectedProject} canEdit={canEditClientLedger} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="ctpa">
+          {access.selectedProject && (
+            <CtpaCompliancePanel projectId={access.selectedProject} canEditCtpa={canEditCtpa} isHseManager={isHseManager} />
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Add Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

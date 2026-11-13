@@ -17,10 +17,32 @@ describe("role ↔ position SSOT", () => {
     expect(defaultPositionForRole("supervisor")).toBe("SUPERVISOR");
   });
 
-  it("syncs position when role changes to site_supervisor", () => {
+  it("syncs position when role changes to site_supervisor unless keeping job title", () => {
     expect(
       syncMembershipRolePosition({ field: "role_new", value: "site_supervisor" }),
     ).toEqual({ role_new: "site_supervisor", position_new: "SITE_SUPERVISOR" });
+    expect(
+      syncMembershipRolePosition({
+        field: "role_new",
+        value: "site_supervisor",
+        currentPosition: "SITE_MANAGER",
+      }),
+    ).toEqual({ role_new: "site_supervisor", position_new: "SITE_SUPERVISOR" });
+    for (const currentPosition of [
+      "CONSTRUCTION_MGR",
+      "FIELD_ENGINEER",
+      "FOREMAN",
+      "CEO",
+      "EXECUTIVE",
+    ] as const) {
+      expect(
+        syncMembershipRolePosition({
+          field: "role_new",
+          value: "site_supervisor",
+          currentPosition,
+        }),
+      ).toEqual({ role_new: "site_supervisor" });
+    }
   });
 
   it("syncs role when position changes to SITE_SUPERVISOR", () => {

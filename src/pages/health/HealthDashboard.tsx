@@ -5,6 +5,7 @@ import { NavLink } from "@/components/NavLink";
 import { Activity, Stethoscope, FlaskConical, ClipboardList, GraduationCap } from "lucide-react";
 import { useToastError } from "@/hooks/useToastError";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
+import { DailyHealthAbnormalPanel } from "@/components/health/DailyHealthAbnormalPanel";
 
 type Stats = {
   workers: number;
@@ -14,6 +15,7 @@ type Stats = {
   carcinogens: number;
   exceeded: number;
   surveysActive: number;
+  educationLogs: number;
 };
 
 export default function HealthDashboard() {
@@ -52,6 +54,7 @@ export default function HealthDashboard() {
           { count: carc },
           { count: exc },
           { count: surv },
+          { count: edu },
         ] = await Promise.all([
           workersBase(),
           workersBase().eq("health_checkup_status", "미수검"),
@@ -70,6 +73,13 @@ export default function HealthDashboard() {
             .eq("project_id", projectId)
             .eq("is_active", true)
             .eq("is_deleted", false),
+          applyCompanyFilter(
+            supabase
+              .from("health_education_logs")
+              .select("id", { count: "exact", head: true })
+              .eq("project_id", projectId)
+              .eq("is_deleted", false),
+          ),
         ]);
         if (cancelled) return;
         setStats({
@@ -80,6 +90,7 @@ export default function HealthDashboard() {
           carcinogens: carc || 0,
           exceeded: exc || 0,
           surveysActive: surv || 0,
+          educationLogs: edu || 0,
         });
       } catch (e) {
         handle(e, "보건 통계 조회");
@@ -122,7 +133,7 @@ export default function HealthDashboard() {
       sub: "노출기준 초과 건수",
       urgent: (stats?.exceeded || 0) > 0,
     },
-    { to: "/health/education", icon: GraduationCap, title: "보건교육", value: "-", sub: "분기별 이수율" },
+    { to: "/health/education", icon: GraduationCap, title: "보건교육", value: stats?.educationLogs ?? "-", sub: "누적 이수 기록" },
     {
       to: "/health/hazard-surveys",
       icon: ClipboardList,
@@ -155,6 +166,7 @@ export default function HealthDashboard() {
           </NavLink>
         ))}
       </div>
+      <DailyHealthAbnormalPanel projectId={projectId} />
     </div>
   );
 }

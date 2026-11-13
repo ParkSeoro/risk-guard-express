@@ -29,14 +29,17 @@ export default function InspectionMode() {
     setRunning(true);
     const f: Finding[] = [];
 
-    const [{ data: runs }, { data: tbms }, { count: tbmParts }, { data: permits }, { data: costs }, { data: duties }] = await Promise.all([
+    const [{ data: runs }, { data: tbms }, { data: permits }, { count: costs }, { data: duties }] = await Promise.all([
       supabase.from('assessment_runs').select('id, status').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('tbm_sessions' as any).select('id').eq('project_id', projectId),
-      supabase.from('tbm_participations' as any).select('id', { count: 'exact', head: true }),
+      supabase.from('tbm_sessions' as any).select('id').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('safety_cost_items' as any).select('id', { count: 'exact', head: true }).eq('project_id', projectId).limit(1),
+      supabase.from('safety_cost_items' as any).select('id', { count: 'exact', head: true }).eq('project_id', projectId).eq('is_deleted', false).limit(1),
       supabase.from('legal_duties' as any).select('id, is_active').eq('project_id', projectId),
     ]);
+    const tbmIds = (tbms || []).map((t: any) => t.id).filter(Boolean);
+    const { count: tbmParts } = tbmIds.length > 0
+      ? await supabase.from('tbm_participations' as any).select('id', { count: 'exact', head: true }).in('tbm_session_id', tbmIds)
+      : { count: 0 };
 
     const approvedRuns = (runs || []).filter((r: any) => r.status === '승인완료').length;
     f.push({ key: 'risk_assessment', label: '위험성평가 작성/승인', ok: approvedRuns > 0, detail: `승인완료 ${approvedRuns}건 / 전체 ${(runs || []).length}건` });

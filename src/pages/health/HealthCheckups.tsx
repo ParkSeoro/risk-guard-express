@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, Stethoscope, Search, Trash2 } from "lucide-react";
+import { Plus, Stethoscope, Search, Trash2, Pencil } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 
@@ -32,6 +32,7 @@ export default function HealthCheckups() {
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [openNew, setOpenNew] = useState(false);
+  const [editingRow, setEditingRow] = useState<any | null>(null);
   const [form, setForm] = useState<any>({ type: "일반", result: "미수검" });
   const [tab, setTab] = useState<"all" | "findings" | "untested" | "due">("all");
   const [search, setSearch] = useState("");
@@ -89,6 +90,28 @@ export default function HealthCheckups() {
     return rows;
   }, [list, tab, search]);
 
+  const openCreate = () => {
+    setEditingRow(null);
+    setForm({ type: "일반", result: "미수검" });
+    setOpenNew(true);
+  };
+
+  const openEdit = (row: any) => {
+    setEditingRow(row);
+    setForm({
+      worker_id: row.worker_id || "",
+      type: row.type || "일반",
+      result: row.result || "미수검",
+      scheduled_date: row.scheduled_date || "",
+      conducted_date: row.conducted_date || "",
+      next_due_date: row.next_due_date || "",
+      institution: row.institution || "",
+      restrictions: row.restrictions || "",
+      notes: row.notes || "",
+    });
+    setOpenNew(true);
+  };
+
   const submit = async () => {
     if (!projectId || !form.worker_id || !form.type) {
       toast.error("근로자, 종류는 필수입니다");
@@ -96,12 +119,11 @@ export default function HealthCheckups() {
     }
     try {
       const worker = workers.find(w => w.id === form.worker_id);
-      const { error } = await supabase.from("health_checkups").insert({
-        project_id: projectId,
+      const payload = {
         worker_id: form.worker_id,
-        company_id: worker?.company_id,
-        worker_name: worker?.name,
-        worker_phone: worker?.phone,
+        company_id: worker?.company_id ?? editingRow?.company_id ?? null,
+        worker_name: worker?.name ?? editingRow?.worker_name ?? "",
+        worker_phone: worker?.phone ?? editingRow?.worker_phone ?? null,
         type: form.type,
         scheduled_date: form.scheduled_date || null,
         conducted_date: form.conducted_date || null,
@@ -110,13 +132,24 @@ export default function HealthCheckups() {
         restrictions: form.restrictions || null,
         next_due_date: form.next_due_date || null,
         notes: form.notes || null,
-      });
-      if (error) throw error;
-      toast.success("등록되었습니다");
+      };
+      if (editingRow) {
+        const { error } = await supabase.from("health_checkups").update(payload).eq("id", editingRow.id);
+        if (error) throw error;
+        toast.success("수정되었습니다");
+      } else {
+        const { error } = await supabase.from("health_checkups").insert({
+          project_id: projectId,
+          ...payload,
+        });
+        if (error) throw error;
+        toast.success("등록되었습니다");
+      }
       setOpenNew(false);
+      setEditingRow(null);
       setForm({ type: "일반", result: "미수검" });
       await load();
-    } catch (e) { handle(e, "건강진단 등록"); }
+    } catch (e) { handle(e, editingRow ? "건강진단 수정" : "건강진단 등록"); }
   };
 
   const onDelete = async (row: any) => {
@@ -135,7 +168,7 @@ export default function HealthCheckups() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Stethoscope className="h-6 w-6" />건강진단 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">일반/특수/배치전/수시/임시 건강진단 기록 (산업안전보건법 제129~131조)</p>
         </div>
-        <Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" />신규 등록</Button>
+        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />신규 등록</Button>
       </div>
 
       <Card>
@@ -189,7 +222,10 @@ export default function HealthCheckups() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{r.restrictions || r.notes || ""}</TableCell>
                         <TableCell>
-                          <Button size="icon" variant="ghost" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4" /></Button>
+                          <div className="flex items-center gap-1">
+                            <Button size="icon" variant="ghost" onClick={() => openEdit(r)} title="수정"><Pencil className="h-4 w-4" /></Button>
+                            <Button size="icon" variant="ghost" onClick={() => onDelete(r)} title="삭제"><Trash2 className="h-4 w-4" /></Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -210,7 +246,7 @@ export default function HealthCheckups() {
 
       <Dialog open={openNew} onOpenChange={setOpenNew}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>건강진단 등록</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingRow ? "건강진단 수정" : "건강진단 등록"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>근로자 *</Label>
@@ -241,7 +277,7 @@ export default function HealthCheckups() {
               <div className="col-span-2"><Label>비고</Label><Input value={form.notes || ""} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
             </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpenNew(false)}>취소</Button><Button onClick={submit}>등록</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setOpenNew(false)}>취소</Button><Button onClick={submit}>{editingRow ? "저장" : "등록"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -41,7 +41,7 @@ export const POSITION_LABELS: Record<string, string> = {
 
 /** Positions selectable per company type (발주처 → 시공사 → 협력사 → 공급사). */
 export const POSITIONS_BY_COMPANY_TYPE: Record<string, ProjectPosition[]> = {
-  client: ['OWNER_PM', 'OWNER_CM', 'OWNER_SM', 'CEO', 'EXECUTIVE'],
+  client: ['OWNER_PM', 'OWNER_CM', 'OWNER_SM', 'SUPERVISOR', 'CEO', 'EXECUTIVE'],
   gc: [
     'CEO',
     'EXECUTIVE',
@@ -49,7 +49,6 @@ export const POSITIONS_BY_COMPANY_TYPE: Record<string, ProjectPosition[]> = {
     'HSE_MANAGER',
     'CONSTRUCTION_MGR',
     'FIELD_ENGINEER',
-    'SUPERVISOR', // 감리
     'SITE_SUPERVISOR', // 관리감독자
     'FOREMAN',
     'WORKER',
@@ -134,19 +133,35 @@ export function defaultPositionForRole(
   }
 }
 
+const KEEP_POSITION_WHEN_SITE_SUPERVISOR = new Set([
+  'CONSTRUCTION_MGR',
+  'FIELD_ENGINEER',
+  'FOREMAN',
+  'CEO',
+  'EXECUTIVE',
+]);
+
 /** Patch object to keep role_new ↔ position_new in sync on membership edits. */
 export function syncMembershipRolePosition(opts: {
   field: 'role_new' | 'position_new' | string;
   value: string | null;
   companyType?: string | null;
+  currentPosition?: string | null;
 }): Record<string, string | null> {
   const out: Record<string, string | null> = { [opts.field]: opts.value };
   if (opts.field === 'position_new' && opts.value) {
     const role = defaultRoleForPosition(opts.value);
     if (role) out.role_new = role;
   } else if (opts.field === 'role_new' && opts.value) {
-    const pos = defaultPositionForRole(opts.value, opts.companyType);
-    if (pos) out.position_new = pos;
+    if (opts.value.toLowerCase() === 'site_supervisor') {
+      const cur = (opts.currentPosition || '').toUpperCase();
+      if (!cur || !KEEP_POSITION_WHEN_SITE_SUPERVISOR.has(cur)) {
+        out.position_new = 'SITE_SUPERVISOR';
+      }
+    } else {
+      const pos = defaultPositionForRole(opts.value, opts.companyType);
+      if (pos) out.position_new = pos;
+    }
   }
   return out;
 }

@@ -14,6 +14,7 @@ import {
   personaMatchesFilter,
   permissionPersonaLabel,
 } from "@/lib/permissions";
+import { resolveMobileShellBucket } from "@/lib/mobileShell";
 
 // useProjectAccess 에서 PERMISSION_MATRIX 를 export 하지 않으므로
 // 동일한 정의를 여기 미러링합니다. (변경 시 둘 다 수정 — 테스트가 강제합니다.)
@@ -168,5 +169,12 @@ describe("권한 관리 관리자/근로자 구분", () => {
   it("소속이 없으면 미배정", () => {
     expect(classifyPermissionPersona({ globalRoles: [], projectRoles: [] })).toBe("unassigned");
     expect(personaMatchesFilter("unassigned", "manager")).toBe(false);
+  });
+
+  it("모바일 셸에서 viewer는 결재·메신저가 있는 manager 버킷에 들어가지 않는다", () => {
+    expect(resolveMobileShellBucket("viewer")).toBe("worker");
+    expect(resolveMobileShellBucket("site_manager")).toBe("manager");
+    expect(resolveMobileShellBucket("supervisor")).toBe("manager");
+    expect(resolveMobileShellBucket("site_supervisor")).toBe("manager");
   });
 });

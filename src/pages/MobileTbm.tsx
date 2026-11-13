@@ -124,20 +124,43 @@ export default function MobileTbm() {
       const rows = ((data as any[]) || []) as TbmSession[];
       setSessions(rows);
 
-      // Worker: mark already participated (match by phone digits when available)
+      // Worker: mark already participated (from tbm_participations OR today's daily check-in ack)
       const phone = profilePhone.replace(/\D/g, "");
-      if (!isManager && phone && rows.length) {
+      if (!isManager && rows.length) {
         const ids = rows.map((s) => s.id);
-        const { data: parts } = await supabase
-          .from("tbm_participations" as any)
-          .select("tbm_session_id, worker_phone")
-          .in("tbm_session_id", ids);
-        if (!current()) return;
         const done = new Set<string>();
-        for (const p of (parts as any[]) || []) {
-          const pPhone = String(p.worker_phone || "").replace(/\D/g, "");
-          if (pPhone && pPhone === phone) done.add(p.tbm_session_id);
+        if (phone) {
+          const { data: parts } = await supabase
+            .from("tbm_participations" as any)
+            .select("tbm_session_id, worker_phone")
+            .in("tbm_session_id", ids);
+          if (!current()) return;
+          for (const p of (parts as any[]) || []) {
+            const pPhone = String(p.worker_phone || "").replace(/\D/g, "");
+            if (pPhone && pPhone === phone) done.add(p.tbm_session_id);
+          }
         }
+        if (user?.id) {
+          const { data: acks } = await supabase
+            .from("worker_daily_acks" as any)
+            .select("permit_ids")
+            .eq("project_id", projectId)
+            .eq("user_id", user.id)
+            .eq("ack_date", selectedDate);
+          const ackPermitIds = [...new Set(((acks as any[]) || []).flatMap((a) => a.permit_ids || []))];
+          if (ackPermitIds.length > 0) {
+            const { data: ackPermits } = await supabase
+              .from("work_permits" as any)
+              .select("tbm_session_id")
+              .in("id", ackPermitIds);
+            for (const ap of (ackPermits as any[]) || []) {
+              if (ap.tbm_session_id && ids.includes(ap.tbm_session_id)) {
+                done.add(ap.tbm_session_id);
+              }
+            }
+          }
+        }
+        if (!current()) return;
         setMyParticipatedIds(done);
       } else {
         setMyParticipatedIds(new Set());
@@ -472,7 +495,7 @@ export default function MobileTbm() {
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     <Button className="w-full" variant="outline" onClick={() => openQr(s)}>
-                      <QrCode className="h-4 w-4 mr-1" /> QR · 참여자
+                      <QrCode className="h-4 w-4 mr-1" /> 참여자 · 명단 외 QR
                     </Button>
                   </div>
                 </CardContent>

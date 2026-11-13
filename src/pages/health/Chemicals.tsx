@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToastError } from "@/hooks/useToastError";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { toast } from "sonner";
-import { Plus, FlaskConical, FileText, CalendarRange } from "lucide-react";
+import { Plus, FlaskConical, FileText, CalendarRange, Pencil, Trash2 } from "lucide-react";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 
 type Company = { id: string; name: string };
 type Chemical = {
@@ -41,6 +42,7 @@ export default function Chemicals() {
     scopeStatus,
   } = useGlobalProjectAccess();
   const canSeeAllCompanies = seesAllCompanies;
+  const { softDelete } = useSoftDelete();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [list, setList] = useState<Chemical[]>([]);
   const [plans, setPlans] = useState<UsagePlan[]>([]);
@@ -48,6 +50,7 @@ export default function Chemicals() {
 
   // dialogs
   const [chemOpen, setChemOpen] = useState(false);
+  const [editingChem, setEditingChem] = useState<Chemical | null>(null);
   const [chemForm, setChemForm] = useState<any>({});
   const [planOpen, setPlanOpen] = useState(false);
   const [planForm, setPlanForm] = useState<any>({ plan_type: "monthly", year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
@@ -91,6 +94,36 @@ export default function Chemicals() {
   const chemicalCompany = (id: string | null) =>
     companies.find(c => c.id === id)?.name || "-";
 
+  const openCreateChem = () => {
+    setEditingChem(null);
+    setChemForm({});
+    setChemOpen(true);
+  };
+
+  const openEditChem = (c: Chemical) => {
+    setEditingChem(c);
+    setChemForm({
+      name: c.name,
+      company_id: c.company_id || "",
+      cas_no: c.cas_no || "",
+      trade_name: c.trade_name || "",
+      hazard_class: c.hazard_class || "",
+      is_carcinogen: c.is_carcinogen,
+      is_reproductive_toxin: c.is_reproductive_toxin,
+      storage_location: c.storage_location || "",
+      monthly_usage: c.monthly_usage ?? "",
+      unit: c.unit || "",
+      notes: c.notes || "",
+    });
+    setChemOpen(true);
+  };
+
+  const onDeleteChem = async (c: Chemical) => {
+    if (!projectId) return;
+    const res = await softDelete("chemicals", c.id, { projectId, label: c.name });
+    if (res.ok) await loadChemicals();
+  };
+
   const submitChemical = async () => {
     if (!projectId || !chemForm.name) { toast.error("물질명은 필수입니다"); return; }
     const company_id = canSeeAllCompanies ? (chemForm.company_id || null) : userCompanyId;
@@ -106,7 +139,7 @@ export default function Chemicals() {
       toast.error("권한이 없는 회사입니다"); return;
     }
     try {
-      let msdsUrl: string | null = null;
+      let msdsUrl: string | null = editingChem?.msds_file_url ?? null;
       if (chemForm.msdsFile) {
         const path = `${projectId}/chemicals/${Date.now()}_${chemForm.msdsFile.name}`;
         const { error: upErr } = await supabase.storage.from("attachments")
@@ -114,8 +147,7 @@ export default function Chemicals() {
         if (upErr) throw upErr;
         msdsUrl = supabase.storage.from("attachments").getPublicUrl(path).data.publicUrl;
       }
-      const { error } = await supabase.from("chemicals").insert({
-        project_id: projectId,
+      const payload = {
         company_id,
         name: chemForm.name,
         cas_no: chemForm.cas_no || null,
@@ -125,15 +157,25 @@ export default function Chemicals() {
         is_reproductive_toxin: !!chemForm.is_reproductive_toxin,
         msds_file_url: msdsUrl,
         storage_location: chemForm.storage_location || null,
-        monthly_usage: chemForm.monthly_usage ? Number(chemForm.monthly_usage) : null,
+        monthly_usage: chemForm.monthly_usage !== "" && chemForm.monthly_usage != null ? Number(chemForm.monthly_usage) : null,
         unit: chemForm.unit || null,
         notes: chemForm.notes || null,
-      });
-      if (error) throw error;
-      toast.success("등록되었습니다");
-      setChemOpen(false); setChemForm({});
+      };
+      if (editingChem) {
+        const { error } = await supabase.from("chemicals").update(payload).eq("id", editingChem.id);
+        if (error) throw error;
+        toast.success("수정되었습니다");
+      } else {
+        const { error } = await supabase.from("chemicals").insert({
+          project_id: projectId,
+          ...payload,
+        });
+        if (error) throw error;
+        toast.success("등록되었습니다");
+      }
+      setChemOpen(false); setEditingChem(null); setChemForm({});
       await loadChemicals();
-    } catch (e) { handle(e, "화학물질 등록"); }
+    } catch (e) { handle(e, editingChem ? "화학물질 수정" : "화학물질 등록"); }
   };
 
   const submitPlan = async () => {
@@ -186,7 +228,7 @@ export default function Chemicals() {
 
         <TabsContent value="chemicals" className="space-y-4">
           <div className="flex justify-end">
-            <Button onClick={() => setChemOpen(true)}><Plus className="h-4 w-4 mr-1" />물질 등록</Button>
+            <Button onClick={openCreateChem}><Plus className="h-4 w-4 mr-1" />물질 등록</Button>
           </div>
           <Card>
             <CardHeader><CardTitle className="text-base">등록된 화학물질 ({list.length})</CardTitle></CardHeader>
@@ -198,7 +240,7 @@ export default function Chemicals() {
                       <TableHead>물질명</TableHead><TableHead>CAS</TableHead>
                       <TableHead>소속 회사</TableHead>
                       <TableHead>유해성</TableHead>
-                      <TableHead>월 사용량</TableHead><TableHead>보관위치</TableHead><TableHead>MSDS</TableHead>
+                      <TableHead>월 사용량</TableHead><TableHead>보관위치</TableHead><TableHead>MSDS</TableHead><TableHead></TableHead>
                     </TableRow></TableHeader>
                     <TableBody>
                       {list.map(c => (
@@ -214,9 +256,15 @@ export default function Chemicals() {
                           <TableCell>{c.monthly_usage ?? "-"} {c.unit || ""}</TableCell>
                           <TableCell className="text-xs">{c.storage_location || "-"}</TableCell>
                           <TableCell>{c.msds_file_url ? <a href={c.msds_file_url} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1"><FileText className="h-3 w-3" />보기</a> : "-"}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button size="icon" variant="ghost" onClick={() => openEditChem(c)} title="수정"><Pencil className="h-4 w-4" /></Button>
+                              <Button size="icon" variant="ghost" onClick={() => onDeleteChem(c)} title="삭제"><Trash2 className="h-4 w-4" /></Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
-                      {list.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">등록된 화학물질이 없습니다.</TableCell></TableRow>}
+                      {list.length === 0 && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">등록된 화학물질이 없습니다.</TableCell></TableRow>}
                     </TableBody>
                   </Table>
                 </div>
@@ -268,7 +316,7 @@ export default function Chemicals() {
       {/* Chemical dialog */}
       <Dialog open={chemOpen} onOpenChange={setChemOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>화학물질 등록</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingChem ? "화학물질 수정" : "화학물질 등록"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><Label>물질명 *</Label><Input value={chemForm.name || ""} onChange={e => setChemForm({ ...chemForm, name: e.target.value })} /></div>
             {canSeeAllCompanies && (
@@ -293,7 +341,7 @@ export default function Chemicals() {
             <div className="col-span-2"><Label>MSDS 파일 (PDF)</Label><Input type="file" accept="application/pdf,image/*" onChange={e => setChemForm({ ...chemForm, msdsFile: e.target.files?.[0] })} /></div>
             <div className="col-span-2"><Label>비고</Label><Input value={chemForm.notes || ""} onChange={e => setChemForm({ ...chemForm, notes: e.target.value })} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setChemOpen(false)}>취소</Button><Button onClick={submitChemical}>등록</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setChemOpen(false)}>취소</Button><Button onClick={submitChemical}>{editingChem ? "저장" : "등록"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

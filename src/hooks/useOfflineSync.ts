@@ -11,12 +11,19 @@ async function dataUrlToFile(dataUrl: string, name: string): Promise<File> {
   return new File([blob], name, { type: blob.type });
 }
 
+const MAX_SESSION_RETRIES = 5;
+const sessionRetryCounts = new Map<number, number>();
+
 async function flushOnce() {
   if (!isOnline()) return;
   const items = await listQueue();
   if (items.length === 0) return;
   let ok = 0;
   for (const it of items) {
+    const itemId = it.id;
+    if (itemId != null && (sessionRetryCounts.get(itemId) ?? 0) >= MAX_SESSION_RETRIES) {
+      continue;
+    }
     try {
       if (it.kind === "inspection_item") {
         const p = it.payload;
@@ -25,23 +32,23 @@ async function flushOnce() {
           const f = await dataUrlToFile(ph.data, ph.name);
           const ext = (ph.name.split(".").pop() || "jpg");
           const path = `${p.projectId}/mobile-inspect/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-          try {
-            const uploaded = await uploadAttachmentFile(path, f);
-            urls.push(uploaded.publicUrl);
-          } catch {
-            /* skip failed offline photo */
-          }
+          const uploaded = await uploadAttachmentFile(path, f);
+          urls.push(uploaded.publicUrl);
         }
-        const { data: ins } = await supabase.from("safety_inspections" as any).insert({
+        const { data: ins, error: insErr } = await supabase.from("safety_inspections" as any).insert({
           project_id: p.projectId, inspection_type: "patrol", process_category: "기타",
           location: p.location, summary: p.issue, inspector_name: p.inspector || "",
           status: p.result === "fail" ? "in_progress" : "completed",
         }).select().single();
-        if (ins) {
-          await supabase.from("safety_inspection_items" as any).insert({
-            inspection_id: (ins as any).id, checklist_code: "MOBILE",
-            label: p.issue || "현장 점검", legal_basis: "", result: p.result, photos: urls, sort_order: 0,
-          });
+        if (insErr || !ins) {
+          throw insErr || new Error("safety_inspections insert returned no row");
+        }
+        const { error: itemErr } = await supabase.from("safety_inspection_items" as any).insert({
+          inspection_id: (ins as any).id, checklist_code: "MOBILE",
+          label: p.issue || "현장 점검", legal_basis: "", result: p.result, photos: urls, sort_order: 0,
+        });
+        if (itemErr) {
+          throw itemErr;
         }
       } else if (it.kind === "rpc") {
         // Generic queued RPC. Payload: { fn: string, args: Record<string,any> }
@@ -54,9 +61,19 @@ async function flushOnce() {
         const { error } = await supabase.rpc(p.fn, args);
         if (error) throw error;
       }
-      await removeFromQueue(it.id!);
+      if (itemId != null) {
+        sessionRetryCounts.delete(itemId);
+        await removeFromQueue(itemId);
+      }
       ok++;
     } catch (e) {
+      if (itemId != null) {
+        const next = (sessionRetryCounts.get(itemId) ?? 0) + 1;
+        sessionRetryCounts.set(itemId, next);
+        if (next === MAX_SESSION_RETRIES) {
+          toast.error("오프라인 대기 항목 동기화가 반복 실패하여 일시 중단되었습니다.");
+        }
+      }
       if (import.meta.env.DEV) console.warn("sync fail", e);
     }
   }

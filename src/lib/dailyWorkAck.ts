@@ -190,7 +190,9 @@ export async function buildRiskSummary(
   return summary;
 }
 
-export async function saveDailyWorkAck(payload: DailyAckPayload): Promise<{ id: string } | { error: string }> {
+export async function saveDailyWorkAck(
+  payload: DailyAckPayload,
+): Promise<{ id: string; tbmSyncWarning?: string } | { error: string }> {
   const ackDate = todaySeoulDate();
   const row = {
     project_id: payload.projectId,
@@ -233,8 +235,8 @@ export async function saveDailyWorkAck(payload: DailyAckPayload): Promise<{ id: 
         .select("id")
         .single();
       if (uerr) return { error: uerr.message };
-      await syncAckToTbm(payload);
-      return { id: (upd as any).id };
+      const tbmSyncWarning = await syncAckToTbm(payload);
+      return tbmSyncWarning ? { id: (upd as any).id, tbmSyncWarning } : { id: (upd as any).id };
     }
     const { data: ins, error: ierr } = await supabase
       .from("worker_daily_acks" as any)
@@ -242,12 +244,12 @@ export async function saveDailyWorkAck(payload: DailyAckPayload): Promise<{ id: 
       .select("id")
       .single();
     if (ierr) return { error: ierr.message };
-    await syncAckToTbm(payload);
-    return { id: (ins as any).id };
+    const tbmSyncWarning = await syncAckToTbm(payload);
+    return tbmSyncWarning ? { id: (ins as any).id, tbmSyncWarning } : { id: (ins as any).id };
   }
 
-  await syncAckToTbm(payload);
-  return { id: (data as any)?.id };
+  const tbmSyncWarning = await syncAckToTbm(payload);
+  return tbmSyncWarning ? { id: (data as any)?.id, tbmSyncWarning } : { id: (data as any)?.id };
 }
 
 /**
@@ -299,9 +301,28 @@ async function resolveAckTbmSessionIds(payload: DailyAckPayload): Promise<string
   return pickAckTbmSessionIds({ assignedPermitTbmIds, companyTodayTbmIds });
 }
 
+export function formatTbmAckSyncError(codeOrMsg: string, detail?: string): string {
+  switch (codeOrMsg) {
+    case "FORBIDDEN":
+      return "로그인 전화번호와 명부 전화번호가 달라 TBM 일지에 서명이 반영되지 않았습니다. 관리자에게 전화번호 확인을 요청하세요.";
+    case "WORKER_PHONE_REQUIRED":
+    case "PHONE_REQUIRED":
+      return "근로자 전화번호가 등록되지 않아 TBM 일지에 서명이 반영되지 않았습니다.";
+    case "NOT_PROJECT_MEMBER":
+      return "현장 소속이 확인되지 않아 TBM 일지에 서명이 반영되지 않았습니다.";
+    case "SIGNATURE_REQUIRED":
+      return "서명 데이터가 짧아 TBM 일지에 반영되지 않았습니다.";
+    default:
+      return detail
+        ? `출근 확인은 저장되었으나 TBM 서명 반영에 실패했습니다: ${detail}`
+        : `출근 확인은 저장되었으나 TBM 서명 반영에 실패했습니다 (${codeOrMsg}).`;
+  }
+}
+
 /** Reuse daily signature on the linked (or company-today fallback) TBM. */
-async function syncAckToTbm(payload: DailyAckPayload) {
+async function syncAckToTbm(payload: DailyAckPayload): Promise<string | undefined> {
   const tbmIds = await resolveAckTbmSessionIds(payload);
+  const warnings: string[] = [];
   for (const tbmId of tbmIds) {
     const { data, error } = await supabase.rpc("upsert_tbm_participation_from_ack", {
       _tbm_session_id: tbmId,
@@ -310,13 +331,16 @@ async function syncAckToTbm(payload: DailyAckPayload) {
     });
     if (error) {
       console.warn("TBM 서명 동기화 실패", tbmId, error.message);
+      warnings.push(formatTbmAckSyncError(error.message));
       continue;
     }
     const rpcErr = (data as { error?: string; message?: string } | null)?.error;
     if (rpcErr) {
       console.warn("TBM 서명 동기화 실패", tbmId, rpcErr, (data as any)?.message);
+      warnings.push(formatTbmAckSyncError(rpcErr, (data as any)?.message));
     }
   }
+  return warnings[0];
 }
 
 export async function fetchTodayAck(

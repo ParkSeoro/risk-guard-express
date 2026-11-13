@@ -289,13 +289,18 @@ const Auth = () => {
   }, [directory, selectedProject, signupAudience]);
 
   const selectedCompanyRow = useMemo(
-    () => directory.find((d) => d.company_id === selectedCompany) || null,
-    [directory, selectedCompany],
+    () =>
+      directory.find((d) => d.project_id === selectedProject && d.company_id === selectedCompany) ||
+      directory.find((d) => d.company_id === selectedCompany) ||
+      null,
+    [directory, selectedProject, selectedCompany],
   );
-  const signupPositionOptions = useMemo(
-    () => positionsForCompanyType(selectedCompanyRow?.company_type),
-    [selectedCompanyRow?.company_type],
-  );
+  const signupPositionOptions = useMemo(() => {
+    const list = positionsForCompanyType(
+      selectedCompanyRow?.role_in_project || selectedCompanyRow?.company_type,
+    );
+    return signupAudience === 'manager' ? list.filter((p) => p !== 'WORKER') : list;
+  }, [selectedCompanyRow?.role_in_project, selectedCompanyRow?.company_type, signupAudience]);
   const parentGcOptions = useMemo(
     () => directory.filter((d) => d.project_id === selectedProject && normalizeCompanyType(d.role_in_project) === 'gc'),
     [directory, selectedProject],
@@ -534,6 +539,8 @@ const Auth = () => {
             description: rpcErr?.message || rosterRes?.error || '다시 시도해 주세요',
             variant: 'destructive',
           });
+          setLoading(false);
+          return;
         }
       }
 
@@ -964,16 +971,16 @@ const Auth = () => {
                           ))}
                         </SelectContent>
                       </Select>
-                      {selectedCompanyRow?.company_type && (() => {
-                        const t = normalizeCompanyType(selectedCompanyRow.company_type);
-                        if (t === 'client') return <p className="text-[10px] text-muted-foreground">발주처: PM / CM / SM</p>;
-                        if (t === 'gc') return <p className="text-[10px] text-muted-foreground">시공사: 감리 · 관리감독자 분리</p>;
+                      {(selectedCompanyRow?.role_in_project || selectedCompanyRow?.company_type) && (() => {
+                        const t = normalizeCompanyType(selectedCompanyRow.role_in_project || selectedCompanyRow.company_type);
+                        if (t === 'client') return <p className="text-[10px] text-muted-foreground">발주처: PM / CM / SM · 감리</p>;
+                        if (t === 'gc') return <p className="text-[10px] text-muted-foreground">시공사: 현장소장 · 안전관리자 · 관리감독자</p>;
                         if (t === 'contractor' || t === 'vendor') {
                           return <p className="text-[10px] text-muted-foreground">협력사/공급사: 관리감독자 · 현장소장 등</p>;
                         }
                         return null;
                       })()}
-                      <p className="text-[10px] text-muted-foreground">관리자 승인 후 이용 가능합니다.</p>
+                      <p className="text-[10px] text-muted-foreground">발주처 SM 또는 마스터 승인 후 이용 가능합니다.</p>
                     </div>
                   </>
                 )}

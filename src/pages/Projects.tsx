@@ -115,12 +115,33 @@ const Projects = () => {
         return;
       }
       if (data) {
-        // Add creator as project_admin
+        // Sync project_companies SSOT for selected GC / contractor companies
+        const linkRows = [
+          ...form.gc_company_ids.map((cid) => ({
+            project_id: data.id,
+            company_id: cid,
+            role_in_project: 'gc',
+            is_deleted: false,
+          })),
+          ...form.sub_company_ids
+            .filter((cid) => !form.gc_company_ids.includes(cid))
+            .map((cid) => ({
+              project_id: data.id,
+              company_id: cid,
+              role_in_project: 'contractor',
+              is_deleted: false,
+            })),
+        ];
+        if (linkRows.length > 0) {
+          await (supabase.from('project_companies' as any) as any).upsert(linkRows, {
+            onConflict: 'project_id,company_id',
+          });
+        }
+        // Add creator as project_admin without forcing client-only OWNER_SM position
         const { error: memberError } = await supabase.from('project_members').insert([{
           project_id: data.id,
           user_id: user.id,
           role_new: 'project_admin' as any,
-          position_new: 'OWNER_SM' as any,
         }]);
         if (memberError) {
           console.error('Project member insert error:', memberError);
@@ -169,6 +190,39 @@ const Projects = () => {
 
     const { error } = await supabase.from('projects').update(updateData).eq('id', editProject.id);
     if (!error) {
+      // Sync project_companies SSOT for GC/contractor selections (preserve client links)
+      const desiredIds = new Set([...form.gc_company_ids, ...form.sub_company_ids]);
+      const { data: existingLinks } = await (supabase.from('project_companies' as any) as any)
+        .select('id, company_id, role_in_project')
+        .eq('project_id', editProject.id)
+        .eq('is_deleted', false);
+      const toRemove = ((existingLinks || []) as any[])
+        .filter((l) => (l.role_in_project === 'gc' || l.role_in_project === 'contractor') && !desiredIds.has(l.company_id))
+        .map((l) => l.id);
+      if (toRemove.length > 0) {
+        await (supabase.from('project_companies' as any) as any).update({ is_deleted: true }).in('id', toRemove);
+      }
+      const linkRows = [
+        ...form.gc_company_ids.map((cid) => ({
+          project_id: editProject.id,
+          company_id: cid,
+          role_in_project: 'gc',
+          is_deleted: false,
+        })),
+        ...form.sub_company_ids
+          .filter((cid) => !form.gc_company_ids.includes(cid))
+          .map((cid) => ({
+            project_id: editProject.id,
+            company_id: cid,
+            role_in_project: 'contractor',
+            is_deleted: false,
+          })),
+      ];
+      if (linkRows.length > 0) {
+        await (supabase.from('project_companies' as any) as any).upsert(linkRows, {
+          onConflict: 'project_id,company_id',
+        });
+      }
       toast({ title: '프로젝트가 수정되었습니다.' });
       log('수정', 'project', editProject.id);
       setEditProject(null);

@@ -32,6 +32,7 @@ import ConstructionFields from '@/components/company/ConstructionFields';
 import { constructionFormFromRow, emptyConstructionForm, upsertProjectConstruction, type ConstructionForm } from '@/lib/companyConstruction';
 import { submitCompanyRegistration } from '@/lib/companyRegistration';
 import { formatKRW } from '@/lib/safetyCost';
+import { ConstructionInfoMissingBanner } from '@/components/ConstructionInfoMissingBanner';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -392,6 +393,7 @@ const ProjectDetail = () => {
       field: 'role_new',
       value: newRole,
       companyType,
+      currentPosition: target?.position_new || null,
     });
     await supabase.from('project_members').update(updateData as any).eq('id', memberId);
     fetchAll();
@@ -758,6 +760,8 @@ const ProjectDetail = () => {
         </div>
       </div>
 
+      <ConstructionInfoMissingBanner projectId={projectId} contextLabel="현장 업체별 공사금액·기간" />
+
       <Tabs defaultValue="members">
         <TabsList>
           <TabsTrigger value="basic-info" className="gap-1.5"><Settings2 className="h-3.5 w-3.5" /> 기본정보</TabsTrigger>
@@ -913,6 +917,7 @@ const ProjectDetail = () => {
                     <div className="flex items-center gap-2">
                       {canManage ? (
                         <>
+                          <span className="text-xs text-muted-foreground">권한</span>
                           <Select value={m.role_new || 'viewer'} onValueChange={v => handleChangeRole(m.id, v)}>
                             <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="역할" /></SelectTrigger>
                             <SelectContent>
@@ -921,6 +926,7 @@ const ProjectDetail = () => {
                               ))}
                             </SelectContent>
                           </Select>
+                          <span className="text-xs text-muted-foreground">직책</span>
                           <Select
                             value={m.position_new || '_none'}
                             onValueChange={v => handleChangePosition(m.id, v === '_none' ? null : v)}

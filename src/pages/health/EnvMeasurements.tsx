@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, ClipboardList, AlertTriangle, Search, Trash2 } from "lucide-react";
+import { Plus, ClipboardList, AlertTriangle, Search, Trash2, Pencil } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 
@@ -32,6 +32,7 @@ export default function EnvMeasurements() {
   const [list, setList] = useState<any[]>([]);
   const [factors, setFactors] = useState<any[]>([]);
   const [openM, setOpenM] = useState(false);
+  const [editingM, setEditingM] = useState<any | null>(null);
   const [openF, setOpenF] = useState(false);
   const [mf, setMf] = useState<any>({ round: "1차(상반기)" });
   const [ff, setFf] = useState<any>({ category: "소음" });
@@ -106,15 +107,36 @@ export default function EnvMeasurements() {
     } catch (e) { handle(e, "유해인자 등록"); }
   };
 
+  const openCreateM = () => {
+    setEditingM(null);
+    setMf({ round: "1차(상반기)" });
+    setOpenM(true);
+  };
+
+  const openEditM = (row: any) => {
+    setEditingM(row);
+    setMf({
+      measure_date: row.measure_date || "",
+      round: row.round || "1차(상반기)",
+      factor_id: row.factor_id || "",
+      measured_value: row.measured_value ?? "",
+      unit: row.unit || "",
+      location: row.location || "",
+      agency: row.agency || "",
+      action_summary: row.action_summary || "",
+      next_due_date: row.next_due_date || "",
+    });
+    setOpenM(true);
+  };
+
   const submitMeasurement = async () => {
     if (!projectId || !mf.measure_date || !mf.factor_id) { toast.error("측정일·인자 필수"); return; }
     try {
       const factor = factors.find(f => f.id === mf.factor_id);
-      const measured = mf.measured_value ? Number(mf.measured_value) : null;
+      const measured = mf.measured_value !== "" && mf.measured_value != null ? Number(mf.measured_value) : null;
       const limit = factor?.exposure_limit_value;
       const exceeded = measured != null && limit != null ? measured > limit : false;
-      const { error } = await supabase.from("work_env_measurements").insert({
-        project_id: projectId,
+      const payload = {
         round: mf.round,
         measure_date: mf.measure_date,
         agency: mf.agency || null,
@@ -128,11 +150,21 @@ export default function EnvMeasurements() {
         action_required: exceeded,
         action_summary: mf.action_summary || null,
         next_due_date: mf.next_due_date || null,
-      });
-      if (error) throw error;
-      toast.success(exceeded ? "등록 (노출기준 초과 — 개선조치 필요)" : "등록되었습니다");
-      setOpenM(false); setMf({ round: "1차(상반기)" }); await load();
-    } catch (e) { handle(e, "측정 등록"); }
+      };
+      if (editingM) {
+        const { error } = await supabase.from("work_env_measurements").update(payload).eq("id", editingM.id);
+        if (error) throw error;
+        toast.success(exceeded ? "수정 (노출기준 초과 — 개선조치 필요)" : "수정되었습니다");
+      } else {
+        const { error } = await supabase.from("work_env_measurements").insert({
+          project_id: projectId,
+          ...payload,
+        });
+        if (error) throw error;
+        toast.success(exceeded ? "등록 (노출기준 초과 — 개선조치 필요)" : "등록되었습니다");
+      }
+      setOpenM(false); setEditingM(null); setMf({ round: "1차(상반기)" }); await load();
+    } catch (e) { handle(e, editingM ? "측정 수정" : "측정 등록"); }
   };
 
   const onDelete = async (row: any) => {
@@ -153,7 +185,7 @@ export default function EnvMeasurements() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setOpenF(true)}><Plus className="h-4 w-4 mr-1" />유해인자</Button>
-          <Button onClick={() => setOpenM(true)}><Plus className="h-4 w-4 mr-1" />측정 등록</Button>
+          <Button onClick={openCreateM}><Plus className="h-4 w-4 mr-1" />측정 등록</Button>
         </div>
       </div>
 
@@ -206,7 +238,10 @@ export default function EnvMeasurements() {
                         <TableCell className="text-xs">{r.location || "-"}</TableCell>
                         <TableCell className="text-xs">{r.agency || "-"}</TableCell>
                         <TableCell>
-                          <Button size="icon" variant="ghost" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4" /></Button>
+                          <div className="flex items-center gap-1">
+                            <Button size="icon" variant="ghost" onClick={() => openEditM(r)} title="수정"><Pencil className="h-4 w-4" /></Button>
+                            <Button size="icon" variant="ghost" onClick={() => onDelete(r)} title="삭제"><Trash2 className="h-4 w-4" /></Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -246,7 +281,7 @@ export default function EnvMeasurements() {
 
       <Dialog open={openM} onOpenChange={setOpenM}>
         <DialogContent>
-          <DialogHeader><DialogTitle>측정 등록</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingM ? "측정 수정" : "측정 등록"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>측정일 *</Label><Input type="date" value={mf.measure_date || ""} onChange={e => setMf({ ...mf, measure_date: e.target.value })} /></div>
             <div><Label>회차</Label>
@@ -267,7 +302,7 @@ export default function EnvMeasurements() {
             <div className="col-span-2"><Label>개선조치 요약</Label><Input value={mf.action_summary || ""} onChange={e => setMf({ ...mf, action_summary: e.target.value })} /></div>
             <div className="col-span-2"><Label>차회 측정 기한</Label><Input type="date" value={mf.next_due_date || ""} onChange={e => setMf({ ...mf, next_due_date: e.target.value })} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpenM(false)}>취소</Button><Button onClick={submitMeasurement}>등록</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setOpenM(false)}>취소</Button><Button onClick={submitMeasurement}>{editingM ? "저장" : "등록"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

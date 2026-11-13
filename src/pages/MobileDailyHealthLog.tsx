@@ -38,6 +38,7 @@ export default function MobileDailyHealthLog() {
   const [fitToWork, setFitToWork] = useState(true);
   const [note, setNote] = useState("");
   const [alreadyToday, setAlreadyToday] = useState(false);
+  const [todayAction, setTodayAction] = useState<{ status: string; note?: string | null; by?: string | null } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -64,10 +65,24 @@ export default function MobileDailyHealthLog() {
       const today = new Date().toISOString().slice(0, 10);
       const [{ data: w }, { data: existing }] = await Promise.all([
         supabase.from("workers").select("*").eq("id", wid).maybeSingle(),
-        supabase.from("worker_daily_health_logs").select("id").eq("worker_id", wid).eq("log_date", today).maybeSingle(),
+        (supabase as any)
+          .from("worker_daily_health_logs")
+          .select("id, action_status, action_note, action_taken_by_name")
+          .eq("worker_id", wid)
+          .eq("log_date", today)
+          .maybeSingle(),
       ]);
       setWorker(w);
       setAlreadyToday(!!existing);
+      if (existing && existing.action_status && existing.action_status !== "pending") {
+        setTodayAction({
+          status: existing.action_status,
+          note: existing.action_note,
+          by: existing.action_taken_by_name,
+        });
+      } else {
+        setTodayAction(null);
+      }
       setLoading(false);
     })();
   }, [paramWorkerId, profile?.phone, projectId]);
@@ -139,6 +154,14 @@ export default function MobileDailyHealthLog() {
         <CardHeader>
           <CardTitle className="text-base">{worker.name} ({worker.company_name})</CardTitle>
           {alreadyToday && <p className="text-xs text-warning">오늘 이미 작성한 일지가 있습니다. 추가 저장은 불가합니다.</p>}
+          {todayAction && (
+            <div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 p-2 text-xs text-emerald-900 dark:text-emerald-200">
+              <strong>관리자 조치 완료:</strong>{" "}
+              {{ rest: "휴식 조치", reassigned: "경작업 전환", sent_home: "귀가 조치", cleared: "이상없음 확인" }[todayAction.status] || todayAction.status}
+              {todayAction.note ? ` · ${todayAction.note}` : ""}
+              {todayAction.by ? ` (${todayAction.by})` : ""}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div>

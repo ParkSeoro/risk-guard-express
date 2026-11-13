@@ -197,6 +197,11 @@ export default function WorkerDetail() {
                   size="sm"
                   disabled={saving}
                   onClick={async () => {
+                    const phoneDigits = form.phone.replace(/\D/g, "");
+                    if (phoneDigits.length < 10) {
+                      toast.error("전화번호 10자리 이상을 입력하세요 (근로자 아이디로 사용됩니다)");
+                      return;
+                    }
                     setSaving(true);
                     const res = await syncWorkerProfileIdentity({
                       workerId: w.id,

@@ -13,10 +13,12 @@ export default function RoleGuard({
   children,
   allowed = ['master', 'project_admin', 'safety_manager'],
   masterOnly = false,
+  allowContractorCompany = false,
 }: {
   children: ReactNode;
   allowed?: Allowed[];
   masterOnly?: boolean;
+  allowContractorCompany?: boolean;
 }) {
   const { hasRole, roles, loading } = useAuth();
   const ctx = useGlobalProjectAccessOptional();
@@ -27,13 +29,13 @@ export default function RoleGuard({
   if (isMaster) return <>{children}</>;
   if (masterOnly) return <Navigate to="/" replace />;
 
-  // Hard block: contractor/vendor company accounts, or contractor/worker/viewer-only roles
+  // Hard block: contractor/vendor company accounts (unless explicitly allowed), or contractor/worker/viewer-only roles
   const companyType = ctx?.userCompanyType;
   const isContractorCo = companyType === 'contractor' || companyType === 'vendor';
   const LOW = new Set(['contractor', 'worker', 'viewer', 'user']);
   const isLowPriv = roles.length === 0 || roles.every((r) => LOW.has(r as string));
 
-  if (isContractorCo || isLowPriv) return <Navigate to="/" replace />;
+  if ((isContractorCo && !allowContractorCompany) || isLowPriv) return <Navigate to="/" replace />;
 
   const ok = allowed.some((r) => hasRole(r as any));
   if (!ok) return <Navigate to="/" replace />;

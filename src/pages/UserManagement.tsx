@@ -465,13 +465,19 @@ const UserManagement = () => {
   // Keep role_new ↔ position_new SSOT pairs in sync (site_supervisor ↔ SITE_SUPERVISOR).
   const handleUpdateMembership = async (membershipId: string, field: string, value: string | null) => {
     const mem = Object.values(userMemberships).flat().find((m) => m.id === membershipId);
-    const companyType = mem?.company_id
-      ? projectCompanies.find((c) => c.id === mem.company_id)?.type
-      : null;
+    const companyType =
+      mem?.companies?.type ||
+      (mem?.company_id ? projectCompanies.find((c) => c.id === mem.company_id)?.type : null) ||
+      null;
 
     const updateData: Record<string, any> =
       field === 'role_new' || field === 'position_new'
-        ? syncMembershipRolePosition({ field, value, companyType })
+        ? syncMembershipRolePosition({
+            field,
+            value,
+            companyType,
+            currentPosition: mem?.position_new || null,
+          })
         : { [field]: value };
 
     if (field === 'company_id') {
@@ -526,6 +532,7 @@ const UserManagement = () => {
       log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole, position: assignPosition });
       setShowAssignDialog(false);
       resetAssignForm();
+      fetchUsers();
     } catch (err) {
       setAssignError(`오류가 발생했습니다: ${String(err)}`);
     }
@@ -769,6 +776,7 @@ const UserManagement = () => {
                           return (
                             <div key={m.id} className="flex items-center gap-1 text-[10px] flex-wrap">
                               <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
+                              <span className="text-muted-foreground">권한</span>
                               <Select value={m.role_new || 'viewer'} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
                                 <SelectContent>
@@ -777,13 +785,15 @@ const UserManagement = () => {
                                   ))}
                                 </SelectContent>
                               </Select>
+                              <span className="text-muted-foreground">직책</span>
                               <Select value={m.position_new || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
                                 <SelectTrigger className="h-5 w-28 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>
                                   {(() => {
                                     const co = projectCompanies.find((c) => c.id === m.company_id);
-                                    const companyType = normalizeCompanyType(co?.type) || co?.type;
+                                    const rawType = m.companies?.type || co?.type;
+                                    const companyType = normalizeCompanyType(rawType) || rawType;
                                     const allowed = companyType
                                       ? (POSITIONS_BY_COMPANY_TYPE[companyType] || Object.keys(positionLabels).filter((k) => k !== 'OWNER_HSE'))
                                       : Object.keys(positionLabels).filter((k) => k !== 'OWNER_HSE');
@@ -969,10 +979,10 @@ const UserManagement = () => {
                       </SelectContent>
                     </Select>
                     {companyType === 'client' && (
-                      <p className="text-[11px] text-muted-foreground">발주처 직책: PM / CM / SM</p>
+                      <p className="text-[11px] text-muted-foreground">발주처 직책: PM / CM / SM · 감리</p>
                     )}
                     {companyType === 'gc' && (
-                      <p className="text-[11px] text-muted-foreground">시공사: 감리와 관리감독자를 구분해 선택하세요.</p>
+                      <p className="text-[11px] text-muted-foreground">시공사: 현장소장·안전관리자·관리감독자 등</p>
                     )}
                     {(companyType === 'contractor' || companyType === 'vendor') && (
                       <p className="text-[11px] text-muted-foreground">협력사: 관리감독자·현장소장·안전관리자 등</p>

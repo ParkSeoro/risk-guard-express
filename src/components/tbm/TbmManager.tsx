@@ -770,7 +770,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <div>
             <p className="font-semibold">등록된 TBM이 없습니다.</p>
             <p className="text-xs text-muted-foreground mt-1">
-              QR 코드를 발행해 근로자가 참여 서명할 수 있는 첫 TBM을 만들어 보세요.
+              허가서 승인 시 작업일 TBM이 자동 생성되며, 명단에 없는 당일 추가·방문 인원은 QR로 서명받을 수 있습니다.
             </p>
           </div>
           <Button size="sm" onClick={() => setShowCreate(true)}>

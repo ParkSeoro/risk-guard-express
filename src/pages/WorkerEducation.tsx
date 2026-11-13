@@ -12,8 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { GraduationCap, Plus, AlertTriangle, CheckCircle2, Search } from "lucide-react";
+import { GraduationCap, Plus, AlertTriangle, CheckCircle2, Search, ScanText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { extractDocumentDraft, type EducationCertificateDraft } from "@/lib/ocrDocumentDraft";
 
 type Row = {
   id: string; project_id: string; worker_id: string; company_id: string | null;
@@ -24,6 +25,15 @@ type Row = {
 type Worker = { id: string; name: string; company_id: string | null };
 
 const TYPES = ['정기', '채용시', '작업변경시', '특별', '관리감독자', '기초안전보건'];
+
+const LEGAL_MIN_HOURS: Record<string, { hours: number; note: string }> = {
+  정기: { hours: 3, note: '산안법 §29 별표4: 분기 3~6시간 이상 (건설 일용직 별도 기준)' },
+  채용시: { hours: 8, note: '산안법 §29 별표4: 상용직 8시간 / 일용직 1시간 이상' },
+  작업변경시: { hours: 2, note: '산안법 §29 별표4: 2시간 이상 (일용직 1시간 이상)' },
+  특별: { hours: 16, note: '산안법 §29 별표4: 16시간 이상 (단기·일용 2시간 이상)' },
+  관리감독자: { hours: 16, note: '산안법 §29 별표4: 연간 16시간 이상' },
+  기초안전보건: { hours: 4, note: '산안법 §31: 건설업 기초안전보건교육 4시간' },
+};
 
 export default function WorkerEducation() {
   const {
@@ -40,6 +50,7 @@ export default function WorkerEducation() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [form, setForm] = useState({
@@ -104,7 +115,7 @@ export default function WorkerEducation() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ worker_id: "", education_type: "정기", course_name: "", hours: 0, completed_at: today, instructor: "", notes: "", evidence_url: "" });
+    setForm({ worker_id: "", education_type: "정기", course_name: "", hours: LEGAL_MIN_HOURS["정기"].hours, completed_at: today, instructor: "", notes: "", evidence_url: "" });
     setOpen(true);
   }
   function openEdit(r: Row) {
@@ -202,7 +213,14 @@ export default function WorkerEducation() {
                         <td className="p-2">{workerMap[r.worker_id]?.name || "-"}</td>
                         <td className="p-2"><Badge variant="outline">{r.education_type}</Badge></td>
                         <td className="p-2 font-medium">{r.course_name}</td>
-                        <td className="p-2 text-center">{r.hours}h</td>
+                        <td className="p-2 text-center">
+                          <span>{r.hours}h</span>
+                          {(Number(r.hours) <= 0 || (LEGAL_MIN_HOURS[r.education_type] && Number(r.hours) < LEGAL_MIN_HOURS[r.education_type].hours)) && (
+                            <Badge variant="outline" className="ml-1 text-[10px] border-amber-500 text-amber-700">
+                              {Number(r.hours) <= 0 ? '0h 미달' : `기준 ${LEGAL_MIN_HOURS[r.education_type].hours}h 미만`}
+                            </Badge>
+                          )}
+                        </td>
                         <td className="p-2 whitespace-nowrap">{r.completed_at}</td>
                         <td className="p-2 whitespace-nowrap">
                           {r.next_due_at ? <Badge variant={overdue ? "destructive" : "secondary"}>{r.next_due_at}</Badge> : "-"}
@@ -223,7 +241,52 @@ export default function WorkerEducation() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
-          <DialogHeader><DialogTitle>{editing ? "이수 수정" : "교육 이수 등록"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2 pr-6">
+              <DialogTitle>{editing ? "이수 수정" : "교육 이수 등록"}</DialogTitle>
+              <label className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent cursor-pointer">
+                {ocrLoading ? <Loader2 className="size-3.5 animate-spin" /> : <ScanText className="size-3.5" />}
+                <span>{ocrLoading ? "판독 중..." : "이수증 OCR 자동입력"}</span>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  disabled={ocrLoading}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    setOcrLoading(true);
+                    try {
+                      const res = await extractDocumentDraft<EducationCertificateDraft>("education_certificate", file);
+                      if (!res.ok) {
+                        toast.warning(res.warning || "AI 보완을 건너뛰었습니다. 직접 입력하세요.");
+                        return;
+                      }
+                      const d = res.draft || {};
+                      const matchedWorker = !form.worker_id && d.worker_name
+                        ? workers.find((w) => w.name.trim() === String(d.worker_name).trim())
+                        : undefined;
+                      const nextType = d.education_type && TYPES.includes(d.education_type) ? d.education_type : form.education_type;
+                      setForm((prev) => ({
+                        ...prev,
+                        worker_id: matchedWorker?.id || prev.worker_id,
+                        education_type: nextType,
+                        course_name: d.course_name ? String(d.course_name) : prev.course_name,
+                        hours: typeof d.hours === "number" && d.hours > 0 ? d.hours : prev.hours,
+                        completed_at: d.completed_at && /^\d{4}-\d{2}-\d{2}$/.test(d.completed_at) ? d.completed_at : prev.completed_at,
+                        instructor: d.instructor ? String(d.instructor) : prev.instructor,
+                        notes: d.notes ? String(d.notes) : prev.notes,
+                      }));
+                      toast.success(res.warning ? `초안 입력 완료 (${res.warning})` : "이수증 내용을 초안에 채웠습니다. 확인 후 저장하세요.");
+                    } finally {
+                      setOcrLoading(false);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div><Label>근로자</Label>
@@ -233,7 +296,15 @@ export default function WorkerEducation() {
                 </Select>
               </div>
               <div><Label>교육 유형</Label>
-                <Select value={form.education_type} onValueChange={v => setForm({ ...form, education_type: v })}>
+                <Select
+                  value={form.education_type}
+                  onValueChange={v => {
+                    const suggested = LEGAL_MIN_HOURS[v]?.hours ?? form.hours;
+                    const prevSuggested = LEGAL_MIN_HOURS[form.education_type]?.hours;
+                    const shouldUpdateHours = !editing && (form.hours === 0 || form.hours === prevSuggested);
+                    setForm({ ...form, education_type: v, hours: shouldUpdateHours ? suggested : form.hours });
+                  }}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
@@ -248,6 +319,12 @@ export default function WorkerEducation() {
             <div><Label>증빙 URL</Label><Input value={form.evidence_url} onChange={e => setForm({ ...form, evidence_url: e.target.value })} placeholder="https://..." /></div>
             <div><Label>비고</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
             <p className="text-xs text-muted-foreground">정기 3개월, 특별/관리감독자 12개월 주기로 차기 예정일이 자동 계산됩니다.</p>
+            {LEGAL_MIN_HOURS[form.education_type] && Number(form.hours) < LEGAL_MIN_HOURS[form.education_type].hours && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-2 text-xs text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="inline size-3.5 mr-1 -mt-0.5" />
+                {LEGAL_MIN_HOURS[form.education_type].note} (입력 {Number(form.hours) || 0}h — 저장은 가능하나 법정 시간 확인이 필요합니다)
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>

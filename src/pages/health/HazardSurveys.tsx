@@ -10,16 +10,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, ClipboardList, Copy } from "lucide-react";
+import { Plus, ClipboardList, Copy, Pencil, Trash2 } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 
 const TYPES = ["근골격계", "뇌심혈관", "직무스트레스", "감정노동"];
 
 export default function HazardSurveys() {
   const handle = useToastError();
   const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<any | null>(null);
   const [form, setForm] = useState<any>({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });
   const [loading, setLoading] = useState(true);
 
@@ -36,25 +39,60 @@ export default function HazardSurveys() {
   };
   useEffect(() => { load(); }, [projectId, userCompanyId]);
 
+  const openCreate = () => {
+    setEditingRow(null);
+    setForm({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });
+    setOpen(true);
+  };
+
+  const openEdit = (row: any) => {
+    setEditingRow(row);
+    setForm({
+      type: row.type || "근골격계",
+      title: row.title || "",
+      survey_date: row.survey_date || new Date().toISOString().slice(0, 10),
+      target_count: row.target_count ?? "",
+    });
+    setOpen(true);
+  };
+
+  const onDelete = async (row: any) => {
+    if (!projectId) return;
+    const res = await softDelete("hazard_surveys", row.id, { projectId, label: row.title });
+    if (res.ok) await load();
+  };
+
   const submit = async () => {
     if (!projectId || !form.title || !form.survey_date) { toast.error("제목·실시일 필수"); return; }
     try {
-      const token = crypto.randomUUID().replace(/-/g, "");
       const next = new Date(form.survey_date); next.setFullYear(next.getFullYear() + 3);
-      const { error } = await supabase.from("hazard_surveys").insert({
-        project_id: projectId,
-        type: form.type,
-        title: form.title,
-        survey_date: form.survey_date,
-        target_count: form.target_count ? Number(form.target_count) : 0,
-        qr_token: token,
-        next_due_date: next.toISOString().slice(0, 10),
-      });
-      if (error) throw error;
-      toast.success("설문이 생성되었습니다");
-      setOpen(false); setForm({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });
+      if (editingRow) {
+        const { error } = await supabase.from("hazard_surveys").update({
+          type: form.type,
+          title: form.title,
+          survey_date: form.survey_date,
+          target_count: form.target_count ? Number(form.target_count) : 0,
+          next_due_date: next.toISOString().slice(0, 10),
+        }).eq("id", editingRow.id);
+        if (error) throw error;
+        toast.success("수정되었습니다");
+      } else {
+        const token = crypto.randomUUID().replace(/-/g, "");
+        const { error } = await supabase.from("hazard_surveys").insert({
+          project_id: projectId,
+          type: form.type,
+          title: form.title,
+          survey_date: form.survey_date,
+          target_count: form.target_count ? Number(form.target_count) : 0,
+          qr_token: token,
+          next_due_date: next.toISOString().slice(0, 10),
+        });
+        if (error) throw error;
+        toast.success("설문이 생성되었습니다");
+      }
+      setOpen(false); setEditingRow(null); setForm({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });
       await load();
-    } catch (e) { handle(e, "유해요인조사 생성"); }
+    } catch (e) { handle(e, editingRow ? "유해요인조사 수정" : "유해요인조사 생성"); }
   };
 
   const copyLink = (token: string) => {
@@ -72,7 +110,7 @@ export default function HazardSurveys() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardList className="h-6 w-6" />유해요인조사</h1>
           <p className="text-sm text-muted-foreground mt-1">근골격계·뇌심혈관·직무스트레스 조사 (산안법 시행규칙 제657조, 3년 주기)</p>
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-1" />조사 생성</Button>
+        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />조사 생성</Button>
       </div>
 
       <Card>
@@ -83,7 +121,7 @@ export default function HazardSurveys() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>실시일</TableHead><TableHead>유형</TableHead><TableHead>제목</TableHead>
-                  <TableHead>응답</TableHead><TableHead>고위험</TableHead><TableHead>차회</TableHead><TableHead>링크</TableHead>
+                  <TableHead>응답</TableHead><TableHead>고위험</TableHead><TableHead>차회</TableHead><TableHead>링크</TableHead><TableHead></TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {list.map(r => (
@@ -101,9 +139,15 @@ export default function HazardSurveys() {
                           </Button>
                         )}
                       </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => openEdit(r)} title="수정"><Pencil className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => onDelete(r)} title="삭제"><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
-                  {list.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">생성된 조사가 없습니다.</TableCell></TableRow>}
+                  {list.length === 0 && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">생성된 조사가 없습니다.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </div>
@@ -113,7 +157,7 @@ export default function HazardSurveys() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>유해요인조사 생성</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingRow ? "유해요인조사 수정" : "유해요인조사 생성"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>유형</Label>
               <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
@@ -125,7 +169,7 @@ export default function HazardSurveys() {
             <div className="col-span-2"><Label>제목</Label><Input value={form.title || ""} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="2026년 상반기 근골격계 유해요인조사" /></div>
             <div><Label>대상 인원</Label><Input type="number" value={form.target_count || ""} onChange={e => setForm({ ...form, target_count: e.target.value })} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>취소</Button><Button onClick={submit}>생성</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>취소</Button><Button onClick={submit}>{editingRow ? "저장" : "생성"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

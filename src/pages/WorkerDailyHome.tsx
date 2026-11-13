@@ -660,6 +660,9 @@ export default function WorkerDailyHome({
         signatureData,
       });
       if ("error" in saved) throw new Error(saved.error);
+      if (saved.tbmSyncWarning) {
+        toast.warning(saved.tbmSyncWarning, { duration: 7000 });
+      }
       await stampPendingSharesFromDailyAck({
         projectId,
         workerId,

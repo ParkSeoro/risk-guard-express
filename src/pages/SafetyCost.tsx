@@ -28,6 +28,7 @@ import { EvidencePackPanel } from '@/components/safety-cost/EvidencePackPanel';
 import { SafetyCostItemCards } from '@/components/safety-cost/SafetyCostItemCards';
 import { SafetyCostMoneyFields } from '@/components/safety-cost/SafetyCostMoneyFields';
 import { LegacyImportWizard } from '@/components/safety-cost/LegacyImportWizard';
+import { ConstructionInfoMissingBanner } from '@/components/ConstructionInfoMissingBanner';
 import { PpeLedgerPanel } from '@/components/safety-cost/PpeLedgerPanel';
 import { PpeStockPanel } from '@/components/safety-cost/PpeStockPanel';
 import SafetyCostValidationPanel from '@/components/safety-cost/SafetyCostValidationPanel';
@@ -1091,6 +1092,8 @@ const SafetyCost = () => {
       </div>
       )}
     </div>
+
+    <ConstructionInfoMissingBanner projectId={access.selectedProject} contextLabel="산업안전보건관리비 계상 대상 공사금액" />
 
     <Tabs value={activeTab} onValueChange={setActiveTab}>
       <TabsList>

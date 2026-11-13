@@ -153,6 +153,13 @@ export function AppSidebar() {
   const LOW = new Set(['contractor', 'worker', 'viewer', 'user']);
   const isLowPriv = !isMaster && (roles.length === 0 || roles.every((r) => LOW.has(r as string)));
   const restrictToContractorUI = isContractorCo || isLowPriv;
+  const isSystemAdmin = isMaster || hasRole('project_admin') || hasRole('safety_manager');
+  const ADMIN_ONLY_GROUP_URLS = new Set<string>([
+    '/safety-cost',
+    '/contractor-scorecard',
+    '/assessment-notices',
+    '/admin/tracking-health',
+  ]);
   const canViewVision = isMaster || roles.some((r) => (VISION_VIEW_ROLES as readonly string[]).includes(r));
   const location = useLocation();
   const pendingApprovals = usePendingApprovalsCount();
@@ -189,6 +196,9 @@ export function AppSidebar() {
     }
     if (isPureWorkerUser(roles)) {
       items = items.filter((i) => i.url !== "/messenger");
+    }
+    if (!isSystemAdmin) {
+      items = items.filter((i) => !ADMIN_ONLY_GROUP_URLS.has(i.url));
     }
     return { ...g, items };
   });
@@ -345,7 +355,7 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        {!restrictToContractorUI && (
+        {!restrictToContractorUI && isSystemAdmin && (
           <SidebarGroup className="pb-2">
             {!collapsed ? (
               <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>

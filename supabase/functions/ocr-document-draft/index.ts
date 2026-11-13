@@ -14,7 +14,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-type DocumentType = "education_certificate" | "construction_contract";
+type DocumentType =
+  | "education_certificate"
+  | "construction_contract"
+  | "msds_document"
+  | "chemical_lookup"
+  | "chemical_usage_plan";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -49,6 +54,61 @@ function buildPrompt(documentType: DocumentType, ocrText: string): { system: str
 
 OCR 원문:
 ${ocrText.slice(0, 6000)}`,
+    };
+  }
+
+  if (documentType === "msds_document") {
+    return {
+      system: "당신은 대한민국 산업안전보건법 MSDS(물질안전보건자료) 판독 도우미입니다. 원문에 없는 값을 지어내지 말고 JSON만 반환하세요.",
+      prompt: `다음은 MSDS 문서/라벨 OCR 원문입니다.
+아래 JSON 키에 맞춰 추출하세요. 확인되지 않는 항목은 null로 두세요.
+- name: 대표 화학물질명 또는 주요 성분명 (문자열 또는 null)
+- trade_name: 제품명/상품명 (문자열 또는 null)
+- cas_no: 대표 CAS 번호 (예: "108-88-3", 여러 개면 주성분 1개 또는 쉼표 구분, 없으면 null)
+- hazard_class: 주요 유해·위험성 구분 요약 (예: "인화성 액체 구분2, 피부자극성", 없으면 null)
+- is_carcinogen: 발암성 1A/1B 또는 특별관리물질 해당 시 true, 아니면 false
+- is_reproductive_toxin: 생식독성 1A/1B 해당 시 true, 아니면 false
+- unit: 기본 취급 단위 (예: "L", "kg", 없으면 null)
+- notes: 보관/취급 주의사항 및 기타 구성성분 요약 1~2줄 (문자열 또는 null)
+
+OCR 원문:
+${ocrText.slice(0, 6000)}`,
+    };
+  }
+
+  if (documentType === "chemical_lookup") {
+    return {
+      system: "당신은 대한민국 산업안전보건법 및 KOSHA MSDS 화학물질 정보 도우미입니다. 불확실한 CAS 번호는 지어내지 말고 null을 반환하며 JSON만 반환하세요.",
+      prompt: `사용자가 입력한 화학물질명 또는 CAS 번호를 바탕으로 표준 화학물질 정보를 초안으로 정리하세요.
+입력값: ${ocrText.slice(0, 1000)}
+아래 JSON 키에 맞춰 반환하세요:
+- name: 표준 화학물질명 (한글명 우선, 괄호 영문 병기 가능)
+- cas_no: 정확한 CAS 번호 (예: "108-88-3", 단일 물질이 아니거나 불확실하면 null)
+- trade_name: 일반 제품/통용명 (또는 null)
+- hazard_class: 주요 GHS 유해위험성 구분 요약 (문자열 또는 null)
+- is_carcinogen: 발암성 1A/1B/2 또는 특별관리물질 해당 시 true, 아니면 false
+- is_reproductive_toxin: 생식독성 해당 시 true, 아니면 false
+- notes: 작업환경측정·특수건강진단 대상 여부 및 보관/보호구 주의사항 1~2줄 (문자열 또는 null)`,
+    };
+  }
+
+  if (documentType === "chemical_usage_plan") {
+    return {
+      system: "당신은 대한민국 건설현장 화학물질 연·월 사용계획 등록 도우미입니다. JSON만 반환하세요.",
+      prompt: `다음 사용자 입력(자연어 또는 반입내역)을 화학물질 사용계획 항목 배열로 변환하세요.
+입력:
+${ocrText.slice(0, 4000)}
+
+반드시 {"items":[...]} 형태의 JSON 객체로 반환하세요. 각 item의 키:
+- chemical_name: 물질/제품명 (문자열)
+- plan_type: "annual" 또는 "monthly" (기본 "monthly")
+- year: 연도 정수 (예: 2026)
+- month: 월간이면 1~12 정수, 연간이면 null
+- planned_qty: 계획 사용량 숫자 (또는 null)
+- storage_max_qty: 최대 보관량 숫자 (또는 null)
+- unit: 단위 ("L", "kg", "통" 등 또는 null)
+- legal_basis: 관련 법적근거 한 줄 (예: "산안법 §114 MSDS · 화관법 시행규칙 §19")
+- notes: 공정/비고 한 줄 (또는 null)`,
     };
   }
 
@@ -91,8 +151,15 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const documentType = (body?.documentType === "construction_contract"
-      ? "construction_contract"
+    const ALLOWED_TYPES = new Set<DocumentType>([
+      "education_certificate",
+      "construction_contract",
+      "msds_document",
+      "chemical_lookup",
+      "chemical_usage_plan",
+    ]);
+    const documentType = (ALLOWED_TYPES.has(body?.documentType)
+      ? body.documentType
       : "education_certificate") as DocumentType;
     const fileBase64 = typeof body?.fileBase64 === "string" ? body.fileBase64 : undefined;
     const mimeType = typeof body?.mimeType === "string" ? body.mimeType : undefined;

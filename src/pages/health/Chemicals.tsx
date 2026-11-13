@@ -13,8 +13,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToastError } from "@/hooks/useToastError";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { toast } from "sonner";
-import { Plus, FlaskConical, FileText, CalendarRange, Pencil, Trash2 } from "lucide-react";
+import { Plus, FlaskConical, FileText, CalendarRange, Pencil, Trash2, ScanText, Sparkles, Loader2 } from "lucide-react";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
+import {
+  extractDocumentDraft,
+  extractTextDraft,
+  type ChemicalUsagePlanDraft,
+  type ChemicalUsagePlanItemDraft,
+  type MsdsDraft,
+} from "@/lib/ocrDocumentDraft";
 
 type Company = { id: string; name: string };
 type Chemical = {
@@ -54,6 +61,10 @@ export default function Chemicals() {
   const [chemForm, setChemForm] = useState<any>({});
   const [planOpen, setPlanOpen] = useState(false);
   const [planForm, setPlanForm] = useState<any>({ plan_type: "monthly", year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
+  const [chemAiLoading, setChemAiLoading] = useState(false);
+  const [planAiPrompt, setPlanAiPrompt] = useState("");
+  const [planAiLoading, setPlanAiLoading] = useState(false);
+  const [planAiBatch, setPlanAiBatch] = useState<ChemicalUsagePlanItemDraft[]>([]);
 
   const loadCompanies = async () => {
     if (!projectId) return;
@@ -208,6 +219,156 @@ export default function Chemicals() {
 
   const chemicalById = useMemo(() => Object.fromEntries(list.map(c => [c.id, c])), [list]);
 
+  const applyMsdsDraft = (d: MsdsDraft) => {
+    setChemForm((prev: any) => ({
+      ...prev,
+      name: d.name ? String(d.name) : prev.name,
+      trade_name: d.trade_name ? String(d.trade_name) : prev.trade_name,
+      cas_no: d.cas_no ? String(d.cas_no) : prev.cas_no,
+      hazard_class: d.hazard_class ? String(d.hazard_class) : prev.hazard_class,
+      is_carcinogen: typeof d.is_carcinogen === "boolean" ? d.is_carcinogen : prev.is_carcinogen,
+      is_reproductive_toxin: typeof d.is_reproductive_toxin === "boolean" ? d.is_reproductive_toxin : prev.is_reproductive_toxin,
+      unit: d.unit ? String(d.unit) : prev.unit,
+      notes: d.notes ? String(d.notes) : prev.notes,
+    }));
+  };
+
+  const handleChemLookup = async () => {
+    const query = [chemForm.cas_no, chemForm.name, chemForm.trade_name].map((v) => String(v || "").trim()).filter(Boolean).join(" / ");
+    if (!query) {
+      toast.warning("물질명 또는 CAS No.를 먼저 입력하세요.");
+      return;
+    }
+    setChemAiLoading(true);
+    try {
+      const res = await extractTextDraft<MsdsDraft>("chemical_lookup", query);
+      if (!res.ok) {
+        toast.warning(res.warning || "AI 조회를 건너뛰었습니다. 직접 입력하세요.");
+        return;
+      }
+      applyMsdsDraft(res.draft || {});
+      toast.success("CAS/물질 정보를 초안에 채웠습니다. 원본 MSDS와 대조 후 저장하세요.");
+    } finally {
+      setChemAiLoading(false);
+    }
+  };
+
+  const handleBulkGenerateThisMonth = async () => {
+    if (!projectId) return;
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const existingIds = new Set(
+      plans.filter((p) => p.plan_type === "monthly" && p.year === y && p.month === m && p.chemical_id).map((p) => p.chemical_id),
+    );
+    const targets = list.filter((c) => !existingIds.has(c.id));
+    if (targets.length === 0) {
+      toast.info(`${y}년 ${m}월 사용계획이 이미 모든 등록 물질에 대해 존재합니다.`);
+      return;
+    }
+    const rowsToInsert = targets.map((c) => ({
+      project_id: projectId,
+      company_id: canSeeAllCompanies ? c.company_id : userCompanyId,
+      chemical_id: c.id,
+      plan_type: "monthly" as const,
+      year: y,
+      month: m,
+      planned_qty: c.monthly_usage ?? null,
+      unit: c.unit || null,
+      legal_basis: c.is_carcinogen || c.is_reproductive_toxin
+        ? "산안법 §114 MSDS · 특별관리물질(작업환경측정·특수건강진단 대상)"
+        : "산안법 §114 MSDS · 화관법 시행규칙 §19",
+      notes: "등록물질 기준 일괄 생성 초안",
+    }));
+    const { error } = await supabase.from("chemical_usage_plans").insert(rowsToInsert);
+    if (error) {
+      handle(error, "이번 달 사용계획 일괄 생성");
+      return;
+    }
+    toast.success(`${y}년 ${m}월 사용계획 ${rowsToInsert.length}건을 일괄 등록했습니다.`);
+    await loadPlans();
+  };
+
+  const handlePlanAiParse = async () => {
+    if (!planAiPrompt.trim()) {
+      toast.warning("예: '11월 에폭시 도료 200L, 신너 80L' 처럼 입력하세요.");
+      return;
+    }
+    setPlanAiLoading(true);
+    try {
+      const chemHint = list.slice(0, 40).map((c) => `${c.name}${c.cas_no ? `(${c.cas_no})` : ""}`).join(", ");
+      const res = await extractTextDraft<ChemicalUsagePlanDraft>(
+        "chemical_usage_plan",
+        `기준연도: ${new Date().getFullYear()}, 등록물질목록: [${chemHint}]\n사용자입력: ${planAiPrompt}`,
+      );
+      const items = Array.isArray(res.draft?.items) ? res.draft.items : [];
+      if (!res.ok || items.length === 0) {
+        toast.warning(res.warning || "AI 파싱을 건너뛰었습니다. 아래 칸에 직접 입력하세요.");
+        return;
+      }
+      if (items.length === 1) {
+        const it = items[0];
+        const matched = it.chemical_name
+          ? list.find((c) => c.name.includes(String(it.chemical_name)) || String(it.chemical_name).includes(c.name))
+          : undefined;
+        setPlanForm((prev: any) => ({
+          ...prev,
+          chemical_id: matched?.id || prev.chemical_id,
+          plan_type: it.plan_type === "annual" ? "annual" : "monthly",
+          year: it.year || prev.year,
+          month: it.plan_type === "annual" ? null : (it.month || prev.month),
+          planned_qty: it.planned_qty ?? prev.planned_qty,
+          storage_max_qty: it.storage_max_qty ?? prev.storage_max_qty,
+          unit: it.unit || matched?.unit || prev.unit,
+          legal_basis: it.legal_basis || prev.legal_basis,
+          notes: it.notes || prev.notes,
+        }));
+        setPlanAiBatch([]);
+        toast.success("1건의 사용계획을 초안에 채웠습니다.");
+      } else {
+        setPlanAiBatch(items);
+        toast.success(`${items.length}건의 사용계획 초안을 생성했습니다. 아래 버튼으로 일괄 등록하세요.`);
+      }
+    } finally {
+      setPlanAiLoading(false);
+    }
+  };
+
+  const handleSaveAiPlanBatch = async () => {
+    if (!projectId || planAiBatch.length === 0) return;
+    const company_id = canSeeAllCompanies ? (planForm.company_id || null) : userCompanyId;
+    const now = new Date();
+    const rowsToInsert = planAiBatch.map((it) => {
+      const matched = it.chemical_name
+        ? list.find((c) => c.name.includes(String(it.chemical_name)) || String(it.chemical_name).includes(c.name))
+        : undefined;
+      const pType = it.plan_type === "annual" ? "annual" : "monthly";
+      return {
+        project_id: projectId,
+        company_id: company_id || matched?.company_id || null,
+        chemical_id: matched?.id || null,
+        plan_type: pType,
+        year: Number(it.year) || now.getFullYear(),
+        month: pType === "monthly" ? (Number(it.month) || now.getMonth() + 1) : null,
+        planned_qty: it.planned_qty != null ? Number(it.planned_qty) : null,
+        storage_max_qty: it.storage_max_qty != null ? Number(it.storage_max_qty) : null,
+        unit: it.unit || matched?.unit || null,
+        legal_basis: it.legal_basis || "산업안전보건법 제114조 / 화학물질관리법 시행규칙 제19조",
+        notes: it.notes || (it.chemical_name && !matched ? `미등록 물질: ${it.chemical_name}` : null),
+      };
+    });
+    const { error } = await supabase.from("chemical_usage_plans").insert(rowsToInsert);
+    if (error) {
+      handle(error, "AI 사용계획 일괄 등록");
+      return;
+    }
+    toast.success(`${rowsToInsert.length}건의 사용계획을 일괄 등록했습니다.`);
+    setPlanAiBatch([]);
+    setPlanAiPrompt("");
+    setPlanOpen(false);
+    await loadPlans();
+  };
+
   if (!projectId) return <div className="p-6 text-muted-foreground">프로젝트를 선택해주세요.</div>;
 
   return (
@@ -274,7 +435,12 @@ export default function Chemicals() {
         </TabsContent>
 
         <TabsContent value="plans" className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            {list.length > 0 && (
+              <Button variant="outline" onClick={handleBulkGenerateThisMonth} className="gap-1">
+                <Sparkles className="h-4 w-4" /> 등록물질 이번 달 일괄 초안 생성
+              </Button>
+            )}
             <Button onClick={() => setPlanOpen(true)}><Plus className="h-4 w-4 mr-1" />사용계획 등록</Button>
           </div>
           <Card>
@@ -316,7 +482,45 @@ export default function Chemicals() {
       {/* Chemical dialog */}
       <Dialog open={chemOpen} onOpenChange={setChemOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{editingChem ? "화학물질 수정" : "화학물질 등록"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
+              <DialogTitle>{editingChem ? "화학물질 수정" : "화학물질 등록"}</DialogTitle>
+              <div className="flex items-center gap-1.5">
+                <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={chemAiLoading} onClick={handleChemLookup}>
+                  {chemAiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  CAS·물질명 AI 조회
+                </Button>
+                <label className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent cursor-pointer h-7">
+                  {chemAiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanText className="h-3 w-3" />}
+                  <span>MSDS OCR 자동입력</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className="hidden"
+                    disabled={chemAiLoading}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setChemForm((prev: any) => ({ ...prev, msdsFile: file }));
+                      setChemAiLoading(true);
+                      try {
+                        const res = await extractDocumentDraft<MsdsDraft>("msds_document", file);
+                        if (!res.ok) {
+                          toast.warning(res.warning || "MSDS 판독을 건너뛰었습니다. 파일은 첨부되었으니 직접 입력하세요.");
+                          return;
+                        }
+                        applyMsdsDraft(res.draft || {});
+                        toast.success("MSDS 내용을 초안에 채웠습니다. 원본과 대조 후 저장하세요.");
+                      } finally {
+                        setChemAiLoading(false);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><Label>물질명 *</Label><Input value={chemForm.name || ""} onChange={e => setChemForm({ ...chemForm, name: e.target.value })} /></div>
             {canSeeAllCompanies && (
@@ -346,9 +550,42 @@ export default function Chemicals() {
       </Dialog>
 
       {/* Usage plan dialog */}
-      <Dialog open={planOpen} onOpenChange={setPlanOpen}>
+      <Dialog open={planOpen} onOpenChange={(o) => { setPlanOpen(o); if (!o) setPlanAiBatch([]); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>화학물질 사용계획 등록</DialogTitle></DialogHeader>
+          <div className="rounded-md border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+            <Label className="text-xs flex items-center gap-1 font-medium">
+              <Sparkles className="h-3.5 w-3.5 text-primary" /> AI 한 줄/일괄 입력
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                className="h-8 text-xs bg-background"
+                placeholder="예: 11월 에폭시 도료 200L, 신너 80L (최대보관 300L)"
+                value={planAiPrompt}
+                onChange={(e) => setPlanAiPrompt(e.target.value)}
+              />
+              <Button type="button" size="sm" variant="outline" className="h-8 text-xs shrink-0" disabled={planAiLoading} onClick={handlePlanAiParse}>
+                {planAiLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                AI 초안 변환
+              </Button>
+            </div>
+            {planAiBatch.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[11px] font-medium text-primary">변환된 사용계획 {planAiBatch.length}건 미리보기:</div>
+                <div className="max-h-32 overflow-y-auto space-y-1 text-[11px]">
+                  {planAiBatch.map((it, i) => (
+                    <div key={i} className="rounded bg-background px-2 py-1 border flex justify-between gap-2">
+                      <span>{it.chemical_name || "미지정"} ({it.plan_type === "annual" ? `${it.year}년` : `${it.year}-${it.month}`})</span>
+                      <span>계획 {it.planned_qty ?? "-"}{it.unit || ""}</span>
+                    </div>
+                  ))}
+                </div>
+                <Button type="button" size="sm" className="w-full h-7 text-xs" onClick={handleSaveAiPlanBatch}>
+                  AI 초안 일괄 등록 ({planAiBatch.length}건)
+                </Button>
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>유형 *</Label>
@@ -362,7 +599,23 @@ export default function Chemicals() {
             </div>
             <div>
               <Label>물질</Label>
-              <Select value={planForm.chemical_id || ""} onValueChange={v => setPlanForm({ ...planForm, chemical_id: v })}>
+              <Select
+                value={planForm.chemical_id || ""}
+                onValueChange={v => {
+                  const ch = chemicalById[v];
+                  setPlanForm({
+                    ...planForm,
+                    chemical_id: v,
+                    unit: ch?.unit || planForm.unit,
+                    planned_qty: planForm.planned_qty || ch?.monthly_usage || "",
+                    legal_basis: planForm.legal_basis || (
+                      ch?.is_carcinogen || ch?.is_reproductive_toxin
+                        ? "산안법 §114 MSDS · 특별관리물질(작업환경측정·특수건강진단 대상)"
+                        : "산업안전보건법 제114조 / 화학물질관리법 시행규칙 제19조"
+                    ),
+                  });
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="물질 선택 (선택)" /></SelectTrigger>
                 <SelectContent>{list.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>

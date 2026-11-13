@@ -25,6 +25,7 @@ export function WorkerRepresentativeLine({
   companyLocked = false,
   onCompanyChange,
   workers,
+  assignWorker,
   canEdit,
   onChanged,
 }: {
@@ -35,6 +36,8 @@ export function WorkerRepresentativeLine({
   companyLocked?: boolean;
   onCompanyChange?: (companyId: string) => void;
   workers: { id: string; name: string; company_id?: string | null }[];
+  /** 개인 명부에서는 이름 목록 대신 이 근로자를 대표로 지정한다. */
+  assignWorker?: { id: string; name: string };
   canEdit: boolean;
   onChanged?: (action: string, details: Record<string, unknown>) => void;
 }) {
@@ -64,7 +67,7 @@ export function WorkerRepresentativeLine({
       toast.error("회사를 고르세요.");
       return;
     }
-    const next = workers.find((w) => w.id === workerId);
+    const next = assignWorker ?? workers.find((w) => w.id === workerId);
     if (method !== "none" && !next) {
       toast.error("명단에서 근로자대표를 고르세요.");
       return;
@@ -98,8 +101,9 @@ export function WorkerRepresentativeLine({
   };
 
   const roster = workers.filter((w) => !w.company_id || w.company_id === companyId);
+  const isThisPerson = !!assignWorker && rep?.worker_id === assignWorker.id;
   const label = rep?.worker_name
-    ? `${rep.worker_name} · ${METHOD_LABEL[rep.method] || rep.method}`
+    ? `${rep.worker_name} · ${METHOD_LABEL[rep.method] || rep.method}${isThisPerson ? " · 이 사람" : ""}`
     : "없음";
   const companyName = companies.find((c) => c.id === companyId)?.name || "";
   const showCompanySelect = !!onCompanyChange && !companyLocked && companies.length > 0;
@@ -140,7 +144,7 @@ export function WorkerRepresentativeLine({
                   <SelectItem value="none">아직 없음</SelectItem>
                 </SelectContent>
               </Select>
-              {method !== "none" && (
+              {method !== "none" && !assignWorker && (
                 <Select value={workerId || undefined} onValueChange={setWorkerId}>
                   <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="이름" /></SelectTrigger>
                   <SelectContent>
@@ -151,7 +155,7 @@ export function WorkerRepresentativeLine({
                 </Select>
               )}
               <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => void save()}>
-                지정
+                {assignWorker && method !== "none" ? "이 사람을 대표로 지정" : "지정"}
               </Button>
             </>
           )}

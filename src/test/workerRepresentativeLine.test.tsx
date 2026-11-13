@@ -71,4 +71,21 @@ describe("WorkerRepresentativeLine", () => {
     expect(screen.queryByLabelText("회사")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "지정" })).toBeInTheDocument();
   });
+
+  it("designates the open worker without a name list", () => {
+    render(
+      <WorkerRepresentativeLine
+        projectId="p1"
+        companyId="c1"
+        companies={companies}
+        companiesReady
+        companyLocked
+        workers={[{ id: "w1", name: "김근로", company_id: "c1" }]}
+        assignWorker={{ id: "w1", name: "김근로" }}
+        canEdit
+      />,
+    );
+    expect(screen.getByRole("button", { name: "이 사람을 대표로 지정" })).toBeInTheDocument();
+    expect(screen.queryByText("이름")).not.toBeInTheDocument();
+  });
 });

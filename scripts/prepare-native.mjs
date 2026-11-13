@@ -26,7 +26,6 @@ if (existsSync(plistPath)) {
     ],
     ["NSCameraUsageDescription", "QR 스캔과 안전 점검 사진 첨부에 사용됩니다."],
     ["NSPhotoLibraryUsageDescription", "안전 점검 증빙 사진 업로드에 사용됩니다."],
-    ["NSMotionUsageDescription", "낙상·이상행동 감지에 사용됩니다."],
   ];
   for (const [key, desc] of inserts) {
     if (!plist.includes(`<key>${key}</key>`)) {
@@ -40,6 +39,12 @@ if (existsSync(plistPath)) {
     plist = plist.replace(
       "</dict>\n</plist>",
       "\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>location</string>\n\t\t<string>fetch</string>\n\t\t<string>remote-notification</string>\n\t</array>\n</dict>\n</plist>",
+    );
+  }
+  if (!plist.includes("<key>ITSAppUsesNonExemptEncryption</key>")) {
+    plist = plist.replace(
+      "</dict>\n</plist>",
+      "\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<false/>\n</dict>\n</plist>",
     );
   }
   writeFileSync(plistPath, plist);

@@ -15,9 +15,10 @@
  */
 import { APP_VERSION } from "@/lib/appVersion";
 import { isNewerScreenRelease } from "@/lib/otaVersion";
+import { nativeOtaLookupPlatform } from "@/lib/otaReleasePlatform";
 import { getOtaAnonClient } from "./otaAnonClient";
 import { OTA_DOWNLOAD_TIMEOUT_MS } from "./otaUpdater";
-import { isNativeApp } from "./platform";
+import { isNativeApp, nativePlatform } from "./platform";
 
 export const PRE_LOGIN_OTA_MESSAGE = "업데이트 중";
 export const PRE_LOGIN_VERSION_CHECK_MS = 5_000;
@@ -105,11 +106,13 @@ async function findNewerRelease(): Promise<PreLoginRelease | null> {
   const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
   const current = await CapacitorUpdater.current();
   const currentVersion = String((current as { bundle?: { version?: string } })?.bundle?.version || "");
+  const platform = nativeOtaLookupPlatform(nativePlatform());
+  if (!platform) return null;
   const channel = localStorage.getItem("app-update-channel") === "beta" ? "beta" : "stable";
   const ota = getOtaAnonClient();
   const { data, error } = await ota.rpc("get_latest_app_release", {
     _channel: channel,
-    _platform: "android",
+    _platform: platform,
   });
   if (error) return null;
   const release = (Array.isArray(data) ? data[0] : data) as {

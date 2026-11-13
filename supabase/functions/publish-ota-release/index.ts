@@ -8,7 +8,8 @@
 // 메타: 헤더 또는 JSON 바디
 //       X-OTA-Version, X-OTA-Channel, X-OTA-Platform, X-OTA-Mandatory, X-OTA-Notes,
 //       X-OTA-Min-Native-Version, X-OTA-Set-Min-Native-Only
-//       X-OTA-Platform: android | desktop | both. 생략하면 both.
+//       X-OTA-Platform: android | desktop | ios | both. 생략하면 both.
+//       both 는 같은 zip 을 android, desktop, ios 에 둔다. min_native 는 android 행만.
 // 바디: zip 파일 바이너리. min-native-only 이면 JSON 허용.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -111,9 +112,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
   // AAB CI: bump Play floor on the latest android row, else the latest shared row.
-  // desktop rows keep min_native_version empty.
+  // desktop rows keep min_native_version empty. ios rows do too.
   if (minOnly) {
     if (platformRaw === "desktop") return json({ error: "min_native_desktop" }, 400);
+    if (platformRaw === "ios") return json({ error: "min_native_ios" }, 400);
     if (!minNative) return json({ error: "missing_min_native" }, 400);
     let targetRes = await latestOn("android");
     if (targetRes.error) return json({ error: "lookup_failed", detail: targetRes.error.message }, 500);
@@ -141,8 +143,8 @@ Deno.serve(async (req) => {
   if (!version) return json({ error: "missing_version" }, 400);
   const platformHeader = platformRaw || "both";
   const platforms = platformHeader === "both"
-    ? ["android", "desktop"]
-    : platformHeader === "android" || platformHeader === "desktop"
+    ? ["android", "desktop", "ios"]
+    : platformHeader === "android" || platformHeader === "desktop" || platformHeader === "ios"
     ? [platformHeader]
     : null;
   if (!platforms) return json({ error: "invalid_platform" }, 400);
@@ -166,7 +168,7 @@ Deno.serve(async (req) => {
   if (up.error) return json({ error: "upload_failed", detail: up.error.message }, 500);
 
   // Keep the Play floor across OTA publishes unless CI sends a new value.
-  // Only the android row carries it. A desktop row stays empty.
+  // Only the android row carries it. A desktop row stays empty. An ios row stays empty.
   let resolvedMin: string | null = null;
   if (platforms.includes("android")) {
     resolvedMin = minNative || null;
@@ -185,34 +187,56 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 5) 행 upsert. both 는 같은 zip 을 android 행과 desktop 행에 같이 둔다.
-  const { data, error } = await supabase
-    .from("app_releases")
-    .upsert(
-      platforms.map((platform) => ({
-        version,
-        channel,
-        platform,
-        bundle_url: `storage:${path}`,
-        checksum,
-        mandatory,
-        min_native_version: platform === "android" ? resolvedMin : null,
-        notes: notes || `Published from CI at ${new Date().toISOString()}`,
-        is_deleted: false,
-      })),
-      { onConflict: "channel,version,platform" },
-    )
-    .select();
+  // 5) 행 upsert. both 는 같은 zip 을 android, desktop, ios 에 둔다.
+  // ios 제약이 아직 없어도 android 와 desktop 게시는 남긴다.
+  const rowFor = (platform: string) => ({
+    version,
+    channel,
+    platform,
+    bundle_url: `storage:${path}`,
+    checksum,
+    mandatory,
+    min_native_version: platform === "android" ? resolvedMin : null,
+    notes: notes || `Published from CI at ${new Date().toISOString()}`,
+    is_deleted: false,
+  });
+  const upsertRows = (list: string[]) =>
+    supabase
+      .from("app_releases")
+      .upsert(list.map(rowFor), { onConflict: "channel,version,platform" })
+      .select();
 
-  if (error) {
-    await supabase.storage.from("app-updates").remove([path]);
-    return json({ error: "insert_failed", detail: error.message }, 500);
+  const primary = platforms.filter((platform) => platform !== "ios");
+  const includeIos = platforms.includes("ios");
+  const rows: Array<{ id?: string; platform?: string }> = [];
+
+  if (primary.length) {
+    const primaryRes = await upsertRows(primary);
+    if (primaryRes.error) {
+      await supabase.storage.from("app-updates").remove([path]);
+      return json({ error: "insert_failed", detail: primaryRes.error.message }, 500);
+    }
+    if (Array.isArray(primaryRes.data)) rows.push(...primaryRes.data);
   }
 
-  const rows = Array.isArray(data) ? data : [];
+  let iosWarning: string | null = null;
+  if (includeIos) {
+    const iosRes = await upsertRows(["ios"]);
+    if (iosRes.error) {
+      iosWarning = iosRes.error.message;
+      if (!primary.length) {
+        await supabase.storage.from("app-updates").remove([path]);
+        return json({ error: "insert_failed", detail: iosRes.error.message }, 500);
+      }
+    } else if (Array.isArray(iosRes.data)) {
+      rows.push(...iosRes.data);
+    }
+  }
+
   const androidRow = rows.find((row) => row.platform === "android") || rows[0];
   return json({
     ok: true,
+    ios_warning: iosWarning,
     release: {
       id: androidRow?.id,
       version,

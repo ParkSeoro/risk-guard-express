@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload, Trash2, Smartphone, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { minNativeForOtaRow, otaPublishPlatforms } from "@/lib/otaReleasePlatform";
 import { Navigate } from "react-router-dom";
 
 function androidRelease(rows: Release[]): Release | null {
@@ -84,7 +85,8 @@ export default function MobileReleases() {
       const checksum = Array.from(new Uint8Array(hashBuf))
         .map(b => b.toString(16).padStart(2, "0")).join("");
 
-      const platforms = form.platform === "both" ? ["android", "desktop"] : [form.platform];
+      const platforms = otaPublishPlatforms(form.platform === "both" ? "both" : form.platform);
+      if (!platforms) throw new Error("플랫폼을 확인하세요.");
       if (form.platform !== "android" && form.min_native_version.trim()) {
         throw new Error("최소 네이티브 버전은 android 행에만 저장합니다.");
       }
@@ -97,9 +99,10 @@ export default function MobileReleases() {
           bundle_url: bundleUrl,
           checksum,
           mandatory: form.mandatory,
-          min_native_version: platform === "android"
-            ? (form.min_native_version.trim() || inheritedMin)
-            : null,
+          min_native_version: minNativeForOtaRow(
+            platform,
+            form.min_native_version.trim() || inheritedMin,
+          ),
           notes: form.notes.trim() || null,
         });
         if (error) throw error;
@@ -155,7 +158,7 @@ export default function MobileReleases() {
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
               최신 android OTA <span className="font-mono">{latestRelease.version}</span> ({latestRelease.channel})에 저장합니다.
-              desktop 행은 바꾸지 않습니다.
+              desktop 행과 ios 행은 바꾸지 않습니다.
               폰 <b>더보기 → 앱 버전</b> 괄호 숫자보다 <b>큰</b> Play versionCode를 넣으세요. 예: 설치됨 468이면 새 AAB가 470이면 <span className="font-mono">470</span>.
             </p>
             <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
@@ -209,8 +212,9 @@ export default function MobileReleases() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="android">android (폰)</SelectItem>
+                <SelectItem value="ios">ios (아이폰)</SelectItem>
                 <SelectItem value="desktop">desktop (PC)</SelectItem>
-                <SelectItem value="both">android + desktop (같은 zip)</SelectItem>
+                <SelectItem value="both">android + desktop + ios (같은 zip)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -225,7 +229,7 @@ export default function MobileReleases() {
               placeholder={form.platform === "android" ? "versionCode 478" : "android 행만 입력"}
             />
             <p className="text-[11px] text-muted-foreground mt-1">
-              android가 아니면 저장하지 않습니다. 비우면 직전 android 또는 shared 값을 잇습니다.
+              android 행만 저장합니다. ios 와 desktop 은 비웁니다. 비우면 직전 android 또는 shared 값을 잇습니다.
             </p>
           </div>
           <div className="md:col-span-2 flex items-center gap-2">

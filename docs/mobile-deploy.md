@@ -165,7 +165,7 @@ git push origin v1.0.1
 ```
 
 - 네이티브 폴더(`ios/`, `android/`)가 레포에 커밋되어 있으면 `npx cap sync` 까지 자동 실행됩니다.
-- AAB/IPA 빌드는 코드 서명 키 보안 때문에 자동화에 포함하지 않았습니다 (로컬 Mac/Android Studio 에서 수행).
+- AAB는 `.github/workflows/android-aab.yml`, IPA는 `.github/workflows/ios-ipa.yml` 입니다. IPA는 Actions에서 직접 실행할 때만 돌아가고, App Store Connect API 키 시크릿이 있어야 TestFlight로 올라갑니다.
 
 ---
 

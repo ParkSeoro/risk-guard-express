@@ -10,7 +10,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   ...(devUrl
     ? { server: { url: devUrl, cleartext: true } }
-    : { server: { androidScheme: 'https' } }),
+    : { server: { androidScheme: 'https', iosScheme: 'https' } }),
   plugins: {
     Geolocation: {
       // iOS: Always-Allow 권한을 요청해 잠금/백그라운드에서도 위치 추적

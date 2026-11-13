@@ -2,7 +2,32 @@
  * 위험성평가 결재 상신 사전점검 — 토스트를 하나씩 띄우기 전에 한 목록으로 보여 줌.
  */
 
-export type AssessmentPreflightJump = 'items' | 'participation' | 'approval';
+export type AssessmentPreflightJump = 'items' | 'participation' | 'approval' | 'run';
+
+export const OCCASIONAL_REASON_EMPTY = '수시 사유가 비어 있습니다';
+export const WORKER_PARTICIPATION_EMPTY = '작업 근로자 참여 기록이 없습니다';
+export const TRIVIAL_EXCLUSION_LABEL = '제외 사유를 다시 적으세요';
+
+export function trivialExclusionReason(reason?: string | null): boolean {
+  const text = String(reason || '').replace(/\s+/g, '');
+  return text === '경미' || text === '매우경미' || text === '경미함' || text === '경미한요인' || text === '매우경미한요인';
+}
+
+export function repConsultGap(opts: {
+  requested: boolean;
+  schedule?: string | null;
+  scope?: string | null;
+  method?: string | null;
+}): string | null {
+  if (!opts.requested) return null;
+  const missing = [
+    !String(opts.schedule || '').trim() ? '일정' : '',
+    !String(opts.scope || '').trim() ? '범위' : '',
+    !String(opts.method || '').trim() ? '방법' : '',
+  ].filter(Boolean);
+  if (missing.length === 0) return null;
+  return `참여 요구를 켰습니다. ${missing.join('·')}이 비어 있습니다. 세 칸을 채우면 상신됩니다.`;
+}
 
 export type AssessmentPreflightItem = {
   id: string;
@@ -36,6 +61,15 @@ export function buildAssessmentSubmitPreflight(opts: {
   /** Rows missing 개선대책 / PPE / (중·상) 법적근거 / 상황·기존대책 */
   incompleteItemCount?: number;
   incompleteItemDetail?: string;
+  runType?: string | null;
+  occasionalReason?: string | null;
+  repParticipationRequested?: boolean;
+  repSchedule?: string | null;
+  repScope?: string | null;
+  repMethod?: string | null;
+  participationPhotos?: number;
+  participantCount?: number;
+  trivialExclusionCount?: number;
 }): { items: AssessmentPreflightItem[]; ready: boolean } {
   const items: AssessmentPreflightItem[] = [];
 
@@ -56,6 +90,55 @@ export function buildAssessmentSubmitPreflight(opts: {
       : authorOk
         ? `작성 관리감독자(${opts.authorName || '지정됨'})만 상신 가능`
         : '작성 주체 지정 후 해당 관리감독자가 상신',
+  });
+
+  if (String(opts.runType || '').trim() === '수시') {
+    const reason = String(opts.occasionalReason || '').trim();
+    items.push({
+      id: 'occasional_reason',
+      label: '수시 사유',
+      ok: !!reason,
+      detail: reason || OCCASIONAL_REASON_EMPTY,
+      jump: 'run',
+    });
+  }
+
+  const repGap = repConsultGap({
+    requested: !!opts.repParticipationRequested,
+    schedule: opts.repSchedule,
+    scope: opts.repScope,
+    method: opts.repMethod,
+  });
+  if (opts.repParticipationRequested) {
+    items.push({
+      id: 'rep_consult',
+      label: '근로자 대표와 일정·방법 상의',
+      ok: !repGap,
+      detail: repGap || '완료',
+      jump: 'participation',
+    });
+  }
+
+  const trivial = opts.trivialExclusionCount || 0;
+  if (trivial > 0) {
+    items.push({
+      id: 'trivial_exclusion',
+      label: TRIVIAL_EXCLUSION_LABEL,
+      ok: false,
+      detail: `${trivial}건은 경미하다는 이유만으로 빼지 않습니다`,
+      jump: 'items',
+    });
+  }
+
+  const participated = (opts.opinions || 0) > 0
+    || (opts.participationPhotos || 0) > 0
+    || (opts.participantCount || 0) > 0;
+  items.push({
+    id: 'worker_participation',
+    label: '작업 근로자 참여',
+    ok: participated,
+    detail: participated ? '의견·사진·참여자 중 기록 있음' : WORKER_PARTICIPATION_EMPTY,
+    jump: 'participation',
   });
 
   items.push({

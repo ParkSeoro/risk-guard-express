@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calculateRiskGrade, derivedResidualFields } from './riskGrade';
 import { defaultLegalForHazard } from './riskLegalDefaults';
+import { fetchTradeLibraryStandardRows } from '@/lib/globalRiskLibrary';
 import type { ValidationReport, ValidationIssue, CoverageGap } from './validationEngine';
 
 // ========== Data Models ==========
@@ -127,12 +128,10 @@ export async function generateRemediationActions(
   const actions: RemediationAction[] = [];
 
   // Fetch library and legal references for context
-  const [{ data: library }, { data: legalRefs }] = await Promise.all([
-    supabase.from('standard_risk_library').select('*').eq('is_active', true),
+  const [{ data: legalRefs }, libItems] = await Promise.all([
     supabase.from('legal_references').select('*').limit(200),
+    fetchTradeLibraryStandardRows(),
   ]);
-
-  const libItems = library || [];
   const legals = legalRefs || [];
 
   // ===== A. Missing Fields (ACTION 1) =====

@@ -18,6 +18,7 @@ import { ensureTbmForPermit, TBM_ISSUE_STATUSES } from '@/lib/tbmFromPermit';
 import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
+import { AssessmentUnconfirmedBanner } from '@/components/assessment/AssessmentUnconfirmedBanner';
 import { tbmListQueryBlock } from '@/lib/tbmListQuery';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
@@ -1017,6 +1018,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
             />
           )}
           <div className="max-h-[60vh] overflow-y-auto space-y-2">
+            <AssessmentUnconfirmedBanner
+              projectId={projectId}
+              phones={participants.map((p) => String(p.worker_phone || '')).filter(Boolean)}
+              workerIds={participants.map((p) => String(p.worker_id || '')).filter(Boolean)}
+            />
             {participants.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">아직 참여자가 없습니다.</p>
             ) : participants.map((p) => (

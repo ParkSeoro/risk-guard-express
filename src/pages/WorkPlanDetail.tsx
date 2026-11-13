@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchGlobalRiskLibraryItems } from '@/lib/globalRiskLibrary';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
@@ -444,6 +445,7 @@ const WorkPlanDetail = () => {
     setAiLoading(section.key);
     try {
       const overview = sections.find((s) => s.key === 'overview')?.content || '';
+      const library = await fetchGlobalRiskLibraryItems({ processName: wpType.name, limit: 12 }).catch(() => []);
       const { data, error } = await supabase.functions.invoke('generate-risk-ai', {
         body: {
           process_name: wpType.name, equipment: '', work_description: section.title + ' 작성',
@@ -451,6 +453,12 @@ const WorkPlanDetail = () => {
           section_key: section.key, section_title: section.title,
           work_type: wpType.id,
           site_context: overview,
+          library_hints: library.map((row) => ({
+            sub_task: row.sub_task,
+            hazard: row.hazard,
+            situation: row.hazard_situation,
+            measure: row.improvement_measure,
+          })),
         },
       });
       if (error) throw error;

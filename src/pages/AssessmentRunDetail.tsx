@@ -84,7 +84,10 @@ import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 import ApprovalRejectReasonDialog from '@/components/approval/ApprovalRejectReasonDialog';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
-import { buildAssessmentSubmitPreflight, countIncompleteAssessmentItems } from '@/lib/assessmentSubmitPreflight';
+import { buildAssessmentSubmitPreflight, countIncompleteAssessmentItems, repConsultGap, trivialExclusionReason } from '@/lib/assessmentSubmitPreflight';
+import { nextAssessmentGuide } from '@/lib/assessmentGuide';
+import { improvementPlanDateLabel, retentionBlocksDelete, retentionLockMessage, seoulTodayIso } from '@/lib/assessmentRetention';
+import { AssessmentWritingGuide } from '@/components/assessment/AssessmentWritingGuide';
 import {
   assessmentAuthorSubmitMessage,
   canAssistAssessmentWrite,
@@ -156,7 +159,7 @@ const AssessmentRunDetail = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, profile, isAdmin, roles } = useAuth();
+  const { user, profile, isAdmin, roles, applyProfilePatch } = useAuth();
   useEffect(() => {
     if (runId) void markOpenDocumentNotifications(runId);
   }, [runId]);
@@ -311,6 +314,7 @@ const AssessmentRunDetail = () => {
 
   // Worker opinion / health / accident counts (for approval gate)
   const [participationCounts, setParticipationCounts] = useState({ opinions: 0, healths: 0, accidents: 0, unreviewedHealth: 0, unreviewedAi: 0 });
+  const [companyRepName, setCompanyRepName] = useState<string | null>(null);
   const refreshParticipation = useCallback(async () => {
     if (!runId) return;
     const [op, hz, ac, ai] = await Promise.all([
@@ -1573,6 +1577,33 @@ const AssessmentRunDetail = () => {
   }, [showApproval, refreshApprovalPreflightMeta]);
 
   const itemGaps = useMemo(() => countIncompleteAssessmentItems(activeItems as any), [activeItems]);
+  const trivialExclusionCount = useMemo(
+    () => (items || []).filter((i: any) => i.is_excluded && trivialExclusionReason(i.excluded_reason)).length,
+    [items],
+  );
+  const emptyExclusionCount = useMemo(
+    () => (items || []).filter((i: any) => i.is_excluded && !String(i.excluded_reason || '').trim()).length,
+    [items],
+  );
+
+  useEffect(() => {
+    if (!run?.project_id || !userCompanyId) {
+      setCompanyRepName(null);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('worker_representatives' as any)
+      .select('worker_name')
+      .eq('project_id', run.project_id)
+      .eq('company_id', userCompanyId)
+      .is('ended_at', null)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setCompanyRepName((data as any)?.worker_name || null);
+      });
+    return () => { cancelled = true; };
+  }, [run?.project_id, userCompanyId]);
 
   const submitPreflight = useMemo(() => buildAssessmentSubmitPreflight({
     itemCount: activeItems.length,
@@ -1595,6 +1626,15 @@ const AssessmentRunDetail = () => {
     currentUserId: user?.id,
     incompleteItemCount: itemGaps.count,
     incompleteItemDetail: itemGaps.detail,
+    runType: run?.type,
+    occasionalReason: run?.occasional_reason,
+    repParticipationRequested: run?.rep_participation_requested,
+    repSchedule: run?.rep_schedule,
+    repScope: run?.rep_scope,
+    repMethod: run?.rep_method,
+    participationPhotos: (run?.worker_participation_images || []).length,
+    participantCount: participants.length,
+    trivialExclusionCount,
   }), [
     activeItems.length,
     itemGaps,
@@ -1607,6 +1647,15 @@ const AssessmentRunDetail = () => {
     approvalDraftInfo,
     userDirectory,
     user?.id,
+    run?.type,
+    run?.occasional_reason,
+    run?.rep_participation_requested,
+    run?.rep_schedule,
+    run?.rep_scope,
+    run?.rep_method,
+    run?.worker_participation_images,
+    participants.length,
+    trivialExclusionCount,
   ]);
 
   const submitBlockedReason = useMemo(() => {
@@ -1615,7 +1664,7 @@ const AssessmentRunDetail = () => {
     return bad.map((i) => `${i.label}${i.detail ? ` (${i.detail})` : ''}`).join(' · ');
   }, [submitPreflight]);
 
-  const jumpFromPreflight = (jump?: 'items' | 'participation' | 'approval') => {
+  const jumpFromPreflight = (jump?: 'items' | 'participation' | 'approval' | 'run') => {
     if (!jump) return;
     setShowApproval(false);
     setActiveMainTab('assessment');
@@ -1624,6 +1673,7 @@ const AssessmentRunDetail = () => {
       const id =
         jump === 'participation' ? 'ra-worker-participation'
           : jump === 'approval' ? 'ra-approval-line'
+            : jump === 'run' ? 'ra-run-kind'
             : 'ra-risk-items';
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -1692,6 +1742,17 @@ const AssessmentRunDetail = () => {
     setShowApproval(false);
     setApprovalComment('');
     setApprovalDraftInfo((prev) => ({ ...prev, status: 'submitted', ready: false, dirty: false }));
+    if (!run.improvement_plan_completed_on && itemGaps.count === 0) {
+      const day = seoulTodayIso();
+      const { error: stampErr } = await supabase
+        .from('assessment_runs')
+        .update({ improvement_plan_completed_on: day })
+        .eq('id', runId);
+      if (!stampErr) {
+        setRun((prev: any) => ({ ...prev, status: '결재진행', improvement_plan_completed_on: day }));
+        toast({ title: improvementPlanDateLabel(day) || '개선대책 수립일을 기록했습니다.' });
+      }
+    }
     toast({ title: `결재 상신 완료 (${inserted ?? approvalDraftInfo.stepCount}단계 순차 결재)` });
     log('결재상신', 'assessment_run', runId, run.project_id, { steps: inserted, via: 'approval_platform_draft' });
     fetchAll();
@@ -1979,6 +2040,10 @@ const AssessmentRunDetail = () => {
 
   const handleArchive = async () => {
     if (!run || !user) return;
+    if (retentionBlocksDelete(run.improvement_plan_completed_on)) {
+      toast({ title: retentionLockMessage(run.improvement_plan_completed_on), variant: 'destructive' });
+      return;
+    }
     await supabase.from('assessment_runs').update({
       status: '폐기', is_deleted: true, deleted_by: user.id, deleted_at: new Date().toISOString(), deleted_reason: archiveReason,
     }).eq('id', runId);
@@ -2552,11 +2617,68 @@ const AssessmentRunDetail = () => {
         </div>
       )}
       {/* Company Form Header - 회사 양식 */}
-      <Card className="print:border-2 print:border-foreground">
+      <div className="print:hidden space-y-2">
+        <AssessmentWritingGuide
+          hidden={!!profile?.ra_guide_hidden}
+          text={nextAssessmentGuide({
+            approved: isApproved,
+            runType: run.type,
+            occasionalReason: run.occasional_reason,
+            itemCount: activeItems.length,
+            participantCount: participants.length,
+            opinionCount: participationCounts.opinions,
+            photoCount: (run.worker_participation_images || []).length,
+            repRequested: !!run.rep_participation_requested,
+            repGap: repConsultGap({
+              requested: !!run.rep_participation_requested,
+              schedule: run.rep_schedule,
+              scope: run.rep_scope,
+              method: run.rep_method,
+            }),
+            hasRepresentative: !!companyRepName,
+            trivialExclusionCount,
+            emptyExclusionCount,
+          }).text}
+          onOpen={() => jumpFromPreflight(nextAssessmentGuide({
+            approved: isApproved,
+            runType: run.type,
+            occasionalReason: run.occasional_reason,
+            itemCount: activeItems.length,
+            participantCount: participants.length,
+            opinionCount: participationCounts.opinions,
+            photoCount: (run.worker_participation_images || []).length,
+            repRequested: !!run.rep_participation_requested,
+            repGap: repConsultGap({
+              requested: !!run.rep_participation_requested,
+              schedule: run.rep_schedule,
+              scope: run.rep_scope,
+              method: run.rep_method,
+            }),
+            hasRepresentative: !!companyRepName,
+            trivialExclusionCount,
+            emptyExclusionCount,
+          }).jump || undefined)}
+          onToggle={() => {
+            if (!user) return;
+            const next = !profile?.ra_guide_hidden;
+            void supabase.from('profiles').update({ ra_guide_hidden: next }).eq('user_id', user.id).then(({ error }) => {
+              if (error) {
+                toast({ title: '가이드 설정을 저장하지 못했습니다', variant: 'destructive' });
+                return;
+              }
+              applyProfilePatch({ ra_guide_hidden: next });
+            });
+          }}
+        />
+      </div>
+      <Card id="ra-run-kind" className="print:border-2 print:border-foreground scroll-mt-20">
         <CardContent className="py-4 space-y-3">
           <div className="text-center border-b pb-2 print:pb-3">
             <h1 className="text-lg font-bold print:text-xl">위험성평가표</h1>
-            <p className="text-sm text-muted-foreground">[{run.type}] {run.period_label || '(기간 미지정)'}</p>
+            <p className="text-sm text-muted-foreground">[{run.type === '정기' || run.type === '상시' ? '정기(상시)' : run.type}] {run.period_label || '(기간 미지정)'}</p>
+            {run.type === '수시' && (
+              <p className="text-[11px] text-muted-foreground">상시평가는 정기평가만 갈음합니다. 수시평가는 따로 합니다.</p>
+            )}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">프로젝트:</span><span>{project?.name || ''}</span></div>
@@ -2580,7 +2702,31 @@ const AssessmentRunDetail = () => {
             {run.validation_score != null && (
               <div className="flex gap-1"><span className="font-medium text-muted-foreground">검증:</span><span>{run.validation_verdict} ({run.validation_score}점)</span></div>
             )}
+            {improvementPlanDateLabel(run.improvement_plan_completed_on) && (
+              <div className="col-span-2">{improvementPlanDateLabel(run.improvement_plan_completed_on)}</div>
+            )}
+            {run.library_promoted_count != null && (
+              <div className="col-span-2">
+                {run.library_promoted_count > 0
+                  ? `공종 라이브러리에 ${run.library_promoted_count}건을 넣었습니다.`
+                  : '상황·대책이 짧아 넣지 않았습니다.'}
+              </div>
+            )}
           </div>
+          {run.type === '수시' && (
+            <div className="text-xs space-y-1 print:hidden">
+              <Label className="text-xs">수시 사유</Label>
+              <Input
+                value={run.occasional_reason || ''}
+                disabled={isApproved || isArchived}
+                placeholder="설비 변경, 사고, 작업 변경 등"
+                onChange={(e) => setRun((prev: any) => prev ? { ...prev, occasional_reason: e.target.value } : prev)}
+                onBlur={(e) => {
+                  void supabase.from('assessment_runs').update({ occasional_reason: e.target.value || null }).eq('id', runId!);
+                }}
+              />
+            </div>
+          )}
           {/* Participants summary */}
           {participants.length > 0 && (
             <div className="flex items-center gap-3 text-[10px] border-t pt-2 flex-wrap">
@@ -3339,11 +3485,83 @@ const AssessmentRunDetail = () => {
         <div id="ra-worker-participation" className="scroll-mt-20 rounded-lg border">
           <CollapsibleTrigger asChild>
             <Button variant="ghost" className="w-full justify-between h-10 text-sm">
-              <span>근거 · 근로자 참여 (의견 {participationCounts.opinions} · 보건 {participationCounts.healths})</span>
+              <span>현장 위험요인 찾기 · 근로자 참여 (의견 {participationCounts.opinions} · 보건 {participationCounts.healths})</span>
               {evidenceOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="px-3 pb-3 space-y-3">
+            <div className="rounded-md border p-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-medium">근로자 대표와 일정·방법 상의</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {companyRepName
+                      ? `이 회사 근로자대표: ${companyRepName}. 요구가 없으면 이 칸은 비워 둡니다. 이미 만든 회차는 이 칸이 없어도 유효합니다.`
+                      : '없어도 다음으로 갑니다. 지정은 근로자 관리에 있습니다.'}
+                  </p>
+                </div>
+                <Switch
+                  checked={!!run.rep_participation_requested}
+                  disabled={isApproved || isArchived}
+                  onCheckedChange={(on) => {
+                    if (on && !companyRepName) {
+                      toast({
+                        title: '이 회사의 근로자대표가 없습니다. 평가는 저장됩니다. 참여 요구는 근로자 관리에서 대표를 지정한 뒤에 켤 수 있습니다.',
+                      });
+                      return;
+                    }
+                    setRun((prev: any) => prev ? { ...prev, rep_participation_requested: on } : prev);
+                    void supabase.from('assessment_runs').update({ rep_participation_requested: on }).eq('id', runId!);
+                    log('참여 요구', 'assessment_run', runId!, run.project_id, { requested: on });
+                  }}
+                />
+              </div>
+              {run.rep_participation_requested && (
+                <div className="grid gap-2 md:grid-cols-3">
+                  {([
+                    ['rep_schedule', '일정', run.rep_schedule],
+                    ['rep_scope', '범위', run.rep_scope],
+                    ['rep_method', '방법', run.rep_method],
+                  ] as const).map(([key, label, value]) => (
+                    <div key={key} className="space-y-1">
+                      <Label className="text-xs">{label}</Label>
+                      <Input
+                        value={value || ''}
+                        disabled={isApproved || isArchived}
+                        onChange={(e) => setRun((prev: any) => prev ? { ...prev, [key]: e.target.value } : prev)}
+                        onBlur={(e) => {
+                          void supabase.from('assessment_runs').update({ [key]: e.target.value } as any).eq('id', runId!);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {companyRepName && (canEdit || canForceEdit) && !isApproved && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void supabase.from('assessment_run_participants').insert([{
+                      run_id: runId!,
+                      role: '참여자',
+                      user_name: companyRepName,
+                      company: docCompanies.authorCompanyName,
+                    }]).select().single().then(({ data, error }) => {
+                      if (error) {
+                        toast({ title: error.message, variant: 'destructive' });
+                        return;
+                      }
+                      if (data) setParticipants((prev) => [...prev, data]);
+                      toast({ title: `${companyRepName}을 참여자로 올렸습니다. 어느 단계에 있었는지는 직접 적습니다.` });
+                    });
+                  }}
+                >
+                  대표를 참여자로 올리기
+                </Button>
+              )}
+            </div>
             <WorkerParticipationPanel
               runId={runId!}
               projectId={run.project_id}

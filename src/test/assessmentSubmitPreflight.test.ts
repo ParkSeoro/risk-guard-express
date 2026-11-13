@@ -29,6 +29,7 @@ describe('buildAssessmentSubmitPreflight', () => {
       approvalLineCount: 5,
       authorUserId: 'sup-1',
       currentUserId: 'sup-1',
+      participantCount: 1,
     });
     expect(items.some((i) => i.id === 'opinions')).toBe(false);
     expect(items.find((i) => i.id === 'item_fields')?.ok).toBe(true);
@@ -48,6 +49,7 @@ describe('buildAssessmentSubmitPreflight', () => {
       approvalDraftReady: true,
       authorUserId: 'sup-1',
       currentUserId: 'sup-1',
+      participantCount: 1,
     });
     expect(ready).toBe(true);
     expect(items.find((i) => i.id === 'approval')?.detail).toContain('임시 저장');
@@ -109,6 +111,74 @@ describe('buildAssessmentSubmitPreflight', () => {
     expect(ready).toBe(false);
     expect(items.find((i) => i.id === 'item_fields')?.ok).toBe(false);
     expect(items.find((i) => i.id === 'item_fields')?.detail).toContain('나머지 채우기');
+  });
+
+  it('asks for an occasional reason only on 수시', () => {
+    const blocked = buildAssessmentSubmitPreflight({
+      itemCount: 1,
+      opinionRequired: false,
+      healthRequired: false,
+      opinions: 0,
+      healths: 0,
+      unreviewedAi: 0,
+      unreviewedHealth: 0,
+      approvalLineCount: 2,
+      approvalDraftReady: true,
+      authorUserId: 'sup-1',
+      currentUserId: 'sup-1',
+      participantCount: 1,
+      runType: '수시',
+      occasionalReason: '  ',
+    });
+    expect(blocked.items.find((i) => i.id === 'occasional_reason')?.detail).toBe('수시 사유가 비어 있습니다');
+    const regular = buildAssessmentSubmitPreflight({
+      itemCount: 1,
+      opinionRequired: false,
+      healthRequired: false,
+      opinions: 0,
+      healths: 0,
+      unreviewedAi: 0,
+      unreviewedHealth: 0,
+      approvalLineCount: 2,
+      approvalDraftReady: true,
+      authorUserId: 'sup-1',
+      currentUserId: 'sup-1',
+      participantCount: 1,
+      runType: '정기',
+    });
+    expect(regular.items.some((i) => i.id === 'occasional_reason')).toBe(false);
+  });
+
+  it('blocks participation only when opinion, photo, and participant are all missing', () => {
+    const blocked = buildAssessmentSubmitPreflight({
+      itemCount: 1,
+      opinionRequired: false,
+      healthRequired: false,
+      opinions: 0,
+      healths: 0,
+      unreviewedAi: 0,
+      unreviewedHealth: 0,
+      approvalLineCount: 2,
+      approvalDraftReady: true,
+      authorUserId: 'sup-1',
+      currentUserId: 'sup-1',
+    });
+    expect(blocked.items.find((i) => i.id === 'worker_participation')?.detail).toBe('작업 근로자 참여 기록이 없습니다');
+    const photo = buildAssessmentSubmitPreflight({
+      itemCount: 1,
+      opinionRequired: false,
+      healthRequired: false,
+      opinions: 0,
+      healths: 0,
+      unreviewedAi: 0,
+      unreviewedHealth: 0,
+      approvalLineCount: 2,
+      approvalDraftReady: true,
+      authorUserId: 'sup-1',
+      currentUserId: 'sup-1',
+      participationPhotos: 1,
+    });
+    expect(photo.items.find((i) => i.id === 'worker_participation')?.ok).toBe(true);
   });
 });
 

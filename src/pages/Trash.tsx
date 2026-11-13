@@ -11,6 +11,7 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
+import { retentionBlocksDelete, retentionLockMessage } from '@/lib/assessmentRetention';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -143,6 +144,21 @@ export default function Trash() {
       `[${label}] 항목을 영구 삭제합니다.\n이 작업은 되돌릴 수 없습니다. 계속할까요?`,
     );
     if (!ok) return;
+    if (activeTable === 'assessment_runs' && retentionBlocksDelete((row as any).improvement_plan_completed_on)) {
+      toast({ title: retentionLockMessage((row as any).improvement_plan_completed_on), variant: 'destructive' });
+      return;
+    }
+    if (activeTable === 'risk_items' && (row as any).run_id) {
+      const { data: parent } = await supabase
+        .from('assessment_runs')
+        .select('improvement_plan_completed_on')
+        .eq('id', (row as any).run_id)
+        .maybeSingle();
+      if (retentionBlocksDelete(parent?.improvement_plan_completed_on)) {
+        toast({ title: retentionLockMessage(parent?.improvement_plan_completed_on), variant: 'destructive' });
+        return;
+      }
+    }
     const { error } = await supabase.from(activeTable).delete().eq('id', row.id);
     if (error) {
       toast({ title: `영구 삭제 실패: ${error.message}`, variant: 'destructive' });

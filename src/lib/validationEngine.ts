@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { fetchTradeLibraryStandardRows } from '@/lib/globalRiskLibrary';
 import { calculateRiskGrade, type RiskGrade } from './riskGrade';
 
 export interface ValidationIssue {
@@ -83,10 +84,7 @@ export async function validateRiskItems(
   // Filter out excluded items
   const activeItems = items.filter(i => !i.is_excluded);
 
-  const { data: library } = await supabase
-    .from('standard_risk_library')
-    .select('sub_task, hazard, default_likelihood_grade, default_severity_grade, category_large, category_medium')
-    .eq('is_active', true);
+  const library = await fetchTradeLibraryStandardRows();
 
   const { data: rules } = await supabase
     .from('validation_rules').select('*').eq('is_active', true);

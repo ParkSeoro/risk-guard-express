@@ -4,8 +4,9 @@ name: iOS IPA
 # GitHub의 macOS 빌더에서만 실행됩니다. 일반 push·PR에서는 돌지 않습니다.
 # macOS 분은 리눅스보다 많이 차감되므로, Actions에서 직접 실행할 때만 돌립니다.
 #
-# 실행 (이 파일이 기본 브랜치에 있어야 버튼이 보입니다)
+# 실행
 #   Actions → "iOS IPA" → Run workflow
+#   또는 브랜치 cursor/ios-ipa-run-96eb 에 push (버튼 권한이 없을 때의 시작 방법)
 #
 # ─ 필수 GitHub Secrets (Settings → Secrets and variables → Actions) ─────────────
 #   값은 채팅에 붙여 넣지 않습니다. .p8 과 인증서는 저장소에 커밋하지 않습니다.
@@ -19,6 +20,8 @@ name: iOS IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [cursor/ios-ipa-run-96eb]
 
 permissions:
   contents: read

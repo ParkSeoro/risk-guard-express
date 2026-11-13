@@ -421,5 +421,23 @@ P0-a, P0-b, P0-c의 순서는 그대로입니다. P0-d, P0-d2, P0-e는 그 세 �
 1. **질문 1번 동의**: `syncMembershipRolePosition`에서 `role_new`를 `site_supervisor`(산안법 §16 관리감독자)로 바꿀 때 `position_new`가 비어 있을 때만 `SITE_SUPERVISOR`로 채우고, 이미 `CONSTRUCTION_MGR`·`FIELD_ENGINEER`·`FOREMAN`·`CEO`·`EXECUTIVE`가 있으면 그대로 유지하는 데 동의한다. 반대로 직책을 `SITE_SUPERVISOR`로 고를 때 권한이 `site_supervisor`가 되는 방향과 `supervisorPositionSsot.test.ts` 기대치 수정에도 동의한다.
 2. **질문 2번 동의**: 화면 수정은 `UserManagement.tsx` 소속 줄과 `ProjectDetail.tsx` 멤버 탭의 두 셀렉트 앞에 「권한」「직책」 라벨을 붙이고 위 덮어쓰기만 제거하는 범위로 제한하는 데 동의한다(기존 행 마이그레이션 없음, 감리의 `gc` 제거는 `P0-d` 유지).
 
+### 2026-11-13 14:20 KST · Cursor 6차 — 두 동의 확정
+
+두 질문 모두 그대로 확정합니다. 화면 코드는 이 답으로 고치지 않습니다. 구현 채팅은 P0-d(가입·직책 목록·승인 문구)와 나눕니다. 이 채팅의 범위는 라벨 둘과 `site_supervisor` 덮어쓰기뿐입니다. 감리를 시공사 목록에서 빼는 일은 P0-d에 둡니다. 기존 행은 마이그레이션하지 않습니다. 결재 후보자 필터와 권한 매트릭스는 바꾸지 않습니다.
+
+`syncMembershipRolePosition`은 지금 현재 직책을 받지 않습니다. `UserManagement.handleUpdateMembership`과 `ProjectDetail.handleChangeRole`이 그 행의 `position_new`를 넘겨야 빈 칸과 공사부장을 구분합니다.
+
+권한을 `site_supervisor`로 바꿀 때의 저장은 다음입니다.
+
+- `position_new`가 비어 있으면 `SITE_SUPERVISOR`를 넣습니다.
+- `CONSTRUCTION_MGR`, `FIELD_ENGINEER`, `FOREMAN`, `CEO`, `EXECUTIVE`이면 `position_new`를 update에 넣지 않습니다.
+- 그 외 직책(현장소장, 안전관리자, 감리, 작업자, 발주처 직책)은 지금처럼 `SITE_SUPERVISOR`로 맞춥니다. 이 쌍은 1:1입니다.
+
+반대 방향은 유지합니다. 직책을 `SITE_SUPERVISOR`로 고르면 권한은 `site_supervisor`입니다. 공사부장·공사담당·직장/조장을 고르면 권한은 그대로입니다. 대표·임원을 고르면 권한은 `project_admin`입니다.
+
+`supervisorPositionSsot.test.ts`의 "권한을 관리감독자로 바꾸면 직책도 항상 SITE_SUPERVISOR"는 위 세 갈래로 바꿉니다. 직책이 비어 있으면 채우고, 다섯 직함은 유지하고, 1:1 직책은 맞춥니다. 직책 → 권한 케이스와 결재 후보자 drift 케이스는 유지합니다.
+
+라벨은 `UserManagement` 소속 줄과 `ProjectDetail` 멤버 탭의 두 셀렉트 앞에만 「권한」「직책」을 붙입니다.
+
 
 

@@ -61,7 +61,7 @@ export default function MobileTbm() {
   const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
   const leavePage = useMobileSubpageBack("/app/worker/tasks");
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const { projectId, companyId, applyCompanyFilter, role, isMaster, scopeStatus } = useMobileAccess();
   const preview = usePreview();
   const { log: logAudit } = useAuditLog();

@@ -958,7 +958,8 @@ export default function SafetyInspections() {
 
   const failCount = detailItems.filter(x => x.result === 'fail').length;
   const passCount = detailItems.filter(x => x.result === 'pass').length;
-  const openActions = actions.filter((a) => isOpenInspectionAction(a.status));
+  const OPEN_ACTION_STATUSES = new Set(['open', 'in_progress', 'action_pending', '미조치', '조치중']);
+  const openActions = actions.filter((a) => OPEN_ACTION_STATUSES.has(a.status || ''));
   const pendingActions = openActions.length;
 
   const openActionParent = async (action: InspAction) => {
@@ -1028,7 +1029,11 @@ export default function SafetyInspections() {
               const key = q.trim().toLowerCase();
               const filtered = inspections
                 .filter((i: any) => companyFilter.length === 0 || (i.company_id && companyFilter.includes(i.company_id)))
-                .filter(i => statusFilter === 'all' || i.status === statusFilter)
+                .filter((i) => {
+                  if (statusFilter === 'all') return true;
+                  const isDone = i.status === '완료' || i.status === 'completed';
+                  return statusFilter === 'completed' ? isDone : !isDone;
+                })
                 .filter(i => !key || i.location?.toLowerCase().includes(key) || i.inspector_name?.toLowerCase().includes(key) || i.process_category?.toLowerCase().includes(key));
               if (filtered.length === 0) {
                 return <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">{q || companyFilter.length || statusFilter !== 'all' ? '조건에 맞는 점검 기록이 없습니다.' : '점검 기록이 없습니다. 새 점검을 시작하세요.'}</CardContent></Card>;

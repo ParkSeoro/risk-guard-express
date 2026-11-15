@@ -442,49 +442,7 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      {/* 통합 현장 핵심 지표 바 (반응형 셀 경계: gap-px bg-border) */}
-      <section className="space-y-2" aria-label="현장 숫자">
-        <SectionLabel>현장 숫자</SectionLabel>
-        <div
-          className={`rounded-md border border-border bg-border grid grid-cols-2 sm:grid-cols-3 ${
-            pulseTiles.length >= 6 ? "lg:grid-cols-6" : "lg:grid-cols-5"
-          } gap-px overflow-hidden`}
-        >
-          {pulseTiles.map((tile, idx) => {
-            const spanLastFive =
-              pulseTiles.length === 5 && idx === 4 ? "col-span-2 sm:col-span-2 lg:col-span-1" : "";
-            return (
-              <button
-                key={tile.label}
-                type="button"
-                onClick={() => navigate(tile.path)}
-                className={`bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${spanLastFive}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-muted-foreground font-semibold">{tile.label}</span>
-                  <tile.icon className={`h-3.5 w-3.5 shrink-0 ${tile.danger ? "text-destructive" : "text-muted-foreground/80"}`} />
-                </div>
-                <p className={`text-2xl font-bold tabular-nums tracking-tight mt-1 ${tile.danger ? "text-destructive" : "text-foreground"}`}>
-                  {tile.value}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{tile.hint}</p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
       {selectedProject && <WeatherSummaryCard projectId={selectedProject} />}
-
-      {/* 실시간 고위험 작업 현황 및 4분면 위험성평가 관제 허브 */}
-      <SiteSafetyRiskControlHub
-        projectId={selectedProject}
-        onNavigate={navigate}
-        companyId={userCompanyId || profile?.company_id}
-        companyType={userCompanyType}
-        seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
-        refreshKey={refreshKey}
-      />
 
       {/* 오늘 확인할 일 (긴급도 좌측 레일 기반 액션 패널) */}
       <section className="space-y-2.5">
@@ -526,6 +484,49 @@ const Dashboard = () => {
           </div>
         )}
       </section>
+
+      {/* 통합 현장 핵심 지표 바 (반응형 셀 경계: gap-px bg-border) */}
+      <section className="space-y-2" aria-label="현장 숫자">
+        <SectionLabel>현장 숫자</SectionLabel>
+        <div
+          className={`rounded-md border border-border bg-border grid grid-cols-2 sm:grid-cols-3 ${
+            pulseTiles.length >= 6 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+          } gap-px overflow-hidden`}
+        >
+          {pulseTiles.map((tile, idx) => {
+            const spanLastFive =
+              pulseTiles.length === 5 && idx === 4 ? "col-span-2 sm:col-span-2 lg:col-span-1" : "";
+            return (
+              <button
+                key={tile.label}
+                type="button"
+                onClick={() => navigate(tile.path)}
+                className={`bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${spanLastFive}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-muted-foreground font-semibold">{tile.label}</span>
+                  <tile.icon className={`h-3.5 w-3.5 shrink-0 ${tile.danger ? "text-destructive" : "text-muted-foreground/80"}`} />
+                </div>
+                <p className={`text-2xl font-bold tabular-nums tracking-tight mt-1 ${tile.danger ? "text-destructive" : "text-foreground"}`}>
+                  {tile.value}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{tile.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 오늘 진행 중인 고위험 작업허가(PTW) 목록 */}
+      <SiteSafetyRiskControlHub
+        projectId={selectedProject}
+        onNavigate={navigate}
+        companyId={userCompanyId || profile?.company_id}
+        companyType={userCompanyType}
+        seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
+        refreshKey={refreshKey}
+        section="permits"
+      />
 
       {/* 인허가 · 서류 · 안전점검 통합 현황표 (13개 분산 타일을 1개 업무 매트릭스로 압축) */}
       <section className="space-y-2.5">
@@ -676,6 +677,17 @@ const Dashboard = () => {
           )}
         </Card>
       </section>
+
+      {/* 위험성평가 4분면 매트릭스 */}
+      <SiteSafetyRiskControlHub
+        projectId={selectedProject}
+        onNavigate={navigate}
+        companyId={userCompanyId || profile?.company_id}
+        companyType={userCompanyType}
+        seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
+        refreshKey={refreshKey}
+        section="matrix"
+      />
     </div>
   );
 };

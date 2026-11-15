@@ -1,4 +1,9 @@
 import { readFileSync } from 'node:fs';
+import {
+  companiesHavePairedWork,
+  everyWorkPaired,
+  normalizeCompanySource,
+} from '../../supabase/functions/_shared/weeklyReportGuard';
 import { describe, expect, it } from 'vitest';
 import {
   digestFromSource,
@@ -65,11 +70,11 @@ describe('weekly safety report calendar', () => {
     expect(sql).not.toContain('v_week_start + 4');
     expect(sql).not.toContain('bullet_count > 8');
     expect(writer).toContain('작업 내용이 그대로입니다');
-    expect(writer).toContain('위험이 크지 않은 작업은 작업 내용만 남기세요');
+    expect(writer).toContain('고위험이 아닌 작업은 한 줄로 묶으세요');
     expect(writer).toContain('요인에 의한 위험');
     expect(writer).toContain('factorOnlyRisk');
     expect(writer).toContain('writeCompany');
-    expect(writer).toContain('hasRiskLine');
+    expect(writer).toContain('everyWorkPaired');
     expect(writer).toContain('stripRepeatedHeadings');
     expect(writer).toContain('gemini-2.5-flash');
     expect(writer).not.toContain('최대 6');
@@ -98,5 +103,24 @@ describe('weekly safety report calendar', () => {
     expect(digestFromSource(source)).toContain('(우리플랜트)');
     expect(digestFromSource(source)).toContain('(청원산기(주))');
     expect(digestFromSource(source)).toContain('* 용접');
+  });
+
+  it('normalizes empty group items to headings and validates paired work lines', () => {
+    const normalized = normalizeCompanySource({
+      name: '정엔지니어링',
+      groups: [{ heading: '전기 및 계장 공사', items: [] }],
+    });
+    expect(normalized.groups?.[0]?.items).toEqual(['전기 및 계장 공사']);
+
+    const validText = [
+      '(정엔지니어링)',
+      '■ 전기 및 계장 공사',
+      '* 건물동 전등 설치 작업',
+      '- 위험: 고소작업에 의한 추락',
+      '- 대책: 안전대 착용 및 고리 체결',
+    ].join('\n');
+    expect(everyWorkPaired(validText)).toBe(true);
+    expect(companiesHavePairedWork({ companies: [{ name: '정엔지니어링' }] }, validText)).toBe(true);
+    expect(everyWorkPaired('(정엔지니어링)\n■ 전기\n* 전등 설치')).toBe(false);
   });
 });

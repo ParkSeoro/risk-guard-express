@@ -1,18 +1,21 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { companyNames, digestFromSource, omittedCompanies, type WeeklySource } from "../_shared/weeklyReportGuard.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-push-trigger-secret, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+  companyNames,
+  digestFromSource,
+  everyWorkPaired,
+  normalizeCompanySource,
+  omittedCompanies,
+  type WeeklySource,
+} from "../_shared/weeklyReportGuard.ts";
 
 const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니다.
-입력은 지난 한 주 허가서를 회사별로 모은 작업 목록입니다.
-작업은 빠뜨리지 마세요. 회사 머리글은 입력에 있는 그 회사 이름을 괄호로 감싸 적으세요. 괄호 안에 회사명이라고 적지 마세요. 회사를 빼거나 다른 회사 아래로 합치지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요. 장소도 빼지 마세요.
-제목과 같은 작업 줄은 다시 만들지 마세요.
-각 작업 줄 바로 아래에 위험과 대책을 붙이되, 그 작업에서 실제로 큰 위험만 적으세요.
-위험이 크지 않은 작업은 작업 내용만 남기세요. 위험과 대책 줄을 만들지 마세요.
+입력은 지난 한 주 허가서를 회사별로 모은 작업 목록입니다. 각 묶음에 hazards가 있습니다.
+회사는 빼지 마세요. 회사 머리글은 입력에 있는 그 회사 이름을 괄호로 감싸 적으세요. 괄호 안에 회사명이라고 적지 마세요. 회사를 다른 회사 아래로 합치지 마세요.
+작업을 지우지 마세요.
+고위험 작업만 각각 한 줄로 남기세요. 고위험은 hazards에 해당하는 작업입니다. 고소는 추락이나 낙하가 있는 작업, 화기는 용접·불티·화재, 중장비는 인양·하역·전도·협착입니다.
+고위험 줄마다 바로 아래에 그 작업의 위험과 대책을 적으세요.
+고위험이 아닌 작업은 한 줄로 묶으세요. 그 줄 바로 아래에 그 작업들 전반의 위험과 대책을 한 쌍으로 적으세요.
+모든 작업 줄(* ...) 바로 아래에는 반드시 "- 위험: ..."과 "- 대책: ..." 두 줄이 있어야 합니다.
 위험 줄에는 재해 이름만 적지 마세요. 어떤 요인이 어떤 위험으로 이어지는지 적으세요.
 예: - 위험: 고소작업에 의한 추락
 예: - 위험: 용접 불티에 의한 화재
@@ -25,9 +28,18 @@ const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니�
 
 (입력된 회사 이름)
 ■ 작업 구역
-* 그 주에 한 작업
-- 위험: 요인에 의한 위험
-- 대책: 한 줄`;
+* 고위험 작업
+- 위험: 그 작업의 요인에 의한 위험
+- 대책: 그 작업의 조치
+* 나머지 작업을 한 줄로
+- 위험: 그 작업들 전반의 요인
+- 대책: 그 작업들 전반의 조치`;
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-push-trigger-secret, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
 
 type ReportRow = {
   id: string;
@@ -169,10 +181,6 @@ function companyBlock(source: unknown, name: string): string {
   return (at >= 0 ? digest.slice(at) : digest).trim();
 }
 
-function hasRiskLine(text: string): boolean {
-  return text.split("\n").some((line) => line.trim().startsWith("- 위험:"));
-}
-
 function withCompanyHeader(text: string, name: string): string {
   const trimmed = text.trim();
   const at = trimmed.indexOf(`(${name})`);
@@ -181,43 +189,82 @@ function withCompanyHeader(text: string, name: string): string {
   return `(${name})\n${trimmed}`;
 }
 
-async function writeCompany(apiKey: string, source: WeeklySource, company: NonNullable<WeeklySource["companies"]>[number]): Promise<string> {
+type CompanyWriteResult = {
+  name: string;
+  text: string;
+  paired: boolean;
+  error?: string;
+};
+
+async function writeCompany(
+  apiKey: string,
+  source: WeeklySource,
+  company: NonNullable<WeeklySource["companies"]>[number],
+): Promise<CompanyWriteResult> {
   const name = String(company?.name || "").trim() || "업체 미지정";
-  const slice: WeeklySource = { project_name: source.project_name, companies: [company] };
+  const normalized = normalizeCompanySource(company);
+  const slice: WeeklySource = { project_name: source.project_name, companies: [normalized] };
   const fallback = companyBlock(slice, name);
+
   let text = "";
   try {
-    text = await askGemini(apiKey, slice, "");
-    if (factorOnlyRisk(text) || (text.includes("■") && !hasRiskLine(text))) {
-      text = await askGemini(
-        apiKey,
+    text = stripRepeatedHeadings(await askGemini(apiKey, slice, ""), slice);
+    const headedFirst = withCompanyHeader(text, name);
+    if (factorOnlyRisk(text) || !headedFirst || !everyWorkPaired(headedFirst)) {
+      text = stripRepeatedHeadings(
+        await askGemini(
+          apiKey,
+          slice,
+          "\n모든 작업 줄(* ...) 바로 아래에 '- 위험: 요인에 의한 위험'과 '- 대책: 조치' 두 줄을 반드시 적으세요. 위험 줄에 재해 이름만 적지 마세요. 작업을 지우지 마세요. 회사를 빼지 마세요.",
+        ),
         slice,
-        "\n각 작업 줄 바로 아래에 '- 위험: 요인에 의한 위험'과 '- 대책: 한 줄'을 붙이세요. 회사를 빼지 마세요.",
       );
     }
-  } catch {
-    return fallback;
+  } catch (err) {
+    return {
+      name,
+      text: fallback,
+      paired: false,
+      error: err instanceof Error ? err.message : "AI 호출 실패",
+    };
   }
-  if (factorOnlyRisk(text)) return fallback;
+
+  if (factorOnlyRisk(text)) {
+    return { name, text: fallback, paired: false, error: "위험 줄에 요인만 있습니다." };
+  }
   const headed = withCompanyHeader(text, name);
-  if (!headed || !hasRiskLine(headed)) return fallback;
-  return headed;
+  if (!headed || !everyWorkPaired(headed)) {
+    return { name, text: fallback, paired: false, error: "위험과 대책 짝이 누락되었습니다." };
+  }
+  return { name, text: headed, paired: true };
 }
 
-async function writeRisks(apiKey: string, source: unknown): Promise<string> {
+async function writeRisks(apiKey: string, source: unknown): Promise<{ text: string; partialWarning?: string }> {
   const src = (source || {}) as WeeklySource;
   const project = String(src.project_name || "").trim() || "현장";
   const companies = src.companies || [];
-  const blocks: string[] = [];
-  for (const company of companies) {
-    blocks.push(await writeCompany(apiKey, src, company));
+  if (companies.length === 0) {
+    throw new Error("집계된 업체 작업이 없습니다.");
   }
-  const text = [`[${project} 현장 주간 안전보고]`, ...blocks].join("\n\n").trim();
+
+  const results = await Promise.all(companies.map((company) => writeCompany(apiKey, src, company)));
+  const pairedCount = results.filter((item) => item.paired).length;
+  const failed = results.filter((item) => !item.paired);
+
+  if (pairedCount === 0) {
+    throw new Error(failed[0]?.error || "위험과 대책이 없는 작업이 있습니다.");
+  }
+
+  const text = [`[${project} 현장 주간 안전보고]`, ...results.map((item) => item.text)].join("\n\n").trim();
   const missing = omittedCompanies(source, text);
   if (missing.length > 0) {
     throw new Error(`빠진 업체가 있습니다: ${missing.slice(0, 4).join(", ")}`);
   }
-  return text;
+
+  const partialWarning = failed.length > 0
+    ? `일부 업체(${failed.map((f) => f.name).join(", ")})는 작업 목록만 유지되었습니다.`
+    : undefined;
+  return { text, partialWarning };
 }
 
 Deno.serve(async (req) => {
@@ -234,6 +281,7 @@ Deno.serve(async (req) => {
     : seoulToday();
   const requestedWeek = weekStartMonday(requestedDay);
   const projectId = typeof body.project_id === "string" ? body.project_id : "";
+  const force = body.force === true && Boolean(projectId);
 
   const authHeader = req.headers.get("Authorization") || "";
   const triggerHeader = req.headers.get("X-Push-Trigger-Secret") || "";
@@ -278,7 +326,9 @@ Deno.serve(async (req) => {
       written: 0,
     });
   }
-  const pending = rows.filter((row) => row.status !== "ready" || omittedCompanies(row.source, row.body).length > 0);
+  const pending = force
+    ? rows
+    : rows.filter((row) => row.status !== "ready" || omittedCompanies(row.source, row.body).length > 0);
   if (pending.length === 0) {
     return jsonResponse({
       ok: true,
@@ -291,20 +341,23 @@ Deno.serve(async (req) => {
   const apiKey = await geminiKey();
   if (!apiKey) {
     return jsonResponse({
-      ok: true,
+      ok: false,
       skipped: false,
-      message: "작업 목록은 저장되어 있습니다. 위험과 대책은 아직 만들지 못했습니다.",
+      message: "작업 목록은 저장되어 있습니다. GEMINI_API_KEY가 없어 위험과 대책을 만들지 못했습니다.",
       written: 0,
+      failed: pending.length,
     });
   }
 
   let written = 0;
   const failures: string[] = [];
+  const warnings: string[] = [];
   for (const row of pending) {
     try {
-      const text = stripRepeatedHeadings(await writeRisks(apiKey, row.source), row.source);
-      if (!text || !text.includes("■") || !hasRiskLine(text)) {
-        throw new Error("위험과 대책이 없습니다.");
+      const { text: rawText, partialWarning } = await writeRisks(apiKey, row.source);
+      const text = stripRepeatedHeadings(rawText, row.source);
+      if (!text || !text.includes("■")) {
+        throw new Error("보고 형식이 비어 있습니다.");
       }
       const { error: updateError } = await service
         .from("owner_weekly_work_reports")
@@ -312,6 +365,7 @@ Deno.serve(async (req) => {
         .eq("id", row.id);
       if (updateError) throw new Error(updateError.message);
       written += 1;
+      if (partialWarning) warnings.push(partialWarning);
     } catch (err) {
       failures.push(err instanceof Error ? err.message : "작성 실패");
       const missing = omittedCompanies(row.source, row.body);
@@ -331,6 +385,6 @@ Deno.serve(async (req) => {
     skipped: false,
     written,
     failed: failures.length,
-    message: failures[0] || "",
+    message: failures[0] || warnings[0] || "",
   });
 });

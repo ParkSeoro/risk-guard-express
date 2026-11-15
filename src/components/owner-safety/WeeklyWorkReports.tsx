@@ -165,16 +165,24 @@ export function WeeklyWorkReports({ projectId }: { projectId?: string | null }) 
     if (!projectId || !selectedWeek) return;
     setRebuilding(true);
     const { data, error } = await supabase.functions.invoke('write-weekly-safety-report', {
-      body: { week_start: selectedWeek.start, project_id: projectId },
+      body: { week_start: selectedWeek.start, project_id: projectId, force: Boolean(current) },
     });
     setRebuilding(false);
     if (error) {
       toast.error('다시 만들지 못했습니다.');
       return;
     }
-    const payload = data as { error?: string; message?: string; skipped?: boolean };
-    if (payload?.error) {
-      toast.error(payload.error);
+    const payload = data as {
+      ok?: boolean;
+      error?: string;
+      message?: string;
+      skipped?: boolean;
+      written?: number;
+      failed?: number;
+    };
+    if (payload?.error || payload?.ok === false || (payload?.failed ?? 0) > 0) {
+      toast.error(payload?.error || payload?.message || '주간 보고를 만들지 못했습니다.');
+      if ((payload?.written ?? 0) > 0) reloadMonth();
       return;
     }
     toast.success(payload?.message || '이 주의 보고를 다시 만들었습니다.');

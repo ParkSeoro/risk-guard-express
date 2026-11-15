@@ -27,6 +27,8 @@ type CtpaRecord = {
   target_date: string | null;
   status: "draft" | "in_review" | "approved" | "submitted";
   notes: string | null;
+  company_id?: string | null;
+  companies?: { name?: string | null } | null;
 };
 
 const CTPA_TYPES: Record<CtpaType, { label: string; legal: string }> = {
@@ -48,10 +50,16 @@ export function CtpaCompliancePanel({
   projectId,
   canEditCtpa,
   isHseManager,
+  companyId,
+  applyCompanyFilter,
+  companyScopeAll,
 }: {
   projectId: string;
   canEditCtpa: boolean;
   isHseManager: boolean;
+  companyId: string | null;
+  applyCompanyFilter: (query: any) => any;
+  companyScopeAll: boolean;
 }) {
   const { user } = useAuth();
   const [rows, setRows] = useState<CtpaRecord[]>([]);
@@ -76,16 +84,18 @@ export function CtpaCompliancePanel({
   const load = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
-    const { data } = await (supabase as any)
+    let query = (supabase as any)
       .from("ctpa_compliance_records")
-      .select("*")
+      .select("*, companies(name)")
       .eq("project_id", projectId)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(50);
+    query = applyCompanyFilter(query);
+    const { data } = await query;
     setRows((data as CtpaRecord[]) || []);
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, applyCompanyFilter]);
 
   useEffect(() => {
     load();
@@ -126,6 +136,7 @@ export function CtpaCompliancePanel({
     const { error } = await (supabase as any).from("ctpa_compliance_records").insert([
       {
         project_id: projectId,
+        company_id: companyId,
         record_type: form.record_type,
         title: form.title.trim(),
         target_date: form.target_date || null,
@@ -173,7 +184,7 @@ export function CtpaCompliancePanel({
             <HardHat className="h-4 w-4 text-primary" /> 건설기술진흥법 (건진법 §62·§62의2·§67) 공사관리 트랙
           </h2>
           <p className="text-xs text-muted-foreground">
-            안전관리계획서·정기안전점검·가설구조물·건설사고 CSI 초안 (현장소장·공무·공사팀 작성 / 감리 검토 / 발주처 승인)
+            안전관리계획서·정기안전점검·가설구조물·건설사고 CSI 초안. {companyScopeAll ? "현장 전체 회사의 기록입니다." : "자사와 하위 협력사 기록만 표시됩니다."}
           </p>
         </div>
         {canEditCtpa && (
@@ -212,6 +223,7 @@ export function CtpaCompliancePanel({
                   <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant="outline">{CTPA_TYPES[r.record_type]?.label || r.record_type}</Badge>
+                      {r.companies?.name && <Badge variant="secondary">{r.companies.name}</Badge>}
                       <span>{r.title}</span>
                       {dDay !== null && (
                         <Badge variant={dDay < 0 ? "destructive" : dDay <= 14 ? "secondary" : "outline"}>

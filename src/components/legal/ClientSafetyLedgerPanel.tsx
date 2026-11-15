@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileCheck2, Sparkles, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,9 +53,13 @@ const STAGE_DEFAULTS: Record<Stage, { title: string; items: string[] }> = {
 export function ClientSafetyLedgerPanel({
   projectId,
   canEdit,
+  companyId,
+  accessibleCompanyIds,
 }: {
   projectId: string;
   canEdit: boolean;
+  companyId: string | null;
+  accessibleCompanyIds: string[] | null;
 }) {
   const { user, profile } = useAuth();
   const [rows, setRows] = useState<Record<Stage, LedgerRow | null>>({
@@ -70,13 +75,47 @@ export function ClientSafetyLedgerPanel({
   });
   const [savingStage, setSavingStage] = useState<Stage | null>(null);
   const [aiStage, setAiStage] = useState<Stage | null>(null);
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("project_companies")
+        .select("company_id, companies(name)")
+        .eq("project_id", projectId)
+        .eq("is_deleted", false);
+      if (!active) return;
+      const allow = accessibleCompanyIds ? new Set(accessibleCompanyIds) : null;
+      const list = ((data as any[]) || [])
+        .map((r) => ({
+          id: String(r.company_id || ""),
+          name: String(r.companies?.name || "회사"),
+        }))
+        .filter((c) => c.id && (!allow || allow.has(c.id)));
+      if (list.length === 0 && companyId && (!allow || allow.has(companyId))) {
+        list.push({ id: companyId, name: "내 회사" });
+      }
+      setCompanies(list);
+      setSelectedCompanyId((prev) => {
+        if (prev && list.some((c) => c.id === prev)) return prev;
+        if (companyId && list.some((c) => c.id === companyId)) return companyId;
+        return list[0]?.id || "";
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [projectId, companyId, accessibleCompanyIds]);
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || !selectedCompanyId) return;
     const { data } = await (supabase as any)
       .from("client_safety_ledgers")
       .select("*")
       .eq("project_id", projectId)
+      .eq("company_id", selectedCompanyId)
       .eq("is_deleted", false);
     const map: Record<Stage, LedgerRow | null> = { basic: null, design: null, construction: null };
     const nextNotes: Record<Stage, string> = { basic: "", design: "", construction: "" };
@@ -97,7 +136,7 @@ export function ClientSafetyLedgerPanel({
     setRows(map);
     setNotes(nextNotes);
     setChecks(nextChecks);
-  }, [projectId]);
+  }, [projectId, selectedCompanyId]);
 
   useEffect(() => {
     load();
@@ -127,11 +166,13 @@ export function ClientSafetyLedgerPanel({
   };
 
   const handleSave = async (stage: Stage, confirm = false) => {
+    if (!selectedCompanyId) return;
     setSavingStage(stage);
     const existing = rows[stage];
     const actorName = profile?.display_name || user?.email || "발주처 담당자";
     const payload = {
       project_id: projectId,
+      company_id: selectedCompanyId,
       stage,
       title: STAGE_DEFAULTS[stage].title,
       checklist_json: checks[stage],
@@ -161,11 +202,25 @@ export function ClientSafetyLedgerPanel({
             <FileCheck2 className="h-4 w-4 text-primary" /> 발주자 안전보건대장 (산안법 §67 · 총공사금액 50억원 이상)
           </h2>
           <p className="text-xs text-muted-foreground">
-            기본·설계·공사 3단계 안전보건대장 확인 및 이행 기록 {!canEdit && "· (발주처/관리자만 수정 가능)"}
+            기본·설계·공사 3단계 확인 기록. {accessibleCompanyIds === null ? "발주처·마스터는 현장 회사를 고릅니다." : "자사와 하위 협력사만 표시됩니다."}
+            {!canEdit && " 수정은 발주처 관리자와 프로젝트 관리자만 합니다."}
           </p>
         </div>
+        {companies.length > 1 && (
+          <Select value={selectedCompanyId || undefined} onValueChange={setSelectedCompanyId}>
+            <SelectTrigger className="h-8 w-[220px] text-xs"><SelectValue placeholder="회사 선택" /></SelectTrigger>
+            <SelectContent>
+              {companies.map((c) => (
+                <SelectItem key={c.id} value={c.id} className="text-xs">{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
+      {!selectedCompanyId ? (
+        <p className="text-xs text-muted-foreground py-6 text-center">이 현장에서 볼 수 있는 회사가 없습니다.</p>
+      ) : (
       <div className="grid gap-4">
         {(["basic", "design", "construction"] as Stage[]).map((stage) => {
           const row = rows[stage];
@@ -179,7 +234,7 @@ export function ClientSafetyLedgerPanel({
                     <Badge variant={confirmed ? "default" : "outline"}>
                       {confirmed ? "발주자 확인완료" : row ? "검토중" : "미작성"}
                     </Badge>
-                    {canEdit && (
+                    {canEdit && selectedCompanyId && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -199,7 +254,7 @@ export function ClientSafetyLedgerPanel({
                   {checks[stage].map((item, idx) => (
                     <label key={item.id} className="flex items-center gap-2 text-xs cursor-pointer">
                       <Checkbox
-                        disabled={!canEdit}
+                        disabled={!canEdit || !selectedCompanyId}
                         checked={item.checked}
                         onCheckedChange={(v) => {
                           setChecks((prev) => ({
@@ -214,7 +269,7 @@ export function ClientSafetyLedgerPanel({
                 </div>
                 <Textarea
                   rows={2}
-                  disabled={!canEdit}
+                  disabled={!canEdit || !selectedCompanyId}
                   placeholder="단계별 확인 의견 및 비고..."
                   value={notes[stage]}
                   onChange={(e) => setNotes((prev) => ({ ...prev, [stage]: e.target.value }))}
@@ -225,7 +280,7 @@ export function ClientSafetyLedgerPanel({
                       ? `확인: ${row.confirmed_by_name || "발주처"} (${new Date(row.confirmed_at).toLocaleDateString("ko-KR")})`
                       : "아직 발주자 최종 확인 전입니다."}
                   </span>
-                  {canEdit && (
+                  {canEdit && selectedCompanyId && (
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" disabled={savingStage === stage} onClick={() => handleSave(stage, false)}>
                         저장
@@ -241,6 +296,7 @@ export function ClientSafetyLedgerPanel({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

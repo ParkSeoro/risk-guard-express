@@ -158,7 +158,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     : "flex-1 min-h-0 overflow-auto p-3.5 sm:p-4 print:block print:p-0 print:overflow-visible"
                 }
               >
-                <AppErrorBoundary>{children}</AppErrorBoundary>
+                <AppErrorBoundary resetKey={location.pathname}>{children}</AppErrorBoundary>
               </main>
             </div>
           </div>
@@ -227,7 +227,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   : "overflow-auto p-3 sm:p-5"
               }`}
             >
-              <AppErrorBoundary>{children}</AppErrorBoundary>
+              <AppErrorBoundary resetKey={location.pathname}>{children}</AppErrorBoundary>
             </main>
           </div>
         </RemoteSupportHost>
@@ -328,7 +328,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <TutorialOverlay />
             <ShellAssessmentShareAlert />
             <main className={`flex-1 min-h-0 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 print:h-auto print:max-h-none ${isMessenger ? "overflow-hidden p-0 flex flex-col" : "overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6"}`}>
-              <AppErrorBoundary>
+              <AppErrorBoundary resetKey={location.pathname}>
                 <div className={isMessenger ? "flex-1 min-h-0 flex flex-col h-full" : "w-full max-w-full min-w-0 print:block print:w-full"}>{children}</div>
               </AppErrorBoundary>
             </main>

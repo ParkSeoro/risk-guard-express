@@ -20,6 +20,7 @@ import { SafetyCouncilPanel } from '@/components/legal/SafetyCouncilPanel';
 import { ClientSafetyLedgerPanel } from '@/components/legal/ClientSafetyLedgerPanel';
 import { CtpaCompliancePanel } from '@/components/legal/CtpaCompliancePanel';
 import { RoleLegalAiBriefing } from '@/components/legal/RoleLegalAiBriefing';
+import { canEditClientLedger, canEditCtpa, canViewLegalCompanyDocs, isLegalHseManager } from '@/lib/legalDutyAccess';
 
 const categoryLabels: Record<string, string> = {
   daily: '일일 업무',
@@ -189,10 +190,16 @@ const LegalDuties = () => {
   };
 
   const categories = ['daily', 'weekly', 'monthly', 'event'];
-  const CTPA_POSITIONS = new Set(['SITE_MANAGER', 'CONSTRUCTION_MGR', 'FIELD_ENGINEER', 'SUPERVISOR', 'OWNER_CM', 'OWNER_PM']);
-  const canEditClientLedger = access.isMaster || access.userCompanyType === 'client' || access.hasRole('project_admin');
-  const isHseManager = access.userPosition === 'HSE_MANAGER' || (access.hasRole('safety_manager') && !CTPA_POSITIONS.has(access.userPosition || ''));
-  const canEditCtpa = access.isMaster || (CTPA_POSITIONS.has(access.userPosition || '') && access.userPosition !== 'HSE_MANAGER') || (access.hasRole('project_admin') && access.userPosition !== 'HSE_MANAGER');
+  const roleOpts = {
+    isMaster: access.isMaster,
+    userRole: access.userRole,
+    userCompanyType: access.userCompanyType,
+    userPosition: access.userPosition,
+  };
+  const canViewCompanyDocs = canViewLegalCompanyDocs(roleOpts);
+  const canEditLedger = canEditClientLedger(roleOpts);
+  const isHseManager = isLegalHseManager(roleOpts);
+  const canEditCtpaDocs = canEditCtpa(roleOpts);
 
   if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
@@ -229,8 +236,8 @@ const LegalDuties = () => {
         <TabsList className="flex-wrap">
           <TabsTrigger value="duties" className="text-xs">산안법 법적업무</TabsTrigger>
           <TabsTrigger value="council" className="text-xs">협의체·합동점검 (§64·§75)</TabsTrigger>
-          <TabsTrigger value="client-ledger" className="text-xs">발주자 안전보건대장 (§67)</TabsTrigger>
-          <TabsTrigger value="ctpa" className="text-xs">건진법 공사관리 (§62·§67)</TabsTrigger>
+          {canViewCompanyDocs && <TabsTrigger value="client-ledger" className="text-xs">발주자 안전보건대장 (§67)</TabsTrigger>}
+          {canViewCompanyDocs && <TabsTrigger value="ctpa" className="text-xs">건진법 공사관리 (§62·§67)</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="duties" className="space-y-4">
@@ -326,17 +333,33 @@ const LegalDuties = () => {
           )}
         </TabsContent>
 
+        {canViewCompanyDocs && (
         <TabsContent value="client-ledger">
           {access.selectedProject && (
-            <ClientSafetyLedgerPanel projectId={access.selectedProject} canEdit={canEditClientLedger} />
+            <ClientSafetyLedgerPanel
+              projectId={access.selectedProject}
+              canEdit={canEditLedger}
+              companyId={access.userCompanyId}
+              accessibleCompanyIds={access.accessibleCompanyIds}
+            />
           )}
         </TabsContent>
+        )}
 
+        {canViewCompanyDocs && (
         <TabsContent value="ctpa">
           {access.selectedProject && (
-            <CtpaCompliancePanel projectId={access.selectedProject} canEditCtpa={canEditCtpa} isHseManager={isHseManager} />
+            <CtpaCompliancePanel
+              projectId={access.selectedProject}
+              canEditCtpa={canEditCtpaDocs}
+              isHseManager={isHseManager}
+              companyId={access.userCompanyId}
+              applyCompanyFilter={access.applyCompanyFilter}
+              companyScopeAll={access.accessibleCompanyIds === null}
+            />
           )}
         </TabsContent>
+        )}
       </Tabs>
 
       {/* Add Dialog */}

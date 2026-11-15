@@ -11,10 +11,14 @@ import {
 
 interface State { error: Error | null; }
 
-export class AppErrorBoundary extends React.Component<
-  { children: React.ReactNode; fallback?: React.ReactNode },
-  State
-> {
+type Props = {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+  /** 경로가 바뀌면 잡은 오류를 풀어, 다른 메뉴가 다시 그려지게 한다. */
+  resetKey?: string;
+};
+
+export class AppErrorBoundary extends React.Component<Props, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
@@ -26,6 +30,12 @@ export class AppErrorBoundary extends React.Component<
     console.error("[AppErrorBoundary]", error, info.componentStack);
     if (isShareableRuntimeError(error)) {
       void recoverIosWebRuntimeOnce();
+    }
+  }
+
+  componentDidUpdate(prev: Props) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
     }
   }
 

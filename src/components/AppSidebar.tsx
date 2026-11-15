@@ -25,6 +25,7 @@ import { ADMIN_APP_BASE, toAdminUrl } from "@/lib/adminNav";
 import { VISION_VIEW_ROLES } from "@/lib/visionFleetApi";
 import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
 import { isPureWorkerUser } from "@/components/AuthGuard";
+import { canViewLegalCompanyDocs } from "@/lib/legalDutyAccess";
 import { canOpenCouncil } from "@/lib/councilAccess";
 
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
@@ -181,6 +182,11 @@ export function AppSidebar() {
     '/project-library', '/education-materials', '/worker-education',
     '/profile', '/settings/account', '/manual',
     ...(canViewVision ? ['/vision-fleet'] : []),
+    ...(access && canViewLegalCompanyDocs({
+      isMaster: access.isMaster,
+      userRole: access.userRole,
+      userCompanyType: access.userCompanyType,
+    }) ? ['/legal-duties'] : []),
   ]);
   const canViewOwnerSafety = isOwnerSafetyManager(access, roles, user?.email, profile?.display_name);
   const scopedGroups = groups.map((g) => {

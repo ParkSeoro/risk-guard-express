@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  digestFromSource,
+  omittedCompanies,
+} from '../../supabase/functions/_shared/weeklyReportGuard';
+import {
   formatWeekChoice,
   seoulISODate,
   shouldSkipWeeklyModel,
@@ -13,6 +17,7 @@ import {
 
 const sql = readFileSync('supabase/migrations/20261107120000_weekly_safety_report.sql', 'utf8');
 const mergeSql = readFileSync('supabase/migrations/20261107143000_weekly_report_merge_places.sql', 'utf8');
+const companySql = readFileSync('supabase/migrations/20261116073000_weekly_report_permit_companies.sql', 'utf8');
 const writer = readFileSync('supabase/functions/write-weekly-safety-report/index.ts', 'utf8');
 
 describe('weekly safety report calendar', () => {
@@ -62,12 +67,36 @@ describe('weekly safety report calendar', () => {
     expect(writer).toContain('작업 내용이 그대로입니다');
     expect(writer).toContain('위험이 크지 않은 작업은 작업 내용만 남기세요');
     expect(writer).toContain('요인에 의한 위험');
-    expect(writer).toContain('위험 줄에 요인만 있습니다');
+    expect(writer).toContain('factorOnlyRisk');
+    expect(writer).toContain('writeCompany');
+    expect(writer).toContain('hasRiskLine');
     expect(writer).toContain('stripRepeatedHeadings');
     expect(writer).toContain('gemini-2.5-flash');
     expect(writer).not.toContain('최대 6');
     expect(mergeSql).toContain('weekly_condense_bullets');
     expect(mergeSql).toContain('PERFORM public.weekly_prepare_report_items()');
     expect(mergeSql).toContain('stats = public.owner_weekly_work_reports.stats');
+    expect(companySql).toContain("WHEN pc.role_in_project = 'contractor'");
+    expect(companySql).toContain('THEN parent.name');
+    expect(companySql).toContain("COALESCE(parent.type, '') <> 'client'");
+    expect(companySql).toContain('weekly_report_keeps_companies');
+    expect(writer).toContain('omittedCompanies');
+    expect(writer).toContain('thinkingBudget: 0');
+    expect(writer).toContain('digestFromSource');
+  });
+
+  it('keeps every permit company when the model answer drops one', () => {
+    const source = {
+      project_name: '여수',
+      companies: [
+        { name: '우리플랜트', groups: [{ heading: '배관', items: ['용접'] }] },
+        { name: '청원산기(주)', groups: [{ heading: '탱크', items: [] }] },
+      ],
+    };
+    expect(omittedCompanies(source, '(우리플랜트)\n■ 배관')).toEqual(['청원산기(주)']);
+    expect(omittedCompanies(source, '(우리플랜트)\n■ 배관\n\n(청원산기(주))\n■ 탱크')).toEqual([]);
+    expect(digestFromSource(source)).toContain('(우리플랜트)');
+    expect(digestFromSource(source)).toContain('(청원산기(주))');
+    expect(digestFromSource(source)).toContain('* 용접');
   });
 });

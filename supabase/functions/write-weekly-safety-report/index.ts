@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { digestFromSource, omittedCompanies, type WeeklySource } from "../_shared/weeklyReportGuard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +9,7 @@ const corsHeaders = {
 
 const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니다.
 입력은 지난 한 주 허가서를 회사별로 모은 작업 목록입니다.
-작업은 빠뜨리지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요. 장소도 빼지 마세요.
+작업은 빠뜨리지 마세요. 입력의 회사는 모두 (회사명)으로 적으세요. 회사를 빼거나 다른 회사 아래로 합치지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요. 장소도 빼지 마세요.
 제목과 같은 작업 줄은 다시 만들지 마세요.
 각 작업 줄 바로 아래에 위험과 대책을 붙이되, 그 작업에서 실제로 큰 위험만 적으세요.
 위험이 크지 않은 작업은 작업 내용만 남기세요. 위험과 대책 줄을 만들지 마세요.
@@ -125,7 +126,11 @@ async function askGemini(apiKey: string, source: unknown, extra: string): Promis
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: REPORT_PROMPT }] },
         contents: [{ role: "user", parts: [{ text: JSON.stringify(source) + extra }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 32768,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     },
   );
@@ -133,17 +138,51 @@ async function askGemini(apiKey: string, source: unknown, extra: string): Promis
   if (!res.ok) {
     throw new Error(String(payload?.error?.message || "주간 보고를 만들지 못했습니다.").slice(0, 180));
   }
-  const parts = payload?.candidates?.[0]?.content?.parts || [];
+  const candidate = payload?.candidates?.[0] || {};
+  if (candidate.finishReason === "MAX_TOKENS") {
+    throw new Error("보고가 길이를 넘겼습니다.");
+  }
+  const parts = candidate?.content?.parts || [];
   return parts.map((part: { text?: string }) => part.text || "").join("\n").trim();
 }
 
-async function writeRisks(apiKey: string, source: unknown): Promise<string> {
-  let text = await askGemini(apiKey, source, "");
-  if (factorOnlyRisk(text)) {
-    text = await askGemini(apiKey, source, "\n지난 답은 위험에 재해 이름만 적었습니다. 요인에 의한 위험으로 다시 적으세요.");
+function companyBlock(source: unknown, name: string): string {
+  const digest = digestFromSource(source);
+  const at = digest.indexOf(`(${name})`);
+  return (at >= 0 ? digest.slice(at) : digest).trim();
+}
+
+async function writeCompany(apiKey: string, source: WeeklySource, company: NonNullable<WeeklySource["companies"]>[number]): Promise<string> {
+  const name = String(company?.name || "").trim() || "업체 미지정";
+  const slice: WeeklySource = { project_name: source.project_name, companies: [company] };
+  let text = "";
+  try {
+    text = await askGemini(apiKey, slice, "");
+    if (factorOnlyRisk(text)) {
+      text = await askGemini(apiKey, slice, "\n지난 답은 위험에 재해 이름만 적었습니다. 요인에 의한 위험으로 다시 적으세요.");
+    }
+  } catch {
+    text = "";
   }
-  if (factorOnlyRisk(text)) {
-    throw new Error("위험 줄에 요인만 있습니다.");
+  if (!text || factorOnlyRisk(text) || omittedCompanies(slice, text).length > 0 || !text.includes("■")) {
+    return companyBlock(slice, name);
+  }
+  const at = text.indexOf(`(${name})`);
+  return (at >= 0 ? text.slice(at) : text).trim();
+}
+
+async function writeRisks(apiKey: string, source: unknown): Promise<string> {
+  const src = (source || {}) as WeeklySource;
+  const project = String(src.project_name || "").trim() || "현장";
+  const companies = src.companies || [];
+  const blocks: string[] = [];
+  for (const company of companies) {
+    blocks.push(await writeCompany(apiKey, src, company));
+  }
+  const text = [`[${project} 현장 주간 안전보고]`, ...blocks].join("\n\n").trim();
+  const missing = omittedCompanies(source, text);
+  if (missing.length > 0) {
+    throw new Error(`빠진 업체가 있습니다: ${missing.slice(0, 4).join(", ")}`);
   }
   return text;
 }
@@ -206,7 +245,7 @@ Deno.serve(async (req) => {
       written: 0,
     });
   }
-  const pending = rows.filter((row) => row.status !== "ready");
+  const pending = rows.filter((row) => row.status !== "ready" || omittedCompanies(row.source, row.body).length > 0);
   if (pending.length === 0) {
     return jsonResponse({
       ok: true,
@@ -242,9 +281,14 @@ Deno.serve(async (req) => {
       written += 1;
     } catch (err) {
       failures.push(err instanceof Error ? err.message : "작성 실패");
+      const missing = omittedCompanies(row.source, row.body);
       await service
         .from("owner_weekly_work_reports")
-        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .update({
+          ...(missing.length > 0 ? { body: digestFromSource(row.source) } : {}),
+          status: "digest",
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", row.id);
     }
   }

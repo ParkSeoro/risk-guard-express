@@ -958,8 +958,7 @@ export default function SafetyInspections() {
 
   const failCount = detailItems.filter(x => x.result === 'fail').length;
   const passCount = detailItems.filter(x => x.result === 'pass').length;
-  const OPEN_ACTION_STATUSES = new Set(['open', 'in_progress', 'action_pending', '미조치', '조치중']);
-  const openActions = actions.filter((a) => OPEN_ACTION_STATUSES.has(a.status || ''));
+  const openActions = actions.filter((a) => isOpenInspectionAction(a.status));
   const pendingActions = openActions.length;
 
   const openActionParent = async (action: InspAction) => {

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getGradeClassName } from "@/lib/riskGrade";
 import { isActiveRiskItem } from "@/lib/riskItemVisibility";
+import { isOpenInspectionAction } from "@/lib/inspectionActions";
 import {
   buildAttentionItems,
   countOnSite,
@@ -306,9 +307,7 @@ const Dashboard = () => {
 
       const rawInsps = (inspRes.data || []) as Array<{ status?: string }>;
       const rawActs = (actRes.data || []) as Array<{ status?: string }>;
-      const openActions = rawActs.filter(
-        (a) => a.status === 'open' || a.status === 'in_progress' || a.status === 'action_pending' || a.status === '미조치' || a.status === '조치중'
-      ).length;
+      const openActions = rawActs.filter((a) => isOpenInspectionAction(a.status)).length;
       const completedInsps = rawInsps.filter((i) => i.status === 'completed' || i.status === '완료').length;
       const inProgressInsps = rawInsps.length - completedInsps;
       const inspectionSum: InspectionSum = {

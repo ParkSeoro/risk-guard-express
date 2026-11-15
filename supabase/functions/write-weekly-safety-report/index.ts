@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { digestFromSource, omittedCompanies, type WeeklySource } from "../_shared/weeklyReportGuard.ts";
+import { companyNames, digestFromSource, omittedCompanies, type WeeklySource } from "../_shared/weeklyReportGuard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,11 +93,24 @@ function compactLabel(value: string): string {
   return value.toLowerCase().replace(/[^0-9a-zA-Z가-힣]+/g, "");
 }
 
-function stripRepeatedHeadings(text: string): string {
+function echoLabels(source: unknown): Set<string> {
+  const src = (source || {}) as WeeklySource;
+  const project = String(src.project_name || "").trim();
+  const labels = new Set<string>(companyNames(source));
+  if (project) {
+    labels.add(project);
+    labels.add(`${project} 현장 주간 안전보고`);
+  }
+  return labels;
+}
+
+function stripRepeatedHeadings(text: string, source?: unknown): string {
+  const echoes = echoLabels(source);
   let heading = "";
   const kept: string[] = [];
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
+    if (echoes.has(trimmed)) continue;
     const asHeading = trimmed.match(/^■\s*(.*)$/);
     if (asHeading) {
       heading = compactLabel(asHeading[1]);
@@ -289,7 +302,7 @@ Deno.serve(async (req) => {
   const failures: string[] = [];
   for (const row of pending) {
     try {
-      const text = stripRepeatedHeadings(await writeRisks(apiKey, row.source));
+      const text = stripRepeatedHeadings(await writeRisks(apiKey, row.source), row.source);
       if (!text || !text.includes("■") || !hasRiskLine(text)) {
         throw new Error("위험과 대책이 없습니다.");
       }

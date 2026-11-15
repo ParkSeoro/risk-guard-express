@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -33,9 +33,18 @@ const POSITION_OPTIONS = [
 ];
 
 const positionLabel = (v: string) => POSITION_OPTIONS.find(p => p.value === v)?.label || v;
+const COMPANY_DETAIL_TABS = ["overview", "construction", "departments", "managers"];
 
 export default function CompanyDetail() {
   const { id: companyId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState(
+    requestedTab && COMPANY_DETAIL_TABS.includes(requestedTab) ? requestedTab : "overview",
+  );
+  useEffect(() => {
+    if (requestedTab && COMPANY_DETAIL_TABS.includes(requestedTab)) setTab(requestedTab);
+  }, [requestedTab]);
   const { toast } = useToast();
   const { seesAllCompanies, accessibleCompanyIds, userCompanyId } = useGlobalProjectAccess();
   const { user } = useAuth();
@@ -77,7 +86,7 @@ export default function CompanyDetail() {
         {!canEdit && <Badge variant="outline">조회 전용</Badge>}
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">회사 개요</TabsTrigger>
           <TabsTrigger value="construction">공사 개요</TabsTrigger>

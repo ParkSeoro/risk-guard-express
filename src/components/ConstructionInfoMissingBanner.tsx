@@ -3,6 +3,13 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle } from "lucide-react";
 import { toAdminUrl } from "@/lib/adminNav";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
+
+/** 소속 회사가 있으면 그 회사 공사 개요, 없으면 현장 업체 관리. */
+export function constructionInfoEntryPath(projectId: string, companyId?: string | null) {
+  if (companyId) return toAdminUrl(`/companies/${companyId}?tab=construction`);
+  return toAdminUrl(`/project/${projectId}?tab=companies`);
+}
 
 interface Props {
   projectId: string | null | undefined;
@@ -11,6 +18,8 @@ interface Props {
 }
 
 export function ConstructionInfoMissingBanner({ projectId, companyId, contextLabel }: Props) {
+  const access = useGlobalProjectAccessOptional();
+  const targetCompanyId = companyId || access?.userCompanyId || null;
   const [missing, setMissing] = useState(false);
 
   useEffect(() => {
@@ -57,7 +66,7 @@ export function ConstructionInfoMissingBanner({ projectId, companyId, contextLab
         </span>
       </div>
       <Link
-        to={toAdminUrl(`/project/${projectId}`)}
+        to={constructionInfoEntryPath(projectId, targetCompanyId)}
         className="font-semibold underline underline-offset-2 text-amber-800 dark:text-amber-100 whitespace-nowrap"
       >
         현장 상세에서 입력하기 →

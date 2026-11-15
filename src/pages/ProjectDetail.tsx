@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -50,8 +50,18 @@ const companyTypeOrder: Record<string, number> = {
   client: 0, gc: 1, contractor: 2, vendor: 3,
 };
 
+const PROJECT_DETAIL_TABS = ["basic-info", "members", "companies", "approval-routes", "tags", "invites"];
+
 const ProjectDetail = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState(
+    requestedTab && PROJECT_DETAIL_TABS.includes(requestedTab) ? requestedTab : "members",
+  );
+  useEffect(() => {
+    if (requestedTab && PROJECT_DETAIL_TABS.includes(requestedTab)) setTab(requestedTab);
+  }, [requestedTab]);
   const { user, hasRole } = useAuth();
   const { toast } = useToast();
   const isMaster = hasRole('master');
@@ -762,7 +772,7 @@ const ProjectDetail = () => {
 
       <ConstructionInfoMissingBanner projectId={projectId} contextLabel="현장 업체별 공사금액·기간" />
 
-      <Tabs defaultValue="members">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="basic-info" className="gap-1.5"><Settings2 className="h-3.5 w-3.5" /> 기본정보</TabsTrigger>
           <TabsTrigger value="members" className="gap-1.5"><Users className="h-3.5 w-3.5" /> 멤버/권한</TabsTrigger>

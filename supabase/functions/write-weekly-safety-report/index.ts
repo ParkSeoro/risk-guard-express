@@ -152,23 +152,39 @@ function companyBlock(source: unknown, name: string): string {
   return (at >= 0 ? digest.slice(at) : digest).trim();
 }
 
+function hasRiskLine(text: string): boolean {
+  return text.split("\n").some((line) => line.trim().startsWith("- 위험:"));
+}
+
+function withCompanyHeader(text: string, name: string): string {
+  const trimmed = text.trim();
+  const at = trimmed.indexOf(`(${name})`);
+  if (at >= 0) return trimmed.slice(at).trim();
+  if (!trimmed.includes("■")) return "";
+  return `(${name})\n${trimmed}`;
+}
+
 async function writeCompany(apiKey: string, source: WeeklySource, company: NonNullable<WeeklySource["companies"]>[number]): Promise<string> {
   const name = String(company?.name || "").trim() || "업체 미지정";
   const slice: WeeklySource = { project_name: source.project_name, companies: [company] };
+  const fallback = companyBlock(slice, name);
   let text = "";
   try {
     text = await askGemini(apiKey, slice, "");
-    if (factorOnlyRisk(text)) {
-      text = await askGemini(apiKey, slice, "\n지난 답은 위험에 재해 이름만 적었습니다. 요인에 의한 위험으로 다시 적으세요.");
+    if (factorOnlyRisk(text) || (text.includes("■") && !hasRiskLine(text))) {
+      text = await askGemini(
+        apiKey,
+        slice,
+        "\n각 작업 줄 바로 아래에 '- 위험: 요인에 의한 위험'과 '- 대책: 한 줄'을 붙이세요. 회사를 빼지 마세요.",
+      );
     }
   } catch {
-    text = "";
+    return fallback;
   }
-  if (!text || factorOnlyRisk(text) || omittedCompanies(slice, text).length > 0 || !text.includes("■")) {
-    return companyBlock(slice, name);
-  }
-  const at = text.indexOf(`(${name})`);
-  return (at >= 0 ? text.slice(at) : text).trim();
+  if (factorOnlyRisk(text)) return fallback;
+  const headed = withCompanyHeader(text, name);
+  if (!headed || !hasRiskLine(headed)) return fallback;
+  return headed;
 }
 
 async function writeRisks(apiKey: string, source: unknown): Promise<string> {
@@ -270,8 +286,8 @@ Deno.serve(async (req) => {
   for (const row of pending) {
     try {
       const text = stripRepeatedHeadings(await writeRisks(apiKey, row.source));
-      if (!text || !text.includes("■")) {
-        throw new Error("보고 형식이 비어 있습니다.");
+      if (!text || !text.includes("■") || !hasRiskLine(text)) {
+        throw new Error("위험과 대책이 없습니다.");
       }
       const { error: updateError } = await service
         .from("owner_weekly_work_reports")

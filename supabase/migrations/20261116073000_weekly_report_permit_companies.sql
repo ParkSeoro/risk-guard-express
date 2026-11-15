@@ -1,4 +1,4 @@
--- List each permit company, and do not keep a ready narrative that dropped one.
+-- Subcontractors roll up to their contractor. A ready narrative that drops a company is not kept.
 
 
 CREATE OR REPLACE FUNCTION public.weekly_report_keeps_companies(p_body text, p_source jsonb)
@@ -48,7 +48,13 @@ BEGIN
   WITH issued AS (
     SELECT DISTINCT ON (wp.id)
       wp.project_id,
-      COALESCE(c.name, '업체 미지정') AS company_name,
+      CASE
+        WHEN pc.role_in_project = 'contractor'
+         AND parent.id IS NOT NULL
+         AND COALESCE(parent.type, '') <> 'client'
+        THEN parent.name
+        ELSE COALESCE(c.name, '업체 미지정')
+      END AS company_name,
       btrim(regexp_replace(COALESCE(wp.work_name, ''), '\s+', ' ', 'g')) AS work_name,
       regexp_replace(
         regexp_replace(
@@ -63,13 +69,18 @@ BEGIN
       ) AS work_description
     FROM public.work_permits wp
     LEFT JOIN public.companies c ON c.id = wp.company_id
+    LEFT JOIN public.project_companies pc
+      ON pc.project_id = wp.project_id
+     AND pc.company_id = wp.company_id
+     AND COALESCE(pc.is_deleted, false) = false
+    LEFT JOIN public.companies parent ON parent.id = pc.parent_company_id
     WHERE wp.is_deleted IS NOT TRUE
       AND wp.permit_date BETWEEN v_week_start AND v_week_end
       AND wp.status IN (
         '승인', '승인완료', '발행완료', 'approved', 'ISSUED', 'APPROVED',
         '종료대기', 'CLOSURE_PENDING', '종료완료', 'closed', 'CLOSED'
       )
-    ORDER BY wp.id
+    ORDER BY wp.id, pc.role_in_project
   ),
   names AS (
     SELECT DISTINCT project_id, company_name, NULLIF(work_name, '') AS work_name

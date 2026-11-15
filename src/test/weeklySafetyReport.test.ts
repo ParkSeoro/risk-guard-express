@@ -69,14 +69,16 @@ describe('weekly safety report calendar', () => {
     expect(writer).toContain('요인에 의한 위험');
     expect(writer).toContain('factorOnlyRisk');
     expect(writer).toContain('writeCompany');
+    expect(writer).toContain('hasRiskLine');
     expect(writer).toContain('stripRepeatedHeadings');
     expect(writer).toContain('gemini-2.5-flash');
     expect(writer).not.toContain('최대 6');
     expect(mergeSql).toContain('weekly_condense_bullets');
     expect(mergeSql).toContain('PERFORM public.weekly_prepare_report_items()');
     expect(mergeSql).toContain('stats = public.owner_weekly_work_reports.stats');
-    expect(companySql).toContain("COALESCE(c.name, '업체 미지정') AS company_name");
-    expect(companySql).not.toContain('THEN parent.name');
+    expect(companySql).toContain("WHEN pc.role_in_project = 'contractor'");
+    expect(companySql).toContain('THEN parent.name');
+    expect(companySql).toContain("COALESCE(parent.type, '') <> 'client'");
     expect(companySql).toContain('weekly_report_keeps_companies');
     expect(writer).toContain('omittedCompanies');
     expect(writer).toContain('thinkingBudget: 0');

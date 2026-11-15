@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle } from "lucide-react";
+import { toAdminUrl } from "@/lib/adminNav";
 
 interface Props {
   projectId: string | null | undefined;
@@ -56,7 +57,7 @@ export function ConstructionInfoMissingBanner({ projectId, companyId, contextLab
         </span>
       </div>
       <Link
-        to={`/projects/${projectId}`}
+        to={toAdminUrl(`/project/${projectId}`)}
         className="font-semibold underline underline-offset-2 text-amber-800 dark:text-amber-100 whitespace-nowrap"
       >
         현장 상세에서 입력하기 →

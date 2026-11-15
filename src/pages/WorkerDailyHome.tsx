@@ -73,7 +73,6 @@ import { HardHat, MapPin, LogIn, LogOut, FileSignature, ShieldCheck, OctagonAler
 import {
   shouldShowHomeGpsCard,
   shouldShowHomeWorkStopCard,
-  WORK_STOP_LEGAL_CITE,
 } from "@/lib/workStop";
 import { toast } from "sonner";
 import { isNativeApp } from "@/lib/native/isNativeApp";
@@ -200,6 +199,7 @@ export default function WorkerDailyHome({
 
   const displayFence = currentSpot || checkInFences[0] || null;
   const displayOutline = currentOutline || siteOutlines[0] || null;
+  const homePlaceName = displayOutline?.name || currentSpot?.name || displayFence?.name || "";
   const hasFence = siteOutlines.length > 0 || checkInFences.length > 0;
 
   useEffect(() => {
@@ -860,7 +860,7 @@ export default function WorkerDailyHome({
             <span>
               {diagnosticsOnly
                 ? "위치 · GPS"
-                : `출근 위치${displayOutline?.name ? ` · ${displayOutline.name}` : currentSpot?.name ? ` · ${currentSpot.name}` : ""}`}
+                : `출근 위치${homePlaceName ? ` · ${homePlaceName}` : ""}`}
             </span>
           </div>
           {diagnosticsOnly ? (

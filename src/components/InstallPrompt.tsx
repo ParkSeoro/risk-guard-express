@@ -73,19 +73,12 @@ export default function InstallPrompt() {
   }, []);
 
   useEffect(() => {
-    if (isStandalone()) return;
+    if (platform !== "ios" || isStandalone()) return;
     const dismissedAt = Number(localStorage.getItem(DISMISS_KEY) || 0);
     if (dismissedAt && Date.now() - dismissedAt < DISMISS_HOURS * 3600 * 1000) return;
 
     setShow(true);
-
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e);
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [platform]);
 
   const dismiss = () => {
     localStorage.setItem(DISMISS_KEY, String(Date.now()));
@@ -128,7 +121,7 @@ export default function InstallPrompt() {
     : platform === "ios" ? "설치 방법"
     : "설치 안내";
 
-  if (!show || !allowed) return null;
+  if (!show || !allowed || platform !== "ios") return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-card border-2 border-primary rounded-xl shadow-2xl overflow-hidden">

@@ -128,7 +128,7 @@ export default function InstallPrompt() {
     : platform === "ios" ? "설치 방법"
     : "설치 안내";
 
-  if (!show || !allowed) return null;
+  if (!show || !allowed || platform !== "ios") return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-card border-2 border-primary rounded-xl shadow-2xl overflow-hidden">

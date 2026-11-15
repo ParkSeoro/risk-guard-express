@@ -118,13 +118,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(() => {
     return !selectedProject || !dashboardCache.has(selectedProject);
   });
-  const [dismissedPcBanner, setDismissedPcBanner] = useState(() => {
-    try {
-      return localStorage.getItem("safenex_pc_banner_dismissed") === "true";
-    } catch {
-      return false;
-    }
-  });
 
   const fetchDashboard = useCallback(async (force = false) => {
     if (!selectedProject || scopeStatus !== "ready") return;
@@ -432,55 +425,47 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">현장 운영 현황</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/60">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-foreground">현장 운영 현황</h1>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
             {currentProject
               ? formatSiteLabel(currentProject.name, currentProject.site_name)
               : "프로젝트를 선택하세요"}
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchDashboard(true)} title="새로고침">
-          <RefreshCw className="h-4 w-4" />
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs shrink-0" onClick={() => fetchDashboard(true)} title="새로고침">
+          <RefreshCw className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">새로고침</span>
         </Button>
       </div>
 
-      {!isWindowsDesktopApp() && !dismissedPcBanner && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2 text-xs shadow-xs">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Monitor className="h-4 w-4 text-primary shrink-0" />
-            <span className="font-semibold text-foreground truncate">SafeNex PC 데스크톱 버전</span>
-            <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal shrink-0">
-              {PC_APP_VERSION} 정식
-            </Badge>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Button size="sm" asChild className="h-7 text-xs px-2.5 gap-1 font-medium shadow-xs">
-              <Link to="/download">
-                <Download className="h-3 w-3" /> 다운로드
-              </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                setDismissedPcBanner(true);
-                try {
-                  localStorage.setItem("safenex_pc_banner_dismissed", "true");
-                } catch {
-                  /* ignore */
-                }
-              }}
-              title="배너 닫기"
+      {/* 통합 현장 핵심 지표 바 (분산된 개별 KPI 카드 대신 1개의 연속 스트립) */}
+      <section className="space-y-2" aria-label="현장 숫자">
+        <SectionLabel>현장 숫자</SectionLabel>
+        <div
+          className={`rounded-lg border bg-card grid grid-cols-2 sm:grid-cols-3 ${
+            pulseTiles.length >= 6 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+          } divide-y sm:divide-y-0 sm:divide-x divide-border overflow-hidden`}
+        >
+          {pulseTiles.map((tile) => (
+            <button
+              key={tile.label}
+              type="button"
+              onClick={() => navigate(tile.path)}
+              className="px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground font-semibold">{tile.label}</span>
+                <tile.icon className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums tracking-tight mt-1 text-foreground">{tile.value}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{tile.hint}</p>
+            </button>
+          ))}
         </div>
-      )}
+      </section>
 
       {selectedProject && <WeatherSummaryCard projectId={selectedProject} />}
 
@@ -494,174 +479,195 @@ const Dashboard = () => {
         refreshKey={refreshKey}
       />
 
-      {/* Attention / action needed */}
-      <section className="space-y-3">
+      {/* 오늘 확인할 일 (긴급도 좌측 레일 기반 액션 패널) */}
+      <section className="space-y-2.5">
         <SectionLabel>오늘 확인할 일</SectionLabel>
         {data.attention.length === 0 ? (
-          <Card>
-            <CardContent className="py-6 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">오늘 확인할 일이 없습니다</p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="rounded-lg border bg-card px-4 py-3.5 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-md bg-success/10 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="h-4 w-4 text-success" />
+            </div>
+            <p className="text-sm font-medium text-foreground">오늘 확인할 일이 없습니다</p>
+          </div>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {data.attention.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => navigate(item.path)}
-                className="text-left rounded-lg border bg-card p-3 hover:border-primary/40 transition-colors flex items-start gap-3"
-              >
-                <Badge variant={severityBadgeVariant(item.severity)} className="mt-0.5 shrink-0">
-                  {item.count}
-                </Badge>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">{item.label}</p>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <div className="rounded-lg border bg-card divide-y divide-border overflow-hidden">
+            {data.attention.map((item) => {
+              const railClass =
+                item.severity === "critical"
+                  ? "border-l-4 border-l-destructive"
+                  : item.severity === "warning"
+                  ? "border-l-4 border-l-warning"
+                  : "border-l-4 border-l-border";
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => navigate(item.path)}
+                  className={`w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors flex items-center gap-3 ${railClass}`}
+                >
+                  <Badge variant={severityBadgeVariant(item.severity)} className="shrink-0 tabular-nums">
+                    {item.count}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-foreground truncate">{item.label}</p>
+                    {item.detail && <p className="text-xs text-muted-foreground mt-0.5 truncate">{item.detail}</p>}
                   </div>
-                  {item.detail && <p className="text-xs text-muted-foreground mt-0.5">{item.detail}</p>}
-                </div>
-              </button>
-            ))}
+                  <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </button>
+              );
+            })}
           </div>
         )}
       </section>
 
-      {/* Site pulse */}
-      <section className="space-y-3">
-        <SectionLabel>현장 숫자</SectionLabel>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {pulseTiles.map((tile) => (
-            <button
-              key={tile.label}
-              type="button"
-              onClick={() => navigate(tile.path)}
-              className="rounded-lg border bg-card p-3 text-left hover:border-primary/40 transition-colors"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">{tile.label}</span>
-                <tile.icon className="h-3.5 w-3.5 text-muted-foreground" />
-              </div>
-              <p className="text-2xl font-bold tabular-nums">{tile.value}</p>
-              <p className="text-[11px] text-muted-foreground mt-1 truncate">{tile.hint}</p>
-            </button>
-          ))}
-        </div>
+      {/* 인허가 · 서류 · 안전점검 통합 현황표 (13개 분산 타일을 1개 업무 매트릭스로 압축) */}
+      <section className="space-y-2.5">
+        <SectionLabel>인허가 · 서류 · 안전점검 현황</SectionLabel>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                  <th className="text-left font-semibold px-4 py-2.5 w-40">업무 구분</th>
+                  <th className="text-left font-semibold px-4 py-2.5">단계별 현황 (클릭 시 해당 목록 이동)</th>
+                  <th className="text-right font-semibold px-4 py-2.5 w-24">전체</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                <tr className="hover:bg-muted/20" aria-label="허가서 발행 현황">
+                  <td className="px-4 py-3 font-semibold text-foreground">
+                    <button type="button" onClick={() => navigate("/work-plans")} className="flex items-center gap-2 hover:text-primary">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      작업계획서
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusChip label="작성중" value={data.planSum.draft} onClick={() => navigate("/work-plans?status=작성중")} />
+                      <StatusChip label="결재중" value={data.planSum.inApproval} onClick={() => navigate("/work-plans?status=결재중")} tone="warning" />
+                      <StatusChip label="승인완료" value={data.planSum.approved} onClick={() => navigate("/work-plans?status=승인완료")} tone="success" />
+                      <StatusChip label="반려" value={data.planSum.rejected} onClick={() => navigate("/work-plans?status=반려")} tone={data.planSum.rejected > 0 ? "danger" : "neutral"} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums">{data.planSum.total}</td>
+                </tr>
+
+                <tr className="hover:bg-muted/20" aria-label="허가서 발행 현황">
+                  <td className="px-4 py-3 font-semibold text-foreground">
+                    <button type="button" onClick={() => navigate("/work-permits")} className="flex items-center gap-2 hover:text-primary">
+                      <FileSignature className="h-4 w-4 text-muted-foreground" />
+                      작업허가서 (PTW)
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusChip label="작성중" value={data.permitSum.draft} onClick={() => navigate("/work-permits?status=draft&period=all")} />
+                      <StatusChip label="결재중" value={data.permitSum.inApproval} onClick={() => navigate("/work-permits?status=in_approval&period=all")} tone="warning" />
+                      <StatusChip label="발행" value={data.permitSum.active} onClick={() => navigate("/work-permits?status=issued&period=all")} tone="success" />
+                      <StatusChip label="종료 대기" value={data.permitSum.closurePending} onClick={() => navigate("/work-permits?status=closure_pending&period=all")} tone={data.permitSum.closurePending > 0 ? "warning" : "neutral"} />
+                      <StatusChip label="반려" value={data.permitSum.rejected} onClick={() => navigate("/work-permits?status=rejected&period=all")} tone={data.permitSum.rejected > 0 ? "danger" : "neutral"} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums">{data.permitSum.total}</td>
+                </tr>
+
+                <tr className="hover:bg-muted/20" aria-label="허가서 발행 현황">
+                  <td className="px-4 py-3 font-semibold text-foreground">
+                    <button type="button" onClick={() => navigate("/safety-inspections")} className="flex items-center gap-2 hover:text-primary">
+                      <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+                      안전점검 · 시정조치
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusChip label="진행중" value={data.inspectionSum.inProgress} onClick={() => navigate("/safety-inspections")} tone="warning" />
+                      <StatusChip label="점검 완료" value={data.inspectionSum.completed} onClick={() => navigate("/safety-inspections")} tone="success" />
+                      <StatusChip
+                        label="미조치 지적사항"
+                        value={data.inspectionSum.openActions}
+                        onClick={() => navigate("/safety-inspections?tab=actions")}
+                        tone={data.inspectionSum.openActions > 0 ? "danger" : "neutral"}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums">{data.inspectionSum.total}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
       </section>
 
-      <section className="space-y-3">
+      {/* 위험성평가 요약 및 개선 후 상 잔여 위험 */}
+      <section className="space-y-2.5">
         <SectionLabel>위험성평가</SectionLabel>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <KpiCard label="회차" value={data.totalRuns} path="/risk-assessment" icon={<ClipboardList className="h-4 w-4 text-primary" />} />
-          <KpiCard label="승인 회차" value={data.approvedRuns} path="/risk-assessment?status=승인완료" icon={<ShieldCheck className="h-4 w-4 text-primary" />} />
-          <KpiCard label="평가항목" value={data.totalItems} path="/risk-assessment" icon={<ShieldAlert className="h-4 w-4 text-primary" />} />
-          <KpiCard
-            label="미조치 피드백"
-            value={data.raFeedbackUnresolved}
-            path="/risk-assessment?focus=feedback"
-            valueColor={data.raFeedbackUnresolved > 0 ? "text-destructive" : undefined}
-            icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
-          />
-          <KpiCard
-            label="개선후 상"
-            value={data.residualHigh}
-            path="/risk-assessment?focus=residual"
-            valueColor={data.residualHigh > 0 ? "text-destructive" : undefined}
-            icon={<ShieldCheck className="h-4 w-4 text-warning" />}
-          />
-        </div>
-        {data.topRisks.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-destructive" /> 개선 후 상
-                  </CardTitle>
-                  <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => navigate("/risk-assessment?focus=residual")}>
-                    전체 보기 <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
-                <table className="w-full data-table text-sm">
-                  <thead>
-                    <tr>
-                      <th>공정</th>
-                      <th>위험요인</th>
-                      <th className="text-center">위험도</th>
-                      <th className="text-center">개선후</th>
-                      <th className="text-center">상태</th>
+        <Card className="overflow-hidden">
+          <div className="px-4 py-3 bg-muted/30 border-b flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusChip label="전체 회차" value={data.totalRuns} onClick={() => navigate("/risk-assessment")} />
+              <StatusChip label="승인 회차" value={data.approvedRuns} onClick={() => navigate("/risk-assessment?status=승인완료")} tone="success" />
+              <StatusChip label="평가항목" value={data.totalItems} onClick={() => navigate("/risk-assessment")} />
+              <StatusChip
+                label="미조치 피드백"
+                value={data.raFeedbackUnresolved}
+                onClick={() => navigate("/risk-assessment?focus=feedback")}
+                tone={data.raFeedbackUnresolved > 0 ? "danger" : "neutral"}
+              />
+              <StatusChip
+                label="개선후 상"
+                value={data.residualHigh}
+                onClick={() => navigate("/risk-assessment?focus=residual")}
+                tone={data.residualHigh > 0 ? "danger" : "neutral"}
+              />
+            </div>
+            <Button variant="ghost" size="sm" className="text-xs gap-1 h-7" onClick={() => navigate("/risk-assessment?focus=residual")}>
+              전체 보기 <ArrowRight className="h-3 w-3" />
+            </Button>
+          </div>
+
+          {data.topRisks.length > 0 ? (
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full data-table text-sm">
+                <thead>
+                  <tr>
+                    <th className="pl-4">공정</th>
+                    <th>위험요인</th>
+                    <th className="text-center">위험도</th>
+                    <th className="text-center">개선후</th>
+                    <th className="text-center pr-4">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topRisks.map((item) => (
+                    <tr key={item.id}>
+                      <td className="font-medium pl-4">{item.process}</td>
+                      <td className="max-w-[260px] truncate">{item.hazard}</td>
+                      <td className="text-center">
+                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.risk_grade || "중")}`}>
+                          {item.risk_grade || "중"}
+                        </span>
+                      </td>
+                      <td className="text-center">
+                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.improved_risk_grade || "하")}`}>
+                          {item.improved_risk_grade || "하"}
+                        </span>
+                      </td>
+                      <td className="text-center pr-4">
+                        <Badge variant={item.status === "완료" ? "default" : "outline"} className="text-[10px]">
+                          {item.status}
+                        </Badge>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.topRisks.map((item) => (
-                      <tr key={item.id}>
-                        <td className="font-medium">{item.process}</td>
-                        <td className="max-w-[220px] truncate">{item.hazard}</td>
-                        <td className="text-center">
-                          <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.risk_grade || "중")}`}>
-                            {item.risk_grade || "중"}
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.improved_risk_grade || "하")}`}>
-                            {item.improved_risk_grade || "하"}
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          <Badge variant={item.status === "완료" ? "default" : "outline"} className="text-[10px]">
-                            {item.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <SectionLabel>작업계획서</SectionLabel>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatusTile label="작성중" value={data.planSum.draft} path="/work-plans?status=작성중" icon={FileText} />
-          <StatusTile label="결재중" value={data.planSum.inApproval} path="/work-plans?status=결재중" icon={FileText} />
-          <StatusTile label="승인완료" value={data.planSum.approved} path="/work-plans?status=승인완료" icon={FileText} />
-          <StatusTile label="반려" value={data.planSum.rejected} path="/work-plans?status=반려" icon={FileText} />
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <SectionLabel>허가서 발행 현황</SectionLabel>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <StatusTile label="작성중" value={data.permitSum.draft} path="/work-permits?status=draft&period=all" icon={FileSignature} />
-          <StatusTile label="결재중" value={data.permitSum.inApproval} path="/work-permits?status=in_approval&period=all" icon={FileSignature} />
-          <StatusTile label="발행" value={data.permitSum.active} path="/work-permits?status=issued&period=all" icon={FileSignature} />
-          <StatusTile label="종료 대기" value={data.permitSum.closurePending} path="/work-permits?status=closure_pending&period=all" icon={FileSignature} />
-          <StatusTile label="반려" value={data.permitSum.rejected} path="/work-permits?status=rejected&period=all" icon={FileSignature} />
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <SectionLabel>안전점검 및 조치 현황</SectionLabel>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatusTile label="전체 점검" value={data.inspectionSum.total} path="/safety-inspections" icon={ClipboardCheck} />
-          <StatusTile label="진행중" value={data.inspectionSum.inProgress} path="/safety-inspections" icon={ClipboardCheck} />
-          <StatusTile label="점검 완료" value={data.inspectionSum.completed} path="/safety-inspections" icon={CheckCircle2} />
-          <StatusTile 
-            label="미조치 지적사항" 
-            value={data.inspectionSum.openActions} 
-            path="/safety-inspections?tab=actions" 
-            icon={AlertTriangle} 
-          />
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          ) : (
+            <div className="px-4 py-4 text-xs text-muted-foreground">
+              개선 후 &apos;상&apos; 등급으로 남아 있는 위험요인이 없습니다.
+            </div>
+          )}
+        </Card>
       </section>
     </div>
   );
@@ -670,7 +676,7 @@ const Dashboard = () => {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <h2 className="text-sm font-semibold text-muted-foreground">{children}</h2>
+      <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{children}</h2>
       <div className="h-px flex-1 bg-border" />
     </div>
   );
@@ -682,56 +688,33 @@ function severityBadgeVariant(s: AttentionItem["severity"]): "destructive" | "se
   return "outline";
 }
 
-function KpiCard({
-  label, value, icon, valueColor, path,
-}: {
-  label: string;
-  value: number | string;
-  icon: React.ReactNode;
-  valueColor?: string;
-  path?: string;
-}) {
-  const navigate = useNavigate();
-  return (
-    <Card
-      className={path ? "cursor-pointer hover:border-primary/40 transition-colors" : undefined}
-      onClick={path ? () => navigate(path) : undefined}
-    >
-      <CardContent className="pt-4 pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{label}</p>
-            <p className={`text-xl font-bold mt-1 tabular-nums ${valueColor || "text-foreground"}`}>{value}</p>
-          </div>
-          <div className="h-8 w-8 rounded-md bg-muted/60 flex items-center justify-center shrink-0">
-            {icon}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusTile({
-  label, value, path, icon: Icon,
+function StatusChip({
+  label,
+  value,
+  onClick,
+  tone = "neutral",
 }: {
   label: string;
   value: number;
-  path: string;
-  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+  tone?: "neutral" | "success" | "warning" | "danger";
 }) {
-  const navigate = useNavigate();
+  const valueTone =
+    tone === "danger"
+      ? "text-destructive"
+      : tone === "warning"
+      ? "text-amber-600 dark:text-amber-400"
+      : tone === "success"
+      ? "text-success"
+      : "text-foreground";
   return (
     <button
       type="button"
-      onClick={() => navigate(path)}
-      className="rounded-lg border bg-card p-3 text-left hover:border-primary/40 transition-colors"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-background px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-muted/50 transition-colors"
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-muted-foreground font-medium">{label}</span>
-        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      </div>
-      <p className="text-2xl font-bold tabular-nums">{value}</p>
+      <span className="text-muted-foreground font-medium">{label}</span>
+      <span className={`font-bold tabular-nums ${valueTone}`}>{value}</span>
     </button>
   );
 }

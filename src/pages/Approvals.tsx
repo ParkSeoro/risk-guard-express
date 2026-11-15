@@ -581,23 +581,23 @@ const Approvals = () => {
           currentTimelineSteps(steps as any[]).some(s => s.status === '반려')
         ).length;
         return (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card><CardContent className="pt-4 flex items-center justify-between">
-              <div><div className="text-xs text-muted-foreground">내 대기</div><div className="text-2xl font-bold text-destructive">{mineCount}</div></div>
-              <Inbox className="h-6 w-6 text-destructive" />
-            </CardContent></Card>
-            <Card><CardContent className="pt-4 flex items-center justify-between">
-              <div><div className="text-xs text-muted-foreground">상신</div><div className="text-2xl font-bold">{submittedCount}</div></div>
-              <Send className="h-6 w-6 text-primary" />
-            </CardContent></Card>
-            <Card><CardContent className="pt-4 flex items-center justify-between">
-              <div><div className="text-xs text-muted-foreground">완료</div><div className="text-2xl font-bold text-success">{completedCount}</div></div>
-              <CheckCircle2 className="h-6 w-6 text-success" />
-            </CardContent></Card>
-            <Card><CardContent className="pt-4 flex items-center justify-between">
-              <div><div className="text-xs text-muted-foreground">반려</div><div className="text-2xl font-bold text-destructive">{rejectedCount}</div></div>
-              <AlertTriangle className="h-6 w-6 text-destructive" />
-            </CardContent></Card>
+          <div className="rounded-md border border-border/90 bg-card grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border overflow-hidden">
+            <div className="px-4 py-3 flex items-center justify-between gap-2">
+              <div><div className="text-[11px] font-semibold text-muted-foreground">내 대기</div><div className="text-2xl font-bold tabular-nums text-destructive mt-0.5">{mineCount}</div></div>
+              <Inbox className="h-5 w-5 text-destructive/80 shrink-0" />
+            </div>
+            <div className="px-4 py-3 flex items-center justify-between gap-2">
+              <div><div className="text-[11px] font-semibold text-muted-foreground">상신</div><div className="text-2xl font-bold tabular-nums mt-0.5">{submittedCount}</div></div>
+              <Send className="h-5 w-5 text-primary/80 shrink-0" />
+            </div>
+            <div className="px-4 py-3 flex items-center justify-between gap-2">
+              <div><div className="text-[11px] font-semibold text-muted-foreground">완료</div><div className="text-2xl font-bold tabular-nums text-success mt-0.5">{completedCount}</div></div>
+              <CheckCircle2 className="h-5 w-5 text-success/80 shrink-0" />
+            </div>
+            <div className="px-4 py-3 flex items-center justify-between gap-2">
+              <div><div className="text-[11px] font-semibold text-muted-foreground">반려</div><div className="text-2xl font-bold tabular-nums text-destructive mt-0.5">{rejectedCount}</div></div>
+              <AlertTriangle className="h-5 w-5 text-destructive/80 shrink-0" />
+            </div>
           </div>
         );
       })()}

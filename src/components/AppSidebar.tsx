@@ -4,7 +4,7 @@ import { Bell, LayoutDashboard, FolderKanban, ShieldAlert, Database,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
-  Building2, FolderOpen, Video, MessageSquare,
+  Building2, FolderOpen, Video, MessageSquare, Search, X, Monitor, Download,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -26,6 +26,7 @@ import { VISION_VIEW_ROLES } from "@/lib/visionFleetApi";
 import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import { canOpenCouncil } from "@/lib/councilAccess";
+import { isWindowsDesktopApp } from "@/lib/desktopBridge";
 
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
 
@@ -240,6 +241,21 @@ export function AppSidebar() {
   }, [openGroups]);
 
   const toggleGroup = (k: string) => setOpenGroups(s => ({ ...s, [k]: !s[k] }));
+  const [menuQuery, setMenuQuery] = useState("");
+  const normalizedQuery = menuQuery.trim().toLowerCase();
+  const matchesQuery = (title: string) => !normalizedQuery || title.toLowerCase().includes(normalizedQuery);
+
+  const displayGroups = normalizedQuery
+    ? visibleGroups
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((i) => matchesQuery(i.title)),
+          subgroups: g.subgroups
+            ?.map((sub) => ({ ...sub, items: sub.items.filter((i) => matchesQuery(i.title)) }))
+            .filter((sub) => sub.items.length > 0),
+        }))
+        .filter((g) => g.items.length > 0 || (g.subgroups?.length ?? 0) > 0)
+    : visibleGroups;
 
   const isItemActive = (url: string) => {
     const full = toAdminUrl(url);
@@ -301,7 +317,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
+      <SidebarHeader className="border-b border-sidebar-border px-4 py-3.5 space-y-2.5">
         <Link
           to={ADMIN_APP_BASE}
           onClick={closeMobileNav}
@@ -315,28 +331,51 @@ export function AppSidebar() {
             </div>
           )}
         </Link>
+        {!collapsed && (
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-sidebar-muted" />
+            <input
+              type="text"
+              value={menuQuery}
+              onChange={(e) => setMenuQuery(e.target.value)}
+              placeholder="메뉴 빠른 검색..."
+              aria-label="메뉴 빠른 검색"
+              className="w-full h-8 rounded-md bg-sidebar-accent/70 border border-sidebar-border pl-8 pr-7 text-xs text-sidebar-foreground placeholder:text-sidebar-muted focus:outline-none focus:ring-1 focus:ring-sidebar-ring"
+            />
+            {menuQuery && (
+              <button
+                type="button"
+                onClick={() => setMenuQuery("")}
+                aria-label="검색어 지우기"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sidebar-muted hover:text-sidebar-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </SidebarHeader>
 
-      <SidebarContent className="gap-2">
-        {visibleGroups.map(g => (
-          <SidebarGroup key={g.key} className="pb-2">
+      <SidebarContent className="gap-1.5 py-2">
+        {displayGroups.map(g => (
+          <SidebarGroup key={g.key} className="pb-1.5">
             {!collapsed ? (
-              <Collapsible open={openGroups[g.key] ?? true} onOpenChange={() => toggleGroup(g.key)}>
+              <Collapsible open={normalizedQuery ? true : (openGroups[g.key] ?? true)} onOpenChange={() => toggleGroup(g.key)}>
                 <CollapsibleTrigger className="w-full">
                   <SidebarGroupLabel className="text-sidebar-primary text-[11px] font-bold tracking-wide flex items-center justify-between cursor-pointer py-1.5 h-auto">
                     <span>{g.label}</span>
-                    <ChevronDown className={`h-4 w-4 transition-transform ${openGroups[g.key] === false ? '-rotate-90' : ''}`} />
+                    <ChevronDown className={`h-4 w-4 transition-transform ${(normalizedQuery ? false : openGroups[g.key] === false) ? '-rotate-90' : ''}`} />
                   </SidebarGroupLabel>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarGroupContent>
                     <SidebarMenu>{g.items.map(renderItem)}</SidebarMenu>
                     {g.subgroups?.map(sub => (
-                      <Collapsible key={sub.key} open={openGroups[sub.key] ?? false} onOpenChange={() => toggleGroup(sub.key)}>
+                      <Collapsible key={sub.key} open={normalizedQuery ? true : (openGroups[sub.key] ?? false)} onOpenChange={() => toggleGroup(sub.key)}>
                         <CollapsibleTrigger className="w-full">
                           <SidebarGroupLabel className="text-sidebar-foreground/80 text-[10px] font-semibold tracking-wide flex items-center justify-between cursor-pointer py-1 h-auto pl-2">
                             <span>{sub.label}</span>
-                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openGroups[sub.key] === false || openGroups[sub.key] === undefined ? '-rotate-90' : ''}`} />
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${(normalizedQuery ? false : (openGroups[sub.key] === false || openGroups[sub.key] === undefined)) ? '-rotate-90' : ''}`} />
                           </SidebarGroupLabel>
                         </CollapsibleTrigger>
                         <CollapsibleContent>
@@ -355,19 +394,19 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        {!restrictToContractorUI && isSystemAdmin && (
-          <SidebarGroup className="pb-2">
+        {!restrictToContractorUI && isSystemAdmin && (!normalizedQuery || adminFinal.some((i) => matchesQuery(i.title))) && (
+          <SidebarGroup className="pb-1.5">
             {!collapsed ? (
-              <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
+              <Collapsible open={normalizedQuery ? true : (openGroups['admin'] ?? false)} onOpenChange={() => toggleGroup('admin')}>
                 <CollapsibleTrigger className="w-full">
                   <SidebarGroupLabel className="text-sidebar-primary text-[11px] font-bold tracking-wide flex items-center justify-between cursor-pointer py-1.5 h-auto">
                     <span>시스템</span>
-                    <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
+                    <ChevronDown className={`h-4 w-4 transition-transform ${(normalizedQuery ? false : openGroups['admin'] === false) ? '-rotate-90' : ''}`} />
                   </SidebarGroupLabel>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarGroupContent>
-                    <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
+                    <SidebarMenu>{adminFinal.filter((i) => matchesQuery(i.title)).map(renderItem)}</SidebarMenu>
                   </SidebarGroupContent>
                 </CollapsibleContent>
               </Collapsible>
@@ -381,6 +420,21 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2 space-y-1">
+        {!collapsed && !isWindowsDesktopApp() && (
+          <NavLink
+            to="/download"
+            onClick={closeMobileNav}
+            className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs text-sidebar-foreground/90 bg-sidebar-accent/50 hover:bg-sidebar-accent rounded-md border border-sidebar-border/80 transition-colors"
+            activeClassName="bg-sidebar-accent font-semibold"
+            title="SafeNex PC 데스크톱 버전 다운로드"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Monitor className="h-3.5 w-3.5 text-sidebar-primary shrink-0" />
+              <span className="truncate font-medium">PC 데스크톱 앱</span>
+            </span>
+            <Download className="h-3.5 w-3.5 text-sidebar-muted shrink-0" />
+          </NavLink>
+        )}
         {!collapsed && profile && (
           <NavLink to="/settings/account" className="flex items-center gap-2 px-2 py-1 text-xs text-sidebar-foreground hover:bg-sidebar-accent rounded-md" activeClassName="bg-sidebar-accent font-semibold">
             <User className="h-3.5 w-3.5" />

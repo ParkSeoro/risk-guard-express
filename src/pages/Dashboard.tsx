@@ -398,11 +398,11 @@ const Dashboard = () => {
 
   const pulseTiles = useMemo(() => {
     const tiles = [
-      { label: "현장 체류", value: data.pulse.onSiteWorkers, hint: `금일 출역 ${data.pulse.todayEntries}`, path: "/workers?tab=attendance&status=inside", icon: HardHat },
-      { label: "금일 출역", value: data.pulse.todayEntries, hint: "오늘 입퇴장", path: "/workers?tab=attendance", icon: HardHat },
-      { label: "금일 TBM", value: data.pulse.todayTbm, hint: "오늘 작성된 TBM", path: "/tbm-logs?date=today", icon: ClipboardCheck },
-      { label: "작업허가(PTW)", value: data.permitSum.active, hint: `승인·가동 중 (${data.permitSum.total}건 등록)`, path: "/work-permits", icon: FileSignature },
-      { label: "미조치 지적", value: data.inspectionSum.openActions, hint: data.inspectionSum.openActions > 0 ? "현장 시정 조치 필요" : "지적사항 없음", path: "/safety-inspections?tab=actions", icon: ShieldAlert },
+      { label: "현장 체류", value: data.pulse.onSiteWorkers, hint: `금일 출역 ${data.pulse.todayEntries}`, path: "/workers?tab=attendance&status=inside", icon: HardHat, danger: false },
+      { label: "금일 출역", value: data.pulse.todayEntries, hint: "오늘 입퇴장", path: "/workers?tab=attendance", icon: HardHat, danger: false },
+      { label: "금일 TBM", value: data.pulse.todayTbm, hint: "오늘 작성된 TBM", path: "/tbm-logs?date=today", icon: ClipboardCheck, danger: false },
+      { label: "작업허가(PTW)", value: data.permitSum.active, hint: `승인·가동 중 (${data.permitSum.total}건 등록)`, path: "/work-permits?status=issued&period=all", icon: FileSignature, danger: false },
+      { label: "미조치 지적", value: data.inspectionSum.openActions, hint: data.inspectionSum.openActions > 0 ? "현장 시정 조치 필요" : "지적사항 없음", path: "/safety-inspections?tab=actions", icon: ShieldAlert, danger: data.inspectionSum.openActions > 0 },
     ];
     if (showOpsWide) {
       tiles.push({
@@ -411,6 +411,7 @@ const Dashboard = () => {
         hint: "미확인",
         path: "/zone-events?ack=open",
         icon: MapPin,
+        danger: data.pulse.zoneAlerts > 0,
       });
     }
     return tiles;
@@ -441,26 +442,28 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      {/* 통합 현장 핵심 지표 바 (분산된 개별 KPI 카드 대신 1개의 연속 스트립) */}
+      {/* 통합 현장 핵심 지표 바 (반응형 셀 경계: gap-px bg-border) */}
       <section className="space-y-2" aria-label="현장 숫자">
         <SectionLabel>현장 숫자</SectionLabel>
         <div
-          className={`rounded-lg border bg-card grid grid-cols-2 sm:grid-cols-3 ${
+          className={`rounded-md border border-border bg-border grid grid-cols-2 sm:grid-cols-3 ${
             pulseTiles.length >= 6 ? "lg:grid-cols-6" : "lg:grid-cols-5"
-          } divide-y sm:divide-y-0 sm:divide-x divide-border overflow-hidden`}
+          } gap-px overflow-hidden`}
         >
           {pulseTiles.map((tile) => (
             <button
               key={tile.label}
               type="button"
               onClick={() => navigate(tile.path)}
-              className="px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-muted-foreground font-semibold">{tile.label}</span>
-                <tile.icon className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
+                <tile.icon className={`h-3.5 w-3.5 shrink-0 ${tile.danger ? "text-destructive" : "text-muted-foreground/80"}`} />
               </div>
-              <p className="text-2xl font-bold tabular-nums tracking-tight mt-1 text-foreground">{tile.value}</p>
+              <p className={`text-2xl font-bold tabular-nums tracking-tight mt-1 ${tile.danger ? "text-destructive" : "text-foreground"}`}>
+                {tile.value}
+              </p>
               <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{tile.hint}</p>
             </button>
           ))}
@@ -528,13 +531,13 @@ const Dashboard = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
-                  <th className="text-left font-semibold px-4 py-2.5 w-40">업무 구분</th>
-                  <th className="text-left font-semibold px-4 py-2.5">단계별 현황 (클릭 시 해당 목록 이동)</th>
-                  <th className="text-right font-semibold px-4 py-2.5 w-24">전체</th>
+                  <th className="text-left font-semibold px-4 py-2.5 w-44">업무 구분</th>
+                  <th className="text-left font-semibold px-4 py-2.5">상태별 건수 (클릭 시 이동)</th>
+                  <th className="text-right font-semibold px-4 py-2.5 w-24">등록 문서</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                <tr className="hover:bg-muted/20" aria-label="허가서 발행 현황">
+                <tr className="hover:bg-muted/20" aria-label="작업계획서 현황">
                   <td className="px-4 py-3 font-semibold text-foreground">
                     <button type="button" onClick={() => navigate("/work-plans")} className="flex items-center gap-2 hover:text-primary">
                       <FileText className="h-4 w-4 text-muted-foreground" />
@@ -571,7 +574,7 @@ const Dashboard = () => {
                   <td className="px-4 py-3 text-right font-bold tabular-nums">{data.permitSum.total}</td>
                 </tr>
 
-                <tr className="hover:bg-muted/20" aria-label="허가서 발행 현황">
+                <tr className="hover:bg-muted/20" aria-label="안전점검 및 조치 현황">
                   <td className="px-4 py-3 font-semibold text-foreground">
                     <button type="button" onClick={() => navigate("/safety-inspections")} className="flex items-center gap-2 hover:text-primary">
                       <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
@@ -583,7 +586,7 @@ const Dashboard = () => {
                       <StatusChip label="진행중" value={data.inspectionSum.inProgress} onClick={() => navigate("/safety-inspections")} tone="warning" />
                       <StatusChip label="점검 완료" value={data.inspectionSum.completed} onClick={() => navigate("/safety-inspections")} tone="success" />
                       <StatusChip
-                        label="미조치 지적사항"
+                        label="미조치 지적(시정조치)"
                         value={data.inspectionSum.openActions}
                         onClick={() => navigate("/safety-inspections?tab=actions")}
                         tone={data.inspectionSum.openActions > 0 ? "danger" : "neutral"}
@@ -676,7 +679,7 @@ const Dashboard = () => {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{children}</h2>
+      <h2 className="text-xs font-bold text-muted-foreground">{children}</h2>
       <div className="h-px flex-1 bg-border" />
     </div>
   );
@@ -699,21 +702,27 @@ function StatusChip({
   onClick: () => void;
   tone?: "neutral" | "success" | "warning" | "danger";
 }) {
-  const valueTone =
-    tone === "danger"
-      ? "text-destructive"
-      : tone === "warning"
-      ? "text-amber-600 dark:text-amber-400"
-      : tone === "success"
-      ? "text-success"
-      : "text-foreground";
+  const isZero = value === 0;
+  const valueTone = isZero
+    ? "text-muted-foreground"
+    : tone === "danger"
+    ? "text-destructive"
+    : tone === "warning"
+    ? "text-amber-600 dark:text-amber-400"
+    : tone === "success"
+    ? "text-success"
+    : "text-foreground";
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-background px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-muted/50 transition-colors"
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors ${
+        isZero
+          ? "border-border/50 bg-transparent text-muted-foreground/80 hover:bg-muted/30"
+          : "border-border bg-background hover:border-primary/50 hover:bg-muted/50"
+      }`}
     >
-      <span className="text-muted-foreground font-medium">{label}</span>
+      <span className="font-medium">{label}</span>
       <span className={`font-bold tabular-nums ${valueTone}`}>{value}</span>
     </button>
   );

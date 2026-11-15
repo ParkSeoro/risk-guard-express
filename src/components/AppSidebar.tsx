@@ -240,22 +240,32 @@ export function AppSidebar() {
     localStorage.setItem('sidebar:groups_v3', JSON.stringify(openGroups));
   }, [openGroups]);
 
-  const toggleGroup = (k: string) => setOpenGroups(s => ({ ...s, [k]: !s[k] }));
+  const toggleGroup = (k: string) => {
+    if (normalizedQuery) return;
+    setOpenGroups(s => ({ ...s, [k]: !s[k] }));
+  };
   const [menuQuery, setMenuQuery] = useState("");
   const normalizedQuery = menuQuery.trim().toLowerCase();
-  const matchesQuery = (title: string) => !normalizedQuery || title.toLowerCase().includes(normalizedQuery);
+  const matchesQuery = (title: string, groupLabel?: string) =>
+    !normalizedQuery ||
+    title.toLowerCase().includes(normalizedQuery) ||
+    (groupLabel ? groupLabel.toLowerCase().includes(normalizedQuery) : false);
 
   const displayGroups = normalizedQuery
     ? visibleGroups
         .map((g) => ({
           ...g,
-          items: g.items.filter((i) => matchesQuery(i.title)),
+          items: g.items.filter((i) => matchesQuery(i.title, g.label)),
           subgroups: g.subgroups
-            ?.map((sub) => ({ ...sub, items: sub.items.filter((i) => matchesQuery(i.title)) }))
+            ?.map((sub) => ({ ...sub, items: sub.items.filter((i) => matchesQuery(i.title, `${g.label} ${sub.label}`)) }))
             .filter((sub) => sub.items.length > 0),
         }))
         .filter((g) => g.items.length > 0 || (g.subgroups?.length ?? 0) > 0)
     : visibleGroups;
+  const adminMatches = !normalizedQuery
+    ? adminFinal
+    : adminFinal.filter((i) => matchesQuery(i.title, "시스템"));
+  const showAdminSection = !restrictToContractorUI && isSystemAdmin && adminMatches.length > 0;
 
   const isItemActive = (url: string) => {
     const full = toAdminUrl(url);
@@ -394,7 +404,7 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        {!restrictToContractorUI && isSystemAdmin && (!normalizedQuery || adminFinal.some((i) => matchesQuery(i.title))) && (
+        {showAdminSection && (
           <SidebarGroup className="pb-1.5">
             {!collapsed ? (
               <Collapsible open={normalizedQuery ? true : (openGroups['admin'] ?? false)} onOpenChange={() => toggleGroup('admin')}>
@@ -406,7 +416,7 @@ export function AppSidebar() {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarGroupContent>
-                    <SidebarMenu>{adminFinal.filter((i) => matchesQuery(i.title)).map(renderItem)}</SidebarMenu>
+                    <SidebarMenu>{adminMatches.map(renderItem)}</SidebarMenu>
                   </SidebarGroupContent>
                 </CollapsibleContent>
               </Collapsible>
@@ -416,6 +426,12 @@ export function AppSidebar() {
               </SidebarGroupContent>
             )}
           </SidebarGroup>
+        )}
+
+        {!collapsed && normalizedQuery && displayGroups.length === 0 && !showAdminSection && (
+          <div className="px-4 py-6 text-center text-xs text-sidebar-muted">
+            일치하는 메뉴가 없습니다
+          </div>
         )}
       </SidebarContent>
 

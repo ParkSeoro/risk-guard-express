@@ -73,19 +73,12 @@ export default function InstallPrompt() {
   }, []);
 
   useEffect(() => {
-    if (isStandalone()) return;
+    if (platform !== "ios" || isStandalone()) return;
     const dismissedAt = Number(localStorage.getItem(DISMISS_KEY) || 0);
     if (dismissedAt && Date.now() - dismissedAt < DISMISS_HOURS * 3600 * 1000) return;
 
     setShow(true);
-
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e);
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [platform]);
 
   const dismiss = () => {
     localStorage.setItem(DISMISS_KEY, String(Date.now()));

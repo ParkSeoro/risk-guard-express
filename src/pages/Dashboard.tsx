@@ -450,23 +450,27 @@ const Dashboard = () => {
             pulseTiles.length >= 6 ? "lg:grid-cols-6" : "lg:grid-cols-5"
           } gap-px overflow-hidden`}
         >
-          {pulseTiles.map((tile) => (
-            <button
-              key={tile.label}
-              type="button"
-              onClick={() => navigate(tile.path)}
-              className="bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-muted-foreground font-semibold">{tile.label}</span>
-                <tile.icon className={`h-3.5 w-3.5 shrink-0 ${tile.danger ? "text-destructive" : "text-muted-foreground/80"}`} />
-              </div>
-              <p className={`text-2xl font-bold tabular-nums tracking-tight mt-1 ${tile.danger ? "text-destructive" : "text-foreground"}`}>
-                {tile.value}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{tile.hint}</p>
-            </button>
-          ))}
+          {pulseTiles.map((tile, idx) => {
+            const spanLastFive =
+              pulseTiles.length === 5 && idx === 4 ? "col-span-2 sm:col-span-2 lg:col-span-1" : "";
+            return (
+              <button
+                key={tile.label}
+                type="button"
+                onClick={() => navigate(tile.path)}
+                className={`bg-card px-4 py-3 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${spanLastFive}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-muted-foreground font-semibold">{tile.label}</span>
+                  <tile.icon className={`h-3.5 w-3.5 shrink-0 ${tile.danger ? "text-destructive" : "text-muted-foreground/80"}`} />
+                </div>
+                <p className={`text-2xl font-bold tabular-nums tracking-tight mt-1 ${tile.danger ? "text-destructive" : "text-foreground"}`}>
+                  {tile.value}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{tile.hint}</p>
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -583,8 +587,8 @@ const Dashboard = () => {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <StatusChip label="진행중" value={data.inspectionSum.inProgress} onClick={() => navigate("/safety-inspections")} tone="warning" />
-                      <StatusChip label="점검 완료" value={data.inspectionSum.completed} onClick={() => navigate("/safety-inspections")} tone="success" />
+                      <StatusChip label="진행중" value={data.inspectionSum.inProgress} onClick={() => navigate("/safety-inspections?status=in_progress")} tone="warning" />
+                      <StatusChip label="점검 완료" value={data.inspectionSum.completed} onClick={() => navigate("/safety-inspections?status=completed")} tone="success" />
                       <StatusChip
                         label="미조치 지적(시정조치)"
                         value={data.inspectionSum.openActions}

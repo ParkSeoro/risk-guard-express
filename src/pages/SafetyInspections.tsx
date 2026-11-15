@@ -139,7 +139,7 @@ export default function SafetyInspections() {
   })();
   const selfTitle = inspectorTitleFromMember({ position: userPosition, role: userRole });
   const patrolSeedSteps = DEFAULT_STEPS_BY_ENTITY.safety_inspection;
-  const [tab, setTab] = useState('list');
+  const [tab, setTab] = useState(() => (searchParams.get('tab') === 'actions' ? 'actions' : 'list'));
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [actions, setActions] = useState<(InspAction & { inspection?: Inspection })[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
@@ -150,7 +150,17 @@ export default function SafetyInspections() {
   const [listLoading, setListLoading] = useState(true);
   const [companyFilter, setCompanyFilter] = useState<string[]>([]);
   const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>(() => {
+    const s = searchParams.get('status');
+    return s === 'in_progress' || s === 'completed' ? s : 'all';
+  });
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'actions' || t === 'list') setTab(t);
+    const s = searchParams.get('status');
+    if (s === 'in_progress' || s === 'completed' || s === 'all') setStatusFilter(s);
+  }, [searchParams]);
 
   // create form
   const [form, setForm] = useState({

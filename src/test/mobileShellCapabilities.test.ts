@@ -11,7 +11,7 @@ import { previewModeToRole } from "@/contexts/PreviewContext";
 describe("mobile shell role buckets", () => {
   it("maps project roles to worker vs manager buckets", () => {
     expect(resolveMobileShellBucket("worker")).toBe("worker");
-    expect(resolveMobileShellBucket("viewer")).toBe("manager");
+    expect(resolveMobileShellBucket("viewer")).toBe("worker");
     expect(resolveMobileShellBucket("supervisor")).toBe("manager");
     expect(resolveMobileShellBucket("safety_manager")).toBe("manager");
     expect(resolveMobileShellBucket("master", true)).toBe("master");

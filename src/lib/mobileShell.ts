@@ -99,6 +99,8 @@ export function roleLabelKo(role: string): string {
       return "감리";
     case "site_supervisor":
       return "관리감독자";
+    case "viewer":
+      return "열람자";
     case "worker":
     case "contractor":
       return "근로자";

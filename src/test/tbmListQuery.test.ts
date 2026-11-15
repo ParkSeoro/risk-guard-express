@@ -9,8 +9,8 @@ describe("tbmListQueryBlock", () => {
     expect(tbmListQueryBlock({ projectId: "", scopeStatus: "ready" })).toBe("no-project");
   });
 
-  it("does not treat the default mobile role change as a new list load", () => {
-    expect(isManagerMobileRole("viewer")).toBe(true);
+  it("keeps the unloaded viewer role on the worker shell", () => {
+    expect(isManagerMobileRole("viewer")).toBe(false);
     expect(isManagerMobileRole("safety_manager")).toBe(true);
     expect(isManagerMobileRole("worker")).toBe(false);
   });

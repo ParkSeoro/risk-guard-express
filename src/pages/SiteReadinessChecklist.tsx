@@ -33,9 +33,12 @@ export default function SiteReadinessChecklist() {
 
     const tbmList = tbms || [];
     const tbmIds = tbmList.map((t: any) => t.id).filter(Boolean);
-    const { data: myPartsRaw } = tbmIds.length > 0
-      ? await supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed, signature_data').in('tbm_session_id', tbmIds).limit(1000)
-      : { data: [] as any[] };
+    const [{ data: myPartsRaw }, { data: signedRaw }] = tbmIds.length > 0
+      ? await Promise.all([
+          supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed').in('tbm_session_id', tbmIds).limit(1000),
+          supabase.from('tbm_participations' as any).select('id').not('signature_data', 'is', null).in('tbm_session_id', tbmIds).limit(1000),
+        ])
+      : [{ data: [] as any[] }, { data: [] as any[] }];
 
     const activeRuns = (runs || []).filter((r: any) => {
       if ((r.start_date && r.start_date > today) || (r.end_date && r.end_date < today)) return false;
@@ -53,7 +56,7 @@ export default function SiteReadinessChecklist() {
       { key: 'a5', label: '산업안전보건관리비 입력', ok: (costs || []).length > 0, detail: '내역 등록 확인' },
     ];
 
-    const signed = myParts.filter((p: any) => !!p.signature_data && p.briefing_confirmed).length;
+    const signed = (signedRaw || []).length;
     const worker: Item[] = [
       { key: 'w1', label: 'QR 참여자 1명 이상', ok: myParts.length > 0, detail: `${myParts.length}명` },
       { key: 'w2', label: '위험성평가 브리핑 확인 완료', ok: myParts.every((p: any) => p.briefing_confirmed) && myParts.length > 0, detail: `${myParts.filter((p: any) => p.briefing_confirmed).length}/${myParts.length}` },

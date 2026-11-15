@@ -785,7 +785,7 @@ export default function WorkerDailyHome({
       className={
         embedded
           ? "bg-transparent"
-          : "min-h-screen bg-gradient-to-b from-slate-100 via-sky-50 to-emerald-50 pb-24"
+          : "min-h-screen bg-slate-100 pb-24"
       }
     >
       {!embedded && (
@@ -831,16 +831,14 @@ export default function WorkerDailyHome({
                 <div className="text-base font-bold text-destructive leading-tight">
                   위험하면 작업을 멈추세요
                 </div>
-                <p className="text-xs text-slate-700 mt-1 leading-relaxed">
-                  작업중지권·작업거부권. 현장 사진을 찍어 익명 또는 실명으로 신고하세요.
-                  <br />
-                  {WORK_STOP_LEGAL_CITE} · 불이익 금지
+                <p className="text-sm text-slate-800 mt-1 leading-snug">
+                  현장 사진을 찍어 익명 또는 실명으로 신고하세요.
                 </p>
               </div>
             </div>
             <Button
               asChild
-              className="w-full h-12 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-base font-semibold"
+              className="w-full h-14 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-base font-bold"
             >
               <Link to="/app/worker/work-stop">{t("workStopAsk")}</Link>
             </Button>
@@ -856,15 +854,14 @@ export default function WorkerDailyHome({
         )}
 
         {(diagnosticsOnly || shouldShowHomeGpsCard(isCheckedIn)) && (
-        <section className="rounded-2xl bg-white/80 backdrop-blur border border-slate-200 p-4 space-y-3 shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <MapPin className="h-4 w-4 text-emerald-600" />
-            {diagnosticsOnly ? "위치 · GPS" : "출근 위치"}
-            {displayOutline
-              ? ` · ${displayOutline.name} · 바깥 ${displayOutline.buffer_m}m`
-              : displayFence
-                ? ` · ${displayFence.name ? `${displayFence.name} ` : ""}${Math.round(displayFence.radiusM)}m`
-                : ` · ${SITE_CHECKIN_MIN_M}m`}
+        <section className="rounded-xl bg-white border-2 border-slate-300 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+            <MapPin className="h-4 w-4 text-slate-700 shrink-0" />
+            <span>
+              {diagnosticsOnly
+                ? "위치 · GPS"
+                : `출근 위치${displayOutline?.name ? ` · ${displayOutline.name}` : currentSpot?.name ? ` · ${currentSpot.name}` : ""}`}
+            </span>
           </div>
           {diagnosticsOnly ? (
             <>
@@ -958,33 +955,29 @@ export default function WorkerDailyHome({
             </>
           ) : (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <Badge variant={withinCheckIn ? "default" : "secondary"}>
-                  {!hasFence
-                    ? "현장 좌표 없음 — 출근 불가"
+              <div
+                className={`text-xl font-extrabold tracking-tight ${
+                  !hasFence || (!effectiveFix && gpsError)
+                    ? "text-destructive"
                     : !effectiveFix
-                      ? (gpsError ? "GPS 오류" : "위치 확인 중…")
+                      ? "text-slate-800"
                       : withinCheckIn
-                        ? displayOutline
-                          ? `${displayOutline.name} — 출근 가능`
-                          : currentSpot?.name
-                            ? `${currentSpot.name} — 출근 가능`
-                            : "반경 안 — 출근 가능"
-                        : displayOutline
-                          ? "개소 밖 — 출근 불가"
-                          : "반경 밖 — 출근 불가"}
-                </Badge>
-                {effectiveFix && distanceM != null && hasFence && (
-                  <span className="text-xs text-slate-500">{Math.round(distanceM)}m</span>
-                )}
+                        ? "text-emerald-700"
+                        : "text-amber-700"
+                }`}
+              >
+                {!hasFence || (!effectiveFix && gpsError)
+                  ? "위치 확인 실패"
+                  : !effectiveFix
+                    ? "위치 확인 중"
+                    : withinCheckIn
+                      ? "현장 안"
+                      : "현장 밖"}
               </div>
-              {gpsError && (
-                <p className="text-xs text-destructive">GPS: {gpsError}</p>
-              )}
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full"
+                className="w-full h-11 text-sm font-semibold border-slate-300 text-slate-900"
                 onClick={() => {
                   setProbeFix(null);
                   setProbeNonce((n) => n + 1);
@@ -992,7 +985,7 @@ export default function WorkerDailyHome({
               >
                 위치 다시 잡기
               </Button>
-              <Button asChild size="sm" variant="ghost" className="w-full text-xs">
+              <Button asChild size="sm" variant="ghost" className="w-full text-xs text-slate-600">
                 <Link to="/app/worker/location">위치·GPS 자세히</Link>
               </Button>
             </>
@@ -1001,77 +994,57 @@ export default function WorkerDailyHome({
         )}
 
         {!diagnosticsOnly && (
-        <section className="rounded-2xl bg-white/80 border border-slate-200 p-4 space-y-3 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">오늘 상태</div>
-          <ol className="space-y-2 text-sm">
-            <li className={isCheckedIn || checkedOut ? "text-emerald-700" : "text-slate-500"}>
-              1. 출근 {todayLog?.entry_at ? `· ${new Date(todayLog.entry_at).toLocaleTimeString("ko-KR")}` : ""}
-            </li>
-            <li className={ackDone ? "text-emerald-700" : "text-slate-500"}>
-              2. 작업·위험 확인 서명 {ackDone ? "완료" : "필수"}
-              {dayPermits.length > 0 && !ackDone ? ` · 허가서 ${dayPermits.length}건` : ""}
-            </li>
-            <li className={checkedOut ? "text-emerald-700" : "text-slate-500"}>
-              3. 무재해 서약 · 퇴근 {todayLog?.exit_at ? `· ${new Date(todayLog.exit_at).toLocaleTimeString("ko-KR")}` : ""}
-            </li>
-          </ol>
+        <section className="rounded-xl bg-white border-2 border-slate-300 p-4 space-y-3">
+          <div className="text-base font-bold text-slate-900">오늘 출근</div>
 
-          <div className="flex flex-col gap-2 pt-1">
+          <div className="flex flex-col gap-2">
             {!isCheckedIn && !checkedOut && (
               <Button
-                className="h-12 gap-2"
+                className="min-h-[56px] h-14 w-full text-base font-bold gap-2"
                 disabled={busy || !!suspension || (!workerId && ackHydrated)}
                 onClick={() => void handleCheckIn()}
               >
-                <LogIn className="h-4 w-4" />
+                <LogIn className="h-5 w-5" />
                 {suspension
                   ? "출입 정지됨"
                   : !workerId && ackHydrated
                     ? "명부 없음 — 관리자 문의"
-                    : !effectiveFix
-                      ? "출근하기 · 위치 확인"
-                      : withinCheckIn
-                        ? "출근하기"
-                        : "출근하기 · 위치 다시 확인"}
+                    : "출근하기"}
               </Button>
             )}
-            {isCheckedIn && (
-              <>
-                {!ackDone && (
-                  <Button variant="outline" className="h-11 gap-2" onClick={() => setAckOpen(true)}>
-                    <FileSignature className="h-4 w-4" />
-                    작업·위험 확인 서명
-                  </Button>
-                )}
-                <Button
-                  variant="destructive"
-                  className="h-12 gap-2"
-                  disabled={busy || !ackDone || !!suspension}
-                  onClick={() => {
-                    if (suspension) {
-                      toast.error("출입 정지 상태에서는 퇴근할 수 없습니다");
-                      return;
-                    }
-                    if (!ackDone) {
-                      toast.error("작업·위험 확인 서명 후에만 퇴근할 수 있습니다");
-                      setAckOpen(true);
-                      return;
-                    }
-                    setNoAccident(false);
-                    setHealthOk(false);
-                    exitSigRef.current?.clear();
-                    setExitOpen(true);
-                  }}
-                >
-                  <LogOut className="h-4 w-4" />
-                  퇴근하기
-                </Button>
-              </>
+            {isCheckedIn && !ackDone && (
+              <Button
+                className="min-h-[56px] h-14 w-full text-base font-bold gap-2"
+                onClick={() => setAckOpen(true)}
+              >
+                <FileSignature className="h-5 w-5" />
+                작업·위험 확인 서명
+              </Button>
+            )}
+            {isCheckedIn && ackDone && (
+              <Button
+                variant="destructive"
+                className="min-h-[56px] h-14 w-full text-base font-bold gap-2"
+                disabled={busy || !!suspension}
+                onClick={() => {
+                  if (suspension) {
+                    toast.error("출입 정지 상태에서는 퇴근할 수 없습니다");
+                    return;
+                  }
+                  setNoAccident(false);
+                  setHealthOk(false);
+                  exitSigRef.current?.clear();
+                  setExitOpen(true);
+                }}
+              >
+                <LogOut className="h-5 w-5" />
+                퇴근하기
+              </Button>
             )}
             {checkedOut && (
-              <div className="text-center text-sm text-emerald-700 py-2 flex items-center justify-center gap-2">
-                <ShieldCheck className="h-4 w-4" />
-                오늘 일일 파이프라인 완료
+              <div className="text-center text-base font-bold text-emerald-700 py-3 flex items-center justify-center gap-2">
+                <ShieldCheck className="h-5 w-5" />
+                오늘 퇴근했습니다
               </div>
             )}
           </div>

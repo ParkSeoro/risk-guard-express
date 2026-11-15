@@ -21,6 +21,7 @@ interface SiteSafetyRiskControlHubProps {
   companyType?: string | null;
   seesAllCompanies?: boolean;
   refreshKey?: number;
+  section?: "all" | "permits" | "matrix";
 }
 
 interface RealPtwItem {
@@ -82,6 +83,7 @@ export function SiteSafetyRiskControlHub({
   companyType,
   seesAllCompanies = true,
   refreshKey = 0,
+  section = "all",
 }: SiteSafetyRiskControlHubProps) {
   const [selectedQuadrant, setSelectedQuadrant] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -619,74 +621,16 @@ export function SiteSafetyRiskControlHub({
     ? riskPoints.filter(p => p.quadrant === selectedQuadrant)
     : riskPoints;
 
+  const showPermits = section === "all" || section === "permits";
+  const showMatrix = section === "all" || section === "matrix";
+
   return (
     <div className="space-y-4">
-      
-      {/* 1. 최상단: 종합 현장 안전 등급 바 & 진행 중 고위험 작업 현황 헤더 */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        
-        {/* 좌측: 현장 종합 안전 등급 스코어 카드 (4 cols) */}
-        <div className="lg:col-span-4 rounded-xl border bg-card p-4 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                현장 종합 안전 건전성 지수
-              </span>
-              <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${safetyScore.gradeColor}`}>
-                {safetyScore.grade}
-              </span>
-            </div>
-
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-4xl font-black tracking-tight text-foreground tabular-nums">
-                {safetyScore.totalScore}
-              </span>
-              <span className="text-xs text-muted-foreground font-semibold">/ 100점 (현장 실데이터 산정)</span>
-            </div>
-
-            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-              {safetyScore.summary}
-            </p>
-          </div>
-
-          {/* 3대 핵심 섹터(TBM, PTW, 점검) 점수 바 */}
-          <div className="mt-4 pt-3 border-t space-y-2.5">
-            <div className="text-[11px] font-bold text-muted-foreground flex items-center justify-between">
-              <span>3대 섹터별 연동 점수</span>
-              <span className="text-[10px] text-primary font-normal">TBM · PTW · 점검</span>
-            </div>
-
-            {safetyScore.sectors.map((sec, idx) => (
-              <div key={idx} className="space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-foreground flex items-center gap-1">
-                    {idx === 0 && <Clock className="h-3 w-3 text-muted-foreground" />}
-                    {idx === 1 && <HardHat className="h-3 w-3 text-muted-foreground" />}
-                    {idx === 2 && <ClipboardCheck className="h-3 w-3 text-muted-foreground" />}
-                    {sec.name}
-                  </span>
-                  <span className="text-muted-foreground font-mono">
-                    <strong className="text-foreground">{sec.score}</strong>/{sec.max}점 ({sec.rate})
-                  </span>
-                </div>
-                <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-primary h-full rounded-full transition-all duration-500" 
-                    style={{ width: `${Math.min(100, Math.max(0, (sec.score / sec.max) * 100))}%` }}
-                  />
-                </div>
-                <p className="text-[10px] text-muted-foreground truncate">{sec.detail}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 우측: 현재 현장 작업허가(PTW) 실데이터 시각화 (8 cols) */}
-        <div className="lg:col-span-8 rounded-xl border bg-card p-4 shadow-sm flex flex-col justify-between">
+      {showPermits && (
+        <div className="rounded-md border border-border bg-card p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className={`h-2.5 w-2.5 rounded-full ${activePtws.length > 0 ? 'bg-rose-500 animate-ping' : 'bg-slate-400'}`} />
+              <div className={`h-2.5 w-2.5 rounded-full ${activePtws.length > 0 ? 'bg-rose-500' : 'bg-slate-400'}`} />
               <h3 className="text-sm font-bold text-foreground">
                 현장 고위험 작업허가(PTW) 현황
               </h3>
@@ -708,17 +652,14 @@ export function SiteSafetyRiskControlHub({
           </div>
 
           {activePtws.length === 0 ? (
-            <div className="py-8 text-center rounded-lg border border-dashed bg-muted/20 flex flex-col items-center justify-center space-y-2 my-auto">
-              <ClipboardList className="h-8 w-8 text-muted-foreground/60" />
+            <div className="py-6 text-center rounded-md border border-dashed bg-muted/20 flex flex-col items-center justify-center space-y-2">
+              <ClipboardList className="h-7 w-7 text-muted-foreground/60" />
               <p className="text-xs font-semibold text-muted-foreground">
                 현재 현장에 등록된 작업허가서(PTW)가 없습니다.
               </p>
-              <p className="text-[11px] text-muted-foreground/80">
-                화기, 양중, 고소 등 위험작업 시작 전 안전작업허가서를 등록하고 승인 받으세요.
-              </p>
               <button
                 onClick={() => onNavigate?.('/work-permits')}
-                className="mt-2 inline-flex items-center gap-1 text-xs text-primary font-semibold hover:underline cursor-pointer"
+                className="mt-1 inline-flex items-center gap-1 text-xs text-primary font-semibold hover:underline cursor-pointer"
               >
                 <PlusCircle className="h-3.5 w-3.5" /> 작업허가서 신청하기
               </button>
@@ -729,7 +670,7 @@ export function SiteSafetyRiskControlHub({
                 <div 
                   key={ptw.id} 
                   onClick={() => onNavigate?.(`/work-permits/${ptw.id}`)}
-                  className="rounded-lg border bg-muted/40 p-3 flex flex-col justify-between hover:border-primary/50 transition-colors cursor-pointer"
+                  className="rounded-md border bg-muted/30 p-3 flex flex-col justify-between hover:border-primary/50 transition-colors cursor-pointer"
                 >
                   <div>
                     <div className="flex items-center justify-between">
@@ -773,21 +714,12 @@ export function SiteSafetyRiskControlHub({
               ))}
             </div>
           )}
-
-          {/* 안전 통제 확인 하단 바: 점검 및 TBM 동시 요약 */}
-          <div className="mt-3 pt-2.5 border-t flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              현장 DB 실데이터: 허가 {totalPtwCount}건, 점검 {inspectionData.totalInspections}건, 미조치 지적사항 {inspectionData.openActions}건
-            </span>
-            <span className="text-[11px] text-muted-foreground">실시간 동기화</span>
-          </div>
         </div>
+      )}
 
-      </div>
-
-      {/* 2. 중단: 실제 위험성평가 수준 4분면 매트릭스 그래프 (4-Quadrant Risk Matrix) */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm space-y-4">
+      {/* 2. 위험성평가 수준 4분면 매트릭스 */}
+      {showMatrix && (
+      <div className="rounded-md border border-border bg-card p-4 space-y-4">
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
           <div>
@@ -1057,6 +989,7 @@ export function SiteSafetyRiskControlHub({
         )}
 
       </div>
+      )}
 
     </div>
   );

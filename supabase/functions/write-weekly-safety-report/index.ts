@@ -9,7 +9,7 @@ const corsHeaders = {
 
 const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니다.
 입력은 지난 한 주 허가서를 회사별로 모은 작업 목록입니다.
-작업은 빠뜨리지 마세요. 입력의 회사는 모두 (회사명)으로 적으세요. 회사를 빼거나 다른 회사 아래로 합치지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요. 장소도 빼지 마세요.
+작업은 빠뜨리지 마세요. 회사 머리글은 입력에 있는 그 회사 이름을 괄호로 감싸 적으세요. 괄호 안에 회사명이라고 적지 마세요. 회사를 빼거나 다른 회사 아래로 합치지 마세요. 같은 회사 안에서 이미 합쳐진 줄은 다시 나누지 마세요. 장소도 빼지 마세요.
 제목과 같은 작업 줄은 다시 만들지 마세요.
 각 작업 줄 바로 아래에 위험과 대책을 붙이되, 그 작업에서 실제로 큰 위험만 적으세요.
 위험이 크지 않은 작업은 작업 내용만 남기세요. 위험과 대책 줄을 만들지 마세요.
@@ -23,7 +23,7 @@ const REPORT_PROMPT = `당신은 건설현장 주간 안전보고를 적습니�
 
 [현장명 현장 주간 안전보고]
 
-(회사명)
+(입력된 회사 이름)
 ■ 작업 구역
 * 그 주에 한 작업
 - 위험: 요인에 의한 위험
@@ -108,7 +108,11 @@ function stripRepeatedHeadings(text: string): string {
     if (asBullet && heading && compactLabel(asBullet[1]) === heading) continue;
     kept.push(line);
   }
-  return kept.join("\n").trim();
+  return kept
+    .join("\n")
+    .replace(/^\((?:회사명|회사 이름|입력된 회사 이름|실제 회사 이름)\)\s*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function factorOnlyRisk(text: string): boolean {

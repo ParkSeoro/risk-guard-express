@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   hasTrackingConsent,
   normalizeTrackingConsentStorage,
+  probeCurrentPosition,
   setTrackingConsent,
 } from "@/lib/tracking/locationTracker";
 import { hasCompletedNativePermissions, isNativeApp } from "@/lib/native/isNativeApp";
@@ -73,7 +74,12 @@ export default function WorkerGlobalGps() {
   const setGpsUi = useSetGpsUi();
   const workerIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
+  const gpsActiveRef = useRef(false);
   const [gpsBlockReason, setGpsBlockReason] = useState<GpsBlockReason>(null);
+
+  useEffect(() => {
+    gpsActiveRef.current = gpsTracking && !gpsSuspended;
+  }, [gpsTracking, gpsSuspended]);
 
   useEffect(() => {
     if (!user) {
@@ -204,55 +210,38 @@ export default function WorkerGlobalGps() {
       projectId: string,
       attendanceShape = false,
     ): Promise<boolean> => {
-      if (!("geolocation" in navigator)) return false;
-      return await new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            void (async () => {
-              try {
-                const cal = await fetchProjectGpsCalibration(projectId, async (id) => {
-                  const { data } = await supabase.from("projects").select("gps_calibration").eq("id", id).maybeSingle();
-                  return data?.gps_calibration ?? null;
-                });
-                const aligned = applyGpsCalibration(pos.coords.latitude, pos.coords.longitude, cal);
-                const testLat = aligned.calibrated ? aligned.lat : pos.coords.latitude;
-                const testLng = aligned.calibrated ? aligned.lng : pos.coords.longitude;
-                if (attendanceShape) {
-                  const outlines = await fetchAttendanceOutlines(projectId);
-                  if (outlines.length) {
-                    resolve(
-                      isWithinAnySiteAttendance(
-                        outlines,
-                        testLat,
-                        testLng,
-                        pos.coords.accuracy,
-                      ),
-                    );
-                    return;
-                  }
-                }
-                const fences = await resolveSiteTrackingFences(projectId);
-                if (!fences.length) {
-                  resolve(false);
-                  return;
-                }
-                resolve(
-                  isInsideAnyResumeFence(
-                    fences,
-                    testLat,
-                    testLng,
-                    pos.coords.accuracy,
-                  ),
-                );
-              } catch {
-                resolve(false);
-              }
-            })();
-          },
-          () => resolve(false),
-          { enableHighAccuracy: true, maximumAge: 8_000, timeout: 15_000 },
+      const pos = await probeCurrentPosition();
+      if (!pos) return false;
+      try {
+        const cal = await fetchProjectGpsCalibration(projectId, async (id) => {
+          const { data } = await supabase.from("projects").select("gps_calibration").eq("id", id).maybeSingle();
+          return data?.gps_calibration ?? null;
+        });
+        const aligned = applyGpsCalibration(pos.lat, pos.lng, cal);
+        const testLat = aligned.calibrated ? aligned.lat : pos.lat;
+        const testLng = aligned.calibrated ? aligned.lng : pos.lng;
+        if (attendanceShape) {
+          const outlines = await fetchAttendanceOutlines(projectId);
+          if (outlines.length) {
+            return isWithinAnySiteAttendance(
+              outlines,
+              testLat,
+              testLng,
+              pos.accuracy,
+            );
+          }
+        }
+        const fences = await resolveSiteTrackingFences(projectId);
+        if (!fences.length) return false;
+        return isInsideAnyResumeFence(
+          fences,
+          testLat,
+          testLng,
+          pos.accuracy,
         );
-      });
+      } catch {
+        return false;
+      }
     };
 
     const startForProject = async (projectId: string) => {
@@ -422,6 +411,8 @@ export default function WorkerGlobalGps() {
 
     const onVisResume = () => {
       if (document.visibilityState !== "visible") return;
+      // Avoid redundant cold GPS probes & DB lookups when already actively tracking on-site.
+      if (lastKeyRef.current && gpsActiveRef.current) return;
       void boot();
     };
 

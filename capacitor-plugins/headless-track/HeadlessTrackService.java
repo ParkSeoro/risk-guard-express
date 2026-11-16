@@ -42,13 +42,19 @@ public class HeadlessTrackService extends Service implements LocationListener {
   public static final String ACTION_STOP = "org.safenex.app.HEADLESS_TRACK_STOP";
   private static final String TAG = "HeadlessTrack";
   private static final String CHANNEL_ID = "safenex_location";
+  private static final String ALERT_CHANNEL_ID = "safenex_danger_alert";
   private static final int NOTIF_ID = 7101;
+  private static final int ALERT_NOTIF_ID = 7102;
+  private static final long DANGER_BURST_MS = 180_000L;
+  private static final long DANGER_BURST_INTERVAL_MS = 30_000L;
   private static final double EARTH_M = 6371000.0;
 
   private LocationManager locationManager;
   private final ExecutorService io = Executors.newSingleThreadExecutor();
   private final Handler main = new Handler(Looper.getMainLooper());
   private long lastSentAt = 0;
+  private volatile long dangerBurstUntil = 0;
+  private volatile boolean dangerBurstActive = false;
   private int outsideStreak = 0;
   /** True = no track-location posts; GPS interval is resumePollMs until back inside. */
   private volatile boolean watchMode = false;
@@ -154,7 +160,14 @@ public class HeadlessTrackService extends Service implements LocationListener {
   private void setWatchMode(boolean next) {
     if (watchMode == next) return;
     watchMode = next;
+    if (next) dangerBurstActive = false;
     if (running) main.post(this::applyLocationUpdates);
+  }
+
+  private void setDangerBurst(boolean next) {
+    if (dangerBurstActive == next) return;
+    dangerBurstActive = next;
+    if (running && !watchMode) main.post(this::applyLocationUpdates);
   }
 
   private boolean providerUsable(String name) {
@@ -192,9 +205,13 @@ public class HeadlessTrackService extends Service implements LocationListener {
       } catch (Exception ignored) {
       }
       SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+      long baseInterval = Math.max(5_000, p.getInt("interval_ms", 180_000));
+      boolean inDangerBurst = !watchMode && dangerBurstActive && System.currentTimeMillis() < dangerBurstUntil;
       long minTime = watchMode
           ? Math.max(30_000, p.getInt("resume_poll_ms", 300_000))
-          : Math.max(5_000, p.getInt("interval_ms", 180_000));
+          : inDangerBurst
+              ? Math.min(baseInterval, DANGER_BURST_INTERVAL_MS)
+              : baseInterval;
       float minDist = watchMode ? 40f : 15f;
       // Never assume GPS exists — missing provider throws and START_STICKY loops
       // the process ("Safenex keeps stopping") on many Korean OEM phones.
@@ -287,8 +304,15 @@ public class HeadlessTrackService extends Service implements LocationListener {
     }
 
     long now = System.currentTimeMillis();
-    int intervalMs = p.getInt("interval_ms", 180_000);
-    if (now - lastSentAt < intervalMs) return;
+    int configuredInterval = p.getInt("interval_ms", 180_000);
+    boolean inBurst = now < dangerBurstUntil;
+    if (!inBurst && dangerBurstActive) {
+      setDangerBurst(false);
+    }
+    int effectiveInterval = inBurst
+        ? (int) Math.min(configuredInterval, DANGER_BURST_INTERVAL_MS)
+        : configuredInterval;
+    if (now - lastSentAt < effectiveInterval) return;
     lastSentAt = now;
 
     try {
@@ -308,13 +332,16 @@ public class HeadlessTrackService extends Service implements LocationListener {
       body.put("device_ts", new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
           .format(new java.util.Date(now)));
 
-      int code = postJson(url + "/functions/v1/track-location", anon, access, body.toString());
-      if (code == 401 && refresh != null && !refresh.isEmpty()) {
+      PostResult res = postJsonWithResponse(url + "/functions/v1/track-location", anon, access, body.toString());
+      if (res.code == 401 && refresh != null && !refresh.isEmpty()) {
         String next = refreshAccess(url, anon, refresh);
         if (next != null) {
           p.edit().putString("access_token", next).apply();
-          postJson(url + "/functions/v1/track-location", anon, next, body.toString());
+          res = postJsonWithResponse(url + "/functions/v1/track-location", anon, next, body.toString());
         }
+      }
+      if (res.code == 200 && res.body != null && !res.body.isEmpty()) {
+        handleTrackResponse(res.body, now);
       }
     } catch (Exception e) {
       Log.w(TAG, "postFix failed", e);
@@ -351,7 +378,16 @@ public class HeadlessTrackService extends Service implements LocationListener {
     }
   }
 
-  private int postJson(String url, String apikey, String bearer, String json) throws Exception {
+  private static class PostResult {
+    final int code;
+    final String body;
+    PostResult(int code, String body) {
+      this.code = code;
+      this.body = body;
+    }
+  }
+
+  private PostResult postJsonWithResponse(String url, String apikey, String bearer, String json) throws Exception {
     HttpURLConnection c = open(url, apikey, bearer);
     try {
       byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
@@ -361,9 +397,71 @@ public class HeadlessTrackService extends Service implements LocationListener {
       os.flush();
       int code = c.getResponseCode();
       Log.d(TAG, "track-location HTTP " + code);
-      return code;
+      java.io.InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+      String resp = null;
+      if (in != null) {
+        Scanner s = new Scanner(in, StandardCharsets.UTF_8.name()).useDelimiter("\\A");
+        resp = s.hasNext() ? s.next() : null;
+      }
+      return new PostResult(code, resp);
     } finally {
       c.disconnect();
+    }
+  }
+
+  private void handleTrackResponse(String body, long now) {
+    try {
+      JSONObject j = new JSONObject(body);
+      String eventType = j.optString("event_type", "");
+      String zoneType = j.optString("zone_type", "");
+      String zoneName = j.optString("zone_name", "");
+      if ("unauthorized_entry".equals(eventType)) {
+        dangerBurstUntil = now + DANGER_BURST_MS;
+        setDangerBurst(true);
+        fireDangerNotification(zoneName);
+      } else if ("exit".equals(eventType) || (!"danger".equals(zoneType) && !"restricted".equals(zoneType))) {
+        dangerBurstUntil = 0;
+        setDangerBurst(false);
+      }
+    } catch (Exception e) {
+      Log.w(TAG, "handleTrackResponse parse skipped", e);
+    }
+  }
+
+  private void fireDangerNotification(String zoneName) {
+    try {
+      NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+      if (nm == null) return;
+      if (Build.VERSION.SDK_INT >= 26) {
+        NotificationChannel alertCh = new NotificationChannel(
+            ALERT_CHANNEL_ID,
+            "위험구역 진입 경고",
+            NotificationManager.IMPORTANCE_HIGH);
+        alertCh.setDescription("출입 제한 및 위험구역 진입 시 즉시 경고합니다");
+        alertCh.enableVibration(true);
+        nm.createNotificationChannel(alertCh);
+      }
+      Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+      PendingIntent pi = launch == null
+          ? null
+          : PendingIntent.getActivity(
+              this,
+              1,
+              launch,
+              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+      String label = (zoneName != null && !zoneName.isEmpty()) ? zoneName : "위험구역";
+      Notification alert = new NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+          .setContentTitle("위험구역 진입 경고")
+          .setContentText(label + " 구역에 진입했습니다. 즉시 안전한 곳으로 이동하세요.")
+          .setSmallIcon(android.R.drawable.ic_dialog_alert)
+          .setPriority(NotificationCompat.PRIORITY_HIGH)
+          .setCategory(NotificationCompat.CATEGORY_ALARM)
+          .setAutoCancel(true)
+          .setContentIntent(pi)
+          .build();
+      nm.notify(ALERT_NOTIF_ID, alert);
+    } catch (Exception e) {
+      Log.w(TAG, "fireDangerNotification failed", e);
     }
   }
 
@@ -434,6 +532,13 @@ public class HeadlessTrackService extends Service implements LocationListener {
       e.remove("fence_lng_bits");
       e.remove("fence_radius_m");
     }
+    if (cfg.has("calDeltaLat") && cfg.has("calDeltaLng")) {
+      e.putLong("cal_delta_lat_bits", Double.doubleToRawLongBits(cfg.optDouble("calDeltaLat", 0.0)));
+      e.putLong("cal_delta_lng_bits", Double.doubleToRawLongBits(cfg.optDouble("calDeltaLng", 0.0)));
+    } else {
+      e.remove("cal_delta_lat_bits");
+      e.remove("cal_delta_lng_bits");
+    }
     String fencesJson = cfg.optString("fencesJson", "");
     if (fencesJson != null && !fencesJson.isEmpty() && !"null".equals(fencesJson)) {
       e.putString("fences_json", fencesJson);
@@ -449,7 +554,11 @@ public class HeadlessTrackService extends Service implements LocationListener {
     boolean insideResume;
   }
 
-  private static FenceHit evalFences(SharedPreferences p, double lat, double lng, float acc, float maxAcc) {
+  private static FenceHit evalFences(SharedPreferences p, double rawLat, double rawLng, float acc, float maxAcc) {
+    double dLat = Double.longBitsToDouble(p.getLong("cal_delta_lat_bits", 0));
+    double dLng = Double.longBitsToDouble(p.getLong("cal_delta_lng_bits", 0));
+    double lat = rawLat + (Double.isFinite(dLat) ? dLat : 0.0);
+    double lng = rawLng + (Double.isFinite(dLng) ? dLng : 0.0);
     FenceHit hit = new FenceHit();
     org.json.JSONArray arr = null;
     String raw = p.getString("fences_json", null);

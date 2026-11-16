@@ -153,7 +153,7 @@ function emitFix(opts: TrackerOptions, info: TrackerFixInfo) {
   opts.onUpdate?.(info);
 }
 
-async function probeCurrentPosition(): Promise<{
+export async function probeCurrentPosition(): Promise<{
   lat: number;
   lng: number;
   accuracy: number;
@@ -441,6 +441,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     await attachWatcher();
     const detachHeadlessGate = await attachAndroidHeadlessGate(opts, {
       isStopped: () => sessionStopped,
+      getCalibration: () => cal,
       pauseForeground: async () => {
         webviewOwnsPipeline = false;
         await detachWatcher();
@@ -526,13 +527,25 @@ async function getGeolocation(): Promise<{
   };
 }
 
-async function headlessCompanionOpts(opts: TrackerOptions): Promise<Parameters<typeof startHeadlessTrack>[0] | null> {
+async function headlessCompanionOpts(
+  opts: TrackerOptions,
+  cal: GpsCalibration | null = null,
+): Promise<Parameters<typeof startHeadlessTrack>[0] | null> {
   const { data } = await supabase.auth.getSession();
   const session = data?.session;
   if (!session?.access_token) return null;
   const live = opts.getIdentity?.() ?? opts.identity;
   const fences = listTrackingFences(opts);
   const site = fences[0] ?? null;
+  let calDeltaLat = 0;
+  let calDeltaLng = 0;
+  if (cal && site) {
+    const aligned = applyGpsCalibration(site.lat, site.lng, cal);
+    if (aligned.calibrated) {
+      calDeltaLat = aligned.lat - site.lat;
+      calDeltaLng = aligned.lng - site.lng;
+    }
+  }
   return {
     projectId: live.project_id,
     workerId: live.worker_id,
@@ -548,6 +561,8 @@ async function headlessCompanionOpts(opts: TrackerOptions): Promise<Parameters<t
     fencesJson: fences.length
       ? JSON.stringify(fences.map((f) => ({ lat: f.lat, lng: f.lng, radiusM: f.radiusM })))
       : null,
+    calDeltaLat,
+    calDeltaLng,
     intervalMs: TRACK_BG_HEARTBEAT_MS,
     exitStreak: SITE_EXIT_STREAK,
     maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
@@ -557,9 +572,12 @@ async function headlessCompanionOpts(opts: TrackerOptions): Promise<Parameters<t
   };
 }
 
-async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
+async function startHeadlessCompanion(
+  opts: TrackerOptions,
+  cal: GpsCalibration | null = null,
+): Promise<void> {
   try {
-    const next = await headlessCompanionOpts(opts);
+    const next = await headlessCompanionOpts(opts, cal);
     if (!next) return;
     await startHeadlessTrack(next);
   } catch (e) {
@@ -576,13 +594,14 @@ async function attachAndroidHeadlessGate(
   opts: TrackerOptions,
   hooks: {
     isStopped: () => boolean;
+    getCalibration?: () => GpsCalibration | null;
     pauseForeground: () => void | Promise<void>;
     resumeForeground: () => void | Promise<void>;
   },
 ): Promise<() => void> {
   if (!isHeadlessTrackAvailable()) return () => {};
 
-  void startHeadlessCompanion(opts);
+  void startHeadlessCompanion(opts, hooks.getCalibration?.() ?? null);
 
   const apply = async (isActive: boolean) => {
     if (hooks.isStopped()) return;
@@ -590,7 +609,7 @@ async function attachAndroidHeadlessGate(
       await hooks.resumeForeground();
     } else {
       await hooks.pauseForeground();
-      await startHeadlessCompanion(opts);
+      await startHeadlessCompanion(opts, hooks.getCalibration?.() ?? null);
     }
   };
 
@@ -860,6 +879,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   await attachWatch();
   const detachHeadlessGate = await attachAndroidHeadlessGate(opts, {
     isStopped: () => stopped,
+    getCalibration: () => cal,
     pauseForeground: () => {
       webviewOwnsPipeline = false;
       detachWatch();

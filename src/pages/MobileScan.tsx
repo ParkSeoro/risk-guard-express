@@ -143,9 +143,15 @@ export default function MobileScan() {
     }
     // Signup / register QR (Auth path)
     if (/\/worker\/register/i.test(raw) || /\/register\?.*audience=worker/i.test(raw)) {
-      setLast({ token: "register", url: raw.startsWith("http") ? raw : `${window.location.origin}${raw.startsWith("/") ? raw : `/${raw}`}` });
+      const parsed = new URL(
+        raw.startsWith("http") ? raw : `${window.location.origin}${raw.startsWith("/") ? raw : `/${raw}`}`,
+        window.location.origin,
+      );
+      const dest = `${parsed.pathname}${parsed.search}`;
+      setLast({ token: "register", url: dest });
       await stop();
       toast.success("등록 QR 인식 — 회원가입으로 이동");
+      navigate(dest);
       return;
     }
     // Legacy QR-only portal — retired; send to login

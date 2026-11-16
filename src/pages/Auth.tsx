@@ -242,7 +242,14 @@ const Auth = () => {
     return () => clearTimeout(timer);
   }, [inviteCode, mode, signupAudience, signupMethod]);
 
-  // Projects + company directory for signup (anon RPCs)
+  const resolvedQrProjectName = useMemo(
+    () => qrProjectName || directory.find((d) => d.project_id === qrProject)?.project_name || '',
+    [qrProjectName, directory, qrProject],
+  );
+  const resolvedQrCompanyName = useMemo(
+    () => qrCompanyName || directory.find((d) => d.company_id === qrCompany)?.company_name || '',
+    [qrCompanyName, directory, qrCompany],
+  );
   useEffect(() => {
     if (mode !== 'signup') return;
     if (signupAudience === 'manager' && signupMethod === 'invite') return;
@@ -477,9 +484,55 @@ const Auth = () => {
         _email: dummyEmail,
         _phone: digits,
       });
-      const identErr = signupIdentityErrorMessage((ident as any)?.error);
+      const identCode = (ident as any)?.error as string | undefined;
+      const identErr = signupIdentityErrorMessage(identCode);
       if (identErr) {
-        toast({ title: '회원가입 불가', description: identErr, variant: 'destructive' });
+        // Existing @worker.local account (e.g. another site, Excel bulk, or incomplete prior attempt):
+        // verify ownership via phone + last-4 PIN, then link directly to this QR project/company.
+        const { data: existingAuth, error: existingLoginErr } = await signInWorkerWithPhone(digits, last4);
+        if (!existingLoginErr && existingAuth?.user) {
+          const { data: rosterRes, error: rpcErr } = await (supabase as any).rpc(
+            'complete_worker_roster_signup',
+            {
+              _user_id: existingAuth.user.id,
+              _project_id: selectedProject,
+              _company_id: selectedCompany,
+              _name: nameParsed.data,
+              _phone: digits,
+              _job_type: jobParsed.data,
+            },
+          );
+          if (rpcErr || rosterRes?.error) {
+            toast({
+              title: '명부 등록 실패',
+              description: rpcErr?.message || rosterRes?.error || '다시 시도해 주세요',
+              variant: 'destructive',
+            });
+            return;
+          }
+          if (selectedProject) {
+            writeActiveProjectId(selectedProject);
+            void supabase
+              .from('profiles')
+              .update({ default_project_id: selectedProject } as any)
+              .eq('user_id', existingAuth.user.id);
+          }
+          setPin(last4);
+          rememberWorkerLoginOnDevice(digits, last4, true);
+          toast({
+            title: '근로자 현장 등록 완료',
+            description: `기존 계정으로 이 현장에 연결되었습니다. 비밀번호는 전화번호 뒤 4자리(${last4})입니다.`,
+          });
+          setMode('login');
+          setLoginAudience('worker');
+          setRememberWorkerLogin(true);
+          return;
+        }
+        toast({
+          title: '회원가입 불가',
+          description: `${identErr} 기존 계정이 있다면 로그인 화면에서 기존 비밀번호로 로그인해 주세요.`,
+          variant: 'destructive',
+        });
         return;
       }
       const signupMeta = {
@@ -773,10 +826,10 @@ const Auth = () => {
                   <div className="rounded-lg border bg-muted/40 p-3 space-y-1 text-sm">
                     <p className="font-medium text-foreground">현장 등록 QR</p>
                     <p className="text-muted-foreground">
-                      프로젝트: <span className="text-foreground font-medium">{qrProjectName || '…'}</span>
+                      프로젝트: <span className="text-foreground font-medium">{resolvedQrProjectName || '…'}</span>
                     </p>
                     <p className="text-muted-foreground">
-                      소속사: <span className="text-foreground font-medium">{qrCompanyName || '…'}</span>
+                      소속사: <span className="text-foreground font-medium">{resolvedQrCompanyName || '…'}</span>
                     </p>
                     <p className="text-[11px] text-muted-foreground pt-1">
                       프로젝트·소속사는 QR로 고정됩니다. 잘못됐으면 관리자에게 새 QR을 요청하세요.

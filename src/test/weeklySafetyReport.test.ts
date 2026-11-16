@@ -70,7 +70,7 @@ describe('weekly safety report calendar', () => {
     expect(sql).not.toContain('v_week_start + 4');
     expect(sql).not.toContain('bullet_count > 8');
     expect(writer).toContain('작업 내용이 그대로입니다');
-    expect(writer).toContain('고위험이 아닌 작업은 한 줄로 묶으세요');
+    expect(writer).toContain('유사하거나 중복되는 작업');
     expect(writer).toContain('요인에 의한 위험');
     expect(writer).toContain('factorOnlyRisk');
     expect(writer).toContain('writeCompany');

@@ -152,6 +152,8 @@ export async function cloneAssessmentRun(opts: {
   source: CloneAssessmentRunSource;
   userId: string;
   periodLabel?: string;
+  startDate?: string | null;
+  endDate?: string | null;
 }): Promise<CloneAssessmentRunResult> {
   const { source, userId } = opts;
   const period_label =
@@ -168,8 +170,8 @@ export async function cloneAssessmentRun(opts: {
         target_processes: source.target_processes || [],
         target_contractors: source.target_contractors || [],
         target_company_ids: source.target_company_ids || [],
-        start_date: null,
-        end_date: null,
+        start_date: opts.startDate || null,
+        end_date: opts.endDate || null,
         notes: `${notesBase}[원본 회차: ${source.period_label || ''}]`,
         opinion_required: source.opinion_required ?? true,
         health_required: source.health_required ?? true,

@@ -2748,7 +2748,12 @@ const AssessmentRunDetail = () => {
       <div className="flex items-center justify-between print:hidden">
         <div>
           <div className="flex items-center gap-2">
-            {isMasterOrCreator && (
+            {(isMasterOrCreator || (canEdit && (
+              (user && run?.author_user_id === user.id)
+              || userRole === 'safety_manager'
+              || userRole === 'site_supervisor'
+              || userRole === 'project_admin'
+            ))) && (
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowEditRun(true)}><Pencil className="h-3.5 w-3.5" /></Button>
             )}
           </div>

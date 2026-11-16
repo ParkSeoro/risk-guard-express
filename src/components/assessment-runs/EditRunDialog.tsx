@@ -25,6 +25,8 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
   const [form, setForm] = useState({
     type: '',
     period_label: '',
+    start_date: '',
+    end_date: '',
     target_processes: '',
     target_contractors: '',
     notes: '',
@@ -38,6 +40,8 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
       setForm({
         type: resolveAssessmentRunType(run.type),
         period_label: run.period_label || '',
+        start_date: String(run.start_date || '').slice(0, 10),
+        end_date: String(run.end_date || '').slice(0, 10),
         target_processes: (run.target_processes || []).join(', '),
         target_contractors: (run.target_contractors || []).join(', '),
         notes: run.notes || '',
@@ -48,6 +52,10 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
 
   const handleSave = async () => {
     if (!run) return;
+    if (form.start_date && form.end_date && form.start_date > form.end_date) {
+      toast({ title: '종료일이 시작일보다 이전입니다.', variant: 'destructive' });
+      return;
+    }
     if (isApproved && !forceReason.trim()) {
       toast({ title: '승인완료 회차는 수정 사유 입력이 필수입니다.', variant: 'destructive' });
       return;
@@ -57,6 +65,8 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
     const updates: any = {
       type: resolveAssessmentRunType(form.type),
       period_label: form.period_label,
+      start_date: form.start_date || null,
+      end_date: form.end_date || null,
       target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
       target_contractors: form.target_contractors.split(',').map(s => s.trim()).filter(Boolean),
       notes: form.notes,
@@ -82,6 +92,8 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
     const changedFields: Record<string, { from: any; to: any }> = {};
     if (run.type !== form.type) changedFields.type = { from: run.type, to: form.type };
     if (run.period_label !== form.period_label) changedFields.period_label = { from: run.period_label, to: form.period_label };
+    if ((run.start_date || '') !== form.start_date) changedFields.start_date = { from: run.start_date || null, to: form.start_date || null };
+    if ((run.end_date || '') !== form.end_date) changedFields.end_date = { from: run.end_date || null, to: form.end_date || null };
     if (run.notes !== form.notes) changedFields.notes = { from: run.notes, to: form.notes };
     if (isApproved) changedFields.status = { from: '승인완료', to: '작성중' };
 
@@ -140,11 +152,29 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>적용기간 *</Label>
+              <Label>회차명 *</Label>
               <Input
                 value={form.period_label}
                 onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))}
                 placeholder="예: 2026년 3월 1주차"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>적용 시작일</Label>
+              <Input
+                type="date"
+                value={form.start_date}
+                onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>적용 종료일</Label>
+              <Input
+                type="date"
+                value={form.end_date}
+                onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))}
               />
             </div>
           </div>

@@ -100,6 +100,52 @@ function parseServiceAccount(): ServiceAccount | null {
 }
 
 let cachedAccess: { token: string; expMs: number } | null = null;
+let cachedApnsJwt: { token: string; expMs: number } | null = null;
+
+interface ApnsConfig {
+  keyP8: string;
+  keyId: string;
+  teamId: string;
+  bundleId: string;
+  sandbox: boolean;
+  criticalApproved: boolean;
+}
+
+function parseApnsConfig(): ApnsConfig | null {
+  const keyP8 = (Deno.env.get("APNS_KEY_P8") || "").trim();
+  const keyId = (Deno.env.get("APNS_KEY_ID") || "").trim();
+  const teamId = (Deno.env.get("APNS_TEAM_ID") || "").trim();
+  if (!keyP8 || !keyId || !teamId) return null;
+  return {
+    keyP8,
+    keyId,
+    teamId,
+    bundleId: (Deno.env.get("APNS_BUNDLE_ID") || "org.safenex.app").trim(),
+    sandbox: Deno.env.get("APNS_USE_SANDBOX") === "true",
+    criticalApproved: Deno.env.get("APNS_CRITICAL_APPROVED") === "true",
+  };
+}
+
+async function getApnsJwt(cfg: ApnsConfig): Promise<string> {
+  const now = Date.now();
+  if (cachedApnsJwt && cachedApnsJwt.expMs > now + 60_000) {
+    return cachedApnsJwt.token;
+  }
+  const pem = cfg.keyP8.replace(/\\n/g, "\n");
+  const key = await jose.importPKCS8(pem, "ES256");
+  const token = await new jose.SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid: cfg.keyId })
+    .setIssuer(cfg.teamId)
+    .setIssuedAt()
+    .sign(key);
+  // APNs tokens are valid for up to 60 minutes; refresh every 45 minutes.
+  cachedApnsJwt = { token, expMs: now + 45 * 60_000 };
+  return token;
+}
+
+function isHexApnsToken(token: string): boolean {
+  return /^[0-9a-fA-F]{64,200}$/.test(token.trim());
+}
 
 async function getFcmAccessToken(sa: ServiceAccount): Promise<string> {
   const now = Date.now();
@@ -257,8 +303,9 @@ async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promis
 
   const sa = parseServiceAccount();
   const legacyKey = Deno.env.get("FCM_SERVER_KEY");
+  const apnsCfg = parseApnsConfig();
 
-  if (sa || legacyKey) {
+  if (sa || legacyKey || apnsCfg) {
     try {
       const { data: toks } = await supabase
         .from("device_push_tokens")
@@ -266,15 +313,71 @@ async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promis
         .eq("user_id", n.user_id);
       const expired: string[] = [];
       const data = dataPayload(n, body, commonData, isCriticalAlarm);
+      const allToks = (toks || []) as Array<{ id: string; token: string; platform?: string | null }>;
+      const apnsTokens = allToks.filter(
+        (t) => (t.platform || "").toLowerCase() === "ios" && isHexApnsToken(t.token),
+      );
+      const fcmTokens = allToks.filter(
+        (t) => !((t.platform || "").toLowerCase() === "ios" && isHexApnsToken(t.token)),
+      );
 
-      if (sa) {
+      // Direct APNs HTTP/2 delivery for iOS @capacitor/push-notifications hex tokens
+      if (apnsCfg && apnsTokens.length > 0) {
+        try {
+          const apnsJwt = await getApnsJwt(apnsCfg);
+          const apnsHost = apnsCfg.sandbox ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
+          const useCritical = isCriticalAlarm && apnsCfg.criticalApproved;
+          const apsPayload: Record<string, unknown> = {
+            alert: { title: n.title, body },
+            sound: useCritical ? { critical: 1, name: "siren.wav", volume: 1.0 } : "default",
+            "interruption-level": useCritical ? "critical" : isCriticalAlarm ? "time-sensitive" : "active",
+          };
+          const apnsBody = JSON.stringify({ ...data, aps: apsPayload });
+
+          await Promise.all(
+            apnsTokens.map(async (t) => {
+              try {
+                const res = await fetch(`${apnsHost}/3/device/${t.token.trim()}`, {
+                  method: "POST",
+                  headers: {
+                    authorization: `bearer ${apnsJwt}`,
+                    "apns-topic": apnsCfg.bundleId,
+                    "apns-push-type": "alert",
+                    "apns-priority": "10",
+                    "content-type": "application/json",
+                  },
+                  body: apnsBody,
+                });
+                if (!res.ok) {
+                  result.native.failed++;
+                  const errJson = await res.json().catch(() => ({}));
+                  const reason = String((errJson as any)?.reason || "");
+                  if (res.status === 410 || reason === "Unregistered" || reason === "BadDeviceToken") {
+                    expired.push(t.id);
+                  }
+                  console.warn("[dispatch] apns fail", res.status, reason);
+                } else {
+                  result.native.sent++;
+                }
+              } catch (e) {
+                result.native.failed++;
+                console.warn("[dispatch] apns error", e);
+              }
+            }),
+          );
+        } catch (e) {
+          console.warn("[dispatch] apns jwt/setup error", e);
+        }
+      }
+
+      if (sa && fcmTokens.length > 0) {
         result.native_mode = "http_v1";
         const accessToken = await getFcmAccessToken(sa);
         const endpoint =
           `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
 
         await Promise.all(
-          (toks || []).map(async (t: any) => {
+          fcmTokens.map(async (t: any) => {
             try {
               const platform = (t.platform || "").toLowerCase();
               const message: Record<string, unknown> = {
@@ -334,10 +437,10 @@ async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promis
             }
           }),
         );
-      } else if (legacyKey) {
+      } else if (legacyKey && fcmTokens.length > 0) {
         result.native_mode = "legacy";
         await Promise.all(
-          (toks || []).map(async (t: any) => {
+          fcmTokens.map(async (t: any) => {
             try {
               const platform = (t.platform || "").toLowerCase();
               const apnsCritical =

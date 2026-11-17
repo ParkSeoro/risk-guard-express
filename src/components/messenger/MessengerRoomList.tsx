@@ -102,6 +102,65 @@ export function MessengerRoomList({
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [startingChatId, setStartingChatId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const clickTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleRoomClick = (room: ChatRoom) => {
+    if (!onDoubleClickRoom) {
+      onSelectRoom(room);
+      return;
+    }
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      return;
+    }
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null;
+      onSelectRoom(room);
+    }, 220);
+  };
+
+  const handleRoomDoubleClick = (room: ChatRoom) => {
+    if (!onDoubleClickRoom) return;
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    onDoubleClickRoom(room);
+  };
+
+  const handleSelfChatClick = () => {
+    if (!onDoubleClickRoom) {
+      void handleOpenSelfChat(false);
+      return;
+    }
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      return;
+    }
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null;
+      void handleOpenSelfChat(false);
+    }, 220);
+  };
+
+  const handleSelfChatDoubleClick = () => {
+    if (!onDoubleClickRoom) return;
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    void handleOpenSelfChat(true);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -467,8 +526,8 @@ export function MessengerRoomList({
             <div className="px-2 pt-2">
               <button
                 type="button"
-                onClick={() => void handleOpenSelfChat(false)}
-                onDoubleClick={() => void handleOpenSelfChat(true)}
+                onClick={handleSelfChatClick}
+                onDoubleClick={handleSelfChatDoubleClick}
                 disabled={startingChatId !== null}
                 title="클릭하여 나와의 채팅 열기 · 더블클릭하여 새 창으로 분리"
                 className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10 transition-colors"
@@ -521,9 +580,13 @@ export function MessengerRoomList({
               return (
                 <div
                   key={room.id}
-                  onClick={() => onSelectRoom(room)}
-                  onDoubleClick={() => onDoubleClickRoom?.(room)}
-                  title="클릭하여 대화방 열기 · 더블클릭하여 새 창으로 분리"
+                  onClick={() => handleRoomClick(room)}
+                  onDoubleClick={() => handleRoomDoubleClick(room)}
+                  title={
+                    onDoubleClickRoom
+                      ? "클릭하여 대화방 열기 · 더블클릭하여 새 창으로 분리"
+                      : "클릭하여 대화방 열기"
+                  }
                   className={cn(
                     "group flex items-start gap-3 px-3 py-2.5 mx-1.5 rounded-xl cursor-pointer hover:bg-muted/60 transition-all relative",
                     isSelected && "bg-primary/8 hover:bg-primary/12 ring-1 ring-primary/15",
@@ -662,8 +725,8 @@ export function MessengerRoomList({
           {!search.trim() && (
             <button
               type="button"
-              onClick={() => void handleOpenSelfChat(false)}
-              onDoubleClick={() => void handleOpenSelfChat(true)}
+              onClick={handleSelfChatClick}
+              onDoubleClick={handleSelfChatDoubleClick}
               disabled={startingChatId !== null}
               title={
                 onDoubleClickRoom

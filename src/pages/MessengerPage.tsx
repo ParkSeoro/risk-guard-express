@@ -11,6 +11,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import { canOpenCouncil } from "@/lib/councilAccess";
 import { clearMessengerPickerActive, readMessengerPickerState } from "@/lib/messengerPath";
+import { openDesktopPopoutWindow } from "@/lib/desktopBridge";
+import { useMessengerLock } from "@/hooks/useMessengerLock";
+import {
+  MessengerLockScreen,
+  MessengerLockSettingsDialog,
+} from "@/components/messenger/MessengerLockOverlay";
 import { MessageSquare } from "lucide-react";
 
 export default function MessengerPage() {
@@ -24,6 +30,15 @@ export default function MessengerPage() {
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const cachedRoomRef = useRef<ChatRoom | null>(null);
+  const {
+    lockState,
+    setLockState,
+    settingsOpen,
+    setSettingsOpen,
+    lockNow,
+    unlock,
+    isLockConfigured,
+  } = useMessengerLock(user?.id);
 
   // 불변 loadRooms 함수로 무한 깜박임 루프 제거
   const loadRooms = useCallback(async () => {
@@ -119,13 +134,29 @@ export default function MessengerPage() {
     loadRooms();
   };
 
+  const handlePopoutRoom = (room: ChatRoom) => {
+    const title = room.is_self_chat
+      ? "나와의 채팅"
+      : room.custom_name ||
+        room.name ||
+        room.other_participant?.full_name ||
+        "SafeNex 대화방";
+    openDesktopPopoutWindow({
+      url: `${window.location.origin}/app/admin/messenger?room=${room.id}&popout=1`,
+      title: `SafeNex - ${title}`,
+      width: 440,
+      height: 700,
+      windowName: `safenex_chat_${room.id}`,
+    });
+  };
+
   if (rolesReady && isPureWorkerUser(roles)) {
     return <Navigate to="/app/worker/today" replace />;
   }
 
   return (
     <div
-      className="flex-1 h-full min-h-0 w-full flex bg-background overflow-hidden overscroll-contain"
+      className="relative flex-1 h-full min-h-0 w-full flex bg-background overflow-hidden overscroll-contain"
     >
       {/* 대화방 목록 패널 (데스크톱 360px 고정, 모바일에서는 선택된 방이 없을 때 전체 너비) */}
       <div
@@ -137,6 +168,7 @@ export default function MessengerPage() {
           rooms={rooms}
           selectedRoomId={selectedRoomId}
           onSelectRoom={handleSelectRoom}
+          onDoubleClickRoom={handlePopoutRoom}
           onOpenNewChat={() => setIsNewChatOpen(true)}
           onRoomCreated={(id) => {
             setSelectedRoomId(id);
@@ -145,6 +177,9 @@ export default function MessengerPage() {
           }}
           currentProjectId={projectAccess?.selectedProject}
           loading={loading}
+          onLockNow={lockNow}
+          onOpenLockSettings={() => setSettingsOpen(true)}
+          isLockConfigured={isLockConfigured}
         />
       </div>
 
@@ -167,15 +202,18 @@ export default function MessengerPage() {
             대화방을 불러오는 중...
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground bg-muted/10">
-            <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-3">
-              <MessageSquare className="h-8 w-8 stroke-1 text-muted-foreground/60" />
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground bg-slate-50/70 dark:bg-slate-950/40">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4 shadow-sm">
+              <MessageSquare className="h-8 w-8 stroke-1.5" />
             </div>
-            <h3 className="text-base font-semibold text-foreground">
-              대화방을 선택하세요
+            <h3 className="text-base font-bold text-foreground">
+              SafeNex 현장 메신저
             </h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-              왼쪽 목록에서 대화방을 선택하거나 새 대화를 시작하여 안전 관리 업무를 실시간으로 공유하세요.
+            <p className="text-sm text-muted-foreground mt-1.5 max-w-sm leading-relaxed">
+              대화방을 클릭해 바로 소통하거나, 대화방·담당자를 <span className="font-semibold text-foreground">더블클릭</span>해 별도 창으로 띄워 작업하세요.
+            </p>
+            <p className="text-xs text-muted-foreground/80 mt-2">
+              상단「나와의 채팅」으로 개인 메모·사진도 간편하게 보관할 수 있습니다.
             </p>
           </div>
         )}
@@ -191,6 +229,24 @@ export default function MessengerPage() {
         }}
         currentProjectId={projectAccess?.selectedProject}
       />
+
+      {user?.id && (
+        <MessengerLockSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          userId={user.id}
+          lockState={lockState}
+          onSaved={setLockState}
+        />
+      )}
+
+      {user?.id && lockState.locked && (
+        <MessengerLockScreen
+          userId={user.id}
+          userName={user.user_metadata?.full_name || user.email}
+          onUnlocked={unlock}
+        />
+      )}
     </div>
   );
 }

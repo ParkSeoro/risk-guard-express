@@ -1024,14 +1024,16 @@ export function MessengerChatPane({
     );
   }, [annotatedMessages, searchQuery]);
 
-  const roomTitle =
-    room.custom_name ||
-    room.name ||
-    (room.is_group
-      ? `그룹 대화 (${participants.length || room.participants?.length || 0}명)`
-      : room.other_participant?.full_name || "1:1 대화방");
+  const roomTitle = room.is_self_chat
+    ? room.custom_name || "나와의 채팅"
+    : room.custom_name ||
+      room.name ||
+      (room.is_group
+        ? `그룹 대화 (${participants.length || room.participants?.length || 0}명)`
+        : room.other_participant?.full_name || "1:1 대화방");
 
   const participantCompanySummary = useMemo(() => {
+    if (room.is_self_chat) return "개인 메모 · 사진 · 파일 보관함";
     if (!room.is_group && room.other_participant?.company_name) {
       return room.other_participant.company_name;
     }
@@ -1045,7 +1047,7 @@ export function MessengerChatPane({
     if (companies.length === 0) return room.project_id ? "현장 관리자 대화방" : "전사 통합 대화방";
     if (companies.length === 1) return companies[0];
     return `${companies[0]} 외 ${companies.length - 1}개 업체`;
-  }, [room.is_group, room.other_participant, room.project_id, participants]);
+  }, [room.is_self_chat, room.is_group, room.other_participant, room.project_id, participants]);
 
   return (
     <div
@@ -1099,7 +1101,7 @@ export function MessengerChatPane({
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
-          {isDesktopShellActive() && (
+          {!window.location.search.includes("popout=1") && (
             <Button
               type="button"
               variant="ghost"
@@ -1110,7 +1112,8 @@ export function MessengerChatPane({
                   url: `${window.location.origin}/app/admin/messenger?room=${room.id}&popout=1`,
                   title: `SafeNex 대화 - ${roomTitle}`,
                   width: 440,
-                  height: 720,
+                  height: 700,
+                  windowName: `safenex_chat_${room.id}`,
                 })
               }
               title="대화방 새 창으로 분리 (독립 창)"

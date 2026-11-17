@@ -24,13 +24,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Users, Plus, Globe, ArrowLeft } from "lucide-react";
+import { MessageSquare, Users, Plus, Globe, ArrowLeft, Lock, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canOpenCouncil } from "@/lib/councilAccess";
+import { useMessengerLock } from "@/hooks/useMessengerLock";
+import {
+  MessengerLockScreen,
+  MessengerLockSettingsDialog,
+} from "@/components/messenger/MessengerLockOverlay";
 
 export default function DesktopWorkspacePage() {
   const navigate = useNavigate();
   const { user, roles, rolesReady } = useAuth();
+  const {
+    lockState,
+    setLockState,
+    settingsOpen,
+    setSettingsOpen,
+    lockNow,
+    unlock,
+    isLockConfigured,
+  } = useMessengerLock(user?.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const roomParam = searchParams.get("room");
   const tabParam = searchParams.get("tab");
@@ -131,16 +145,17 @@ export default function DesktopWorkspacePage() {
   };
 
   const handlePopoutRoom = (room: ChatRoom) => {
-    const title =
-      room.custom_name ||
-      room.name ||
-      room.other_participant?.full_name ||
-      "SafeNex 대화방";
+    const title = room.is_self_chat
+      ? "나와의 채팅"
+      : room.custom_name ||
+        room.name ||
+        room.other_participant?.full_name ||
+        "SafeNex 대화방";
     openDesktopPopoutWindow({
       url: `${window.location.origin}/app/admin/messenger?room=${room.id}&popout=1`,
       title: `SafeNex - ${title}`,
-      width: 400,
-      height: 640,
+      width: 440,
+      height: 700,
       windowName: `safenex_chat_${room.id}`,
     });
   };
@@ -154,7 +169,7 @@ export default function DesktopWorkspacePage() {
     Boolean(selectedRoom && messengerTab === "rooms");
 
   return (
-    <div className="flex-1 min-w-0 h-full min-h-0 w-full flex flex-col bg-background overflow-hidden select-none">
+    <div className="relative flex-1 min-w-0 h-full min-h-0 w-full flex flex-col bg-background overflow-hidden select-none">
       {/* 상단 컴팩트 바 (목록 화면에서만 표시하여 대화방/관제실 진입 시 웹·앱 화면 높이를 100% 일치시킴) */}
       {!isRoomViewOpen && (
       <header className="px-3 pt-2.5 pb-2 border-b bg-card flex flex-col gap-2 shrink-0">
@@ -207,6 +222,31 @@ export default function DesktopWorkspacePage() {
             >
               <Globe className="h-3.5 w-3.5" />
               <span>사이트</span>
+            </Button>
+            {isLockConfigured && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={lockNow}
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                title="지금 메신저 잠금"
+              >
+                <Lock className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              className={cn(
+                "h-7 w-7",
+                isLockConfigured ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              )}
+              title={isLockConfigured ? "잠금 설정 (켜짐)" : "메신저 자동 잠금 설정"}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="sm"
@@ -325,6 +365,24 @@ export default function DesktopWorkspacePage() {
         }}
         currentProjectId={projectAccess?.selectedProject}
       />
+
+      {user?.id && (
+        <MessengerLockSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          userId={user.id}
+          lockState={lockState}
+          onSaved={setLockState}
+        />
+      )}
+
+      {user?.id && lockState.locked && (
+        <MessengerLockScreen
+          userId={user.id}
+          userName={user.user_metadata?.full_name || user.email}
+          onUnlocked={unlock}
+        />
+      )}
     </div>
   );
 }

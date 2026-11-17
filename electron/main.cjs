@@ -46,6 +46,7 @@ const PREFERRED_PORTS = [38471, 38472, 38473, 38474, 0];
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
+  app.exit(0);
 } else {
   app.on("second-instance", () => {
     if (mainWindow) {
@@ -55,6 +56,8 @@ if (!gotTheLock) {
     }
   });
 }
+
+const popoutWindows = new Map();
 
 function getAppIconPath() {
   const candidates = [
@@ -743,6 +746,15 @@ ipcMain.handle("safenex:load-login-memory", () => {
 });
 
 ipcMain.handle("safenex:open-popout", (_event, opts) => {
+  const key = (opts && (opts.windowName || opts.url)) || "default";
+  const existing = popoutWindows.get(key);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return;
+  }
+
   const popout = new BrowserWindow({
     width: (opts && opts.width) || 460,
     height: (opts && opts.height) || 720,
@@ -755,6 +767,12 @@ ipcMain.handle("safenex:open-popout", (_event, opts) => {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  popoutWindows.set(key, popout);
+  popout.on("closed", () => {
+    if (popoutWindows.get(key) === popout) {
+      popoutWindows.delete(key);
+    }
   });
   if (opts && opts.url) {
     popout.loadURL(opts.url);
@@ -795,14 +813,16 @@ ipcMain.on("safenex:window-hide-to-tray", () => {
   if (mainWindow) mainWindow.hide();
 });
 
-app.whenReady().then(() => {
-  const currentLogin = app.getLoginItemSettings();
-  if (currentLogin.openAtLogin === undefined) {
-    app.setLoginItemSettings({ openAtLogin: true });
-  }
-  void createMainWindow();
-  createTray();
-});
+if (gotTheLock) {
+  app.whenReady().then(() => {
+    const currentLogin = app.getLoginItemSettings();
+    if (currentLogin.openAtLogin === undefined) {
+      app.setLoginItemSettings({ openAtLogin: true });
+    }
+    void createMainWindow();
+    createTray();
+  });
+}
 
 app.on("before-quit", () => {
   isQuitting = true;

@@ -33,6 +33,7 @@ export interface ChatRoom {
   unread_count?: number;
   participants?: ChatParticipant[];
   other_participant?: ChatParticipant; // For 1:1 chat display
+  is_self_chat?: boolean;
 }
 
 export interface ChatParticipant {
@@ -280,6 +281,7 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
         notifications_enabled: myPart?.is_notification_enabled !== false,
         participants: roomParticipants,
         other_participant: otherParticipant,
+        is_self_chat: !room.is_group && roomParticipants.length <= 1 && !otherParticipant,
       };
     }),
   );
@@ -628,6 +630,18 @@ export async function createChatRoom(params: {
     return null;
   }
 
+  return data as string;
+}
+
+/**
+ * 나와의 채팅방(개인 메모·파일 보관함) 조회 또는 개설
+ */
+export async function openOrCreateSelfChatRoom(): Promise<string | null> {
+  const { data, error } = await (supabase.rpc as any)("open_or_create_self_chat");
+  if (error) {
+    console.error("openOrCreateSelfChatRoom RPC error:", error);
+    return null;
+  }
   return data as string;
 }
 

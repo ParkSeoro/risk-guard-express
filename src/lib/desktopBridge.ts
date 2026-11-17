@@ -450,6 +450,7 @@ export function openDesktopPopoutWindow(opts: {
       title: opts.title || "SafeNex",
       width,
       height,
+      windowName: opts.windowName,
     });
     return;
   }

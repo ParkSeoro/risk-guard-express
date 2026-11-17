@@ -3,6 +3,7 @@ import {
   createChatRoom,
   fetchChatContacts,
   getFavoriteRoomIds,
+  openOrCreateSelfChatRoom,
   toggleFavoriteRoomId,
   type ChatContact,
   type ChatRoom,
@@ -27,6 +28,10 @@ import {
   Building2,
   Phone,
   MessageCirclePlus,
+  ExternalLink,
+  Lock,
+  Settings2,
+  NotebookPen,
 } from "lucide-react";
 import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
@@ -57,6 +62,9 @@ interface MessengerRoomListProps {
   onTabChange?: (tab: "rooms" | "directory") => void;
   hideHeader?: boolean;
   hideTopTabs?: boolean;
+  onLockNow?: () => void;
+  onOpenLockSettings?: () => void;
+  isLockConfigured?: boolean;
 }
 
 export function MessengerRoomList({
@@ -72,6 +80,9 @@ export function MessengerRoomList({
   onTabChange,
   hideHeader = false,
   hideTopTabs = false,
+  onLockNow,
+  onOpenLockSettings,
+  isLockConfigured = false,
 }: MessengerRoomListProps) {
   const { user } = useAuth();
   const isCouncilDirector = canOpenCouncil(user);
@@ -169,8 +180,11 @@ export function MessengerRoomList({
       return titleMatch || otherMatch || companyMatch || partMatch || lastMsgMatch;
     });
 
-    // 즐겨찾기 고정된 대화방을 최상단에 배치
+    // 나와의 채팅 → 즐겨찾기 고정된 대화방을 최상단에 배치
     return [...list].sort((a, b) => {
+      if (Boolean(a.is_self_chat) !== Boolean(b.is_self_chat)) {
+        return a.is_self_chat ? -1 : 1;
+      }
       const aFav = favSet.has(a.id);
       const bFav = favSet.has(b.id);
       if (aFav !== bFav) return aFav ? -1 : 1;
@@ -180,6 +194,31 @@ export function MessengerRoomList({
     });
   }, [rooms, filter, search, favoriteIds]);
 
+  const hasSelfChatRoom = useMemo(() => rooms.some((r) => r.is_self_chat), [rooms]);
+
+  const handleOpenSelfChat = async (popout = false) => {
+    if (startingChatId) return;
+    setStartingChatId("self-chat");
+    try {
+      const existing = rooms.find((r) => r.is_self_chat);
+      const roomId = existing?.id || (await openOrCreateSelfChatRoom());
+      if (!roomId) {
+        toast.error("나와의 채팅방을 열지 못했습니다.");
+        return;
+      }
+      setActiveTab("rooms");
+      if (popout && onDoubleClickRoom) {
+        onDoubleClickRoom(
+          existing || ({ id: roomId, name: "나와의 채팅", is_group: false, is_self_chat: true } as ChatRoom),
+        );
+      } else {
+        onRoomCreated?.(roomId);
+      }
+    } finally {
+      setStartingChatId(null);
+    }
+  };
+
   const companyGroups = useMemo(() => groupContactsByCompany(contacts), [contacts]);
 
   const handleToggleFavorite = (e: React.MouseEvent, roomId: string) => {
@@ -187,7 +226,7 @@ export function MessengerRoomList({
     setFavoriteIds(toggleFavoriteRoomId(roomId));
   };
 
-  const handleStartDirectChat = async (contact: ChatContact) => {
+  const handleStartDirectChat = async (contact: ChatContact, opts?: { popout?: boolean }) => {
     if (startingChatId) return;
     setStartingChatId(contact.user_id);
     try {
@@ -199,7 +238,15 @@ export function MessengerRoomList({
       });
       if (roomId) {
         setActiveTab("rooms");
-        onRoomCreated?.(roomId);
+        if (opts?.popout && onDoubleClickRoom) {
+          onDoubleClickRoom({
+            id: roomId,
+            name: contact.full_name || "1:1 대화",
+            is_group: false,
+          } as ChatRoom);
+        } else {
+          onRoomCreated?.(roomId);
+        }
       } else {
         toast.error("대화방을 열지 못했습니다.");
       }
@@ -232,21 +279,52 @@ export function MessengerRoomList({
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background overflow-hidden">
-      {/* 헤더 및 새 대화 버튼 */}
+      {/* 헤더 및 새 대화 / 잠금 버튼 */}
       {!hideHeader && (
-        <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-primary" />
-            <h2 className={messengerType.title}>SafeNex 메신저</h2>
+        <div className="p-3 pt-[max(0.75rem,var(--sat))] border-b bg-card shrink-0 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <MessageSquare className="h-4 w-4" />
+            </div>
+            <h2 className={cn(messengerType.title, "truncate")}>SafeNex 메신저</h2>
           </div>
-          <Button
-            size="sm"
-            onClick={onOpenNewChat}
-            className={cn("h-8 px-2.5 gap-1 shadow-2xs", messengerType.preview)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>새 대화</span>
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            {isLockConfigured && onLockNow && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onLockNow}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                title="지금 메신저 잠금"
+              >
+                <Lock className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {onOpenLockSettings && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onOpenLockSettings}
+                className={cn(
+                  "h-8 w-8",
+                  isLockConfigured ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                )}
+                title={isLockConfigured ? "잠금 설정 (켜짐)" : "메신저 자동 잠금 설정"}
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={onOpenNewChat}
+              className={cn("h-8 px-2.5 gap-1 rounded-lg shadow-2xs", messengerType.preview)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>새 대화</span>
+            </Button>
+          </div>
         </div>
       )}
 
@@ -384,6 +462,37 @@ export function MessengerRoomList({
             </div>
           )}
 
+          {/* 나와의 채팅 (아직 생성 전일 때 빠른 진입 카드) */}
+          {!hasSelfChatRoom && !search.trim() && (filter === "all" || filter === "direct") && (
+            <div className="px-2 pt-2">
+              <button
+                type="button"
+                onClick={() => void handleOpenSelfChat(false)}
+                onDoubleClick={() => void handleOpenSelfChat(true)}
+                disabled={startingChatId !== null}
+                title="클릭하여 나와의 채팅 열기 · 더블클릭하여 새 창으로 분리"
+                className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10 transition-colors"
+              >
+                <div className="h-10 w-10 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                  <NotebookPen className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded-full bg-teal-600 text-white text-[10px] font-bold leading-none">
+                      나
+                    </span>
+                    <span className={cn("text-foreground truncate", messengerType.title)}>
+                      나와의 채팅
+                    </span>
+                  </div>
+                  <p className={cn("text-muted-foreground truncate mt-0.5", messengerType.preview)}>
+                    개인 메모 · 현장 사진 · 파일 보관함
+                  </p>
+                </div>
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-12 text-center text-xs text-muted-foreground">
               대화방 목록을 불러오는 중...
@@ -396,15 +505,18 @@ export function MessengerRoomList({
               </p>
             </div>
           ) : (
-            filteredRooms.map((room) => {
+            <div className="py-1.5 space-y-0.5">
+            {filteredRooms.map((room) => {
               const isSelected = room.id === selectedRoomId;
               const isFavorite = favoriteIds.includes(room.id);
-              const title =
-                room.custom_name ||
-                room.name ||
-                (room.is_group
-                  ? `그룹 대화 (${room.participants?.length || 0}명)`
-                  : room.other_participant?.full_name || "1:1 대화");
+              const isSelf = Boolean(room.is_self_chat);
+              const title = isSelf
+                ? room.custom_name || "나와의 채팅"
+                : room.custom_name ||
+                  room.name ||
+                  (room.is_group
+                    ? `그룹 대화 (${room.participants?.length || 0}명)`
+                    : room.other_participant?.full_name || "1:1 대화");
 
               return (
                 <div
@@ -413,20 +525,24 @@ export function MessengerRoomList({
                   onDoubleClick={() => onDoubleClickRoom?.(room)}
                   title="클릭하여 대화방 열기 · 더블클릭하여 새 창으로 분리"
                   className={cn(
-                    "group flex items-start gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors relative",
-                    isSelected && "bg-primary/5 hover:bg-primary/10",
+                    "group flex items-start gap-3 px-3 py-2.5 mx-1.5 rounded-xl cursor-pointer hover:bg-muted/60 transition-all relative",
+                    isSelected && "bg-primary/8 hover:bg-primary/12 ring-1 ring-primary/15",
                   )}
                 >
                   {/* 아바타 아이콘 */}
                   <div
                     className={cn(
-                      "h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold shadow-2xs",
-                      room.is_group
-                        ? "bg-secondary text-secondary-foreground"
-                        : "bg-primary/10 text-primary",
+                      "h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 text-xs font-semibold shadow-2xs",
+                      isSelf
+                        ? "bg-teal-500/15 text-teal-600 dark:text-teal-400"
+                        : room.is_group
+                          ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                          : "bg-primary/10 text-primary",
                     )}
                   >
-                    {room.is_group ? (
+                    {isSelf ? (
+                      <NotebookPen className="h-5 w-5" />
+                    ) : room.is_group ? (
                       <Users className="h-5 w-5" />
                     ) : (
                       room.other_participant?.full_name?.slice(0, 1) || (
@@ -438,7 +554,12 @@ export function MessengerRoomList({
                   {/* 대화방 메타 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1 mb-1">
-                      <div className="flex items-center gap-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {isSelf && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-teal-600 text-white text-[10px] font-bold leading-none shrink-0">
+                            나
+                          </span>
+                        )}
                         {isFavorite && (
                           <Star className="h-3 w-3 fill-amber-400 text-amber-400 shrink-0" />
                         )}
@@ -462,6 +583,19 @@ export function MessengerRoomList({
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {onDoubleClickRoom && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDoubleClickRoom(room);
+                            }}
+                            className="p-0.5 rounded opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                            title="별도 창으로 열기"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => handleToggleFavorite(e, room.id)}
@@ -518,7 +652,8 @@ export function MessengerRoomList({
                   </div>
                 </div>
               );
-            })
+            })}
+            </div>
           )}
         </div>
       ) : (
@@ -574,7 +709,9 @@ export function MessengerRoomList({
                   {group.members.map((member) => (
                     <div
                       key={member.user_id}
-                      className="p-2.5 flex items-center justify-between gap-2 hover:bg-muted/30 transition-colors"
+                      onDoubleClick={() => void handleStartDirectChat(member, { popout: true })}
+                      title="더블클릭하여 1:1 별도 창으로 열기"
+                      className="p-2.5 flex items-center justify-between gap-2 hover:bg-muted/40 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">

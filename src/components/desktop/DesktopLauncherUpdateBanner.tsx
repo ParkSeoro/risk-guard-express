@@ -28,7 +28,7 @@ export function DesktopLauncherUpdateBanner() {
 
     void getDesktopVersionInfo().then(async (info) => {
       if (cancelled || !info?.appVersion) return;
-      if (!isOtaUpdateAvailable(info.appVersion, PC_APP_VERSION)) return;
+      if (!isOtaUpdateAvailable(PC_APP_VERSION, info.appVersion)) return;
 
       setInstalledVersion(info.appVersion.replace(/^v/i, ""));
 

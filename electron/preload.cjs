@@ -34,4 +34,9 @@ contextBridge.exposeInMainWorld("safenexDesktop", {
 
   saveLoginMemory: (data) => ipcRenderer.invoke("safenex:save-login-memory", data),
   loadLoginMemory: () => ipcRenderer.invoke("safenex:load-login-memory"),
+
+  prepareLauncherUpdate: (opts) =>
+    ipcRenderer.invoke("safenex:prepare-launcher-update", opts),
+  installLauncherUpdate: (opts) =>
+    ipcRenderer.invoke("safenex:install-launcher-update", opts),
 });

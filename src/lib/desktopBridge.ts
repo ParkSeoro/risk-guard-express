@@ -58,12 +58,20 @@ export interface SafeNexNativeDesktopAPI {
     title?: string;
     width?: number;
     height?: number;
+    windowName?: string;
   }) => Promise<void> | void;
   setBadgeCount?: (count: number) => Promise<void> | void;
   flashFrame?: (flash: boolean) => Promise<void> | void;
   minimizeWindow?: () => void;
   maximizeOrRestoreWindow?: () => void;
   hideToTray?: () => void;
+  prepareLauncherUpdate?: (opts: {
+    url: string;
+    version: string;
+  }) => Promise<{ ready: boolean; filePath?: string; version?: string; error?: string }>;
+  installLauncherUpdate?: (opts: {
+    filePath: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

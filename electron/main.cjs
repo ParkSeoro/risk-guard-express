@@ -21,6 +21,7 @@ const fs = require("fs");
 const http = require("http");
 const https = require("https");
 const os = require("os");
+const { spawn } = require("child_process");
 const { unzipBuffer, isHttpsDownloadUrl } = require("./desktopOtaFiles.cjs");
 
 let mainWindow = null;
@@ -811,6 +812,99 @@ ipcMain.on("safenex:window-maximize", () => {
 
 ipcMain.on("safenex:window-hide-to-tray", () => {
   if (mainWindow) mainWindow.hide();
+});
+
+function launcherUpdatesDir() {
+  return path.join(app.getPath("userData"), "launcher-updates");
+}
+
+function downloadHttpsToFile(url, destPath, redirectsLeft = 5) {
+  return new Promise((resolve, reject) => {
+    if (!isHttpsDownloadUrl(url)) {
+      reject(new Error("Invalid HTTPS URL"));
+      return;
+    }
+    const req = https.get(url, { headers: { "User-Agent": "SafeNexDesktop/1.1" } }, (res) => {
+      if (
+        res.statusCode &&
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location &&
+        redirectsLeft > 0
+      ) {
+        res.resume();
+        const nextUrl = new URL(res.headers.location, url).toString();
+        resolve(downloadHttpsToFile(nextUrl, destPath, redirectsLeft - 1));
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const tmpPath = `${destPath}.part`;
+      const out = fs.createWriteStream(tmpPath);
+      res.pipe(out);
+      out.on("finish", () => {
+        out.close(() => {
+          try {
+            fs.renameSync(tmpPath, destPath);
+            resolve(destPath);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      out.on("error", (err) => {
+        try { fs.unlinkSync(tmpPath); } catch {}
+        reject(err);
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(120000, () => {
+      req.destroy(new Error("Download timeout"));
+    });
+  });
+}
+
+ipcMain.handle("safenex:prepare-launcher-update", async (_event, opts) => {
+  try {
+    const url = String(opts?.url || "");
+    const version = String(opts?.version || "latest").replace(/[^a-zA-Z0-9._-]/g, "");
+    if (!url.startsWith("https://github.com/ParkSeoro/risk-guard-express/releases/")) {
+      return { ready: false, error: "Unsupported update URL" };
+    }
+    const dir = launcherUpdatesDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, `SafeNex_PC_Setup_${version}.exe`);
+    if (fs.existsSync(filePath) && fs.statSync(filePath).size > 1024 * 1024) {
+      return { ready: true, filePath, version };
+    }
+    await downloadHttpsToFile(url, filePath);
+    return { ready: true, filePath, version };
+  } catch (e) {
+    return { ready: false, error: String(e?.message || e) };
+  }
+});
+
+ipcMain.handle("safenex:install-launcher-update", (_event, opts) => {
+  try {
+    const filePath = path.resolve(String(opts?.filePath || ""));
+    const baseDir = path.resolve(launcherUpdatesDir());
+    if (!filePath.startsWith(baseDir) || !fs.existsSync(filePath)) {
+      return { ok: false, error: "Installer file not found" };
+    }
+    const child = spawn(filePath, ["/S"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    isQuitting = true;
+    setTimeout(() => app.quit(), 250);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
 });
 
 if (gotTheLock) {

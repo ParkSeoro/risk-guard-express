@@ -6,6 +6,7 @@
  *   Multi-Window Pop-out Chat / Work Modules, and Taskbar Unread Badge & FlashFrame.
  */
 
+import { Capacitor } from "@capacitor/core";
 import { isOtaUpdateAvailable } from "@/lib/otaVersion";
 import {
   DESKTOP_OTA_DOWNLOAD_FAILED,
@@ -436,6 +437,8 @@ export function openDesktopPopoutWindow(opts: {
   windowName?: string;
 }): void {
   if (typeof window === "undefined") return;
+  // 모바일 네이티브 앱(Android/iOS)에서는 절대 별도 창/외부 브라우저를 띄우지 않는다.
+  if (Capacitor.isNativePlatform()) return;
   const width = opts.width ?? 460;
   const height = opts.height ?? 720;
 

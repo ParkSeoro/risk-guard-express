@@ -86,7 +86,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import { isDesktopShellActive, openDesktopPopoutWindow } from "@/lib/desktopBridge";
+import { Capacitor } from "@capacitor/core";
+import { openDesktopPopoutWindow } from "@/lib/desktopBridge";
 import { playMessengerChime } from "@/lib/messengerSound";
 import { clearMessengerPickerActive, markMessengerPickerActive } from "@/lib/messengerPath";
 
@@ -1101,12 +1102,12 @@ export function MessengerChatPane({
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
-          {!window.location.search.includes("popout=1") && (
+          {!Capacitor.isNativePlatform() && !window.location.search.includes("popout=1") && (
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground hidden sm:inline-flex"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hidden md:inline-flex"
               onClick={() =>
                 openDesktopPopoutWindow({
                   url: `${window.location.origin}/app/admin/messenger?room=${room.id}&popout=1`,
@@ -1241,7 +1242,7 @@ export function MessengerChatPane({
       <div
         ref={listRef}
         onScroll={handleListScroll}
-        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 bg-[#eef2f7] dark:bg-slate-950/60"
       >
         {loading ? (
           <div className={cn("h-full flex items-center justify-center text-muted-foreground", messengerType.preview)}>

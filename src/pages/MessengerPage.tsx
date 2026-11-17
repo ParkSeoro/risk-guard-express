@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import { canOpenCouncil } from "@/lib/councilAccess";
 import { clearMessengerPickerActive, readMessengerPickerState } from "@/lib/messengerPath";
+import { Capacitor } from "@capacitor/core";
 import { openDesktopPopoutWindow } from "@/lib/desktopBridge";
 import { useMessengerLock } from "@/hooks/useMessengerLock";
 import {
@@ -168,7 +169,7 @@ export default function MessengerPage() {
           rooms={rooms}
           selectedRoomId={selectedRoomId}
           onSelectRoom={handleSelectRoom}
-          onDoubleClickRoom={handlePopoutRoom}
+          onDoubleClickRoom={Capacitor.isNativePlatform() ? undefined : handlePopoutRoom}
           onOpenNewChat={() => setIsNewChatOpen(true)}
           onRoomCreated={(id) => {
             setSelectedRoomId(id);

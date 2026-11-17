@@ -6,9 +6,9 @@ import { Link } from 'react-router-dom';
 import { openPlayStore } from '@/lib/playStore';
 
 const GITHUB_REPO = 'ParkSeoro/risk-guard-express';
-export const PC_APP_VERSION = 'v1.1.8';
+export const PC_APP_VERSION = 'v1.1.9';
 const PC_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/SafeNex_PC_Setup.exe`;
-const PC_VERSIONED_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/SafeNex_PC_Setup_1.1.8.exe`;
+const PC_VERSIONED_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/SafeNex_PC_Setup_1.1.9.exe`;
 
 export default function DownloadPage() {
   return (

@@ -659,6 +659,37 @@ export function MessengerRoomList({
       ) : (
         /* 현장 조직도 (원청 / 협력사 소속별 디렉터리) */
         <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-3">
+          {!search.trim() && (
+            <button
+              type="button"
+              onClick={() => void handleOpenSelfChat(false)}
+              onDoubleClick={() => void handleOpenSelfChat(true)}
+              disabled={startingChatId !== null}
+              title={
+                onDoubleClickRoom
+                  ? "클릭하여 나와의 채팅 열기 · 더블클릭하여 새 창으로 분리"
+                  : "나와의 채팅 열기"
+              }
+              className="w-full text-left flex items-center gap-3 p-2.5 rounded-xl border border-teal-500/25 bg-teal-500/5 hover:bg-teal-500/10 transition-colors"
+            >
+              <div className="h-9 w-9 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                <NotebookPen className="h-4.5 w-4.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="px-1.5 py-0.5 rounded-full bg-teal-600 text-white text-[10px] font-bold leading-none">
+                    나
+                  </span>
+                  <span className={cn("text-foreground truncate", messengerType.title)}>
+                    나와의 채팅
+                  </span>
+                </div>
+                <p className={cn("text-muted-foreground truncate mt-0.5", messengerType.meta)}>
+                  개인 메모 · 현장 사진 · 파일 보관함
+                </p>
+              </div>
+            </button>
+          )}
           {loadingContacts ? (
             <div className="py-12 text-center text-xs text-muted-foreground">
               현장 조직도를 불러오는 중...

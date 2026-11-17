@@ -50,13 +50,13 @@ Deno.serve(async (req) => {
   await admin.from("device_push_tokens").delete().eq("user_id", userId);
   await admin.from("project_members").delete().eq("user_id", userId);
 
-  // 2. Anonymize profile PII while keeping row for FK-less signature/audit integrity
+  // 2. Clear personal contact & mark profile deleted, while keeping display_name
+  //    so legally mandated Korean OSHA (산업안전보건법) signatures/approvals remain attributable.
   await admin
     .from("profiles")
     .update({
       phone: null,
       account_status: "deleted",
-      display_name: "탈퇴한 사용자",
       default_project_id: null,
       updated_at: new Date().toISOString(),
     })

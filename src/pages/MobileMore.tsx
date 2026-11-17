@@ -5,6 +5,7 @@ import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
 import { setForceDesktop } from "@/hooks/use-mobile";
 import { isNativeApp } from "@/lib/native/isNativeApp";
+import { AccountDeleteSection } from "@/components/AccountDeleteSection";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -218,17 +219,20 @@ export default function MobileMore() {
       )}
 
       {!preview.isPreview && (
-        <Button
-          variant="ghost"
-          className="w-full text-destructive"
-          onClick={async () => {
-            await signOut();
-            navigate("/login");
-          }}
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          {t("menuLogout")}
-        </Button>
+        <div className="space-y-1">
+          <Button
+            variant="ghost"
+            className="w-full text-destructive"
+            onClick={async () => {
+              await signOut();
+              navigate("/login");
+            }}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            {t("menuLogout")}
+          </Button>
+          <AccountDeleteSection compact />
+        </div>
       )}
     </div>
   );

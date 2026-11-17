@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, Save, User, KeyRound, Building2, Shield } from 'lucide-react';
 import { WORKER_LOCALE_LABELS, WORKER_LOCALES, parseWorkerLocale, writeStoredWorkerLocale, type WorkerLocale } from '@/lib/i18n/workerLocale';
+import { AccountDeleteSection } from '@/components/AccountDeleteSection';
 
 const statusLabel: Record<string, string> = {
   pending: '승인대기',
@@ -386,6 +387,8 @@ const SettingsAccount = () => {
         </CardContent>
       </Card>
       )}
+
+      <AccountDeleteSection />
     </div>
   );
 };

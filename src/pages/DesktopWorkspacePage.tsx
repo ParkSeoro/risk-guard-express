@@ -32,6 +32,7 @@ import {
   MessengerLockScreen,
   MessengerLockSettingsDialog,
 } from "@/components/messenger/MessengerLockOverlay";
+import { DesktopLauncherUpdateBanner } from "@/components/desktop/DesktopLauncherUpdateBanner";
 
 export default function DesktopWorkspacePage() {
   const navigate = useNavigate();
@@ -170,6 +171,7 @@ export default function DesktopWorkspacePage() {
 
   return (
     <div className="relative flex-1 min-w-0 h-full min-h-0 w-full flex flex-col bg-background overflow-hidden select-none">
+      <DesktopLauncherUpdateBanner />
       {/* 상단 컴팩트 바 (목록 화면에서만 표시하여 대화방/관제실 진입 시 웹·앱 화면 높이를 100% 일치시킴) */}
       {!isRoomViewOpen && (
       <header className="px-3 pt-2.5 pb-2 border-b bg-card flex flex-col gap-2 shrink-0">

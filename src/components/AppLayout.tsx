@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DesktopRailSidebar } from "@/components/desktop/DesktopRailSidebar";
+import { DesktopLauncherUpdateBanner } from "@/components/desktop/DesktopLauncherUpdateBanner";
 import { ArrowLeft, User, LogOut, Building2, Smartphone, Globe, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -325,6 +326,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </header>
             <RemoteSupportBannerSlot />
+            <DesktopLauncherUpdateBanner />
             <TutorialOverlay />
             <ShellAssessmentShareAlert />
             <main className={`flex-1 min-h-0 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 print:h-auto print:max-h-none ${isMessenger ? "overflow-hidden p-0 flex flex-col" : "overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6"}`}>

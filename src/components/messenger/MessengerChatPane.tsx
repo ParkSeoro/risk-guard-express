@@ -84,7 +84,9 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from "lucide-react";
+import { copyChatImageToClipboard, downloadChatAttachment } from "@/lib/messengerAttachmentActions";
 import { toast } from "sonner";
 import { Capacitor } from "@capacitor/core";
 import { openDesktopPopoutWindow } from "@/lib/desktopBridge";
@@ -141,9 +143,10 @@ export function MessengerChatPane({
   const [galleryUrl, setGalleryUrl] = useState<string | null>(null);
   const [readMarkerAt, setReadMarkerAt] = useState<string | null>(null);
 
-  // 파일 첨부 및 카메라 촬영 상태
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  // 파일 첨부 및 카메라 촬영 상태 (다중 파일 지원)
+  const [selectedFiles, setSelectedFiles] = useState<
+    Array<{ id: string; file: File; previewUrl: string | null }>
+  >([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,10 +182,13 @@ export function MessengerChatPane({
     setForwardMessage(null);
     setGalleryUrl(null);
     setReplyTarget(null);
-    setSelectedFile(null);
-    setFilePreviewUrl((prev) => {
-      if (prev && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(prev);
-      return null;
+    setSelectedFiles((prev) => {
+      prev.forEach((item) => {
+        if (item.previewUrl && typeof URL.revokeObjectURL === "function") {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+      return [];
     });
   }, [room.id, user?.id]);
 
@@ -559,33 +565,61 @@ export function MessengerChatPane({
     }, 400);
   };
 
-  const attachFile = useCallback((file: File) => {
+  const attachFiles = useCallback((files: File[]) => {
     clearMessengerPickerActive();
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error("50MB 이하의 파일만 전송할 수 있습니다.");
-      return;
+    if (!files || files.length === 0) return;
+
+    const valid: Array<{ id: string; file: File; previewUrl: string | null }> = [];
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error(`"${file.name}"은(는) 50MB를 초과해 제외되었습니다.`);
+        continue;
+      }
+      const isPreviewableImage =
+        file.type.startsWith("image/") ||
+        /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(file.name || "");
+      const previewUrl =
+        isPreviewableImage && typeof URL.createObjectURL === "function"
+          ? URL.createObjectURL(file)
+          : null;
+      valid.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        previewUrl,
+      });
     }
 
-    setSelectedFile(file);
-    const isPreviewableImage =
-      file.type.startsWith("image/") ||
-      /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(file.name || "");
-    setFilePreviewUrl((prev) => {
-      if (prev && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(prev);
-      return isPreviewableImage && typeof URL.createObjectURL === "function"
-        ? URL.createObjectURL(file)
-        : null;
+    if (valid.length === 0) return;
+    setSelectedFiles((prev) => {
+      const merged = [...prev, ...valid];
+      if (merged.length > 10) {
+        toast.info("한 번에 최대 10개까지 첨부할 수 있습니다.");
+        merged.slice(10).forEach((item) => {
+          if (item.previewUrl && typeof URL.revokeObjectURL === "function") {
+            URL.revokeObjectURL(item.previewUrl);
+          }
+        });
+        return merged.slice(0, 10);
+      }
+      return merged;
     });
   }, []);
 
+  const attachFile = useCallback(
+    (file: File) => {
+      attachFiles([file]);
+    },
+    [attachFiles],
+  );
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = "";
-    if (!file) {
+    if (files.length === 0) {
       clearMessengerPickerActive();
       return;
     }
-    attachFile(file);
+    attachFiles(files);
   };
 
   const openCameraFallbackInput = () => {
@@ -750,21 +784,29 @@ export function MessengerChatPane({
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    const pastedFiles: File[] = [];
     for (let i = 0; i < items.length; i += 1) {
       const item = items[i];
       if (item.type.startsWith("image/")) {
         const blob = item.getAsFile();
         if (blob) {
-          e.preventDefault();
           const ext = blob.type.split("/")[1] || "png";
-          const file = new File([blob], `clipboard_${Date.now()}.${ext}`, {
-            type: blob.type,
-          });
-          attachFile(file);
-          toast.info("클립보드 이미지가 첨부되었습니다.");
-          return;
+          pastedFiles.push(
+            new File([blob], `clipboard_${Date.now()}_${i}.${ext}`, {
+              type: blob.type,
+            }),
+          );
         }
       }
+    }
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      attachFiles(pastedFiles);
+      toast.info(
+        pastedFiles.length > 1
+          ? `클립보드 이미지 ${pastedFiles.length}장이 첨부되었습니다.`
+          : "클립보드 이미지가 첨부되었습니다.",
+      );
     }
   };
 
@@ -782,18 +824,35 @@ export function MessengerChatPane({
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer?.files?.[0];
-    if (file) {
-      attachFile(file);
+    const files = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
+    if (files.length > 0) {
+      attachFiles(files);
     }
+  };
+
+  const removeSelectedFile = (id: string) => {
+    setSelectedFiles((prev) =>
+      prev.filter((item) => {
+        if (item.id === id) {
+          if (item.previewUrl && typeof URL.revokeObjectURL === "function") {
+            URL.revokeObjectURL(item.previewUrl);
+          }
+          return false;
+        }
+        return true;
+      }),
+    );
   };
 
   const handleClearFile = () => {
     clearMessengerPickerActive();
-    setSelectedFile(null);
-    setFilePreviewUrl((prev) => {
-      if (prev && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(prev);
-      return null;
+    setSelectedFiles((prev) => {
+      prev.forEach((item) => {
+        if (item.previewUrl && typeof URL.revokeObjectURL === "function") {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+      return [];
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
@@ -801,72 +860,106 @@ export function MessengerChatPane({
 
   const handleSend = async (overrideContent?: string) => {
     const rawContent = overrideContent !== undefined ? overrideContent : inputText;
-    if ((!rawContent.trim() && !selectedFile) || sending) return;
+    const filesToSend = overrideContent !== undefined ? [] : selectedFiles;
+    if ((!rawContent.trim() && filesToSend.length === 0) || sending) return;
 
     const text = rawContent;
     const parentSnapshot = replyTarget;
     const parentId = parentSnapshot?.id || null;
-    const file = overrideContent !== undefined ? null : selectedFile;
 
     setSending(true);
     if (overrideContent === undefined) {
       setInputText("");
       setReplyTarget(null);
-      handleClearFile();
+      setSelectedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
     }
 
     try {
-      let uploadedAttachment: any = null;
-
-      if (file) {
-        setUploadingFile(true);
-        uploadedAttachment = await uploadChatFile(file, room.id);
-        setUploadingFile(false);
-
-        if (!uploadedAttachment) {
-          toast.error("파일 업로드에 실패했습니다.");
-          if (overrideContent === undefined) {
-            setInputText(text);
-            attachFile(file);
-          }
-          setSending(false);
-          return;
-        }
-      }
-
-      const res = await sendChatMessage(room.id, text, parentId, uploadedAttachment);
-      if (!res) {
-        toast.error("메시지 전송에 실패했습니다.");
-        if (overrideContent === undefined) {
-          setInputText(text);
-          if (file) attachFile(file);
+      if (filesToSend.length === 0) {
+        const res = await sendChatMessage(room.id, text, parentId, null);
+        if (!res) {
+          toast.error("메시지 전송에 실패했습니다.");
+          if (overrideContent === undefined) setInputText(text);
+        } else {
+          setMessages((prev) =>
+            mergeChatMessages(prev, [
+              {
+                ...res,
+                sender_name: profile?.display_name || "나",
+                sender_company: profile?.company || null,
+                sender_role: profile?.position || null,
+                parent_message: parentSnapshot
+                  ? {
+                      id: parentSnapshot.id,
+                      sender_name: parentSnapshot.sender_name ?? null,
+                      content: parentSnapshot.content,
+                    }
+                  : res.parent_message ?? null,
+              },
+            ]),
+          );
+          stickToBottomRef.current = true;
+          onRoomUpdatedRef.current?.();
         }
       } else {
-        setMessages((prev) =>
-          mergeChatMessages(prev, [
-            {
-              ...res,
-              sender_name: profile?.display_name || "나",
-              sender_company: profile?.company || null,
-              sender_role: profile?.position || null,
-              parent_message: parentSnapshot
-                ? {
-                    id: parentSnapshot.id,
-                    sender_name: parentSnapshot.sender_name ?? null,
-                    content: parentSnapshot.content,
-                  }
-                : res.parent_message ?? null,
-            },
-          ]),
-        );
-        stickToBottomRef.current = true;
-        onRoomUpdatedRef.current?.();
+        setUploadingFile(true);
+        const failed: Array<{ id: string; file: File; previewUrl: string | null }> = [];
+        for (let i = 0; i < filesToSend.length; i += 1) {
+          const item = filesToSend[i];
+          const uploadedAttachment = await uploadChatFile(item.file, room.id);
+          if (!uploadedAttachment) {
+            failed.push(item);
+            continue;
+          }
+          const msgText = i === 0 ? text : "";
+          const res = await sendChatMessage(
+            room.id,
+            msgText,
+            i === 0 ? parentId : null,
+            uploadedAttachment,
+          );
+          if (!res) {
+            failed.push(item);
+            continue;
+          }
+          if (item.previewUrl && typeof URL.revokeObjectURL === "function") {
+            URL.revokeObjectURL(item.previewUrl);
+          }
+          setMessages((prev) =>
+            mergeChatMessages(prev, [
+              {
+                ...res,
+                sender_name: profile?.display_name || "나",
+                sender_company: profile?.company || null,
+                sender_role: profile?.position || null,
+                parent_message:
+                  i === 0 && parentSnapshot
+                    ? {
+                        id: parentSnapshot.id,
+                        sender_name: parentSnapshot.sender_name ?? null,
+                        content: parentSnapshot.content,
+                      }
+                    : res.parent_message ?? null,
+              },
+            ]),
+          );
+        }
+        setUploadingFile(false);
+        if (failed.length > 0) {
+          toast.error(`${failed.length}개 파일 전송에 실패했습니다.`);
+          setSelectedFiles(failed);
+        } else {
+          stickToBottomRef.current = true;
+          onRoomUpdatedRef.current?.();
+        }
       }
     } catch (err: any) {
       toast.error(err?.message || "오류가 발생했습니다.");
       if (overrideContent === undefined) {
         setInputText(text);
-        if (file) attachFile(file);
+        if (filesToSend.length > 0) setSelectedFiles(filesToSend);
       }
     } finally {
       setSending(false);
@@ -1314,37 +1407,52 @@ export function MessengerChatPane({
         </div>
       )}
 
-      {/* 첨부할 파일 미리보기 바 */}
-      {selectedFile && (
-        <div className={cn("px-3 py-2 bg-muted/90 border-t flex items-center justify-between animate-in slide-in-from-bottom-2 shrink-0", messengerType.preview)}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            {filePreviewUrl ? (
-              <img
-                src={filePreviewUrl}
-                alt="미리보기"
-                className="h-10 w-10 object-cover rounded border shrink-0"
-              />
-            ) : (
-              <div className="h-10 w-10 rounded border bg-background flex items-center justify-center shrink-0">
-                <FileText className="h-5 w-5 text-primary" />
+      {/* 첨부할 파일 미리보기 바 (다중 파일 지원) */}
+      {selectedFiles.length > 0 && (
+        <div className={cn("px-3 py-2 bg-muted/90 border-t flex items-center justify-between gap-2 animate-in slide-in-from-bottom-2 shrink-0", messengerType.preview)}>
+          <div className="flex items-center gap-2 overflow-x-auto min-w-0 py-0.5">
+            {selectedFiles.map((item) => (
+              <div
+                key={item.id}
+                className="relative flex items-center gap-2 rounded-lg border bg-background px-2 py-1.5 shrink-0 max-w-[180px]"
+              >
+                {item.previewUrl ? (
+                  <img
+                    src={item.previewUrl}
+                    alt={item.file.name}
+                    className="h-9 w-9 object-cover rounded border shrink-0"
+                  />
+                ) : (
+                  <div className="h-9 w-9 rounded border bg-muted/40 flex items-center justify-center shrink-0">
+                    <FileText className="h-4 w-4 text-primary" />
+                  </div>
+                )}
+                <div className="min-w-0 pr-4">
+                  <p className={cn("font-semibold truncate", messengerType.meta)}>
+                    {item.file.name}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {formatBytes(item.file.size)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeSelectedFile(item.id)}
+                  className="absolute top-1 right-1 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                  title="이 파일 제거"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </div>
-            )}
-            <div className="min-w-0">
-              <p className={cn("font-semibold truncate max-w-[200px] sm:max-w-xs", messengerType.preview)}>
-                {selectedFile.name}
-              </p>
-              <p className={cn("text-muted-foreground", messengerType.meta)}>
-                {formatBytes(selectedFile.size)} · 전송 준비 완료
-              </p>
-            </div>
+            ))}
           </div>
           <button
             type="button"
             onClick={handleClearFile}
-            className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground shrink-0"
-            title="첨부 취소"
+            className="px-2 py-1 text-xs hover:bg-muted rounded text-muted-foreground hover:text-foreground shrink-0"
+            title="모든 첨부 취소"
           >
-            <X className="h-4 w-4" />
+            전체 취소
           </button>
         </div>
       )}
@@ -1392,6 +1500,7 @@ export function MessengerChatPane({
           type="file"
           ref={fileInputRef}
           onChange={handleFileSelect}
+          multiple
           accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,.pdf,.doc,.docx,.xls,.xlsx,.hwp,.hwpx,.zip,.txt,.csv"
           className="sr-only"
           tabIndex={-1}
@@ -1466,8 +1575,8 @@ export function MessengerChatPane({
                   }, 60);
                 }}
                 placeholder={
-                  selectedFile
-                    ? "설명 메시지를 입력하세요 (선택)..."
+                  selectedFiles.length > 0
+                    ? `${selectedFiles.length}개 첨부됨 · 설명 메시지 입력 (선택)...`
                     : messengerComposerPlaceholder(compactComposer)
                 }
                 className={cn("min-h-[44px] max-h-32 resize-none border-0 shadow-none focus-visible:ring-0 p-1.5 overflow-hidden", messengerType.input)}
@@ -1498,13 +1607,13 @@ export function MessengerChatPane({
             type="button"
             size="icon"
             onPointerDown={(event) => {
-              if (inputText.trim() || selectedFile) event.preventDefault();
+              if (inputText.trim() || selectedFiles.length > 0) event.preventDefault();
             }}
             onMouseDown={(event) => {
-              if (inputText.trim() || selectedFile) event.preventDefault();
+              if (inputText.trim() || selectedFiles.length > 0) event.preventDefault();
             }}
             onClick={() => void handleSend()}
-            disabled={(!inputText.trim() && !selectedFile) || sending}
+            disabled={(!inputText.trim() && selectedFiles.length === 0) || sending}
             className="h-8 w-8 rounded-lg shrink-0 mb-0.5"
             title="전송"
           >
@@ -1545,7 +1654,7 @@ export function MessengerChatPane({
                 alt={gallery[galleryAt].name}
                 className="max-h-[75vh] max-w-full object-contain rounded"
               />
-              <div className="flex items-center justify-between w-full gap-2">
+              <div className="flex flex-wrap items-center justify-between w-full gap-2">
                 <Button
                   type="button"
                   variant="secondary"
@@ -1555,9 +1664,29 @@ export function MessengerChatPane({
                 >
                   <ChevronLeft className="h-4 w-4" /> 이전
                 </Button>
-                <span className={messengerType.meta}>
-                  {galleryAt + 1} / {gallery.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void copyChatImageToClipboard(gallery[galleryAt].url)}
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-1" /> 이미지 복사
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      void downloadChatAttachment(gallery[galleryAt].url, gallery[galleryAt].name)
+                    }
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1" /> 저장
+                  </Button>
+                  <span className={cn("px-1", messengerType.meta)}>
+                    {galleryAt + 1} / {gallery.length}
+                  </span>
+                </div>
                 <Button
                   type="button"
                   variant="secondary"

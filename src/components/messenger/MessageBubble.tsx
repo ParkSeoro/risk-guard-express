@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/context-menu";
 import { messengerType } from "@/lib/messengerType";
 import { cn } from "@/lib/utils";
+import { downloadChatAttachment, copyChatImageToClipboard } from "@/lib/messengerAttachmentActions";
 
 interface MessageBubbleProps {
   message: ChatRoomMessage;
@@ -368,7 +369,7 @@ export function MessageBubble({
                     return isImage ? (
                       <div
                         key={att.id}
-                        className="rounded-lg overflow-hidden border bg-background/50 cursor-pointer max-w-[280px]"
+                        className="group/att relative rounded-lg overflow-hidden border bg-background/50 cursor-pointer max-w-[280px]"
                         onClick={() => att.public_url && openImage(att.public_url)}
                       >
                         <img
@@ -377,7 +378,32 @@ export function MessageBubble({
                           className="w-full max-h-56 object-cover hover:opacity-95 transition-opacity"
                           loading="lazy"
                         />
-                        <div className={cn("p-1 px-2 text-muted-foreground flex items-center justify-between bg-background/80", messengerType.meta)}>
+                        {att.public_url && (
+                          <div
+                            className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover/att:opacity-100 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => void copyChatImageToClipboard(att.public_url!)}
+                              className="h-7 w-7 rounded-md bg-black/65 hover:bg-black/85 text-white flex items-center justify-center shadow-sm"
+                              title="이미지 복사"
+                              aria-label="이미지 복사"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void downloadChatAttachment(att.public_url!, att.file_name)}
+                              className="h-7 w-7 rounded-md bg-black/65 hover:bg-black/85 text-white flex items-center justify-center shadow-sm"
+                              title="이미지 저장"
+                              aria-label="이미지 저장"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        <div className={cn("p-1 px-2 text-muted-foreground flex items-center justify-between bg-background/85", messengerType.meta)}>
                           <span className="truncate max-w-[180px]">{att.file_name}</span>
                           <span className="shrink-0">{formatBytes(att.file_size)}</span>
                         </div>
@@ -398,19 +424,18 @@ export function MessageBubble({
                           <p className={cn("opacity-75", messengerType.meta)}>{formatBytes(att.file_size)}</p>
                         </div>
                         {att.public_url && (
-                          <a
-                            href={att.public_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            download={att.file_name}
+                          <button
+                            type="button"
+                            onClick={() => void downloadChatAttachment(att.public_url!, att.file_name)}
                             className={cn(
                               "p-1.5 rounded-md hover:bg-black/10 transition-colors shrink-0",
                               isMe ? "text-primary-foreground" : "text-foreground",
                             )}
                             title="다운로드"
+                            aria-label="첨부파일 다운로드"
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                         )}
                       </div>
                     );

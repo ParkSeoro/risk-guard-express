@@ -63,11 +63,6 @@ export default function PushNotificationBridge() {
         const PushNotifications = mod.PushNotifications;
         if (!PushNotifications) return;
 
-        const perm = await PushNotifications.checkPermissions();
-        // Do NOT auto-request here — that raced with GPS onboarding and caused permission loops.
-        if (perm.receive !== 'granted') return;
-        if (cancelled) return;
-
         const platformResolved = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
 
         // Android 8+: custom channels so FCM siren / high priority actually apply
@@ -96,26 +91,8 @@ export default function PushNotificationBridge() {
           }
         }
 
-        await PushNotifications.register();
-
-        // iOS Critical Alerts (Apple entitlement + Info.plist flag required)
-        if (platformResolved === 'ios' && isIosNativeAlarmAvailable()) {
-          try {
-            const crit = await requestIosCriticalAlerts();
-            if (crit.criticalAlertSetting === 'enabled') {
-              console.info('[PushBridge/native] Critical Alerts enabled');
-            } else if (crit.criticalAlertsEnabledInPlist) {
-              console.warn(
-                '[PushBridge/native] Critical Alerts requested but not enabled:',
-                crit.criticalAlertSetting,
-                crit.note,
-              );
-            }
-          } catch (e) {
-            console.warn('[PushBridge/native] Critical Alerts request skipped', e);
-          }
-        }
-
+        // Attach listeners BEFORE checkPermissions/register so tokens emitted by onboarding,
+        // Settings toggles, or immediate iOS APNs callbacks are never missed.
         const regHandle = await PushNotifications.addListener(
           'registration',
           async (t: { value: string }) => {
@@ -180,7 +157,46 @@ export default function PushNotificationBridge() {
           },
         );
 
+        let criticalAlertsRequested = false;
+        const registerIfGranted = async () => {
+          if (cancelled) return;
+          const perm = await PushNotifications.checkPermissions();
+          // Do NOT auto-request here — that raced with GPS onboarding and caused permission loops.
+          if (perm.receive !== 'granted' || cancelled) return;
+
+          await PushNotifications.register();
+
+          // iOS Critical Alerts (Apple entitlement + Info.plist flag required)
+          if (platformResolved === 'ios' && !criticalAlertsRequested && isIosNativeAlarmAvailable()) {
+            criticalAlertsRequested = true;
+            try {
+              const crit = await requestIosCriticalAlerts();
+              if (crit.criticalAlertSetting === 'enabled') {
+                console.info('[PushBridge/native] Critical Alerts enabled');
+              } else if (crit.criticalAlertsEnabledInPlist) {
+                console.warn(
+                  '[PushBridge/native] Critical Alerts requested but not enabled:',
+                  crit.criticalAlertSetting,
+                  crit.note,
+                );
+              }
+            } catch (e) {
+              console.warn('[PushBridge/native] Critical Alerts request skipped', e);
+            }
+          }
+        };
+
+        const onVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            void registerIfGranted();
+          }
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+
+        await registerIfGranted();
+
         cleanup = () => {
+          document.removeEventListener('visibilitychange', onVisibilityChange);
           regHandle?.remove?.();
           errHandle?.remove?.();
           tapHandle?.remove?.();

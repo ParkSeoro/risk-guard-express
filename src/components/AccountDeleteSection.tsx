@@ -72,7 +72,7 @@ export function AccountDeleteSection({ compact = false }: AccountDeleteSectionPr
           계정 삭제 (회원 탈퇴)
         </CardTitle>
         <CardDescription className="text-xs">
-          로그인 계정 및 개인 연락처·알림 토큰을 영구 삭제합니다. 산업안전보건법상 보존이 필요한 작업허가·TBM 서명 이력은 익명 처리되어 보관됩니다.
+          로그인 계정 및 개인 연락처·알림 토큰을 영구 삭제합니다. 산업안전보건법상 보존이 필요한 작업허가·TBM 서명 및 성명 이력은 법정 기간 동안 보관됩니다.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -104,7 +104,7 @@ export function AccountDeleteSection({ compact = false }: AccountDeleteSectionPr
             <DialogDescription className="text-xs leading-relaxed pt-1">
               계정을 삭제하면 로그인 정보와 개인 연락처·푸시 알림 토큰이 즉시 삭제되며 복구할 수 없습니다.
               <br />
-              단, 산업안전보건법에 따라 법적 보존 의무가 있는 작업허가서·TBM·안전점검 서명 이력은 익명 처리되어 보관됩니다.
+              단, 산업안전보건법에 따라 법적 보존 의무가 있는 작업허가서·TBM·안전점검 서명 및 성명 이력은 법정 기간 동안 그대로 보관됩니다.
             </DialogDescription>
           </DialogHeader>
 

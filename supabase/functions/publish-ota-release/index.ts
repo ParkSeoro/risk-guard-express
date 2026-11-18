@@ -234,9 +234,11 @@ Deno.serve(async (req) => {
   }
 
   const androidRow = rows.find((row) => row.platform === "android") || rows[0];
+  const prunedCount = await pruneOldOtaBundles(supabase, channel, 10);
   return json({
     ok: true,
     ios_warning: iosWarning,
+    pruned_old_bundles: prunedCount,
     release: {
       id: androidRow?.id,
       version,
@@ -249,3 +251,72 @@ Deno.serve(async (req) => {
     },
   });
 });
+
+async function pruneOldOtaBundles(
+  supabase: ReturnType<typeof createClient>,
+  channel: string,
+  keepLatest = 10,
+): Promise<number> {
+  try {
+    // 1. Collect storage paths referenced by the latest releases per platform (never delete these)
+    const { data: recentRows } = await supabase
+      .from("app_releases")
+      .select("bundle_url, platform")
+      .eq("is_deleted", false)
+      .order("released_at", { ascending: false })
+      .limit(40);
+
+    const protectedPaths = new Set<string>();
+    const countsByPlatform = new Map<string, number>();
+    for (const row of recentRows || []) {
+      const p = String((row as any).platform || "shared");
+      const n = countsByPlatform.get(p) || 0;
+      if (n < keepLatest) {
+        countsByPlatform.set(p, n + 1);
+        const url = String((row as any).bundle_url || "");
+        if (url.startsWith("storage:")) {
+          protectedPaths.add(url.slice("storage:".length));
+        }
+      }
+    }
+
+    // 2. List files in the channel prefix (e.g. "stable") newest-first
+    const { data: objects, error: listErr } = await supabase.storage
+      .from("app-updates")
+      .list(channel, {
+        limit: 1000,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+
+    if (listErr || !objects || objects.length <= keepLatest) return 0;
+
+    const toDelete: string[] = [];
+    for (let i = 0; i < objects.length; i += 1) {
+      const obj = objects[i];
+      if (!obj.name || !obj.id) continue;
+      const fullPath = `${channel}/${obj.name}`;
+      if (i < keepLatest || protectedPaths.has(fullPath)) continue;
+      toDelete.push(fullPath);
+    }
+
+    if (toDelete.length === 0) return 0;
+
+    let deleted = 0;
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const batch = toDelete.slice(i, i + 100);
+      const { error: rmErr } = await supabase.storage.from("app-updates").remove(batch);
+      if (!rmErr) {
+        deleted += batch.length;
+        const storageUrls = batch.map((p) => `storage:${p}`);
+        await supabase
+          .from("app_releases")
+          .update({ is_deleted: true })
+          .in("bundle_url", storageUrls);
+      }
+    }
+    return deleted;
+  } catch (e) {
+    console.warn("pruneOldOtaBundles skipped:", e);
+    return 0;
+  }
+}

@@ -270,7 +270,7 @@ export function MessageBubble({
         <div
           id={`msg-${message.id}`}
           className={cn(
-            "group flex items-end gap-1.5 max-w-[88%] sm:max-w-[80%] transition-all",
+            "group flex items-end gap-1.5 max-w-[88%] sm:max-w-[80%] min-w-0 transition-all",
             isFirstInGroup ? "mt-2.5" : "mt-0.5",
             isLastInGroup ? "mb-1.5" : "mb-0",
             isMe ? "ml-auto flex-row-reverse" : "mr-auto flex-row",
@@ -291,7 +291,7 @@ export function MessageBubble({
           )}
 
           {/* 메시지 본체 영역 */}
-          <div className={cn("flex flex-col min-w-0", isMe ? "items-end" : "items-start")}>
+          <div className={cn("flex flex-col min-w-0 max-w-full", isMe ? "items-end" : "items-start")}>
             {/* 상대방 이름 및 소속 회사 (연속 메시지의 첫 줄에만 표시) */}
             {!isMe && isFirstInGroup && (
               <div className={cn("flex items-center gap-1.5 mb-1 px-0.5 flex-wrap", messengerType.preview)}>
@@ -343,7 +343,7 @@ export function MessageBubble({
             <div
               ref={bubbleRef}
               className={cn(
-                "relative select-none px-3.5 py-2.5 rounded-2xl break-words shadow-2xs [-webkit-touch-callout:none] [-webkit-user-select:none]",
+                "relative max-w-full select-none px-3.5 py-2.5 rounded-2xl break-words [overflow-wrap:anywhere] shadow-2xs [-webkit-touch-callout:none] [-webkit-user-select:none]",
                 messengerType.body,
                 isMe
                   ? "bg-primary text-primary-foreground rounded-br-xs"

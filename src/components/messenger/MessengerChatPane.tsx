@@ -1335,7 +1335,7 @@ export function MessengerChatPane({
       <div
         ref={listRef}
         onScroll={handleListScroll}
-        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 bg-[#eef2f7] dark:bg-slate-950/60"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 bg-[#eef2f7] dark:bg-slate-950/60"
       >
         {loading ? (
           <div className={cn("h-full flex items-center justify-center text-muted-foreground", messengerType.preview)}>

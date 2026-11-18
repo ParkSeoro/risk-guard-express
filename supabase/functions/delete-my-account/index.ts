@@ -1,6 +1,7 @@
-// Self-service account deletion (Apple Guideline 5.1.1(v) compliant)
-// Deletes the user's auth.users login, device push tokens, and personal contact PII
-// while preserving legally mandated industrial safety signature/audit records.
+// Self-service account deletion (Apple Guideline 5.1.1(v) + Korean OSHA compliant)
+// Permanently disables/strips login credentials in auth.users and removes push tokens/memberships
+// WITHOUT calling auth.admin.deleteUser(), so profiles.display_name, approvals, TBM signatures,
+// work permits, and audit logs remain 100% intact for statutory retention.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -50,22 +51,32 @@ Deno.serve(async (req) => {
   await admin.from("device_push_tokens").delete().eq("user_id", userId);
   await admin.from("project_members").delete().eq("user_id", userId);
 
-  // 2. Clear personal contact & mark profile deleted, while keeping display_name
-  //    so legally mandated Korean OSHA (산업안전보건법) signatures/approvals remain attributable.
+  // 2. Clear personal phone & mark profile inactive, preserving display_name for legal audit/signatures
   await admin
     .from("profiles")
     .update({
       phone: null,
-      account_status: "deleted",
+      account_status: "inactive",
       default_project_id: null,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId);
 
-  // 3. Delete login credentials from auth.users (no CASCADE exists on public tables)
-  const { error: delErr } = await admin.auth.admin.deleteUser(userId);
-  if (delErr) {
-    return json({ ok: false, error: delErr.message || "계정 삭제에 실패했습니다." }, 500);
+  // 3. Permanently revoke & anonymize auth.users credentials WITHOUT cascading/failing FKs
+  const randomPassword = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  const { error: updErr } = await admin.auth.admin.updateUserById(userId, {
+    email: `deleted_${userId}@deleted.safenex.invalid`,
+    password: randomPassword,
+    email_confirm: true,
+    ban_duration: "876000h",
+    user_metadata: {
+      account_deleted: true,
+      deleted_at: new Date().toISOString(),
+    },
+  });
+
+  if (updErr) {
+    return json({ ok: false, error: updErr.message || "계정 삭제에 실패했습니다." }, 500);
   }
 
   return json({ ok: true });

@@ -534,7 +534,13 @@ export function filterApproversForStep(
       return matchesStepPosition(a, key);
     }
 
-    if (key === 'cooperator' || key === 'consent') return true;
+    if (key === 'cooperator' || key === 'consent') {
+      return isWithinAuthorHierarchy(a, {
+        authorCompanyId,
+        authorCompanyType: authorType,
+        parentGcCompanyId,
+      });
+    }
     return false;
   });
 
@@ -630,6 +636,30 @@ export type ApproverFilterContextLike = {
 };
 
 /**
+ * 기안자 회사 계층 범위 확인: 자기 회사 + 상위회사(협력사면 상위 시공사 + 발주처, 시공사는 발주처, 발주처는 자사).
+ * 타 시공사(동급 GC)·타 협력사는 항상 제외한다.
+ */
+export function isWithinAuthorHierarchy(
+  a: EligibleApprover,
+  ctx?: ApproverFilterContextLike,
+): boolean {
+  const authorCompanyId = ctx?.authorCompanyId ?? null;
+  if (!authorCompanyId) return true;
+  if (a.out_company_id === authorCompanyId) return true;
+  const candidateType = normalizeCompanyType(a.out_company_type);
+  if (candidateType === 'client') return true;
+  const authorType = normalizeCompanyType(ctx?.authorCompanyType);
+  if (
+    (authorType === 'contractor' || authorType === 'vendor')
+    && ctx?.parentGcCompanyId
+    && a.out_company_id === ctx.parentGcCompanyId
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * 시공(상신) 드롭다운: 기안자가 기안 회사 소속이면 직책과 무관하게 맨 앞에 둔다.
  * (상신 단계는 작성자 본인이 자동 완료되어야 함)
  */
@@ -641,7 +671,7 @@ export function optionsForApprovalStep(
 ): EligibleApprover[] {
   if (opts?.openPool) {
     return preferAuthorCompany(
-      eligible.filter((a) => !isWorkerApprover(a)),
+      eligible.filter((a) => !isWorkerApprover(a) && isWithinAuthorHierarchy(a, ctx)),
       ctx.authorCompanyId,
     );
   }

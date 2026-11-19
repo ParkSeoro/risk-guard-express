@@ -130,7 +130,7 @@ describe("RA 결재선 생성 → 소속 인원 → 권한별 결재", () => {
     expect(director.map((a) => a.out_user_id)).toEqual(["parent-sm"]);
   });
 
-  it("openPool: 소장 단계도 직책 제한 없이 전원(근로자 제외)", () => {
+  it("openPool: 자기 회사 + 상위회사(원청·발주처)만 포함하고 타 시공사·근로자는 제외", () => {
     const pool = [
       ...eligible,
       mk({
@@ -144,10 +144,24 @@ describe("RA 결재선 생성 → 소속 인원 → 권한별 결재", () => {
     ];
     const opts = optionsForApprovalStep(pool, "contractor_site_director", ctx, { openPool: true });
     expect(opts.some((a) => a.out_user_id === "worker-1")).toBe(false);
+    expect(opts.some((a) => a.out_company_id === "jinnam")).toBe(false);
     expect(opts.some((a) => a.out_user_id === "hitech-ss")).toBe(true);
     expect(opts.some((a) => a.out_user_id === "parent-sm")).toBe(true);
     expect(opts.some((a) => a.out_user_id === "client-sm")).toBe(true);
-    expect(opts).toHaveLength(eligible.length);
+    expect(opts.every((a) => ["hitech", "parent-gc", "client"].includes(a.out_company_id || ""))).toBe(true);
+  });
+
+  it("openPool (시공사 기안): 자기 시공사 + 발주처만 — 타 시공사·타 협력사 제외", () => {
+    const gcCtx = {
+      authorCompanyId: "parent-gc",
+      authorCompanyType: "gc",
+      parentGcCompanyId: "parent-gc",
+    };
+    const opts = optionsForApprovalStep(eligible, "contractor_site_director", gcCtx, { openPool: true });
+    expect(opts.some((a) => a.out_company_id === "parent-gc")).toBe(true);
+    expect(opts.some((a) => a.out_company_id === "client")).toBe(true);
+    expect(opts.some((a) => a.out_company_id === "jinnam")).toBe(false);
+    expect(opts.some((a) => a.out_company_id === "hitech")).toBe(false);
   });
 
   it("CM/SM 드롭다운: 발주처만", () => {

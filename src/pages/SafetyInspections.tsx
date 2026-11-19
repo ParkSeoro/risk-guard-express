@@ -196,6 +196,7 @@ export default function SafetyInspections() {
     user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string;
   }>>([]);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string; type: string; parent_company_id?: string | null }>>([]);
+  const [projectGcCompanyId, setProjectGcCompanyId] = useState<string | null>(null);
   const [myPendingApprovalId, setMyPendingApprovalId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -322,10 +323,12 @@ export default function SafetyInspections() {
       setInspectorTitle('');
     }
     if (isApprovalInspection(insp.inspection_type) && projectId) {
-      const [{ data: mems }, { data: cos }] = await Promise.all([
+      const [{ data: mems }, { data: cos }, { data: projRow }] = await Promise.all([
         supabase.from('project_members').select('user_id, role_new, position_new, company_id, companies(name, type, parent_company_id), profiles(display_name)').eq('project_id', projectId),
-        supabase.from('project_companies').select('company_id, companies(id, name, type, parent_company_id)').eq('project_id', projectId),
+        supabase.from('project_companies').select('company_id, parent_company_id, companies(id, name, type, parent_company_id)').eq('project_id', projectId).eq('is_deleted', false),
+        supabase.from('projects').select('gc_company_id').eq('id', projectId).maybeSingle(),
       ]);
+      setProjectGcCompanyId((projRow as { gc_company_id?: string | null } | null)?.gc_company_id || null);
       setApproverMembers(((mems as any[]) || []).map((m) => ({
         user_id: m.user_id,
         display_name: m.profiles?.display_name || '',
@@ -337,7 +340,14 @@ export default function SafetyInspections() {
       const uniq = new Map<string, { id: string; name: string; type: string; parent_company_id?: string | null }>();
       for (const row of (cos as any[]) || []) {
         const c = row.companies;
-        if (c?.id) uniq.set(c.id, { id: c.id, name: c.name, type: c.type, parent_company_id: c.parent_company_id });
+        if (c?.id) {
+          uniq.set(c.id, {
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            parent_company_id: row.parent_company_id ?? c.parent_company_id ?? null,
+          });
+        }
       }
       setCompanies(Array.from(uniq.values()));
       if (profile?.user_id) {
@@ -1529,9 +1539,10 @@ export default function SafetyInspections() {
                     projectId={projectId}
                     projectMembers={approverMembers}
                     companies={companies}
-                    submitterCompanyId={detail.company_id}
+                    submitterCompanyId={detail.company_id || userCompanyId || null}
+                    projectGcCompanyId={projectGcCompanyId}
                     readOnly={isPatrolLogLocked(detail.status)}
-                    documentDraft={{ entityType: 'safety_inspection', entityId: detail.id, companyId: detail.company_id }}
+                    documentDraft={{ entityType: 'safety_inspection', entityId: detail.id, companyId: detail.company_id || userCompanyId || null }}
                     seedSteps={isOfficialInspection(detail.inspection_type) ? OFFICIAL_APPROVAL_SEED_STEPS : patrolSeedSteps}
                     stepTemplates={isOfficialInspection(detail.inspection_type) ? OFFICIAL_APPROVAL_STEP_TEMPLATES : undefined}
                     authorUserId={isOfficialInspection(detail.inspection_type) ? (detail.created_by || detail.inspector_id || profile?.user_id) : undefined}

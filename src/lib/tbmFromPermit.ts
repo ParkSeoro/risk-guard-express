@@ -177,6 +177,61 @@ async function resolvePermitAuthorNameAsync(permit: any, fallback = ""): Promise
  * Pass replaceMismatchedDate only from final issuance, so opening an old
  * document does not spawn another log.
  */
+const RISK_GRADE_RANK: Record<string, number> = {
+  상: 1,
+  중: 2,
+  하: 3,
+};
+
+export function sortBriefingRiskRows(
+  items: {
+    hazard?: string | null;
+    improvement_measure?: string | null;
+    risk_grade?: string | null;
+    risk?: number | null;
+    sort_order?: number | null;
+  }[],
+  limit = 8,
+): { hazard: string; grade: string; measure: string }[] {
+  return [...items]
+    .sort((a, b) => {
+      const ra = RISK_GRADE_RANK[String(a.risk_grade ?? "")] ?? 4;
+      const rb = RISK_GRADE_RANK[String(b.risk_grade ?? "")] ?? 4;
+      if (ra !== rb) return ra - rb;
+      const sa = Number(a.risk ?? 0);
+      const sb = Number(b.risk ?? 0);
+      if (sa !== sb) return sb - sa;
+      return Number(a.sort_order ?? 999999) - Number(b.sort_order ?? 999999);
+    })
+    .slice(0, limit)
+    .map((r) => ({
+      hazard: r.hazard || "",
+      grade: String(r.risk_grade ?? ""),
+      measure: r.improvement_measure || "",
+    }));
+}
+
+async function fetchBriefingRisksForRun(
+  runId?: string | null,
+): Promise<{ hazard: string; grade: string; measure: string }[]> {
+  if (!runId) return [];
+  try {
+    const { data: items } = await supabase
+      .from("risk_items")
+      .select("hazard, improvement_measure, risk_grade, risk, sort_order")
+      .eq("run_id", runId)
+      .eq("is_deleted", false)
+      .eq("is_excluded", false)
+      .order("risk", { ascending: false, nullsFirst: false })
+      .order("sort_order", { ascending: true })
+      .limit(100);
+
+    return sortBriefingRiskRows((items as any[]) || [], 8);
+  } catch {
+    return [];
+  }
+}
+
 export async function ensureTbmForPermit(opts: {
   permitId: string;
   projectId: string;
@@ -208,10 +263,16 @@ export async function ensureTbmForPermit(opts: {
   if (linkedId) {
     const { data: linked } = await supabase
       .from("tbm_sessions" as any)
-      .select("id, tbm_date, is_deleted")
+      .select("id, tbm_date, is_deleted, run_id, briefing_risks")
       .eq("id", linkedId)
       .maybeSingle();
-    const row = linked as { id?: string; tbm_date?: string | null; is_deleted?: boolean | null } | null;
+    const row = linked as {
+      id?: string;
+      tbm_date?: string | null;
+      is_deleted?: boolean | null;
+      run_id?: string | null;
+      briefing_risks?: unknown;
+    } | null;
     const matches =
       !!row &&
       !row.is_deleted &&
@@ -219,6 +280,21 @@ export async function ensureTbmForPermit(opts: {
     if (matches || !opts.replaceMismatchedDate) {
       if (row && !row.is_deleted) {
         await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: linkedId });
+        const hasRisks = Array.isArray(row.briefing_risks) && row.briefing_risks.length > 0;
+        const effectiveRunId = row.run_id || (permit as any).assessment_run_id || null;
+        if (!hasRisks && effectiveRunId) {
+          try {
+            const backfilled = await fetchBriefingRisksForRun(effectiveRunId);
+            if (backfilled.length > 0) {
+              await supabase
+                .from("tbm_sessions" as any)
+                .update({ briefing_risks: backfilled, run_id: effectiveRunId })
+                .eq("id", linkedId);
+            }
+          } catch {
+            /* non-blocking backfill */
+          }
+        }
       }
       return { ok: true, tbmId: linkedId, reused: true };
     }
@@ -236,22 +312,9 @@ export async function ensureTbmForPermit(opts: {
     });
   }
 
-  // Pull a few risk rows if assessment linked
-  let risks: { hazard: string; grade: string; measure: string }[] = [];
+  // Pull top risk rows if assessment linked (상 > 중 > 하)
   const runId = (permit as any).assessment_run_id;
-  if (runId) {
-    const { data: items } = await supabase
-      .from("risk_items")
-      .select("hazard, improvement_measure, risk_grade")
-      .eq("run_id", runId)
-      .order("risk_grade", { ascending: false })
-      .limit(8);
-    risks = ((items as any[]) || []).map((r) => ({
-      hazard: r.hazard || "",
-      grade: String(r.risk_grade ?? ""),
-      measure: r.improvement_measure || "",
-    }));
-  }
+  const risks = await fetchBriefingRisksForRun(runId);
 
   const insertPayload: any = {
     project_id: opts.projectId,

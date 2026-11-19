@@ -6,6 +6,7 @@ import {
   permitStatusAllowsTbm,
   permitWorkDateForTbm,
   resolvePermitAuthorName,
+  sortBriefingRiskRows,
   templateBriefingSummary,
   TBM_WAITS_FOR_APPROVAL,
 } from "@/lib/tbmFromPermit";
@@ -120,6 +121,17 @@ describe("tbmFromPermit", () => {
       ),
     ).toBe("신청자김");
     expect(resolvePermitAuthorName({}, "현재유저")).toBe("현재유저");
+  });
+
+  it("orders briefing_risks by 상 > 중 > 하, then risk score desc, then sort_order asc", () => {
+    const sorted = sortBriefingRiskRows([
+      { hazard: "하위험", risk_grade: "하", risk: 2, sort_order: 1, improvement_measure: "대책하" },
+      { hazard: "중위험", risk_grade: "중", risk: 6, sort_order: 2, improvement_measure: "대책중" },
+      { hazard: "상위험B", risk_grade: "상", risk: 9, sort_order: 5, improvement_measure: "대책상B" },
+      { hazard: "상위험A", risk_grade: "상", risk: 12, sort_order: 10, improvement_measure: "대책상A" },
+    ]);
+    expect(sorted.map((r) => r.hazard)).toEqual(["상위험A", "상위험B", "중위험", "하위험"]);
+    expect(sorted[0]).toEqual({ hazard: "상위험A", grade: "상", measure: "대책상A" });
   });
 });
 

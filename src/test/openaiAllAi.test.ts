@@ -28,6 +28,10 @@ describe("AI 비용 레인", () => {
     expect(text).toContain('health: "gemini"');
     expect(text).toContain('safety_cost: "gemini"');
     expect(text).toContain('permit_template: "gemini"');
+    expect(text).toContain('ocr: "gemini"');
+    expect(text).toContain('export type AiProvider = "openai" | "gemini"');
+    expect(text.toLowerCase()).not.toContain("exaone");
+    expect(src("src/lib/aiCostRoute.ts").toLowerCase()).not.toContain("exaone");
   });
 
   it("작업계획서 work_plan_section은 OpenAI를 먼저 호출한다", () => {

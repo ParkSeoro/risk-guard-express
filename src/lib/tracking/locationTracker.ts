@@ -224,6 +224,9 @@ function resolvePowerMode(args: {
 async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => void)> {
   const cap = (globalThis as any).Capacitor as Capacitor | undefined;
   if (!cap?.isNativePlatform?.()) return null;
+  // iOS App Store Guideline 2.5.4: iOS uses foreground WhenInUse tracking only (no UIBackgroundModes location).
+  // Calling BackgroundGeolocation with backgroundMessage on iOS without UIBackgroundModes=location crashes CLLocationManager.
+  if (cap.getPlatform?.() === "ios") return null;
   try {
     const { registerPlugin } = await import("@capacitor/core");
     const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");

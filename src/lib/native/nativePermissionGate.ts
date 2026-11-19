@@ -50,9 +50,9 @@ export const ANDROID_LOCATION_TAP_STEPS_KO = [
 ] as const;
 
 export const IOS_LOCATION_TAP_STEPS_KO = [
-  "「앱을 사용하는 동안」이 아니라 「항상」을 누르세요.",
-  "다음에 「정확한 위치」를 켜세요.",
-  "안 보이면: 설정 → SafeNex → 위치 → 항상",
+  "허용 창에서 「앱을 사용하는 동안 허용」을 누르세요.",
+  "「정확한 위치」를 켜 두세요.",
+  "안 보이면: 설정 → SafeNex → 위치 → 앱을 사용하는 동안",
 ] as const;
 
 export function locationTapStepsKo(platform: "android" | "ios" | "web"): readonly string[] {

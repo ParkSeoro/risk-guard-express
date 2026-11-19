@@ -43,7 +43,8 @@ describe("nativePermissionGate", () => {
     expect(ANDROID_LOCATION_TAP_STEPS_KO.some((s) => s.includes("정확한 위치"))).toBe(true);
     expect(ANDROID_LOCATION_TAP_STEPS_KO.some((s) => s.includes("항상 허용"))).toBe(true);
     expect(ANDROID_LOCATION_TAP_STEPS_KO.some((s) => s.includes("앱 사용 중에만"))).toBe(true);
-    expect(locationTapStepsKo("ios").some((s) => s.includes("항상"))).toBe(true);
+    expect(locationTapStepsKo("ios").some((s) => s.includes("앱을 사용하는 동안"))).toBe(true);
+    expect(locationTapStepsKo("ios").some((s) => s.includes("항상"))).toBe(false);
   });
 
   it("blocks check-in when OS location is denied", () => {

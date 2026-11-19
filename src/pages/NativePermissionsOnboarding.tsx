@@ -163,7 +163,11 @@ export default function NativePermissionsOnboarding() {
       const after = await Geolocation.checkPermissions();
       if (!isForegroundLocationGranted(after)) {
         setLocationDenied(true);
-        toast.error("「정확한 위치」와 「항상 허용」을 눌러야 출근·분포가 됩니다.");
+        toast.error(
+          isAndroid
+            ? "「정확한 위치」와 「항상 허용」을 눌러야 출근·분포가 됩니다."
+            : "「정확한 위치」와 「앱을 사용하는 동안 허용」을 눌러야 출근할 수 있습니다.",
+        );
         return;
       }
       setLocationDenied(false);
@@ -261,7 +265,7 @@ export default function NativePermissionsOnboarding() {
           done={step !== "location"}
           icon={MapPin}
           title="위치"
-          desc="출근·분포·금지구역. 「항상 허용」을 누르세요."
+          desc={isAndroid ? "출근·분포·금지구역. 「항상 허용」을 누르세요." : "출근·현장 안전 확인. 「앱을 사용하는 동안 허용」을 누르세요."}
         />
         <StepCard
           active={step === "notifications"}
@@ -291,7 +295,9 @@ export default function NativePermissionsOnboarding() {
             </ul>
             {locationDenied && (
               <p className="text-sm text-destructive leading-relaxed">
-                위치를 거부하면 출근할 수 없습니다. 허용 창에서 「항상 허용」을 눌러 주세요.
+                {isAndroid
+                  ? "위치를 거부하면 출근할 수 없습니다. 허용 창에서 「항상 허용」을 눌러 주세요."
+                  : "위치를 거부하면 출근할 수 없습니다. 허용 창에서 「앱을 사용하는 동안 허용」을 눌러 주세요."}
               </p>
             )}
             <Button className="w-full h-14 text-lg" disabled={busy} onClick={() => void requestLocation()}>

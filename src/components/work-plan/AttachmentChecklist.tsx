@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { generateAttachments, withKind, type AttachmentItem } from '@/lib/attachmentTemplates';
 import { syncTemplateRows, computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
 import { supabase } from '@/integrations/supabase/client';
+import { resolveArchivedUrl } from '@/lib/archiveUrlResolver';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -505,7 +506,13 @@ export default function AttachmentChecklist({
                             target="_blank"
                             rel="noopener"
                             className="text-[10px] text-primary hover:underline shrink-0"
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              void resolveArchivedUrl(row.file_url!).then((resolved) => {
+                                window.open(resolved, '_blank', 'noopener,noreferrer');
+                              });
+                            }}
                           >
                             보기
                           </a>
@@ -515,8 +522,10 @@ export default function AttachmentChecklist({
                             title="이 첨부만 인쇄"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const w = window.open(row.file_url!, '_blank');
-                              if (w) setTimeout(() => { try { w.print(); } catch { /* ignore */ } }, 800);
+                              void resolveArchivedUrl(row.file_url!).then((resolved) => {
+                                const w = window.open(resolved, '_blank');
+                                if (w) setTimeout(() => { try { w.print(); } catch { /* ignore */ } }, 800);
+                              });
                             }}
                           >
                             <Printer className="h-3 w-3" /> 인쇄

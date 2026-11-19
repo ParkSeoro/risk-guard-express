@@ -20,6 +20,7 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
+import { resolveArchivedUrlsInHtml } from '@/lib/archiveUrlResolver';
 import { datePartFromDateTime } from '@/lib/permitWorkDate';
 import { fetchTodayPermitRoute, fetchPatrolPrintContext, fetchPatrolPrintStamps } from '@/lib/legalForms/fetchTodayPermitRoute';
 import { closePendingInspectionAction, notifyInspectionFailSummary } from '@/lib/inspectionFailNotify';
@@ -853,7 +854,7 @@ export default function SafetyInspections() {
           photos: it.photos || [],
         })),
       });
-      win.document.write(html);
+      win.document.write(await resolveArchivedUrlsInHtml(html));
       win.document.close();
       win.focus();
       setTimeout(() => win.print(), 400);
@@ -884,7 +885,7 @@ export default function SafetyInspections() {
         fetchPatrolPrintStamps(src.id),
       ]);
       const p = projects.find((x) => x.id === projectId);
-      win.document.write(buildPatrolLogHtml({
+      const patrolHtml = buildPatrolLogHtml({
         projectName: p?.name || projectLabel || '현장',
         siteName: p?.site_name,
         inspectedAt: src.inspected_at,
@@ -902,7 +903,8 @@ export default function SafetyInspections() {
         patrolPhotos: src.patrol_photos || patrolPhotos,
         directorItems: normalizeDirectorPatrolItems(src.director_items || directorItems),
         stamps,
-      }));
+      });
+      win.document.write(await resolveArchivedUrlsInHtml(patrolHtml));
       win.document.close();
       setTimeout(() => win.print(), 400);
       return;
@@ -933,7 +935,7 @@ export default function SafetyInspections() {
         <td>${photoTag(a.evidence_photos || [])}</td>
       </tr>
     `).join('');
-    win.document.write(`
+    const generalHtml = `
       <html><head><title>안전점검표</title>
       <style>
         body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;padding:20px;font-size:12px}
@@ -962,7 +964,8 @@ export default function SafetyInspections() {
       <p style="margin-top:30px;font-size:10px;color:#666">출력일: ${new Date().toLocaleString('ko-KR')}</p>
       <script>setTimeout(()=>window.print(),500)</script>
       </body></html>
-    `);
+    `;
+    win.document.write(await resolveArchivedUrlsInHtml(generalHtml));
     win.document.close();
   };
 

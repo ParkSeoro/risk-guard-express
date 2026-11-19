@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
+import { resolveArchivedUrl } from "@/lib/archiveUrlResolver";
 
 function buildStorageDownloadUrl(url: string, fileName: string): string {
   try {
@@ -23,9 +24,10 @@ export async function downloadChatAttachment(
   fileName?: string | null,
 ): Promise<void> {
   const safeName = fileName?.trim() || "safenex-attachment";
+  const resolvedUrl = await resolveArchivedUrl(url, { downloadFileName: safeName });
 
   if (Capacitor.isNativePlatform()) {
-    const downloadUrl = buildStorageDownloadUrl(url, safeName);
+    const downloadUrl = buildStorageDownloadUrl(resolvedUrl, safeName);
     const opened = window.open(downloadUrl, "_system") || window.open(downloadUrl, "_blank", "noopener,noreferrer");
     if (!opened) {
       window.location.href = downloadUrl;
@@ -34,7 +36,7 @@ export async function downloadChatAttachment(
   }
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(resolvedUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
@@ -46,7 +48,7 @@ export async function downloadChatAttachment(
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
   } catch {
-    window.open(buildStorageDownloadUrl(url, safeName), "_blank", "noopener,noreferrer");
+    window.open(buildStorageDownloadUrl(resolvedUrl, safeName), "_blank", "noopener,noreferrer");
   }
 }
 
@@ -64,7 +66,8 @@ export async function copyChatImageToClipboard(url: string): Promise<void> {
   }
 
   try {
-    const res = await fetch(url);
+    const resolvedUrl = await resolveArchivedUrl(url);
+    const res = await fetch(resolvedUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const srcBlob = await res.blob();
 

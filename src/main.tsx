@@ -13,11 +13,13 @@ import { isNativeApp } from "./lib/native/platform";
 import { installStaleChunkAutoReload } from "./lib/staleChunkError";
 import { installIosShareableGuard } from "./lib/iosShareableGuard";
 import { installKoreanToasts } from "./lib/installKoreanToasts";
+import { installArchivedImageFallback } from "./lib/archiveUrlResolver";
 import { toKoreanWarning } from "./lib/errors";
 
 installKoreanToasts();
 installIosShareableGuard();
 installStaleChunkAutoReload();
+installArchivedImageFallback();
 
 const rootEl = document.getElementById("root");
 

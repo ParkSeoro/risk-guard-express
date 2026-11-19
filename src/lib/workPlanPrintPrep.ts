@@ -4,6 +4,7 @@
  * PDF/image attachments are NOT rasterized — preview/print/save use originals.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { resolveArchivedUrl } from "@/lib/archiveUrlResolver";
 import { parseRiskAssessmentExcel } from "@/lib/riskExcelImport";
 import {
   pickRiskPrintHeaders,
@@ -39,9 +40,10 @@ export const RISK_TABLE_MAX_ROWS = 250;
 
 export async function fetchRiskTableFromExcelUrl(url: string): Promise<WorkPlanRiskPrintTable | null> {
   try {
+    const resolved = await resolveArchivedUrl(url);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), EXCEL_FETCH_TIMEOUT_MS);
-    const res = await fetch(url, { signal: ctrl.signal });
+    const res = await fetch(resolved, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();

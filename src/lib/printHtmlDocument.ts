@@ -2,6 +2,7 @@
  * Print/save HTML documents that embed remote images (Storage PNGs).
  * Must wait for images — otherwise Chrome prints blank attachment pages.
  */
+import { resolveArchivedUrlsInHtml } from "@/lib/archiveUrlResolver";
 
 export function waitForDocumentImages(
   doc: Document,
@@ -66,8 +67,9 @@ export async function printHtmlDocument(
       cleanup();
       throw new Error("인쇄 프레임을 만들 수 없습니다.");
     }
+    const resolvedHtml = await resolveArchivedUrlsInHtml(html);
     doc.open();
-    doc.write(html);
+    doc.write(resolvedHtml);
     doc.close();
     try {
       doc.title = desiredTitle;

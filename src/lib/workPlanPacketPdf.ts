@@ -4,6 +4,7 @@
  */
 import { PDFDocument, PageSizes, rgb, StandardFonts } from "pdf-lib";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveArchivedUrl } from "@/lib/archiveUrlResolver";
 import { classifyAttachmentFile } from "@/lib/attachmentPreview";
 import { waitForDocumentImages } from "@/lib/printHtmlDocument";
 import {
@@ -90,7 +91,8 @@ export async function loadWorkPlanPacketFiles(planId: string): Promise<{
 }
 
 async function fetchBytes(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url);
+  const resolved = await resolveArchivedUrl(url);
+  const res = await fetch(resolved);
   if (!res.ok) throw new Error(`첨부 다운로드 실패 (${res.status})`);
   return res.arrayBuffer();
 }

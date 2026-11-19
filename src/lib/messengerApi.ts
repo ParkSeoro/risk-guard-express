@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { extractAttachmentsObjectPath } from "@/lib/archiveUrlResolver";
 import { markChatRoomNotificationsRead } from "@/lib/notificationReadHelper";
 import {
   CHAT_MESSAGE_PAGE_SIZE,
@@ -281,7 +282,7 @@ export async function fetchMyChatRooms(): Promise<ChatRoom[]> {
         notifications_enabled: myPart?.is_notification_enabled !== false,
         participants: roomParticipants,
         other_participant: otherParticipant,
-        is_self_chat: !room.is_group && roomParticipants.length <= 1 && !otherParticipant,
+        is_self_chat: Boolean(room.is_self_chat),
       };
     }),
   );
@@ -569,6 +570,7 @@ export async function sendChatMessage(
         storage_provider: "SUPABASE",
         gcs_bucket: "attachments",
         gcs_blob_name: attachment.publicUrl,
+        storage_object_path: extractAttachmentsObjectPath(attachment.publicUrl),
         public_url: attachment.publicUrl,
         thumbnail_url: attachment.isImage ? attachment.publicUrl : null,
       })

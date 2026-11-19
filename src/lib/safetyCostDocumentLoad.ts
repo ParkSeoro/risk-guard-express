@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { resolveArchivedUrl } from '@/lib/archiveUrlResolver';
 import { isClientType, resolveProjectCompanyType } from '@/lib/companyTypes';
 import { fetchProjectCompanies } from '@/lib/projectCompanies';
 import { sumSafetyCostByCategory } from '@/lib/safetyCost';
@@ -41,11 +42,11 @@ function pickSigners(rows: any[]): SafetyCostSigner[] {
 
 async function publicFileUrl(file: { file_url?: string | null; file_path?: string | null }): Promise<string> {
   const direct = String(file.file_url || '').trim();
-  if (direct) return direct;
+  if (direct) return resolveArchivedUrl(direct);
   const path = String(file.file_path || '').trim();
   if (!path) return '';
   const { data } = supabase.storage.from('attachments').getPublicUrl(path);
-  return data?.publicUrl || '';
+  return data?.publicUrl ? resolveArchivedUrl(data.publicUrl) : '';
 }
 
 /** 사용내역서 한 건을 읽기만 한다. 허가서·위험성평가·TBM·결재 행은 쓰지 않는다. */

@@ -239,12 +239,17 @@ Deno.serve(async (req) => {
   if (!authorized) return jsonRes({ error: "unauthorized" }, 401);
 
   const body = await req.json().catch(() => ({}));
-  // Default is strictly backup_only (purge OFF) per PR #684 Clause 7
+  // Default backup_only. Purge only when cron/policy gate sends purge_enabled=true (PR #684 §5.1).
   const purgeEnabled = body?.purge_enabled === true;
   const copyMinAgeDays = Math.max(1, Number(body?.copy_min_age_days ?? 30));
   const purgeMinAgeDays = Math.max(30, Number(body?.purge_min_age_days ?? 60));
   const maxFiles = Math.min(30, Math.max(1, Number(body?.max_files ?? 15)));
+  const maxPurgeFiles = Math.min(
+    30,
+    Math.max(1, Number(body?.max_purge_files ?? (purgeEnabled ? 5 : maxFiles))),
+  );
   const maxBytesBudget = Math.min(100 * 1024 * 1024, Math.max(10 * 1024 * 1024, Number(body?.max_bytes ?? 50 * 1024 * 1024)));
+  const runRestoreProbe = body?.run_restore_probe === true;
 
   const startedAt = Date.now();
   const mode = purgeEnabled ? "purge_active" : "backup_only";
@@ -262,20 +267,27 @@ Deno.serve(async (req) => {
   let skippedCnt = 0;
   let errorCnt = 0;
   let circuitBroken = false;
+  let fatalCircuit = false;
+  let fatalReason = "";
   let quotaUsed: number | null = null;
   let quotaLimit: number | null = null;
   let notes = "";
+  let restoreProbeOk = false;
 
   try {
     const token = await getGoogleAccessToken(admin);
 
-    // Quota pre-check (80% warn, 90% abort & freeze purge)
+    // Quota pre-check (80% warn/pause, 90% abort & freeze purge)
     const aboutRes = await fetch(
       "https://www.googleapis.com/drive/v3/about?fields=storageQuota",
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!aboutRes.ok) {
       circuitBroken = true;
+      if (aboutRes.status === 401 || aboutRes.status === 403) {
+        fatalCircuit = true;
+        fatalReason = `GDRIVE_QUOTA_CHECK_${aboutRes.status}`;
+      }
       throw new Error(`GDRIVE_QUOTA_CHECK_${aboutRes.status}`);
     }
     const aboutJson = await aboutRes.json();
@@ -285,11 +297,69 @@ Deno.serve(async (req) => {
       const pct = (quotaUsed / quotaLimit) * 100;
       if (pct >= 90) {
         circuitBroken = true;
+        fatalCircuit = true;
+        fatalReason = `quota_${pct.toFixed(1)}_ge_90`;
         notes = `Circuit breaker: Google Drive quota at ${pct.toFixed(1)}% (>= 90%)`;
+        await admin.rpc("disarm_storage_purge_policy", { _reason: fatalReason });
         return jsonRes({ ok: false, circuit_broken: true, quota_pct: pct, notes }, 503);
       }
       if (pct >= 80) {
         notes = `Warning: Google Drive quota at ${pct.toFixed(1)}%`;
+        await admin.rpc("pause_storage_auto_purge", { _reason: `quota_${pct.toFixed(1)}_ge_80` });
+      }
+    }
+
+    // Weekly self restore health check (does not depend on user opening old photos)
+    if (runRestoreProbe && Date.now() - startedAt < 20_000) {
+      const { data: policy } = await admin
+        .from("storage_archive_policy")
+        .select("last_verified_restore_at")
+        .eq("id", 1)
+        .maybeSingle();
+      const last = policy?.last_verified_restore_at
+        ? Date.parse(String(policy.last_verified_restore_at))
+        : NaN;
+      const due = !Number.isFinite(last) || Date.now() - last >= 6 * 86400_000;
+      if (due) {
+        const { data: sample } = await admin
+          .from("storage_archive_registry")
+          .select("id, gdrive_file_id, sha256_hash, object_path")
+          .eq("bucket_id", "attachments")
+          .eq("archive_status", "backed_up")
+          .not("gdrive_file_id", "is", null)
+          .not("sha256_hash", "is", null)
+          .order("backed_up_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (sample?.gdrive_file_id && sample.sha256_hash) {
+          const dlRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(sample.gdrive_file_id)}?alt=media`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (!dlRes.ok) {
+            if (dlRes.status === 401 || dlRes.status === 403) {
+              fatalCircuit = true;
+              fatalReason = `restore_probe_${dlRes.status}`;
+              circuitBroken = true;
+            }
+            errorCnt += 1;
+            notes = `${notes ? notes + "; " : ""}restore_probe_failed:${dlRes.status}`;
+          } else {
+            const buf = await dlRes.arrayBuffer();
+            const hex = await sha256Hex(buf);
+            if (hex !== sample.sha256_hash) {
+              fatalCircuit = true;
+              fatalReason = "restore_probe_failed:checksum_mismatch";
+              circuitBroken = true;
+              errorCnt += 1;
+              notes = `${notes ? notes + "; " : ""}restore_probe_checksum_mismatch`;
+            } else {
+              await admin.rpc("mark_storage_restore_verified");
+              restoreProbeOk = true;
+              verifiedCnt += 1;
+            }
+          }
+        }
       }
     }
 
@@ -350,6 +420,9 @@ Deno.serve(async (req) => {
 
         if (!uploaded.id || (uploaded.sha256Checksum && uploaded.sha256Checksum !== localSha)) {
           errorCnt += 1;
+          fatalCircuit = true;
+          fatalReason = "checksum_mismatch";
+          circuitBroken = true;
           await admin.from("storage_archive_registry").upsert(
             {
               bucket_id: "attachments",
@@ -367,7 +440,7 @@ Deno.serve(async (req) => {
             },
             { onConflict: "bucket_id,object_path" },
           );
-          continue;
+          break;
         }
 
         await admin.from("storage_archive_registry").upsert(
@@ -399,13 +472,15 @@ Deno.serve(async (req) => {
         errorCnt += 1;
         if (msg.includes("401") || msg.includes("403") || msg.includes("invalid_grant") || msg.includes("storageQuotaExceeded")) {
           circuitBroken = true;
+          fatalCircuit = true;
+          fatalReason = msg.slice(0, 120);
           notes = `Circuit breaker triggered: ${msg}`;
           break;
         }
       }
     }
 
-    // Stage 2: Purge ONLY when explicitly enabled AND not circuit-broken
+    // Stage 2: Purge ONLY when policy gate enabled AND not circuit-broken
     if (purgeEnabled && !circuitBroken && Date.now() - startedAt < 40_000) {
       const ageCutoff = new Date(Date.now() - purgeMinAgeDays * 86400_000).toISOString();
       const { data: purgeList } = await admin
@@ -418,7 +493,7 @@ Deno.serve(async (req) => {
         .not("gdrive_file_id", "is", null)
         .lte("source_created_at", ageCutoff)
         .order("source_created_at", { ascending: true })
-        .limit(maxFiles);
+        .limit(maxPurgeFiles);
 
       for (const row of (purgeList || []) as Array<{
         id: string;
@@ -435,6 +510,8 @@ Deno.serve(async (req) => {
         if (!metaRes.ok) {
           if (metaRes.status === 401 || metaRes.status === 403) {
             circuitBroken = true;
+            fatalCircuit = true;
+            fatalReason = `purge_auth_${metaRes.status}`;
             notes = `Purge halted on auth error ${metaRes.status}`;
             break;
           }
@@ -444,7 +521,10 @@ Deno.serve(async (req) => {
         const meta = await metaRes.json();
         if (meta.trashed === true || (row.sha256_hash && meta.sha256Checksum !== row.sha256_hash)) {
           errorCnt += 1;
-          continue;
+          fatalCircuit = true;
+          fatalReason = "checksum_mismatch";
+          circuitBroken = true;
+          break;
         }
 
         const { error: rmErr } = await admin.storage.from("attachments").remove([row.object_path]);
@@ -475,18 +555,36 @@ Deno.serve(async (req) => {
       skipped_cnt: skippedCnt,
       error_cnt: errorCnt,
       circuit_broken: circuitBroken,
+      restore_probe_ok: restoreProbeOk,
+      max_purge_files: maxPurgeFiles,
       quota_used_bytes: quotaUsed,
       quota_limit_bytes: quotaLimit,
       notes,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("GDRIVE_AUTH") || msg.includes("401") || msg.includes("403")) {
+    if (msg.includes("GDRIVE_AUTH") || msg.includes("401") || msg.includes("403") || msg.includes("invalid_grant")) {
       circuitBroken = true;
+      fatalCircuit = true;
+      fatalReason = msg.slice(0, 120);
+    } else if (msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("504") || msg.toLowerCase().includes("timeout")) {
+      circuitBroken = true;
+      await admin.rpc("pause_storage_auto_purge", { _reason: msg.slice(0, 120) });
     }
     notes = msg;
     return jsonRes({ ok: false, error: msg, circuit_broken: circuitBroken }, 500);
   } finally {
+    try {
+      await admin.rpc("record_storage_purge_night_result", {
+        _error_cnt: errorCnt,
+        _circuit_broken: circuitBroken,
+        _purge_was_enabled: purgeEnabled,
+        _fatal: fatalCircuit,
+        _fatal_reason: fatalReason || null,
+      });
+    } catch {
+      /* ignore policy bookkeeping errors */
+    }
     if (runId) {
       await admin
         .from("storage_backup_runs")

@@ -69,6 +69,7 @@ export const LazySettingsApprovalRoutes = L(() => import("@/pages/SettingsApprov
 export const LazySettingsNotifications = L(() => import("@/pages/SettingsNotifications"));
 export const LazySettingsAI = L(() => import("@/pages/SettingsAI"));
 export const LazySettingsWeather = L(() => import("@/pages/SettingsWeather"));
+export const LazySettingsStorageArchive = L(() => import("@/pages/SettingsStorageArchive"));
 export const LazySettingsRemoteSupport = L(() => import("@/pages/SettingsRemoteSupport"));
 export const LazyRemoteSupport = L(() => import("@/pages/RemoteSupport"));
 export const LazyMobileReleases = L(() => import("@/pages/MobileReleases"));

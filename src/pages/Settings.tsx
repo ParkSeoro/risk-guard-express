@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye, ClipboardList, Headset } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye, ClipboardList, Headset, HardDrive } from 'lucide-react';
 import { E2ETestAccountsSetup } from '@/components/E2ETestAccountsSetup';
 
 const settingsCards = [
@@ -57,6 +57,15 @@ const settingsCards = [
     description: '기상청·OpenWeather API 키를 등록해 현장 주소 기반 날씨를 조회합니다.',
     icon: CloudSun,
     path: '/settings/weather',
+    requires: 'master' as const,
+    badge: '마스터 전용',
+  },
+  {
+    id: 'storage-archive',
+    title: 'Google One 보관·삭제',
+    description: '오래된 사진을 Google One으로 복사하고, 한 번 무장하면 게이트가 맞을 때 심야에 자동 삭제합니다.',
+    icon: HardDrive,
+    path: '/settings/storage-archive',
     requires: 'master' as const,
     badge: '마스터 전용',
   },

@@ -35,6 +35,7 @@ export const ADMIN_BACK_PARENTS: Record<string, string | null> = {
   "settings/notifications": "/settings",
   "settings/ai": "/settings",
   "settings/weather": "/settings",
+  "settings/storage-archive": "/settings",
   "settings/remote-support": "/settings",
   "settings/mobile-preview": "/settings",
   "settings/mobile-releases": "/settings",

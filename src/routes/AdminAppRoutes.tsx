@@ -132,6 +132,7 @@ function AdminAppRoutesInner() {
             <Route path="settings/notifications" element={<RoleGuard><P.LazySettingsNotifications /></RoleGuard>} />
             <Route path="settings/ai" element={<RoleGuard><P.LazySettingsAI /></RoleGuard>} />
             <Route path="settings/weather" element={<RoleGuard masterOnly><P.LazySettingsWeather /></RoleGuard>} />
+            <Route path="settings/storage-archive" element={<RoleGuard masterOnly><P.LazySettingsStorageArchive /></RoleGuard>} />
             <Route path="settings/remote-support" element={<RoleGuard masterOnly><P.LazySettingsRemoteSupport /></RoleGuard>} />
             <Route path="settings/mobile-preview" element={<RoleGuard masterOnly><P.LazyMobilePreviewHost /></RoleGuard>} />
             <Route path="settings/mobile-releases" element={<RoleGuard masterOnly><P.LazyMobileReleases /></RoleGuard>} />

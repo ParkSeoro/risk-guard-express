@@ -79,10 +79,11 @@ Supabase `attachments` 용량을 줄인다. 메신저 `chat/`(~31 MB)이 아니�
 | `purge_policy` (DB 1행) | `director_armed` (bool), `armed_at`, `armed_by`, `auto_purge_allowed` (계산/캐시), `copy_min_age_days` (기본 30), `purge_min_age_days` (기본 60), `canary_max_purge_per_tick` |
 | 디렉터 한 번 | 관리 화면 또는 master-only RPC로 `director_armed = true`. **이게 “삭제 켜줘”의 유일한 수동 행위.** |
 | cron | 하드코딩 `false` 대신 `director_armed && auto_purge_allowed`를 읽어 `purge_enabled`에 넣는다. |
-| `auto_purge_allowed`가 true가 되려면 (모두) | (a) 60일+ **eligible** 후보 중 `backed_up`/`archived_purged`가 아닌 잔여 = 0 (또는 허용 오차 N건) · (b) 최근 K회(권고 3밤) 백업 틱 `error_cnt=0` & `circuit_broken=false` · (c) 최근 7일 내 복원 표본 성공 1회 이상 · (d) Drive 쿼터 &lt; 80% · (e) 회로차단기 미발동 |
-| 첫 삭제 밤 | canary: 틱당 삭제 상한을 작게 (예: 5건). 연속 성공 후 상한을 기존 `max_files`까지 올림. |
-| 자동 해제 | auth/쿼터/`circuit_broken` 또는 복원 실패 시 `auto_purge_allowed=false` (+ 관리자 알림). `director_armed`는 유지하거나 정책에 따라 같이 내린다. 재개는 조건이 다시 맞으면 자동, 또는 `director_armed`를 다시 요구. |
-| 알림 | 무장 직전 1회, 첫 purge &gt; 0 밤, 회로차단 시. “매일 승인”은 없다. |
+| `auto_purge_allowed`가 true가 되려면 (모두) | (a) 60일+ **eligible** 후보 중 `backed_up`/`archived_purged`가 아닌 잔여 = 0 (또는 허용 오차 N건) · (b) 최근 **K=3**밤 백업 틱 `error_cnt=0` & `circuit_broken=false` · (c) `last_verified_restore_at`이 7일 이내 · (d) Drive 쿼터 &lt; 80% · (e) 회로차단기 미발동 |
+| 자체 복원 헬스체크 | 사용자 열람에 의존하지 않는다. 심야 틱이 `last_verified_restore_at`이 6일 이상 지나면 `backed_up` 1건을 Drive에서 받아 SHA-256만 확인하고 시각을 갱신한다 (주 1회 상한). |
+| 첫 삭제 밤 | canary **틱당 5건**. 카나리 밤이 **2밤** 연속 무오류면 틱당 **15건**으로 확대. |
+| 자동 해제 | **치명**(`invalid_grant`/401/403/checksum_mismatch/복원 실패): `director_armed=false`까지 해제 + 알림. **일시**(5xx·타임아웃·쿼터 80~90%): `auto_purge_allowed`만 정지, 회복 후 자동 재개. |
+| 알림 | 무장 직전 1회, 첫 purge &gt; 0 밤, 치명 해제 시. “매일 승인”은 없다. |
 
 ### 5.2 대안 (비권고)
 
@@ -131,18 +132,18 @@ Stage 2는 아래를 **모두** 통과한 행만 지운다.
 | 단계 | 내용 | 상태 |
 | --- | --- | --- |
 | Phase 1 | 스키마·복사 워커·복원 리졸버·심야 복사, **삭제 OFF** | **완료 (가동)** |
-| Phase 1b | 정책 래치 + 자동 게이트 + canary 삭제 (5.1) | **설계 합의 대기** |
+| Phase 1b | 정책 래치 + 자동 게이트 + canary + 주 1회 자체 복원 헬스체크 (5.1) | **합의됨 · 구현 중** |
 | Phase 2 | 60일+ 백로그 복사·표본 검증 완료 후, 무장된 정책으로 삭제 틱 가동 | 대기 |
 | Phase 2c | 메신저: 참조 0 + `is_self_chat` 안정화 후 별도 allowlist (용량 본경로 아님) | 후순위 |
 | Phase 3 | 필요 시 Workspace / 한국 리전 객체 스토리지로 provider 추상화 | 후순위 |
 
 ---
 
-## 9. 미결 · 리뷰 요청
+## 9. 합의된 숫자 · 남은 일
 
-1. **5.1 정책 래치**에 Antigravity · 디렉터 동의 여부 (대안 B/C 채택 여부)
-2. 게이트 숫자: 연속 성공 밤 수 K (권고 3), canary 틱당 삭제 건수 (권고 5)
-3. 회로차단 시 `director_armed`까지 내릴지, `auto_purge_allowed`만 내릴지
-4. `print-cache` 정리 잡 일정 (복사와 분리)
+- §5.1 + 주 1회 자체 복원 헬스체크: **합의** (2026-11-20)
+- K=3, canary=5 → 2밤 후 15: **합의**
+- 치명 → `director_armed=false` / 일시 → `auto_purge_allowed`만: **합의**
+- 남은 것: Phase 1b 구현 PR 머지, 디렉터의 **한 번** 무장, `print-cache` 정리 잡 일정
 
-합의되면 Phase 1b 구현 PR을 이 문서에 링크한다. 구현·머지 전 삭제 cron의 `purge_enabled` 하드코딩 `true`는 하지 않는다.
+구현·머지 전에도 초기값 `director_armed=false`라 삭제는 OFF다. cron에 `purge_enabled: true`를 하드코딩하지 않는다.

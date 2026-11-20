@@ -44,6 +44,7 @@ AS $$
 DECLARE
   v_count bigint;
 BEGIN
+  -- Allowlist only (same domains as backup-storage-to-gdrive). Unknown paths never block the gate.
   SELECT COUNT(*)::bigint INTO v_count
   FROM storage.objects o
   LEFT JOIN public.storage_archive_registry r
@@ -55,12 +56,19 @@ BEGIN
     AND lower(o.name) NOT LIKE '%/site-maps/%'
     AND lower(o.name) NOT LIKE '%/drone-maps/%'
     AND lower(o.name) NOT LIKE '%/print-cache/%'
-    AND lower(o.name) NOT LIKE 'chat/%';
+    AND lower(o.name) NOT LIKE 'chat/%'
+    AND (
+      lower(o.name) LIKE 'safety-cost/%'
+      OR lower(o.name) LIKE 'worker-photos/%'
+      OR lower(o.name) LIKE 'feedback/%'
+      OR o.name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(work-plans|tbm|safety-inspection|mobile-inspect|inspection-actions|accidents|incidents|work-stop|chemicals|worker-sign)/'
+    );
   RETURN COALESCE(v_count, 0);
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.count_archive_copy_backlog(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.count_archive_copy_backlog(integer) FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.count_archive_copy_backlog(integer) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.evaluate_storage_purge_gate()
@@ -78,6 +86,9 @@ DECLARE
   v_notes text := '';
   v_recent_count integer := 0;
   v_recent_bad integer := 0;
+  v_quota_ok boolean := true;
+  v_quota_used bigint;
+  v_quota_limit bigint;
 BEGIN
   SELECT * INTO p FROM public.storage_archive_policy WHERE id = 1 FOR UPDATE;
   IF NOT FOUND THEN
@@ -115,14 +126,28 @@ BEGIN
     AND p.last_verified_restore_at >= now() - interval '7 days'
   );
 
+  SELECT quota_used_bytes, quota_limit_bytes
+    INTO v_quota_used, v_quota_limit
+  FROM public.storage_backup_runs
+  WHERE finished_at IS NOT NULL
+    AND quota_limit_bytes IS NOT NULL
+    AND quota_limit_bytes > 0
+  ORDER BY started_at DESC
+  LIMIT 1;
+
+  IF v_quota_limit IS NOT NULL AND v_quota_limit > 0 AND v_quota_used IS NOT NULL THEN
+    v_quota_ok := (v_quota_used::numeric / v_quota_limit::numeric) < 0.80;
+  END IF;
+
   v_allowed := p.director_armed
     AND v_backlog = 0
     AND v_recent_ok
-    AND v_restore_ok;
+    AND v_restore_ok
+    AND v_quota_ok;
 
   v_notes := format(
-    'armed=%s backlog60=%s recent_ok=%s restore_ok=%s clean_nights=%s canary_nights=%s',
-    p.director_armed, v_backlog, v_recent_ok, v_restore_ok,
+    'armed=%s backlog60=%s recent_ok=%s restore_ok=%s quota_ok=%s clean_nights=%s canary_nights=%s',
+    p.director_armed, v_backlog, v_recent_ok, v_restore_ok, v_quota_ok,
     p.consecutive_clean_nights, p.consecutive_canary_success_nights
   );
 
@@ -144,6 +169,7 @@ BEGIN
     END,
     'backlog_over_purge_age', v_backlog,
     'last_verified_restore_at', p.last_verified_restore_at,
+    'quota_ok', v_quota_ok,
     'notes', v_notes
   );
 END;
@@ -190,7 +216,6 @@ REVOKE ALL ON FUNCTION public.evaluate_storage_purge_gate() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.evaluate_storage_purge_gate() TO service_role;
 REVOKE ALL ON FUNCTION public.get_storage_purge_policy_status() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_storage_purge_policy_status() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.count_archive_copy_backlog(integer) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.arm_storage_purge_policy()
 RETURNS jsonb

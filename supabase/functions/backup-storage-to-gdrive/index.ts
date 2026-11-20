@@ -241,6 +241,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   // Default backup_only. Purge only when cron/policy gate sends purge_enabled=true (PR #684 §5.1).
   const purgeEnabled = body?.purge_enabled === true;
+  let effectivePurgeEnabled = purgeEnabled;
   const copyMinAgeDays = Math.max(1, Number(body?.copy_min_age_days ?? 30));
   const purgeMinAgeDays = Math.max(30, Number(body?.purge_min_age_days ?? 60));
   const maxFiles = Math.min(30, Math.max(1, Number(body?.max_files ?? 15)));
@@ -252,14 +253,8 @@ Deno.serve(async (req) => {
   const runRestoreProbe = body?.run_restore_probe === true;
 
   const startedAt = Date.now();
-  const mode = purgeEnabled ? "purge_active" : "backup_only";
-
-  const { data: runRow } = await admin
-    .from("storage_backup_runs")
-    .insert({ mode })
-    .select("id")
-    .single();
-  const runId = runRow?.id;
+  let mode = "backup_only";
+  let runId: string | undefined;
 
   let copiedCnt = 0;
   let verifiedCnt = 0;
@@ -305,9 +300,18 @@ Deno.serve(async (req) => {
       }
       if (pct >= 80) {
         notes = `Warning: Google Drive quota at ${pct.toFixed(1)}%`;
+        effectivePurgeEnabled = false;
         await admin.rpc("pause_storage_auto_purge", { _reason: `quota_${pct.toFixed(1)}_ge_80` });
       }
     }
+
+    mode = effectivePurgeEnabled ? "purge_active" : "backup_only";
+    const { data: runRow } = await admin
+      .from("storage_backup_runs")
+      .insert({ mode, quota_used_bytes: quotaUsed, quota_limit_bytes: quotaLimit })
+      .select("id")
+      .single();
+    runId = runRow?.id;
 
     // Weekly self restore health check (does not depend on user opening old photos)
     if (runRestoreProbe && Date.now() - startedAt < 20_000) {
@@ -325,7 +329,7 @@ Deno.serve(async (req) => {
           .from("storage_archive_registry")
           .select("id, gdrive_file_id, sha256_hash, object_path")
           .eq("bucket_id", "attachments")
-          .eq("archive_status", "backed_up")
+          .in("archive_status", ["backed_up", "archived_purged"])
           .not("gdrive_file_id", "is", null)
           .not("sha256_hash", "is", null)
           .order("backed_up_at", { ascending: false })
@@ -480,8 +484,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Stage 2: Purge ONLY when policy gate enabled AND not circuit-broken
-    if (purgeEnabled && !circuitBroken && Date.now() - startedAt < 40_000) {
+    // Stage 2: Purge ONLY when policy gate enabled (and not paused by quota) AND not circuit-broken
+    if (effectivePurgeEnabled && !circuitBroken && Date.now() - startedAt < 40_000) {
       const ageCutoff = new Date(Date.now() - purgeMinAgeDays * 86400_000).toISOString();
       const { data: purgeList } = await admin
         .from("storage_archive_registry")
@@ -578,7 +582,7 @@ Deno.serve(async (req) => {
       await admin.rpc("record_storage_purge_night_result", {
         _error_cnt: errorCnt,
         _circuit_broken: circuitBroken,
-        _purge_was_enabled: purgeEnabled,
+        _purge_was_enabled: effectivePurgeEnabled,
         _fatal: fatalCircuit,
         _fatal_reason: fatalReason || null,
       });

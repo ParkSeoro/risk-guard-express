@@ -1239,6 +1239,7 @@ const SafetyCost = () => {
             items={filteredItems}
             evidence={reportEvidence}
             highlightedIds={highlightedItemIds}
+            reportMonth={selectedReport?.report_month}
             reportLocked={reportLocked}
             isLegacyImport={isLegacyImport}
             itemSearch={itemSearch}

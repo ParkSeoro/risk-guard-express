@@ -1100,7 +1100,7 @@ export default function SafetyInspections() {
               }
               return filtered.map(i => (
                 <Card key={i.id} className="cursor-pointer hover:bg-accent/30" onClick={() => openDetail(i)}>
-                  <CardContent className="p-3 flex items-center justify-between text-sm gap-2">
+                  <CardContent className="p-3 flex flex-wrap sm:flex-nowrap items-center justify-between text-sm gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold">
                         {inspectionTitle(i)}

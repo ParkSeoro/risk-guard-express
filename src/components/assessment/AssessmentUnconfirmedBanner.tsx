@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { withTopicParticle } from "@/lib/koreanParticle";
 
 type Row = { worker_id: string; worker_name: string; run_id: string; period_label: string | null };
 
@@ -43,7 +44,7 @@ export function AssessmentUnconfirmedBanner({
   return (
     <div className="print:hidden rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 space-y-1">
       {shown.map((row) => (
-        <p key={row.worker_id}>{row.worker_name}은 이 작업의 위험성평가를 아직 확인하지 않았습니다.</p>
+        <p key={row.worker_id}>{withTopicParticle(row.worker_name)} 이 작업의 위험성평가를 아직 확인하지 않았습니다.</p>
       ))}
       {rows.length > shown.length && (
         <p className="text-xs">외 {rows.length - shown.length}명</p>

@@ -261,10 +261,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 )}
                 {/* Global Project Selector — shrinks on narrow screens */}
                 {projectAccess.projects.length > 0 && (
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1 max-w-[11rem] sm:max-w-[14rem] md:max-w-none md:flex-none">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1 max-w-[11rem] sm:max-w-[14rem] lg:max-w-[18rem]">
                     <Building2 className="h-4 w-4 text-muted-foreground shrink-0 hidden xs:block sm:block" />
                     <Select value={projectAccess.selectedProject} onValueChange={projectAccess.setSelectedProject}>
-                      <SelectTrigger className="w-full sm:w-52 h-8 text-xs border-dashed min-w-0">
+                      <SelectTrigger className="w-full h-8 text-xs border-dashed min-w-0 [&>span]:truncate">
                         <SelectValue placeholder="프로젝트 선택" />
                       </SelectTrigger>
                       <SelectContent>
@@ -303,7 +303,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <p className="text-muted-foreground truncate">{roleLabel}</p>
                   </div>
                 </div>
-                <div className="hidden md:block">
+                <div className="hidden xl:block shrink-0">
                   <AICreditBanner />
                 </div>
                 {!isPureWorkerUser(roles) && (
@@ -316,12 +316,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-muted-foreground gap-1.5 px-2"
+                  className="text-muted-foreground gap-1.5 px-2 shrink-0 whitespace-nowrap"
                   onClick={() => void signOut()}
                   title="로그아웃"
                 >
-                  <LogOut className="h-4 w-4" />
-                  <span className="hidden md:inline text-xs">로그아웃</span>
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  <span className="hidden lg:inline text-xs">로그아웃</span>
                 </Button>
               </div>
             </header>

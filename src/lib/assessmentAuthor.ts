@@ -42,13 +42,16 @@ export function hasAssessmentLegalAuthor(authorUserId?: string | null): boolean 
 
 /**
  * 인쇄·PDF 출력 가능 여부: `작성중` 초안은 작성 주체(관리감독자) 지정 필수,
- * 그 외 상태(결재진행·승인완료·반려·만료 등 과거/확정 문서)는 created_by fallback으로 즉시 출력 허용.
+ * 그 외 상태(결재진행·승인완료·반려·만료 등 과거/확정 문서)는 author_user_id || created_by fallback으로 즉시 출력 허용.
+ * author_user_id와 created_by가 모두 비어 있으면 차단 유지.
  */
 export function canPrintAssessmentRun(opts: {
   status?: string | null;
   authorUserId?: string | null;
+  createdBy?: string | null;
 }): boolean {
   if (hasAssessmentLegalAuthor(opts.authorUserId)) return true;
+  if (!opts.createdBy) return false;
   const s = (opts.status || '').trim();
   return !!s && s !== '작성중';
 }

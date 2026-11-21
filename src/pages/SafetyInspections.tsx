@@ -21,6 +21,7 @@ import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { resolveArchivedUrlsInHtml } from '@/lib/archiveUrlResolver';
+import { chunkArray } from '@/lib/chunkArray';
 import { datePartFromDateTime } from '@/lib/permitWorkDate';
 import { fetchTodayPermitRoute, fetchPatrolPrintContext, fetchPatrolPrintStamps } from '@/lib/legalForms/fetchTodayPermitRoute';
 import { closePendingInspectionAction, notifyInspectionFailSummary } from '@/lib/inspectionFailNotify';
@@ -330,15 +331,26 @@ export default function SafetyInspections() {
         supabase.from('projects').select('gc_company_id').eq('id', projectId).maybeSingle(),
       ]);
       const memList = (mems as any[]) || [];
-      const memberUserIds = Array.from(new Set(memList.map((m) => m.user_id).filter(Boolean)));
+      const memberUserIds = Array.from(new Set(memList.map((m) => m.user_id).filter(Boolean))) as string[];
       const profileNameByUser = new Map<string, string>();
       if (memberUserIds.length > 0) {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('user_id, display_name')
-          .in('user_id', memberUserIds);
-        for (const pr of (profs as Array<{ user_id?: string; display_name?: string | null }>) || []) {
-          if (pr.user_id) profileNameByUser.set(pr.user_id, pr.display_name || '');
+        const profChunks = chunkArray(memberUserIds, 50);
+        const profResults = await Promise.all(
+          profChunks.map((chunk) =>
+            supabase
+              .from('profiles')
+              .select('user_id, display_name')
+              .in('user_id', chunk),
+          ),
+        );
+        for (const res of profResults) {
+          if (res.error) {
+            console.warn('[SafetyInspections] profiles chunk query failed:', res.error.message);
+            continue;
+          }
+          for (const pr of (res.data as Array<{ user_id?: string; display_name?: string | null }>) || []) {
+            if (pr.user_id) profileNameByUser.set(pr.user_id, pr.display_name || '');
+          }
         }
       }
       setProjectGcCompanyId((projRow as { gc_company_id?: string | null } | null)?.gc_company_id || null);

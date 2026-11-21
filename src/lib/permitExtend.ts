@@ -2,10 +2,11 @@
 import { supabase } from '@/integrations/supabase/client';
 import { permitPostStepKind } from '@/lib/permitPostApproval';
 
-/** 전회차 복사 때 이전 결재·연장·종료 확인이 새 허가서로 따라오지 않게 뺀다. */
+/** 전회차 복사 때 이전 결재·서명·연장·종료 확인이 새 허가서로 따라오지 않게 뺀다. */
 const PERMIT_CLONE_OMIT_KEYS = [
   'approved_at',
   'reviewed_at',
+  'signatures',
   'work_complete_time',
   'closed_at',
   'closed_by',
@@ -31,14 +32,6 @@ export function permitFormDataForClone(
 ): Record<string, unknown> {
   const next = { ...(formData || {}) };
   for (const key of PERMIT_CLONE_OMIT_KEYS) delete next[key];
-  if (next.signatures && typeof next.signatures === 'object' && !Array.isArray(next.signatures)) {
-    const cleanSigs = { ...(next.signatures as Record<string, unknown>) };
-    delete cleanSigs.closed_at;
-    delete cleanSigs.closure_approver;
-    delete cleanSigs.approved_at;
-    delete cleanSigs.reviewed_at;
-    next.signatures = cleanSigs;
-  }
   return next;
 }
 

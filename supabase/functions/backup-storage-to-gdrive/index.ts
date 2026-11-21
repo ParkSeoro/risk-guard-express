@@ -550,6 +550,28 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Best-effort cleanup of expired (>24h) temporary files in archive-restore-cache via official Storage API
+    let cacheCleanedCnt = 0;
+    if (runRestoreProbe && Date.now() - startedAt < 47_000) {
+      try {
+        const { data: expired } = await admin.rpc("list_expired_restore_cache_objects", {
+          _older_than_hours: 24,
+          _limit: 50,
+        });
+        const paths = ((expired || []) as Array<{ object_path?: string }>)
+          .map((r) => r.object_path)
+          .filter((p): p is string => Boolean(p));
+        if (paths.length > 0) {
+          const { error: cacheRmErr } = await admin.storage
+            .from("archive-restore-cache")
+            .remove(paths);
+          if (!cacheRmErr) cacheCleanedCnt = paths.length;
+        }
+      } catch {
+        /* non-blocking temporary cache cleanup */
+      }
+    }
+
     return jsonRes({
       ok: true,
       mode,
@@ -560,6 +582,7 @@ Deno.serve(async (req) => {
       error_cnt: errorCnt,
       circuit_broken: circuitBroken,
       restore_probe_ok: restoreProbeOk,
+      cache_cleaned_cnt: cacheCleanedCnt,
       max_purge_files: maxPurgeFiles,
       quota_used_bytes: quotaUsed,
       quota_limit_bytes: quotaLimit,

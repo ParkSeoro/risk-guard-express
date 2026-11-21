@@ -44,7 +44,7 @@ import {
   formatSiteLabel,
   emptyDirectorPatrolItems,
   normalizeDirectorPatrolItems,
-  isPatrolLogLocked,
+  isInspectionEditLocked,
   type DirectorPatrolItem,
 } from "@/lib/legalForms/patrolLog";
 
@@ -74,7 +74,8 @@ export default function MobileInspect() {
   const leavePage = useMobileSubpageBack("/app/worker/tasks");
   const [searchParams, setSearchParams] = useSearchParams();
   const deepId = searchParams.get("id");
-  const { profile } = useAuth();
+  const { profile, hasRole } = useAuth();
+  const isMaster = hasRole("master");
   const { projectId, companyId, role } = useMobileAccess();
   const { log: auditLog } = useAuditLog();
 
@@ -224,11 +225,11 @@ export default function MobileInspect() {
       setItems(((its as any) || []).map((x: any) => ({ ...x, photos: x.photos || [] })));
       setInspectionId(ins.id);
       const own = ins.created_by === profile?.user_id || ins.inspector_id === profile?.user_id;
-      setReadOnly(ins.status === "completed" || ins.status === "결재진행" || isPatrolLogLocked(ins.status) || !own);
+      setReadOnly(isInspectionEditLocked(ins.status, isMaster) || (!isMaster && !own));
       setStep("checklist");
     })();
     return () => { cancelled = true; };
-  }, [deepId, profile?.user_id]);
+  }, [deepId, profile?.user_id, isMaster]);
 
   useEffect(() => {
     if (!form.inspector_id || !members.length) return;

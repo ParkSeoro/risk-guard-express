@@ -2286,6 +2286,11 @@ const AssessmentRunDetail = () => {
 
   const handleExcelImport = async () => {
     if (!run || !user || !runId) return;
+    if (!canEdit) {
+      toast({ title: '현재 상태에서는 엑셀을 가져올 수 없습니다.', variant: 'destructive' });
+      setShowExcelUpload(false);
+      return;
+    }
     const parseGrade = (raw: string, fallback: '상' | '중' | '하'): '상' | '중' | '하' => {
       const t = String(raw || '').trim();
       return (['상', '중', '하'] as const).includes(t as '상' | '중' | '하') ? (t as '상' | '중' | '하') : fallback;

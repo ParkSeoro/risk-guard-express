@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { formatSignatureLedgerDetail, signedAtSeoulDate } from '@/lib/laborEvidence';
-import { isInspectionCompletedStatus, isInspectionEditLocked } from '@/lib/legalForms/patrolLog';
+import { inspectionStatusLabel, isInspectionCompletedStatus, isInspectionEditLocked, patrolLockEditHint } from '@/lib/legalForms/patrolLog';
 import { officialChecklist } from '@/lib/legalForms/officialInspectionForms';
 
 describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
   describe('#6 Signature ledger localization, TBM session title, and KST date comparison', () => {
     it('localizes raw ra_share source tokens into Korean', () => {
       expect(formatSignatureLedgerDetail('ra_share', 'notice')).toBe('위험성평가 공지 확인');
+      expect(formatSignatureLedgerDetail('ra_share', 'viewer')).toBe('위험성평가 열람 확인');
       expect(formatSignatureLedgerDetail('ra_share', 'qr')).toBe('QR 확인');
       expect(formatSignatureLedgerDetail('ra_share', 'daily_ack')).toBe('출근 서약 연동');
       expect(formatSignatureLedgerDetail('tbm', '[허가서] OSBL 배관공사')).toBe('[허가서] OSBL 배관공사');
@@ -23,6 +24,7 @@ describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
     it('migration updates list_worker_signature_ledger to return TBM session title', () => {
       const sql = readFileSync('supabase/migrations/20261121154000_signature_ledger_tbm_title.sql', 'utf8');
       expect(sql).toContain("COALESCE(NULLIF(trim(s.title), ''), 'TBM 참여')");
+      expect(sql).not.toContain('statement_timeout');
     });
   });
 
@@ -32,8 +34,22 @@ describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
       expect(isInspectionEditLocked('완료', false)).toBe(true);
       expect(isInspectionEditLocked('결재진행', false)).toBe(true);
       expect(isInspectionEditLocked('in_progress', false)).toBe(false);
+      expect(isInspectionEditLocked('승인완료', false)).toBe(true);
       expect(isInspectionEditLocked('completed', true)).toBe(false);
       expect(isInspectionEditLocked('결재진행', true)).toBe(false);
+      expect(isInspectionCompletedStatus('완료')).toBe(true);
+      expect(isInspectionCompletedStatus('승인완료')).toBe(true);
+      expect(inspectionStatusLabel('완료')).toBe('완료');
+      expect(inspectionStatusLabel('승인완료')).toBe('완료');
+      expect(patrolLockEditHint('완료')).toMatch(/복제/);
+      expect(patrolLockEditHint('승인완료')).toMatch(/복제/);
+    });
+
+    it('hard-lock exempts master and covers legacy done statuses plus soft delete', () => {
+      const sql = readFileSync('supabase/migrations/20261121161000_inspection_lock_master_exception.sql', 'utf8');
+      expect(sql).toContain('public.is_master(auth.uid())');
+      expect(sql).toContain("'완료', '승인완료'");
+      expect(sql).toContain('NEW.is_deleted IS DISTINCT FROM OLD.is_deleted');
     });
 
     it('fixes FAC-06 typo from 결하 to 결속 for new inspections', () => {
@@ -53,8 +69,10 @@ describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
       const src = readFileSync('src/pages/SafetyInspections.tsx', 'utf8');
       expect(src).not.toContain('<Badge className="bg-success">종료</Badge>');
       expect(src).toContain('isInspectionCompletedStatus(i.status)');
+      expect(src).toContain('inspectionStatusLabel(i.status)');
       expect(src).toContain('readOnly={isInspectionEditLocked(detail.status, isMaster)}');
       expect(src).not.toContain('readOnly={isPatrolLogLocked(detail.status)}');
+      expect(src).toMatch(/const completeAction = async[\s\S]*?if \(!assertEditable\(\)\) return/);
     });
   });
 
@@ -67,6 +85,7 @@ describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
     it('AssessmentRunDetail hides 엑셀 가져오기 when not editable', () => {
       const src = readFileSync('src/pages/AssessmentRunDetail.tsx', 'utf8');
       expect(src).toMatch(/\{canEdit && \(\s*<DropdownMenuItem[^>]*>[\s\S]*?엑셀 가져오기/);
+      expect(src).toContain('현재 상태에서는 엑셀을 가져올 수 없습니다.');
     });
   });
 

@@ -40,6 +40,7 @@ import {
   isPatrolLogLocked,
   isInspectionCompletedStatus,
   isInspectionEditLocked,
+  inspectionStatusLabel,
   canWithdrawPatrolLog,
   patrolLockEditHint,
   normalizeDirectorPatrolItems,
@@ -477,8 +478,18 @@ export default function SafetyInspections() {
     setEditOpen(true);
   };
 
+  const reportWriteError = (error: { message?: string } | null, title = '저장 실패') => {
+    if (!error) return false;
+    toast({ title, description: error.message, variant: 'destructive' });
+    return true;
+  };
+
   const saveEdit = async () => {
     if (!editTargetId) return;
+    const target = inspections.find((x) => x.id === editTargetId) || (detail?.id === editTargetId ? detail : null);
+    if (target && isInspectionEditLocked(target.status, isMaster)) {
+      return toast({ title: patrolLockEditHint(target.status), variant: 'destructive' });
+    }
     if (!editForm.location.trim()) return toast({ title: '순회 구간(위치)을 입력하세요.', variant: 'destructive' });
     const patch: Record<string, string> = {
       location: editForm.location.trim(),
@@ -576,8 +587,9 @@ export default function SafetyInspections() {
 
   const persistOfficialPayload = async (next: OfficialFormPayload) => {
     if (!detail || !assertEditable()) return;
+    const { error } = await supabase.from('safety_inspections' as any).update({ form_payload: next }).eq('id', detail.id);
+    if (reportWriteError(error)) return;
     setOfficialPayload(next);
-    await supabase.from('safety_inspections' as any).update({ form_payload: next }).eq('id', detail.id);
     setDetail({ ...detail, form_payload: next });
   };
 
@@ -587,8 +599,9 @@ export default function SafetyInspections() {
 
   const updateItemNote = async (item: InspItem, note: string) => {
     if (!assertEditable()) return;
+    const { error } = await supabase.from('safety_inspection_items' as any).update({ note }).eq('id', item.id);
+    if (reportWriteError(error)) return;
     setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, note } : x));
-    await supabase.from('safety_inspection_items' as any).update({ note }).eq('id', item.id);
   };
 
   const uploadPhoto = async (file: File, folder: string): Promise<string | null> => {
@@ -636,7 +649,8 @@ export default function SafetyInspections() {
       if (u) urls.push(u);
     }
     const newPhotos = [...(item.photos || []), ...urls];
-    await supabase.from('safety_inspection_items' as any).update({ photos: newPhotos }).eq('id', item.id);
+    const { error } = await supabase.from('safety_inspection_items' as any).update({ photos: newPhotos }).eq('id', item.id);
+    if (reportWriteError(error, '사진 저장 실패')) return;
     setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, photos: newPhotos } : x));
   };
 
@@ -649,11 +663,13 @@ export default function SafetyInspections() {
       if (u) urls.push(u);
     }
     const newPhotos = [...(action.evidence_photos || []), ...urls];
-    await supabase.from('safety_inspection_actions' as any).update({ evidence_photos: newPhotos }).eq('id', action.id);
+    const { error } = await supabase.from('safety_inspection_actions' as any).update({ evidence_photos: newPhotos }).eq('id', action.id);
+    if (reportWriteError(error, '사진 저장 실패')) return;
     setDetailActions(prev => prev.map(x => x.id === action.id ? { ...x, evidence_photos: newPhotos } : x));
   };
 
   const completeAction = async (action: InspAction) => {
+    if (!assertEditable()) return;
     if (!action.evidence_photos || action.evidence_photos.length === 0) {
       return toast({ title: '증빙 사진 필수', description: '조치 완료를 위해 증빙 사진을 1장 이상 첨부하세요.', variant: 'destructive' });
     }
@@ -668,20 +684,23 @@ export default function SafetyInspections() {
   const updateActionField = async (action: InspAction, patch: Partial<InspAction>) => {
     if (!assertEditable()) return;
     setDetailActions(prev => prev.map(x => x.id === action.id ? { ...x, ...patch } : x));
-    await supabase.from('safety_inspection_actions' as any).update(patch).eq('id', action.id);
+    const { error } = await supabase.from('safety_inspection_actions' as any).update(patch).eq('id', action.id);
+    if (reportWriteError(error)) return;
   };
 
   const persistWeather = async (value: string) => {
     if (!detail || !assertEditable()) return;
+    const { error } = await supabase.from('safety_inspections' as any).update({ weather: value }).eq('id', detail.id);
+    if (reportWriteError(error)) return;
     setWeather(value);
-    await supabase.from('safety_inspections' as any).update({ weather: value }).eq('id', detail.id);
     setDetail({ ...detail, weather: value });
   };
 
   const persistDirectorItems = async (next: DirectorPatrolItem[]) => {
     if (!detail || !assertEditable()) return;
+    const { error } = await supabase.from('safety_inspections' as any).update({ director_items: next }).eq('id', detail.id);
+    if (reportWriteError(error)) return;
     setDirectorItems(next);
-    await supabase.from('safety_inspections' as any).update({ director_items: next }).eq('id', detail.id);
     setDetail({ ...detail, director_items: next });
   };
 
@@ -693,8 +712,9 @@ export default function SafetyInspections() {
     const next = [...patrolPhotos];
     next[slot] = url;
     const clipped = [next[0] || '', next[1] || ''].filter((x, i) => i < 2);
+    const { error } = await supabase.from('safety_inspections' as any).update({ patrol_photos: clipped }).eq('id', detail.id);
+    if (reportWriteError(error, '사진 저장 실패')) return;
     setPatrolPhotos(clipped);
-    await supabase.from('safety_inspections' as any).update({ patrol_photos: clipped }).eq('id', detail.id);
     setDetail({ ...detail, patrol_photos: clipped });
   };
 
@@ -861,7 +881,7 @@ export default function SafetyInspections() {
         inspection?: Inspection;
         items?: InspItem[];
       } | null;
-      const locked = isPatrolLogLocked(detail.status);
+      const locked = isInspectionEditLocked(detail.status, isMaster);
       const src = locked && snap?.inspection ? snap.inspection : detail;
       const items = locked && snap?.items ? snap.items : detailItems;
       const approvals = await fetchSafetyInspectionApprovalSigners(detail.id);
@@ -893,9 +913,10 @@ export default function SafetyInspections() {
         items?: InspItem[];
         actions?: InspAction[];
       } | null;
-      const src = isPatrolLogLocked(detail.status) && snap?.inspection ? snap.inspection : detail;
-      const items = isPatrolLogLocked(detail.status) && snap?.items ? snap.items : detailItems;
-      const actions = isPatrolLogLocked(detail.status) && snap?.actions ? snap.actions : detailActions;
+      const printLocked = isInspectionEditLocked(detail.status, isMaster);
+      const src = printLocked && snap?.inspection ? snap.inspection : detail;
+      const items = printLocked && snap?.items ? snap.items : detailItems;
+      const actions = printLocked && snap?.actions ? snap.actions : detailActions;
       let title = inspectorTitle;
       if (src.inspector_id) {
         const { data: mem } = await supabase
@@ -1070,7 +1091,7 @@ export default function SafetyInspections() {
                 .filter((i: any) => companyFilter.length === 0 || (i.company_id && companyFilter.includes(i.company_id)))
                 .filter((i) => {
                   if (statusFilter === 'all') return true;
-                  const isDone = i.status === '완료' || i.status === 'completed';
+                  const isDone = isInspectionCompletedStatus(i.status);
                   return statusFilter === 'completed' ? isDone : !isDone;
                 })
                 .filter(i => !key || i.location?.toLowerCase().includes(key) || i.inspector_name?.toLowerCase().includes(key) || i.process_category?.toLowerCase().includes(key));
@@ -1088,7 +1109,7 @@ export default function SafetyInspections() {
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <Badge variant={isInspectionCompletedStatus(i.status) ? 'default' : i.status === '결재진행' ? 'outline' : i.status === '반려' ? 'destructive' : 'secondary'}>
-                        {isInspectionCompletedStatus(i.status) ? '완료' : i.status === '결재진행' ? '결재중' : i.status === '반려' ? '반려' : '진행중'}
+                        {inspectionStatusLabel(i.status)}
                       </Badge>
                       <Button
                         size="icon"
@@ -1613,11 +1634,13 @@ export default function SafetyInspections() {
                           <div className="grid grid-cols-3 gap-2">
                             <div>
                               <Label className="text-xs">담당자</Label>
-                              <AssigneeSelect
-                                projectId={projectId || ''}
-                                value={a.assignee_name || ''}
-                                onChange={({ name }) => updateActionField(a, { assignee_name: name })}
-                              />
+                              <div className={isInspectionEditLocked(detail.status, isMaster) ? 'pointer-events-none opacity-50' : ''}>
+                                <AssigneeSelect
+                                  projectId={projectId || ''}
+                                  value={a.assignee_name || ''}
+                                  onChange={({ name }) => updateActionField(a, { assignee_name: name })}
+                                />
+                              </div>
                             </div>
                             <div>
                               <Label className="text-xs">기한</Label>
@@ -1641,7 +1664,7 @@ export default function SafetyInspections() {
                               <input type="file" accept="image/*" multiple capture="environment" className="hidden" disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => onActionEvidence(a, e.target.files)} />
                             </label>
                             {isOpenInspectionAction(a.status) ? (
-                              <Button size="sm" onClick={() => completeAction(a)}><CheckCircle2 className="h-4 w-4 mr-1" />조치 완료</Button>
+                              <Button size="sm" disabled={isInspectionEditLocked(detail.status, isMaster)} onClick={() => completeAction(a)}><CheckCircle2 className="h-4 w-4 mr-1" />조치 완료</Button>
                             ) : (
                               <Badge className="bg-success">완료 · {a.completed_at ? new Date(a.completed_at).toLocaleString('ko-KR') : ''}</Badge>
                             )}

@@ -183,8 +183,9 @@ export async function fetchHoursRollup(opts: {
 
 const RA_SHARE_SOURCE_LABELS: Record<string, string> = {
   notice: "위험성평가 공지 확인",
-  qr: "QR 확인",
   daily_ack: "출근 서약 연동",
+  viewer: "위험성평가 열람 확인",
+  qr: "QR 확인",
   app: "앱 확인",
   web: "웹 확인",
   worker_app: "근로자 앱 확인",
@@ -299,7 +300,7 @@ async function fetchLedgerFallback(opts: {
         signature_data: e.exit_signature_data,
         signed_at: e.exit_at || e.entry_at,
         detail: e.no_accident_confirmed ? "무재해 확인" : "퇴근 서명",
-        work_date: String(e.entry_at || "").slice(0, 10),
+        work_date: signedAtSeoulDate(e.entry_at) || String(e.entry_at || "").slice(0, 10),
       }),
     );
   }
@@ -361,7 +362,7 @@ async function fetchLedgerFallback(opts: {
         signature_data: a.signature_data,
         signed_at: a.signed_at,
         detail: a.source,
-        work_date: String(a.signed_at || "").slice(0, 10),
+        work_date: signedAtSeoulDate(a.signed_at) || String(a.signed_at || "").slice(0, 10),
       }),
     );
   }

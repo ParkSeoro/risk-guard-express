@@ -18,7 +18,6 @@ DECLARE
   v_to date := COALESCE(_to, CURRENT_DATE);
 BEGIN
   v_uid := public.labor_assert_project_read(_project_id);
-  PERFORM set_config('statement_timeout', '8000', true);
   RETURN COALESCE((
     SELECT jsonb_agg(to_jsonb(x) ORDER BY x.signed_at DESC NULLS LAST) FROM (
       SELECT a.id::text AS id, 'daily_ack'::text AS kind, '일일서약'::text AS kind_label, a.worker_id,

@@ -50,12 +50,17 @@ BEGIN
   FROM public.storage_backup_runs
   WHERE started_at >= v_kst_day_start;
 
-  -- 2. Cumulative Google One archive totals
+  -- 2. Cumulative & today's backed-up source date ranges
   SELECT jsonb_build_object(
     'total_backed_up', COUNT(*) FILTER (WHERE archive_status IN ('backed_up', 'verified', 'purged')),
     'total_purged', COUNT(*) FILTER (WHERE archive_status = 'purged'),
     'total_bytes', COALESCE(SUM(file_size) FILTER (WHERE archive_status IN ('backed_up', 'verified', 'purged')), 0),
-    'failed_count', COUNT(*) FILTER (WHERE archive_status = 'failed' OR last_error IS NOT NULL)
+    'failed_count', COUNT(*) FILTER (WHERE archive_status = 'failed' OR last_error IS NOT NULL),
+    'today_backed_up_bytes', COALESCE(SUM(file_size) FILTER (WHERE backed_up_at >= v_kst_day_start), 0),
+    'today_source_date_min', to_char(MIN(source_created_at) FILTER (WHERE backed_up_at >= v_kst_day_start) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
+    'today_source_date_max', to_char(MAX(source_created_at) FILTER (WHERE backed_up_at >= v_kst_day_start) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
+    'total_source_date_min', to_char(MIN(source_created_at) FILTER (WHERE archive_status IN ('backed_up', 'verified', 'purged')) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
+    'total_source_date_max', to_char(MAX(source_created_at) FILTER (WHERE archive_status IN ('backed_up', 'verified', 'purged')) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')
   )
   INTO v_archive
   FROM public.storage_archive_registry;

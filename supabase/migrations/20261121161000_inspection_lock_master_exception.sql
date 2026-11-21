@@ -17,11 +17,12 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
   END IF;
 
-  IF public.is_master(auth.uid()) THEN
-    RETURN COALESCE(NEW, OLD);
-  END IF;
-
+  -- Master exemption applies ONLY to safety_inspections (and its items/actions) per #7 policy;
+  -- assessment_runs, risk_items, and work_plans retain their existing hard-lock for all roles.
   IF TG_TABLE_NAME = 'safety_inspections' THEN
+    IF public.is_master(auth.uid()) THEN
+      RETURN COALESCE(NEW, OLD);
+    END IF;
     _status := COALESCE(OLD.status, '');
     _locked := _status IN ('결재진행', 'completed', '완료', '승인완료');
     IF _locked AND TG_OP = 'UPDATE' THEN
@@ -47,6 +48,9 @@ BEGIN
   END IF;
 
   IF TG_TABLE_NAME IN ('safety_inspection_items', 'safety_inspection_actions') THEN
+    IF public.is_master(auth.uid()) THEN
+      RETURN COALESCE(NEW, OLD);
+    END IF;
     SELECT status INTO _status FROM public.safety_inspections
      WHERE id = COALESCE(NEW.inspection_id, OLD.inspection_id);
     IF COALESCE(_status, '') IN ('결재진행', 'completed', '완료', '승인완료') THEN

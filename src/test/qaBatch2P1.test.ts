@@ -50,6 +50,9 @@ describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
       expect(sql).toContain('public.is_master(auth.uid())');
       expect(sql).toContain("'완료', '승인완료'");
       expect(sql).toContain('NEW.is_deleted IS DISTINCT FROM OLD.is_deleted');
+      // Master exemption must NOT appear before the safety_inspections branch (keep assessment_runs/work_plans hard-locked)
+      const beforeInspection = sql.split("IF TG_TABLE_NAME = 'safety_inspections'")[0] || '';
+      expect(beforeInspection).not.toContain('is_master');
     });
 
     it('fixes FAC-06 typo from 결하 to 결속 for new inspections', () => {

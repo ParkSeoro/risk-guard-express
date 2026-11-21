@@ -74,6 +74,11 @@ interface NightlyOpsReport {
     total_purged: number;
     total_bytes: number;
     failed_count: number;
+    today_backed_up_bytes?: number;
+    today_source_date_min?: string | null;
+    today_source_date_max?: string | null;
+    total_source_date_min?: string | null;
+    total_source_date_max?: string | null;
   };
   cron_jobs: CronJobSummary[];
   consistency_issues: number;
@@ -154,11 +159,25 @@ function buildTelegramHtml(report: NightlyOpsReport): { html: string; status: "O
     lines.push(
       `• 새벽 실적: 신규 <b>${b.copied}건</b> · 검증 <b>${b.verified}건</b> · 정리 <b>${b.purged}건</b> · 오류 <b>${b.errors}건</b>`,
     );
+    if (a.today_source_date_min) {
+      const rangeStr =
+        a.today_source_date_max && a.today_source_date_max !== a.today_source_date_min
+          ? `${a.today_source_date_min} ~ ${a.today_source_date_max}`
+          : a.today_source_date_min;
+      const sizeStr = a.today_backed_up_bytes ? ` (${formatBytes(a.today_backed_up_bytes)})` : "";
+      lines.push(`• 백업 대상 일자: <code>${escapeHtml(rangeStr)}</code>${sizeStr}`);
+    }
   } else {
     lines.push(`• 오늘 새벽 실행 기록 없음`);
   }
+  const totalRangeStr =
+    a.total_source_date_min
+      ? a.total_source_date_max && a.total_source_date_max !== a.total_source_date_min
+        ? `, ${a.total_source_date_min} ~ ${a.total_source_date_max}`
+        : `, ${a.total_source_date_min}`
+      : "";
   lines.push(
-    `• 누적 백업: <b>${a.total_backed_up.toLocaleString("ko-KR")}건</b> (${formatBytes(a.total_bytes)})${a.failed_count > 0 ? ` · 실패 ${a.failed_count}건` : ""}`,
+    `• 누적 백업: <b>${a.total_backed_up.toLocaleString("ko-KR")}건</b> (${formatBytes(a.total_bytes)}${escapeHtml(totalRangeStr)})${a.failed_count > 0 ? ` · 실패 ${a.failed_count}건` : ""}`,
   );
   if (quotaLine) lines.push(quotaLine.trimEnd());
 

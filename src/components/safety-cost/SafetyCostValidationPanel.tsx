@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Loader2, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
+import { fetchProjectCompanies } from '@/lib/projectCompanies';
+import {
+  safetyCostReportStatusLabel,
+  safetyCostSeverityLabel,
+  safetyCostViolationLabel,
+} from '@/lib/safetyCostLabels';
 
 interface Report {
   id: string;
@@ -43,6 +49,7 @@ export default function SafetyCostValidationPanel({ focusReportId }: Props) {
   const access = useGlobalProjectAccess();
   const { toast } = useToast();
   const [reports, setReports] = useState<Report[]>([]);
+  const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
   const [violations, setViolations] = useState<Record<string, Violation[]>>({});
   const [loading, setLoading] = useState(true);
   const [validating, setValidating] = useState<string | null>(null);
@@ -61,7 +68,15 @@ export default function SafetyCostValidationPanel({ focusReportId }: Props) {
     // UI defense-in-depth — SSOT company scope (not isProjectAdmin/SM)
     q = access.applyCompanyFilter(q);
 
-    const { data: r } = await q;
+    const [{ data: r }, projCos] = await Promise.all([
+      q,
+      fetchProjectCompanies(access.selectedProject).catch(() => []),
+    ]);
+    const coMap: Record<string, string> = {};
+    for (const c of projCos || []) {
+      if (c?.id && c?.name) coMap[c.id] = c.name;
+    }
+    setCompanyNames(coMap);
     let reps = (r as Report[]) || [];
     if (focusReportId) {
       reps = [...reps].sort((a, b) => (a.id === focusReportId ? -1 : b.id === focusReportId ? 1 : 0));
@@ -129,16 +144,21 @@ export default function SafetyCostValidationPanel({ focusReportId }: Props) {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div>
-                      <CardTitle className="text-base">
-                        {r.title || format(new Date(r.report_month), 'yyyy-MM') + ' 월간 보고'}
+                      <CardTitle className="text-base flex items-center gap-1.5 flex-wrap">
+                        <span>{r.title || format(new Date(r.report_month), 'yyyy-MM') + ' 월간 보고'}</span>
+                        {r.company_id && companyNames[r.company_id] && (
+                          <Badge variant="outline" className="text-[10px] font-normal">
+                            {companyNames[r.company_id]}
+                          </Badge>
+                        )}
                         {focused && (
-                          <Badge variant="outline" className="ml-2 text-[10px]">
+                          <Badge variant="outline" className="text-[10px]">
                             선택 중
                           </Badge>
                         )}
                       </CardTitle>
                       <p className="text-xs text-muted-foreground">
-                        {format(new Date(r.report_month), 'yyyy-MM')} · 상태 {r.status || '작성중'} · 합계{' '}
+                        {format(new Date(r.report_month), 'yyyy-MM')} · 상태 {safetyCostReportStatusLabel(r.status)} · 합계{' '}
                         {r.report_total?.toLocaleString() ?? 0}원
                       </p>
                     </div>
@@ -170,8 +190,10 @@ export default function SafetyCostValidationPanel({ focusReportId }: Props) {
                     {vs.map((v) => (
                       <div key={v.id} className="border rounded-md p-2 text-sm">
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge className={SEVERITY_COLOR[v.severity] || ''}>{v.severity}</Badge>
-                          <span className="font-mono text-xs text-muted-foreground">{v.violation_code}</span>
+                          <Badge className={SEVERITY_COLOR[v.severity] || ''}>{safetyCostSeverityLabel(v.severity)}</Badge>
+                          <span className="text-xs text-muted-foreground" title={v.violation_code}>
+                            {safetyCostViolationLabel(v.violation_code)}
+                          </span>
                         </div>
                         <div>{v.detail}</div>
                         {v.legal_basis && (

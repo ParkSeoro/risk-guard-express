@@ -16,6 +16,7 @@ import {
   monthEndTaxLabel,
 } from '@/lib/safetyCostItemEvidence';
 import { ocrStatusBadge, ocrStatusBadgeVariant, ocrStatusLabel, summarizeOcrItems } from '@/lib/safetyCostOcr';
+import { isSafetyCostYearAnomaly } from '@/lib/safetyCostLabels';
 
 const statusVariant = (status: string) => (status === 'usable' ? 'default' : status === 'warning' ? 'destructive' : 'secondary');
 export const statusLabel: Record<string, string> = { usable: '사용 가능', warning: '사용 불가', review: '검토 필요' };
@@ -60,6 +61,7 @@ type Props = {
   items: Item[];
   evidence: Evidence[];
   highlightedIds?: string[];
+  reportMonth?: string | null;
   reportLocked: boolean;
   isLegacyImport: boolean;
   itemSearch: string;
@@ -136,6 +138,7 @@ export function SafetyCostItemCards({
   items,
   evidence,
   highlightedIds,
+  reportMonth,
   reportLocked,
   isLegacyImport,
   itemSearch,
@@ -223,9 +226,16 @@ export function SafetyCostItemCards({
                         ) : null}
                       </div>
                       <p className="font-medium text-sm">{it.item_name}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {displayDate(it) || '—'} · {it.supplier_name || '공급자 없음'}
-                        {it.specification ? ` · ${it.specification}` : ''}
+                      <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-1">
+                        <span>
+                          {displayDate(it) || '—'} · {it.supplier_name || '공급자 없음'}
+                          {it.specification ? ` · ${it.specification}` : ''}
+                        </span>
+                        {isSafetyCostYearAnomaly(displayDate(it), reportMonth) && (
+                          <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-700">
+                            연도 확인 필요
+                          </Badge>
+                        )}
                       </p>
                     </div>
                     <p className="font-semibold shrink-0">{formatKRW(it.amount)}</p>

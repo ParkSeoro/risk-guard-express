@@ -22,8 +22,42 @@ export const TBM_ISSUE_STATUSES = [
 export const TBM_WAITS_FOR_APPROVAL =
   "결재가 끝나면 작업일 일지가 자동으로 만들어집니다.";
 
+const PERMIT_CLOSED_STATUSES = new Set([
+  "종료",
+  "종료 완료",
+  "종료완료",
+  "완료",
+  "CLOSED",
+  "closed",
+  "completed",
+]);
+
 export function permitStatusAllowsTbm(status?: string | null): boolean {
   return (TBM_ISSUE_STATUSES as readonly string[]).includes(status || "");
+}
+
+/** Accurate helper copy for the WorkPermitDetail TBM card across draft, closed, rejected, and issued permits. */
+export function permitTbmStatusMessage(opts: {
+  status?: string | null;
+  isVoided?: boolean;
+  hasLinkedTbm?: boolean;
+}): string {
+  if (opts.isVoided) {
+    return "작업 취소된 허가서입니다.";
+  }
+  const s = String(opts.status || "").trim();
+  if (PERMIT_CLOSED_STATUSES.has(s)) {
+    return opts.hasLinkedTbm
+      ? "종료된 작업허가서의 연계 TBM 기록입니다."
+      : "종료된 작업허가서이며 연계된 TBM이 없습니다.";
+  }
+  if (s === "반려") {
+    return "반려된 허가서입니다. 재상신 후 승인되면 작업일 TBM이 자동 생성됩니다.";
+  }
+  if (!permitStatusAllowsTbm(s)) {
+    return TBM_WAITS_FOR_APPROVAL;
+  }
+  return "1허가서 = 1 TBM. 예상 배정은 TBM 명단(미서명)으로 들어가고, 출근 서명이 당일 TBM 서명입니다. QR은 선택입니다.";
 }
 
 export function permitWorkDateForTbm(permit: {

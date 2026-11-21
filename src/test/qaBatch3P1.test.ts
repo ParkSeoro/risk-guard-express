@@ -14,10 +14,13 @@ describe('QA Batch 3 (P1) regressions — PR #688 consensus', () => {
     it('localizes report statuses, severities, and violation codes into Korean', () => {
       expect(safetyCostReportStatusLabel('draft')).toBe('작성중');
       expect(safetyCostReportStatusLabel('approved')).toBe('승인완료');
-      expect(safetyCostReportStatusLabel('submitted')).toBe('상신됨');
+      expect(safetyCostReportStatusLabel('submitted')).toBe('결재중');
       expect(safetyCostSeverityLabel('high')).toBe('높음');
       expect(safetyCostSeverityLabel('critical')).toBe('치명');
+      expect(safetyCostViolationLabel('PERSONNEL_RATIO_EXCEEDED')).toBe('인건비 비율 초과');
       expect(safetyCostViolationLabel('EVIDENCE_MISSING')).toBe('증빙 파일 누락');
+      expect(safetyCostViolationLabel('UNUSABLE_ITEMS')).toBe('사용 불가 항목 포함');
+      expect(safetyCostViolationLabel('CLASSIFICATION_PENDING')).toBe('분류 검토 대기 항목 있음');
     });
 
     it('detects OCR-misparsed years differing by 2+ years from report month', () => {
@@ -58,6 +61,9 @@ describe('QA Batch 3 (P1) regressions — PR #688 consensus', () => {
 
     it('does not tell closed or voided permits that TBM will be auto-created after approval', () => {
       expect(permitTbmStatusMessage({ status: '종료 완료', hasLinkedTbm: false })).toBe(
+        '종료된 작업허가서이며 연계된 TBM이 없습니다.',
+      );
+      expect(permitTbmStatusMessage({ status: '마감', hasLinkedTbm: false })).toBe(
         '종료된 작업허가서이며 연계된 TBM이 없습니다.',
       );
       expect(permitTbmStatusMessage({ status: '종료', hasLinkedTbm: true })).toBe(

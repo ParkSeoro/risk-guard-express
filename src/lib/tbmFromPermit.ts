@@ -26,6 +26,7 @@ const PERMIT_CLOSED_STATUSES = new Set([
   "종료",
   "종료 완료",
   "종료완료",
+  "마감",
   "완료",
   "CLOSED",
   "closed",

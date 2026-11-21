@@ -2,7 +2,7 @@
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   draft: '작성중',
-  submitted: '상신됨',
+  submitted: '결재중',
   in_approval: '결재중',
   approved: '승인완료',
   rejected: '반려',
@@ -17,7 +17,10 @@ const SEVERITY_LABELS: Record<string, string> = {
 };
 
 const VIOLATION_CODE_LABELS: Record<string, string> = {
+  PERSONNEL_RATIO_EXCEEDED: '인건비 비율 초과',
   EVIDENCE_MISSING: '증빙 파일 누락',
+  UNUSABLE_ITEMS: '사용 불가 항목 포함',
+  CLASSIFICATION_PENDING: '분류 검토 대기 항목 있음',
   TAX_INVOICE_MISSING: '세금계산서 누락',
   RATIO_UNDER: '법정 비율 미달',
   RATIO_OVER: '법정 비율 초과',

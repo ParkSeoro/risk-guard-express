@@ -19,7 +19,11 @@ import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
 import { AssessmentUnconfirmedBanner } from '@/components/assessment/AssessmentUnconfirmedBanner';
-import { tbmListQueryBlock } from '@/lib/tbmListQuery';
+import {
+  extractTbmParticipantCount,
+  TBM_ALL_DATES_PAGE_SIZE,
+  tbmListQueryBlock,
+} from '@/lib/tbmListQuery';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
 import { useAuth } from '@/contexts/AuthContext';
@@ -81,7 +85,10 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [qrUrl, setQrUrl] = useState('');
   const [qrGenerating, setQrGenerating] = useState(false);
   const [participants, setParticipants] = useState<any[]>([]);
+  const [partsSignatureFilled, setPartsSignatureFilled] = useState(false);
   const [showParts, setShowParts] = useState<TbmSession | null>(null);
+  const [pageLimit, setPageLimit] = useState(TBM_ALL_DATES_PAGE_SIZE);
+  const [hasMoreSessions, setHasMoreSessions] = useState(false);
 
   // form
   const [title, setTitle] = useState('');
@@ -126,33 +133,30 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     await closeExpiredTbmSessions(projectId);
     if (requestId !== loadSeq.current) return;
     let q = supabase.from('tbm_sessions' as any)
-      .select('*')
+      .select('*, tbm_participations(count)')
       .eq('project_id', projectId)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .order('tbm_date', { ascending: false })
       .order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
+    if (dateFilter) {
+      q = q.eq('tbm_date', dateFilter).limit(200);
+    } else {
+      q = q.range(0, pageLimit);
+    }
     if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
     const { data } = await q;
     if (requestId !== loadSeq.current) return;
-    const list = ((data as any) || []) as TbmSession[];
+    const rawList = ((data as any) || []) as Array<TbmSession & { tbm_participations?: Array<{ count?: number | null }> | null }>;
+    const hasMore = !dateFilter && rawList.length > pageLimit;
+    const list = hasMore ? rawList.slice(0, pageLimit) : rawList;
+    setHasMoreSessions(hasMore);
     setSessions(list);
-    // fetch participant counts in one shot
-    if (list.length > 0) {
-      const ids = list.map((s) => s.id);
-      const { data: parts } = await supabase
-        .from('tbm_participations' as any)
-        .select('tbm_session_id')
-        .in('tbm_session_id', ids);
-      if (requestId !== loadSeq.current) return;
-      const counts: Record<string, number> = {};
-      ((parts as any[]) || []).forEach((p) => {
-        counts[p.tbm_session_id] = (counts[p.tbm_session_id] || 0) + 1;
-      });
-      setParticipantCounts(counts);
-    } else {
-      setParticipantCounts({});
+    const counts: Record<string, number> = {};
+    for (const row of list) {
+      counts[row.id] = extractTbmParticipantCount(row);
     }
+    setParticipantCounts(counts);
     const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
     if (requestId !== loadSeq.current) return;
     const cs = await fetchProjectCompanies(projectId);
@@ -169,6 +173,10 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
 
   useEffect(() => {
+    setPageLimit(TBM_ALL_DATES_PAGE_SIZE);
+  }, [projectId, dateFilter]);
+
+  useEffect(() => {
     void load();
     const block = tbmListQueryBlock({
       projectId,
@@ -181,9 +189,8 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_participations' }, () => { void load(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-    // Reload when company scope finishes. The date box filters rows already loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, runId, scopeStatus, access?.applyCompanyFilter]);
+  }, [projectId, runId, scopeStatus, access?.applyCompanyFilter, dateFilter, pageLimit]);
 
   const resetForm = () => {
     setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));
@@ -391,6 +398,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const openParts = async (s: TbmSession) => {
     setShowParts(s);
+    setPartsSignatureFilled(false);
     void markOpenDocumentNotifications(s.id);
     const [{ data }, { data: acks }] = await Promise.all([
       supabase.from('tbm_participations' as any).select('*').eq('tbm_session_id', s.id).order('participated_at'),
@@ -400,19 +408,34 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         .eq('project_id', projectId)
         .eq('ack_date', s.tbm_date),
     ]);
-    setParticipants(fillMissingTbmSignatures((data as any[]) || [], (acks as any[]) || []));
+    const rawParts = (data as any[]) || [];
+    const filled = fillMissingTbmSignatures(rawParts, (acks as any[]) || []);
+    const hadFilled = filled.some((row, idx) => !rawParts[idx]?.signature_data && !!row.signature_data);
+    setPartsSignatureFilled(hadFilled);
+    setParticipants(filled);
   };
 
   // Deep-link from permit detail: ?session=<tbmId> → heal from permit crew, open participants
   useEffect(() => {
-    if (!focusSessionId || loading || sessions.length === 0) return;
+    if (!focusSessionId || loading) return;
     if (focusHandledRef.current === focusSessionId) return;
-    const target = sessions.find((s) => s.id === focusSessionId);
-    if (!target) return;
-    focusHandledRef.current = focusSessionId;
 
     let cancelled = false;
     (async () => {
+      let target: TbmSession | null = sessions.find((s) => s.id === focusSessionId) || null;
+      if (!target) {
+        const { data: fetched } = await supabase
+          .from('tbm_sessions' as any)
+          .select('*')
+          .eq('id', focusSessionId)
+          .eq('project_id', projectId)
+          .or('is_deleted.is.null,is_deleted.eq.false')
+          .maybeSingle();
+        if (cancelled) return;
+        target = (fetched as TbmSession | null) || null;
+      }
+      if (!target) return;
+      focusHandledRef.current = focusSessionId;
       const { data: linked } = await supabase
         .from('work_permits' as any)
         .select('id')
@@ -434,7 +457,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       }
       if (!cancelled) {
         await openParts(target);
-        if (target.tbm_date) setDateFilter(target.tbm_date);
+        if (target.tbm_date && target.tbm_date !== dateFilter) {
+          setDateFilter(target.tbm_date);
+        }
         const next = new URLSearchParams(searchParams);
         next.delete('session');
         setSearchParams(next, { replace: true });
@@ -702,15 +727,27 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         </DialogContent>
       </Dialog>
 
-      {/* KPI summary */}
+      {/* KPI summary (화면에 표시 중인 세션 기준) */}
       {(() => {
         const today = todayKst();
-        const totalParts = Object.values(participantCounts).reduce((a, b) => a + b, 0);
-        const activeN = sessions.filter(s => s.is_active).length;
-        const todayN = sessions.filter(s => s.tbm_date === today).length;
+        const visible = sessions.filter((s) => {
+          if (dateFilter && s.tbm_date !== dateFilter) return false;
+          if (statusFilter === 'active' && !s.is_active) return false;
+          if (statusFilter === 'closed' && s.is_active) return false;
+          if (companyFilter !== 'all' && s.company_id !== companyFilter) return false;
+          if (search) {
+            const q = search.toLowerCase();
+            const hay = `${s.title || ''} ${s.location || ''} ${s.leader_name || ''} ${s.process_category || ''} ${s.company_name || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+        const totalParts = visible.reduce((sum, s) => sum + (participantCounts[s.id] || 0), 0);
+        const activeN = visible.filter(s => s.is_active).length;
+        const todayN = visible.filter(s => s.tbm_date === today).length;
         return (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <Card><CardContent className="p-3 flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">전체 TBM</p><p className="text-lg font-bold">{sessions.length}</p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">표시 TBM</p><p className="text-lg font-bold">{visible.length}{!dateFilter && hasMoreSessions ? '+' : ''}</p></div></CardContent></Card>
             <Card><CardContent className="p-3 flex items-center gap-2"><Power className="h-4 w-4 text-emerald-600" /><div><p className="text-[10px] text-muted-foreground">진행중</p><p className="text-lg font-bold">{activeN}</p></div></CardContent></Card>
             <Card><CardContent className="p-3 flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">오늘</p><p className="text-lg font-bold">{todayN}</p></div></CardContent></Card>
             <Card><CardContent className="p-3 flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">총 참여자</p><p className="text-lg font-bold">{totalParts}</p></div></CardContent></Card>
@@ -829,6 +866,18 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
               </CardContent>
             </Card>
           ))}
+          {!dateFilter && hasMoreSessions && (
+            <div className="flex justify-center pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPageLimit((prev) => prev + TBM_ALL_DATES_PAGE_SIZE)}
+              >
+                더 보기 (+{TBM_ALL_DATES_PAGE_SIZE}건)
+              </Button>
+            </div>
+          )}
         </div>
         );
       })()}
@@ -1009,7 +1058,14 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
       <Dialog open={!!showParts} onOpenChange={(v) => !v && setShowParts(null)}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{showParts?.title} 참여자 ({participants.length}명)</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              <span>{showParts?.title} 참여자 ({participants.length}명)</span>
+              {partsSignatureFilled && (
+                <Badge variant="outline" className="text-[10px] font-normal">출근 서명 보정 포함</Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
           {showParts && (
             <TbmSessionPhotos
               projectId={projectId}

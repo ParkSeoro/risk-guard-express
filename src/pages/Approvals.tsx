@@ -454,8 +454,7 @@ const Approvals = () => {
     if (tab === 'rejected') {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
-        const { issuanceSteps, postSteps, priorIssuanceSteps } = splitApprovalTimeline(steps as any[]);
-        const hasReject = [...issuanceSteps, ...postSteps, ...priorIssuanceSteps].some(s => s.status === '반려');
+        const hasReject = currentTimelineSteps(steps as any[]).some(s => s.status === '반려');
         if (hasReject && matchesEntityTypeFilter(runId, steps as any[])) {
           filtered[runId] = steps as any[];
         }

@@ -40,6 +40,19 @@ export function hasAssessmentLegalAuthor(authorUserId?: string | null): boolean 
   return !!authorUserId;
 }
 
+/**
+ * 인쇄·PDF 출력 가능 여부: `작성중` 초안은 작성 주체(관리감독자) 지정 필수,
+ * 그 외 상태(결재진행·승인완료·반려·만료 등 과거/확정 문서)는 created_by fallback으로 즉시 출력 허용.
+ */
+export function canPrintAssessmentRun(opts: {
+  status?: string | null;
+  authorUserId?: string | null;
+}): boolean {
+  if (hasAssessmentLegalAuthor(opts.authorUserId)) return true;
+  const s = (opts.status || '').trim();
+  return !!s && s !== '작성중';
+}
+
 /** 결재에 들어간 회차는 트리거가 삭제(숨김)를 거절한다. */
 export const ASSESSMENT_DELETE_LOCKED_STATUSES = ['결재진행', '승인완료', '승인'] as const;
 

@@ -46,6 +46,20 @@ export function workPlanAuthorDisplayMessage(authorUserId?: string | null): stri
 }
 
 /**
+ * 인쇄·PDF 게이트: `작성중` 초안은 작성 주체(관리감독자) 지정 필수,
+ * 그 외 상태(결재중·승인완료·반려·만료·작업취소 등 과거/확정 문서)는 created_by fallback으로 즉시 출력 허용.
+ */
+export function workPlanPrintAuthorBlockMessage(opts: {
+  status?: string | null;
+  authorUserId?: string | null;
+}): string | null {
+  if (hasAssessmentLegalAuthor(opts.authorUserId)) return null;
+  const s = (opts.status || '').trim();
+  if (s && s !== '작성중') return null;
+  return workPlanAuthorDisplayMessage(opts.authorUserId);
+}
+
+/**
  * 작업계획서 작성자 후보는 문서(또는 로그인) 소속 업체만.
  * 시공사 트리(하위 협력사)까지 열지 않는다.
  * null = 프로젝트 전체(마스터·발주처가 업체를 고르기 전).

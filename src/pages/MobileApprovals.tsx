@@ -105,7 +105,7 @@ export default function MobileApprovals() {
     if (tab === "mine") return out;
     for (const [key, steps] of Object.entries(groupedHistory)) {
       const arr = steps as any[];
-      const { issuanceSteps, postSteps, priorIssuanceSteps } = splitApprovalTimeline(arr);
+      const { issuanceSteps, postSteps } = splitApprovalTimeline(arr);
       const current = [...issuanceSteps, ...postSteps];
       if (tab === "submitted" && user) {
         if (issuanceSteps.some((s) => s.approver_id === user.id && isSubmitterApprovalStep(s))) {
@@ -116,7 +116,7 @@ export default function MobileApprovals() {
           out[key] = arr;
         }
       } else if (tab === "rejected") {
-        if ([...current, ...priorIssuanceSteps].some((s) => s.status === "반려")) out[key] = arr;
+        if (current.some((s) => s.status === "반려")) out[key] = arr;
       }
     }
     return out;

@@ -394,7 +394,12 @@ export function resultLabelKo(result?: string | null): string {
   return '';
 }
 
+export const INSPECTION_COMPLETED_STATUSES = new Set(['completed', '완료', '승인완료']);
 export const PATROL_LOCKED_STATUSES = new Set(['결재진행', 'completed', '완료', '승인완료']);
+
+export function isInspectionCompletedStatus(status?: string | null): boolean {
+  return INSPECTION_COMPLETED_STATUSES.has(String(status || ''));
+}
 
 export function isPatrolLogLocked(status?: string | null): boolean {
   return PATROL_LOCKED_STATUSES.has(String(status || ''));

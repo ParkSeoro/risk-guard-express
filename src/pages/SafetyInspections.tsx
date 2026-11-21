@@ -38,6 +38,7 @@ import {
   inspectorTitleFromMember,
   isPatrolInspection,
   isPatrolLogLocked,
+  isInspectionCompletedStatus,
   isInspectionEditLocked,
   canWithdrawPatrolLog,
   patrolLockEditHint,
@@ -1086,8 +1087,8 @@ export default function SafetyInspections() {
                       <div className="text-xs text-muted-foreground truncate">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <Badge variant={i.status === 'completed' ? 'default' : i.status === '결재진행' ? 'outline' : i.status === '반려' ? 'destructive' : 'secondary'}>
-                        {i.status === 'completed' ? '완료' : i.status === '결재진행' ? '결재중' : i.status === '반려' ? '반려' : '진행중'}
+                      <Badge variant={isInspectionCompletedStatus(i.status) ? 'default' : i.status === '결재진행' ? 'outline' : i.status === '반려' ? 'destructive' : 'secondary'}>
+                        {isInspectionCompletedStatus(i.status) ? '완료' : i.status === '결재진행' ? '결재중' : i.status === '반려' ? '반려' : '진행중'}
                       </Badge>
                       <Button
                         size="icon"
@@ -1254,7 +1255,7 @@ export default function SafetyInspections() {
                             <Button size="sm" variant="outline" className="text-destructive" onClick={() => actOnPatrol('reject')}><XCircle className="h-4 w-4 mr-1" />반려</Button>
                           </>
                         )}
-                        {detail.status !== 'completed' && detail.status !== '결재진행' && (
+                        {!isInspectionCompletedStatus(detail.status) && detail.status !== '결재진행' && (
                           <Button size="sm" onClick={submitPatrolApproval} disabled={submitting}>
                             {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
                             결재 상신
@@ -1271,11 +1272,11 @@ export default function SafetyInspections() {
                             {patrolLockEditHint(detail.status)}
                           </span>
                         )}
-                        {detail.status === 'completed' && <Badge className="bg-success">완료</Badge>}
+                        {isInspectionCompletedStatus(detail.status) && <Badge className="bg-success">완료</Badge>}
                       </>
                     ) : (
                       <>
-                        {detail.status !== 'completed' ? (
+                        {!isInspectionCompletedStatus(detail.status) ? (
                           <Button size="sm" onClick={finishInspection}><CheckCircle2 className="h-4 w-4 mr-1" />점검 완료</Button>
                         ) : (
                           <>
@@ -1549,7 +1550,7 @@ export default function SafetyInspections() {
                                 key={r}
                                 size="sm"
                                 variant={row.result === r ? (r === 'fail' ? 'destructive' : 'default') : 'outline'}
-                                disabled={isPatrolLogLocked(detail.status)}
+                                disabled={isInspectionEditLocked(detail.status, isMaster)}
                                 onClick={() => persistDirectorItems(directorItems.map((x, i) => i === idx ? { ...x, result: r, improve: r === 'pass' ? '' : x.improve } : x))}
                               >
                                 {r === 'pass' ? '양호' : r === 'mid' ? '보통' : '불량'}
@@ -1560,7 +1561,7 @@ export default function SafetyInspections() {
                         {(row.result === 'mid' || row.result === 'fail') && (
                           <Textarea
                             rows={2}
-                            disabled={isPatrolLogLocked(detail.status)}
+                            disabled={isInspectionEditLocked(detail.status, isMaster)}
                             value={row.improve}
                             placeholder="개선요망 사항"
                             onChange={(e) => setDirectorItems((prev) => prev.map((x, i) => i === idx ? { ...x, improve: e.target.value } : x))}
@@ -1581,7 +1582,7 @@ export default function SafetyInspections() {
                     companies={companies}
                     submitterCompanyId={detail.company_id || userCompanyId || null}
                     projectGcCompanyId={projectGcCompanyId}
-                    readOnly={isPatrolLogLocked(detail.status)}
+                    readOnly={isInspectionEditLocked(detail.status, isMaster)}
                     documentDraft={{ entityType: 'safety_inspection', entityId: detail.id, companyId: detail.company_id || userCompanyId || null }}
                     seedSteps={isOfficialInspection(detail.inspection_type) ? OFFICIAL_APPROVAL_SEED_STEPS : patrolSeedSteps}
                     stepTemplates={isOfficialInspection(detail.inspection_type) ? OFFICIAL_APPROVAL_STEP_TEMPLATES : undefined}
@@ -1604,7 +1605,7 @@ export default function SafetyInspections() {
                             <Label className="text-xs">조치 결과</Label>
                             <Input
                               value={a.completion_note || ''}
-                              disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}
+                              disabled={isInspectionEditLocked(detail.status, isMaster)}
                               onChange={(e) => updateActionField(a, { completion_note: e.target.value })}
                               placeholder="조치 결과 문구"
                             />
@@ -1620,11 +1621,11 @@ export default function SafetyInspections() {
                             </div>
                             <div>
                               <Label className="text-xs">기한</Label>
-                              <Input type="date" value={a.due_date || ''} onChange={(e) => updateActionField(a, { due_date: e.target.value || null })} />
+                              <Input type="date" value={a.due_date || ''} disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => updateActionField(a, { due_date: e.target.value || null })} />
                             </div>
                             <div>
                               <Label className="text-xs">심각도</Label>
-                              <Select value={a.severity} onValueChange={(v) => updateActionField(a, { severity: v })}>
+                              <Select value={a.severity} disabled={isInspectionEditLocked(detail.status, isMaster)} onValueChange={(v) => updateActionField(a, { severity: v })}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="low">낮음</SelectItem>
@@ -1635,9 +1636,9 @@ export default function SafetyInspections() {
                             </div>
                           </div>
                           <div className="flex gap-2 items-center">
-                            <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
+                            <label className={`inline-flex items-center gap-1 text-xs px-2 py-1 border rounded ${isInspectionEditLocked(detail.status, isMaster) ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:bg-accent'}`}>
                               <Camera className="h-3 w-3" />증빙 사진
-                              <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onActionEvidence(a, e.target.files)} />
+                              <input type="file" accept="image/*" multiple capture="environment" className="hidden" disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => onActionEvidence(a, e.target.files)} />
                             </label>
                             {isOpenInspectionAction(a.status) ? (
                               <Button size="sm" onClick={() => completeAction(a)}><CheckCircle2 className="h-4 w-4 mr-1" />조치 완료</Button>
@@ -1650,7 +1651,7 @@ export default function SafetyInspections() {
                               {a.evidence_photos.map((p, idx) => (
                                 <div key={`${p}-${idx}`} className="relative">
                                   <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
-                                  {!(isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
+                                  {!isInspectionEditLocked(detail.status, isMaster) && (
                                     <button
                                       type="button"
                                       aria-label="증빙 사진 삭제"

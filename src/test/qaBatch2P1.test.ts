@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { formatSignatureLedgerDetail, signedAtSeoulDate } from '@/lib/laborEvidence';
-import { isInspectionEditLocked } from '@/lib/legalForms/patrolLog';
+import { isInspectionCompletedStatus, isInspectionEditLocked } from '@/lib/legalForms/patrolLog';
 import { officialChecklist } from '@/lib/legalForms/officialInspectionForms';
 
 describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
@@ -43,10 +43,18 @@ describe('QA Batch 2 (P1) regressions — PR #688 consensus', () => {
       expect(fac06?.label).not.toContain('결하');
     });
 
-    it('unifies SafetyInspections detail badge to 완료 instead of 종료', () => {
+    it('unifies SafetyInspections badges (completed/완료/승인완료 -> 완료) and master-exempt edit lock across all sections', () => {
+      expect(isInspectionCompletedStatus('completed')).toBe(true);
+      expect(isInspectionCompletedStatus('완료')).toBe(true);
+      expect(isInspectionCompletedStatus('승인완료')).toBe(true);
+      expect(isInspectionCompletedStatus('결재진행')).toBe(false);
+      expect(isInspectionCompletedStatus('in_progress')).toBe(false);
+
       const src = readFileSync('src/pages/SafetyInspections.tsx', 'utf8');
       expect(src).not.toContain('<Badge className="bg-success">종료</Badge>');
-      expect(src).toContain('isInspectionEditLocked(detail.status, isMaster)');
+      expect(src).toContain('isInspectionCompletedStatus(i.status)');
+      expect(src).toContain('readOnly={isInspectionEditLocked(detail.status, isMaster)}');
+      expect(src).not.toContain('readOnly={isPatrolLogLocked(detail.status)}');
     });
   });
 

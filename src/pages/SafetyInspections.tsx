@@ -38,6 +38,7 @@ import {
   inspectorTitleFromMember,
   isPatrolInspection,
   isPatrolLogLocked,
+  isInspectionEditLocked,
   canWithdrawPatrolLog,
   patrolLockEditHint,
   normalizeDirectorPatrolItems,
@@ -129,7 +130,8 @@ type InspAction = {
 };
 
 export default function SafetyInspections() {
-  const { profile } = useAuth();
+  const { profile, hasRole } = useAuth();
+  const isMaster = hasRole('master');
   const { toast } = useToast();
   const { selectedProject, userCompanyId, userRole, userPosition, projects } = useGlobalProjectAccess();
   const [searchParams] = useSearchParams();
@@ -457,7 +459,7 @@ export default function SafetyInspections() {
 
   const startEdit = (insp: Inspection, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (isApprovalInspection(insp.inspection_type) && isPatrolLogLocked(insp.status)) {
+    if (isInspectionEditLocked(insp.status, isMaster)) {
       return toast({ title: patrolLockEditHint(insp.status), variant: 'destructive' });
     }
     const d = new Date(insp.inspected_at);
@@ -528,7 +530,7 @@ export default function SafetyInspections() {
   };
 
   const updateItemResult = async (item: InspItem, result: 'pass' | 'fail' | 'na', grade?: OfficialGrade | null) => {
-    if (detail && isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
+    if (detail && isInspectionEditLocked(detail.status, isMaster)) {
       return toast({ title: patrolLockEditHint(detail.status), variant: 'destructive' });
     }
     const nextGrade = grade ?? (isOfficialInspection(detail?.inspection_type) ? resultToGrade(result, item.grade) : null);
@@ -564,7 +566,7 @@ export default function SafetyInspections() {
   };
 
   const assertEditable = () => {
-    if (detail && isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
+    if (detail && isInspectionEditLocked(detail.status, isMaster)) {
       toast({ title: patrolLockEditHint(detail.status), variant: 'destructive' });
       return false;
     }
@@ -838,7 +840,7 @@ export default function SafetyInspections() {
 
   const removeInspection = async (id: string) => {
     const target = inspections.find((x) => x.id === id) || (detail?.id === id ? detail : null);
-    if (target && isApprovalInspection(target.inspection_type) && isPatrolLogLocked(target.status)) {
+    if (target && isInspectionEditLocked(target.status, isMaster)) {
       return toast({ title: patrolLockEditHint(target.status), variant: 'destructive' });
     }
     if (!confirm('점검을 삭제하시겠습니까?')) return;
@@ -1092,7 +1094,7 @@ export default function SafetyInspections() {
                         variant="ghost"
                         className="h-8 w-8"
                         title="수정"
-                        disabled={isApprovalInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
+                        disabled={isInspectionEditLocked(i.status, isMaster)}
                         onClick={(e) => startEdit(i, e)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -1103,7 +1105,7 @@ export default function SafetyInspections() {
                         variant="ghost"
                         className="h-8 w-8"
                         title="삭제"
-                        disabled={isApprovalInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
+                        disabled={isInspectionEditLocked(i.status, isMaster)}
                         onClick={(e) => { e.stopPropagation(); removeInspection(i.id); }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1241,7 +1243,7 @@ export default function SafetyInspections() {
                 <DialogTitle className="flex items-center justify-between">
                   <span>{inspectionTitle(detail)}</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => startEdit(detail)} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}><Pencil className="h-4 w-4 mr-1" />수정</Button>
+                    <Button size="sm" variant="outline" onClick={() => startEdit(detail)} disabled={isInspectionEditLocked(detail.status, isMaster)}><Pencil className="h-4 w-4 mr-1" />수정</Button>
                     <Button size="sm" variant="outline" onClick={() => cloneInspection(detail)}><Copy className="h-4 w-4 mr-1" />복제</Button>
                     <Button size="sm" variant="outline" onClick={printDetail}><Printer className="h-4 w-4 mr-1" />인쇄/PDF</Button>
                     {isApprovalInspection(detail.inspection_type) ? (
@@ -1264,19 +1266,30 @@ export default function SafetyInspections() {
                             <RotateCcw className="h-4 w-4 mr-1" />회수
                           </Button>
                         )}
-                        {isPatrolLogLocked(detail.status) && (
+                        {isInspectionEditLocked(detail.status, isMaster) && (
                           <span className="text-[11px] text-muted-foreground max-w-[220px] leading-snug">
                             {patrolLockEditHint(detail.status)}
                           </span>
                         )}
-                        {detail.status === 'completed' && <Badge className="bg-success">종료</Badge>}
+                        {detail.status === 'completed' && <Badge className="bg-success">완료</Badge>}
                       </>
                     ) : (
-                      detail.status !== 'completed' && (
-                        <Button size="sm" onClick={finishInspection}><CheckCircle2 className="h-4 w-4 mr-1" />점검 완료</Button>
-                      )
+                      <>
+                        {detail.status !== 'completed' ? (
+                          <Button size="sm" onClick={finishInspection}><CheckCircle2 className="h-4 w-4 mr-1" />점검 완료</Button>
+                        ) : (
+                          <>
+                            {isInspectionEditLocked(detail.status, isMaster) && (
+                              <span className="text-[11px] text-muted-foreground max-w-[220px] leading-snug">
+                                {patrolLockEditHint(detail.status)}
+                              </span>
+                            )}
+                            <Badge className="bg-success">완료</Badge>
+                          </>
+                        )}
+                      </>
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => removeInspection(detail.id)} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => removeInspection(detail.id)} disabled={isInspectionEditLocked(detail.status, isMaster)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </DialogTitle>
               </DialogHeader>
@@ -1293,7 +1306,7 @@ export default function SafetyInspections() {
                     <Label className="text-xs">날씨</Label>
                     <Input
                       value={weather}
-                      disabled={isPatrolLogLocked(detail.status)}
+                      disabled={isInspectionEditLocked(detail.status, isMaster)}
                       onChange={(e) => setWeather(e.target.value)}
                       onBlur={(e) => persistWeather(e.target.value)}
                       placeholder="맑음 / 흐림 / 비 등"
@@ -1303,17 +1316,17 @@ export default function SafetyInspections() {
                     <Label className="text-xs">{PATROL_WALK_PHOTO_LABEL} (2장)</Label>
                     <div className="flex gap-2 mt-1">
                       {[0, 1].map((slot) => (
-                        <div key={slot} className={`relative flex-1 border rounded p-2 text-center text-xs ${isPatrolLogLocked(detail.status) ? 'opacity-60' : ''}`}>
-                          <label className={isPatrolLogLocked(detail.status) ? '' : 'cursor-pointer hover:bg-accent block'}>
+                        <div key={slot} className={`relative flex-1 border rounded p-2 text-center text-xs ${isInspectionEditLocked(detail.status, isMaster) ? 'opacity-60' : ''}`}>
+                          <label className={isInspectionEditLocked(detail.status, isMaster) ? '' : 'cursor-pointer hover:bg-accent block'}>
                             {patrolPhotos[slot] ? (
                               <img src={patrolPhotos[slot]} alt={`${PATROL_WALK_PHOTO_LABEL} ${slot + 1}`} className="h-20 w-full object-cover rounded mb-1" />
                             ) : (
                               <div className="h-20 flex items-center justify-center text-muted-foreground">{PATROL_WALK_PHOTO_LABEL} {slot + 1}</div>
                             )}
                             <span className="inline-flex items-center gap-1"><Camera className="h-3 w-3" />{patrolPhotos[slot] ? '교체' : '첨부'}</span>
-                            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={isPatrolLogLocked(detail.status)} onChange={(e) => onPatrolPhoto(slot as 0 | 1, e.target.files)} />
+                            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => onPatrolPhoto(slot as 0 | 1, e.target.files)} />
                           </label>
-                          {patrolPhotos[slot] && !isPatrolLogLocked(detail.status) && (
+                          {patrolPhotos[slot] && !isInspectionEditLocked(detail.status, isMaster) && (
                             <button
                               type="button"
                               aria-label="순회 사진 삭제"
@@ -1332,7 +1345,7 @@ export default function SafetyInspections() {
                 <OfficialHeaderFields
                   type={detail.inspection_type as OfficialInspectionType}
                   payload={officialPayload}
-                  disabled={isPatrolLogLocked(detail.status)}
+                  disabled={isInspectionEditLocked(detail.status, isMaster)}
                   onChange={(next) => void persistOfficialPayload(next)}
                 />
               )}
@@ -1370,10 +1383,10 @@ export default function SafetyInspections() {
                               <OfficialGradeButtons
                                 type={detail.inspection_type as OfficialInspectionType}
                                 value={resultToGrade(it.result, it.grade)}
-                                disabled={isPatrolLogLocked(detail.status)}
+                                disabled={isInspectionEditLocked(detail.status, isMaster)}
                                 onPick={(g) => updateOfficialGrade(it, g)}
                               />
-                              {!isPatrolLogLocked(detail.status) && (
+                              {!isInspectionEditLocked(detail.status, isMaster) && (
                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
@@ -1381,10 +1394,10 @@ export default function SafetyInspections() {
                             </div>
                           </div>
                           <div className="flex gap-2 items-start">
-                            <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
-                            <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
+                            <IMESafeInput defaultValue={it.note} disabled={isInspectionEditLocked(detail.status, isMaster)} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
+                            <label className={`inline-flex items-center gap-1 text-xs px-2 py-1 border rounded ${isInspectionEditLocked(detail.status, isMaster) ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:bg-accent'}`}>
                               <Camera className="h-3 w-3" />사진
-                              <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />
+                              <input type="file" accept="image/*" multiple capture="environment" className="hidden" disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => onItemPhoto(it, e.target.files)} />
                             </label>
                           </div>
                           {(it.photos || []).length > 0 && (
@@ -1392,7 +1405,7 @@ export default function SafetyInspections() {
                               {it.photos.map((p, idx) => (
                                 <div key={`${p}-${idx}`} className="relative">
                                   <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
-                                  {!isPatrolLogLocked(detail.status) && (
+                                  {!isInspectionEditLocked(detail.status, isMaster) && (
                                     <button type="button" aria-label="점검 사진 삭제" className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center" onClick={() => void removeItemPhoto(it, idx)}>×</button>
                                   )}
                                 </div>
@@ -1413,10 +1426,10 @@ export default function SafetyInspections() {
                           <div className="text-[10px] text-muted-foreground">{it.legal_basis}</div>
                         </div>
                         <div className="flex gap-1">
-                          <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>{isPatrolInspection(detail.inspection_type) ? '양호' : '통과'}</Button>
-                          <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'fail')}>{isPatrolInspection(detail.inspection_type) ? '불량' : '불합격'}</Button>
-                          <Button size="sm" variant={it.result === 'na' ? 'secondary' : 'outline'} disabled={isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)} onClick={() => updateItemResult(it, 'na')}>해당없음</Button>
-                          {!isPatrolLogLocked(detail.status) && (
+                          <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} disabled={isInspectionEditLocked(detail.status, isMaster)} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>{isPatrolInspection(detail.inspection_type) ? '양호' : '통과'}</Button>
+                          <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} disabled={isInspectionEditLocked(detail.status, isMaster)} onClick={() => updateItemResult(it, 'fail')}>{isPatrolInspection(detail.inspection_type) ? '불량' : '불합격'}</Button>
+                          <Button size="sm" variant={it.result === 'na' ? 'secondary' : 'outline'} disabled={isInspectionEditLocked(detail.status, isMaster)} onClick={() => updateItemResult(it, 'na')}>해당없음</Button>
+                          {!isInspectionEditLocked(detail.status, isMaster) && (
                             <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -1424,10 +1437,10 @@ export default function SafetyInspections() {
                         </div>
                       </div>
                       <div className="flex gap-2 items-start">
-                        <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder={isPatrolInspection(detail.inspection_type) ? '발견사항·즉시조치' : '비고'} className="flex-1 text-sm" />
-                        <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
+                        <IMESafeInput defaultValue={it.note} disabled={isInspectionEditLocked(detail.status, isMaster)} onCommit={(v) => updateItemNote(it, v)} placeholder={isPatrolInspection(detail.inspection_type) ? '발견사항·즉시조치' : '비고'} className="flex-1 text-sm" />
+                        <label className={`inline-flex items-center gap-1 text-xs px-2 py-1 border rounded ${isInspectionEditLocked(detail.status, isMaster) ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:bg-accent'}`}>
                           <Camera className="h-3 w-3" />사진
-                          <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />
+                          <input type="file" accept="image/*" multiple capture="environment" className="hidden" disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => onItemPhoto(it, e.target.files)} />
                         </label>
                       </div>
                       {(it.photos || []).length > 0 && (
@@ -1435,7 +1448,7 @@ export default function SafetyInspections() {
                           {it.photos.map((p, idx) => (
                             <div key={`${p}-${idx}`} className="relative">
                               <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
-                              {!(isApprovalInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) && (
+                              {!isInspectionEditLocked(detail.status, isMaster) && (
                                 <button
                                   type="button"
                                   aria-label="점검 사진 삭제"
@@ -1466,10 +1479,10 @@ export default function SafetyInspections() {
                           <OfficialGradeButtons
                             type={detail.inspection_type as OfficialInspectionType}
                             value={resultToGrade(it.result, it.grade)}
-                            disabled={isPatrolLogLocked(detail.status)}
+                            disabled={isInspectionEditLocked(detail.status, isMaster)}
                             onPick={(g) => updateOfficialGrade(it, g)}
                           />
-                          {!isPatrolLogLocked(detail.status) && (
+                          {!isInspectionEditLocked(detail.status, isMaster) && (
                             <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => void removeChecklistItem(it)} aria-label="점검항목 삭제">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -1477,10 +1490,10 @@ export default function SafetyInspections() {
                         </div>
                       </div>
                       <div className="flex gap-2 items-start">
-                        <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
-                        <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
+                        <IMESafeInput defaultValue={it.note} disabled={isInspectionEditLocked(detail.status, isMaster)} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
+                        <label className={`inline-flex items-center gap-1 text-xs px-2 py-1 border rounded ${isInspectionEditLocked(detail.status, isMaster) ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:bg-accent'}`}>
                           <Camera className="h-3 w-3" />사진
-                          <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />
+                          <input type="file" accept="image/*" multiple capture="environment" className="hidden" disabled={isInspectionEditLocked(detail.status, isMaster)} onChange={(e) => onItemPhoto(it, e.target.files)} />
                         </label>
                       </div>
                       {(it.photos || []).length > 0 && (
@@ -1488,7 +1501,7 @@ export default function SafetyInspections() {
                           {it.photos.map((p, idx) => (
                             <div key={`${p}-${idx}`} className="relative">
                               <img src={p} alt="" className="h-16 w-16 object-cover border rounded" />
-                              {!isPatrolLogLocked(detail.status) && (
+                              {!isInspectionEditLocked(detail.status, isMaster) && (
                                 <button type="button" aria-label="점검 사진 삭제" className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center" onClick={() => void removeItemPhoto(it, idx)}>×</button>
                               )}
                             </div>
@@ -1500,7 +1513,7 @@ export default function SafetyInspections() {
                 ))}
               </div>
 
-              {!isPatrolLogLocked(detail.status) && (
+              {!isInspectionEditLocked(detail.status, isMaster) && (
                 <div className="flex gap-2 mt-3">
                   <Input
                     value={findingText}
@@ -1515,7 +1528,7 @@ export default function SafetyInspections() {
                 <OfficialFooterFields
                   type={detail.inspection_type as OfficialInspectionType}
                   payload={officialPayload}
-                  disabled={isPatrolLogLocked(detail.status)}
+                  disabled={isInspectionEditLocked(detail.status, isMaster)}
                   approvals={inspectionApprovals}
                   onChange={(next) => void persistOfficialPayload(next)}
                 />

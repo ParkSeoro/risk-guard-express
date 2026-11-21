@@ -17,6 +17,7 @@ import {
   defaultSignatureLedgerRange,
   fetchSignatureLedger,
   resolvePledgeText,
+  signedAtSeoulDate,
   type SignatureKind,
   type SignatureLedgerRow,
 } from "@/lib/laborEvidence";
@@ -173,6 +174,7 @@ export default function WorkerSignatureLedgerPanel({
                           {r.companyName || ""}
                           {r.companyName ? " · " : ""}
                           {r.signedAt ? new Date(r.signedAt).toLocaleString("ko-KR") : r.workDate}
+                          {r.workDate && r.signedAt && signedAtSeoulDate(r.signedAt) !== r.workDate ? ` (기준일 ${r.workDate})` : ""}
                         </div>
                       </div>
                       <Badge variant="outline">{r.kindLabel}</Badge>
@@ -196,7 +198,12 @@ export default function WorkerSignatureLedgerPanel({
                   <tbody>
                     {filtered.map((r) => (
                       <tr key={`${r.kind}-${r.id}`} className="border-b cursor-pointer hover:bg-muted/40" onClick={() => openRow(r)}>
-                        <td className="p-2 text-xs">{r.signedAt ? new Date(r.signedAt).toLocaleString("ko-KR") : r.workDate}</td>
+                        <td className="p-2 text-xs">
+                          <div>{r.signedAt ? new Date(r.signedAt).toLocaleString("ko-KR") : r.workDate}</div>
+                          {r.workDate && r.signedAt && signedAtSeoulDate(r.signedAt) !== r.workDate && (
+                            <div className="text-[10px] text-muted-foreground">기준일 {r.workDate}</div>
+                          )}
+                        </td>
                         {!workerId && (
                           <td className="p-2">
                             <div className="font-medium">{r.workerName || "—"}</div>

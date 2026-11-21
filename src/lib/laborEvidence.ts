@@ -181,6 +181,43 @@ export async function fetchHoursRollup(opts: {
   };
 }
 
+const RA_SHARE_SOURCE_LABELS: Record<string, string> = {
+  notice: "위험성평가 공지 확인",
+  qr: "QR 확인",
+  daily_ack: "출근 서약 연동",
+  app: "앱 확인",
+  web: "웹 확인",
+  worker_app: "근로자 앱 확인",
+};
+
+/** Maps raw ledger detail tokens (e.g. `ra_share` source `'notice'`) into localized Korean labels. */
+export function formatSignatureLedgerDetail(kind: SignatureKind, rawDetail?: string | null): string | null {
+  const trimmed = String(rawDetail || "").trim();
+  if (!trimmed) return null;
+  if (kind === "ra_share") {
+    const mapped = RA_SHARE_SOURCE_LABELS[trimmed.toLowerCase()];
+    if (mapped) return mapped;
+  }
+  return trimmed;
+}
+
+/** Formats an ISO timestamp into KST YYYY-MM-DD so ledger UI can compare signedAt vs workDate cleanly. */
+export function signedAtSeoulDate(iso?: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  return y && m && day ? `${y}-${m}-${day}` : null;
+}
+
 function mapLedger(raw: any): SignatureLedgerRow {
   const kind = (raw.kind || "daily_ack") as SignatureKind;
   return {
@@ -193,7 +230,7 @@ function mapLedger(raw: any): SignatureLedgerRow {
     signatureData: raw.signature_data || null,
     signedAt: raw.signed_at || null,
     pledgeTextHash: raw.pledge_text_hash || null,
-    detail: raw.detail || null,
+    detail: formatSignatureLedgerDetail(kind, raw.detail),
     workDate: raw.work_date || null,
   };
 }
@@ -269,13 +306,14 @@ async function fetchLedgerFallback(opts: {
 
   const { data: sessions } = await supabase
     .from("tbm_sessions")
-    .select("id, tbm_date")
+    .select("id, tbm_date, title")
     .eq("project_id", opts.projectId)
     .eq("is_deleted", false)
     .gte("tbm_date", opts.from)
     .lte("tbm_date", opts.to);
   const sessionIds = (sessions || []).map((s) => s.id);
   const sessionDate = Object.fromEntries((sessions || []).map((s) => [s.id, s.tbm_date]));
+  const sessionTitle = Object.fromEntries((sessions || []).map((s) => [s.id, String((s as any).title || "").trim()]));
   if (sessionIds.length) {
     let tq = supabase
       .from("tbm_participations")
@@ -295,7 +333,7 @@ async function fetchLedgerFallback(opts: {
           company_name: p.company_name,
           signature_data: p.signature_data,
           signed_at: p.participated_at,
-          detail: "TBM 참여",
+          detail: sessionTitle[p.tbm_session_id] || "TBM 참여",
           work_date: sessionDate[p.tbm_session_id],
         }),
       );

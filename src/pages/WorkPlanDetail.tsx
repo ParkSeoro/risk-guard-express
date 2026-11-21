@@ -867,30 +867,14 @@ const WorkPlanDetail = () => {
           </Button>
         )}
         {['승인완료', '승인', '완료'].includes(plan.status) && !isVoided && (
-          <>
-            <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
-              const { data, error } = await supabase.rpc('derive_permit_from_work_plan', { _work_plan_id: planId });
-              if (error) { toast({ title: '작업허가서 생성 실패', description: error.message, variant: 'destructive' }); return; }
-              const d: any = data;
-              if (d?.permit_id) { toast({ title: d.reused ? '기존 허가서로 이동' : '작업허가서가 생성되었습니다.' }); navigate(`/work-permits`); }
-            }}>
-              <FileText className="h-3.5 w-3.5" /> 작업허가서 자동생성
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
-              const { data, error } = await supabase.rpc('derive_tbm_from_work_plan', { _work_plan_id: planId });
-              if (error) { toast({ title: 'TBM 생성 실패', description: error.message, variant: 'destructive' }); return; }
-              const d: any = data;
-              if (d?.tbm_id) {
-                toast({ title: d.reused ? '기존 TBM으로 이동' : 'TBM 세션이 생성되었습니다. 참석=근로자 주지' });
-                if (planId) {
-                  fetchWorkPlanTbmNoticeStatus(planId).then(setTbmNotice).catch(() => {});
-                }
-                navigate(`/app/admin/tbm-logs`);
-              }
-            }}>
-              <ClipboardList className="h-3.5 w-3.5" /> TBM 자동생성(주지)
-            </Button>
-          </>
+          <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
+            const { data, error } = await supabase.rpc('derive_permit_from_work_plan', { _work_plan_id: planId });
+            if (error) { toast({ title: '작업허가서 생성 실패', description: error.message, variant: 'destructive' }); return; }
+            const d: any = data;
+            if (d?.permit_id) { toast({ title: d.reused ? '기존 허가서로 이동' : '작업허가서가 생성되었습니다.' }); navigate(`/work-permits`); }
+          }}>
+            <FileText className="h-3.5 w-3.5" /> 작업허가서 자동생성
+          </Button>
         )}
         {planEditable && (
           <Button

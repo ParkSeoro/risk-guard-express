@@ -3095,9 +3095,11 @@ const AssessmentRunDetail = () => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
-              <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
-            </DropdownMenuItem>
+            {canEdit && (
+              <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
+                <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handlePrint}>
               <Printer className="h-3.5 w-3.5 mr-2" /> 인쇄 / PDF
             </DropdownMenuItem>

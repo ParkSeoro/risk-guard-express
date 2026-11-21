@@ -55,7 +55,7 @@ const WorkPlans = () => {
   const [searchParams] = useSearchParams();
   const [statusFilter, setStatusFilter] = useState(() => {
     const status = searchParams.get('status');
-    return status && ['작성중', '결재중', '승인완료', '반려'].includes(status) ? status : 'all';
+    return status && ['작성중', '결재중', '승인완료', '반려', '만료', '작업취소'].includes(status) ? status : 'all';
   });
   const [runs, setRuns] = useState<any[]>([]);
   const createAuthorCompanyIds = useMemo(
@@ -382,7 +382,7 @@ const WorkPlans = () => {
 
       {/* Summary badges */}
       <div className="flex gap-2 flex-wrap">
-        {['작성중', '결재중', '승인완료', '반려', '만료'].map(s => {
+        {['작성중', '결재중', '승인완료', '반려', '만료', '작업취소'].map(s => {
           const count = s === '승인완료'
             ? plans.filter(p => APPROVED_PLAN_STATUSES.has(p.status)).length
             : plans.filter(p => p.status === s).length;

@@ -122,7 +122,12 @@ export function WorkerRepresentativeLine({
           </SelectContent>
         </Select>
       )}
-      {companyLocked && companyName && <span className="text-muted-foreground">{companyName}</span>}
+      {companyLocked && companyName && (
+        <>
+          <span className="text-muted-foreground">{companyName}</span>
+          {companyId && <span aria-hidden="true" className="text-muted-foreground">·</span>}
+        </>
+      )}
       {!companyId ? (
         <span className="text-muted-foreground">
           {!companiesReady

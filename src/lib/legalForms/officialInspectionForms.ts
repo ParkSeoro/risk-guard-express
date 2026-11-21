@@ -359,7 +359,7 @@ export const OFFICIAL_FORM_ITEMS: Record<OfficialInspectionType, OfficialFormIte
     item('FAC-03', '비계', 3, '연결부 및 접속부, 클램프 조임 상태', SF009),
     item('FAC-04', '비계', 4, '재료 결함(변형, 부식, 손상 외) 점검', SF009),
     item('FAC-05', '비계', 5, '비계 기둥(간격 1.8m 이내) 침하방지 깔판 사용', SF009),
-    item('FAC-06', '비계', 6, '작업발판(폭 40cm 이상, 틈 3cm 이하) 결하 및 설치 상태', SF009),
+    item('FAC-06', '비계', 6, '작업발판(폭 40cm 이상, 틈 3cm 이하) 결속 및 설치 상태', SF009),
     item('FAC-07', '비계', 7, '주변 고압선 유무 및 이격거리(3m 이상) 준수', SF009),
     item('FAC-08', '비계', 8, '보행로 내 낙하물 적재 금지', SF009),
     item('FAC-09', '분전함', 1, '차단기 용량 및 적정 케이블 사용 여부', SF009),

@@ -409,6 +409,7 @@ const AssessmentRuns = () => {
   const getApprovalLabel = (run: any) => {
     if (run.status === '승인완료') return { label: '승인완료', className: 'bg-success/10 text-success' };
     if (run.status === '결재진행') return { label: '결재중', className: 'bg-primary/10 text-primary' };
+    if (run.status === '반려') return { label: '반려 · 재상신 필요', className: 'bg-destructive/10 text-destructive' };
     return { label: '미상신', className: 'bg-muted text-muted-foreground' };
   };
 

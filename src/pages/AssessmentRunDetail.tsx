@@ -2286,6 +2286,11 @@ const AssessmentRunDetail = () => {
 
   const handleExcelImport = async () => {
     if (!run || !user || !runId) return;
+    if (!canEdit) {
+      toast({ title: '현재 상태에서는 엑셀을 가져올 수 없습니다.', variant: 'destructive' });
+      setShowExcelUpload(false);
+      return;
+    }
     const parseGrade = (raw: string, fallback: '상' | '중' | '하'): '상' | '중' | '하' => {
       const t = String(raw || '').trim();
       return (['상', '중', '하'] as const).includes(t as '상' | '중' | '하') ? (t as '상' | '중' | '하') : fallback;
@@ -3095,9 +3100,11 @@ const AssessmentRunDetail = () => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
-              <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
-            </DropdownMenuItem>
+            {canEdit && (
+              <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
+                <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handlePrint}>
               <Printer className="h-3.5 w-3.5 mr-2" /> 인쇄 / PDF
             </DropdownMenuItem>

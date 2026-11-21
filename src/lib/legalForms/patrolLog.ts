@@ -394,10 +394,32 @@ export function resultLabelKo(result?: string | null): string {
   return '';
 }
 
-export const PATROL_LOCKED_STATUSES = new Set(['결재진행', 'completed']);
+export const INSPECTION_COMPLETED_STATUSES = new Set(['completed', '완료', '승인완료']);
+export const PATROL_LOCKED_STATUSES = new Set(['결재진행', 'completed', '완료', '승인완료']);
+
+export function isInspectionCompletedStatus(status?: string | null): boolean {
+  return INSPECTION_COMPLETED_STATUSES.has(String(status || ''));
+}
 
 export function isPatrolLogLocked(status?: string | null): boolean {
   return PATROL_LOCKED_STATUSES.has(String(status || ''));
+}
+
+export function inspectionStatusLabel(status?: string | null): string {
+  const s = String(status || '');
+  if (isInspectionCompletedStatus(s)) return '완료';
+  if (s === '결재진행') return '결재중';
+  if (s === '반려') return '반려';
+  return '진행중';
+}
+
+/**
+ * 안전점검 전 유형(일일·시설물·순회·정기·특별 등) 편집 잠금 판정.
+ * `completed` / `완료` / `결재진행` / `승인완료` 상태는 읽기 전용, 단 마스터(`isMaster`)만 예외 허용.
+ */
+export function isInspectionEditLocked(status?: string | null, isMaster = false): boolean {
+  if (isMaster) return false;
+  return isPatrolLogLocked(status);
 }
 
 /** 결재진행 중이면 회수 후 수정 가능. 승인완료는 회수 불가(복제). */
@@ -406,7 +428,7 @@ export function canWithdrawPatrolLog(status?: string | null): boolean {
 }
 
 export function patrolLockEditHint(status?: string | null): string {
-  if (String(status || '') === 'completed') {
+  if (isInspectionCompletedStatus(status)) {
     return '승인 완료된 일지는 수정·삭제할 수 없습니다. 필요하면 복제하세요.';
   }
   if (canWithdrawPatrolLog(status)) {

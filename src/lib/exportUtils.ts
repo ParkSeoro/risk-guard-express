@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
+import { resolveArchivedUrlsInHtml } from '@/lib/archiveUrlResolver';
 
 interface RiskRow {
   process: string;
@@ -100,22 +101,23 @@ export async function exportToPDFServer(
   }
 
   const fileName = (data.fileName as string | undefined) || `위험성평가_인쇄용_${new Date().toISOString().slice(0, 10)}.html`;
+  const resolvedHtml = await resolveArchivedUrlsInHtml(data.html);
 
   if (mode === 'download') {
     if (preOpenedWindow) { try { preOpenedWindow.close(); } catch {} }
-    downloadHtmlFallback(data.html, fileName);
+    downloadHtmlFallback(resolvedHtml, fileName);
     return;
   }
 
   // mode === 'print'
   const printWindow = preOpenedWindow ?? window.open('', '_blank', 'width=1100,height=800');
   if (!printWindow) {
-    downloadHtmlFallback(data.html, fileName);
+    downloadHtmlFallback(resolvedHtml, fileName);
     throw new Error('팝업이 차단되어 HTML 파일을 다운로드했습니다. 다운로드한 파일을 열어 인쇄해 주세요.');
   }
 
   printWindow.document.open();
-  printWindow.document.write(data.html);
+  printWindow.document.write(resolvedHtml);
   printWindow.document.close();
   try { printWindow.document.title = (fileName || '').replace(/\.pdf$/i, '') || printWindow.document.title; } catch {}
 

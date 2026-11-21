@@ -17,6 +17,7 @@ import { uploadAttachmentFile, buildProjectAttachmentPath } from '@/lib/compress
 import { calculateRiskGrade, derivedResidualFields } from '@/lib/riskGrade';
 import { fetchGlobalRiskLibraryItems } from '@/lib/globalRiskLibrary';
 import { matchOpinionRiskToLibrary } from '@/lib/opinionLibraryMatch';
+import { openArchivedUrl } from '@/lib/archiveUrlResolver';
 
 interface Props {
   runId: string;
@@ -753,7 +754,7 @@ export default function WorkerParticipationPanel({
                 <div className="flex gap-1 flex-wrap">
                   {a.photo_urls.map((u: string, i: number) => (
                     <div key={`${u}-${i}`} className="relative">
-                      <img src={u} alt="사고사진" className="w-16 h-16 object-cover rounded border cursor-pointer" onClick={() => window.open(u, '_blank')} />
+                      <img src={u} alt="사고사진" className="w-16 h-16 object-cover rounded border cursor-pointer" onClick={() => openArchivedUrl(u)} />
                       {canEdit && (
                         <button
                           type="button"

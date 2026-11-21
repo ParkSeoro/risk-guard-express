@@ -23,6 +23,7 @@ import { tbmListQueryBlock } from '@/lib/tbmListQuery';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { tbmParticipationTimeLabel } from '@/lib/tbmParticipationTime';
 import { useAuth } from '@/contexts/AuthContext';
+import { resolveArchivedUrlsInHtml } from '@/lib/archiveUrlResolver';
 import { markOpenDocumentNotifications } from '@/lib/notificationReadHelper';
 import { TbmSessionPhotos } from '@/components/tbm/TbmSessionPhotos';
 import { parseTbmPhotoUrls, tbmPhotoCountLabel } from '@/lib/tbmPhotos';
@@ -518,7 +519,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <td class="center">${isRenderableSignature(p.signature_data) ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
         </tr>`).join('');
 
-    w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"/>
+    const tbmPrintHtml = `<!doctype html><html lang="ko"><head><meta charset="utf-8"/>
       <title>TBM 일지 - ${esc(s.title)}</title>
       <style>
         @page { size: A4; margin: 12mm; }
@@ -607,7 +608,8 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           }
         };
       </script>
-    </body></html>`);
+    </body></html>`;
+    w.document.write(await resolveArchivedUrlsInHtml(tbmPrintHtml));
     w.document.close(); w.focus();
   };
 

@@ -193,9 +193,54 @@ export async function resolveArchivedUrlsInHtml(html: string): Promise<string> {
 }
 
 /**
- * Installs a zero-overhead global capture-phase <img> error fallback listener.
- * Active/backed-up images never trigger this; only an archived-purged 404 image
- * triggers a transparent on-demand restore from Google One.
+ * Opens an attachment URL in a new tab safely (popup-blocker friendly).
+ * If the file was purged to Google One, transparently restores a 5-minute Signed URL first.
+ */
+export function openArchivedUrl(url: string, downloadFileName?: string | null): void {
+  const raw = String(url || "").trim();
+  if (!raw || typeof window === "undefined") return;
+  const objectPath = extractAttachmentsObjectPath(raw);
+  if (!objectPath) {
+    window.open(raw, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const now = Date.now();
+  const cacheKey = downloadFileName ? `${objectPath}::dl::${downloadFileName}` : objectPath;
+  const restoredHit = restoredCache.get(cacheKey);
+  if (restoredHit && restoredHit.expiresAt > now) {
+    window.open(restoredHit.url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const activeUntil = activeCache.get(objectPath);
+  if (activeUntil && activeUntil > now) {
+    window.open(raw, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  // Pre-open synchronously inside user gesture to avoid browser popup blockers
+  const win = window.open("about:blank", "_blank");
+  void resolveArchivedUrl(raw, { downloadFileName }).then((resolved) => {
+    const targetUrl = resolved || raw;
+    if (win && !win.closed) {
+      try {
+        win.opener = null;
+      } catch {
+        /* ignore */
+      }
+      win.location.replace(targetUrl);
+    } else {
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
+    }
+  });
+}
+
+/**
+ * Installs zero-overhead global capture-phase fallbacks for archived attachments:
+ * 1) <img> error listener: active/backed-up images never trigger this; an archived-purged 404 image
+ *    triggers a transparent on-demand restore from Google One.
+ * 2) <a href=".../attachments/..."> click listener: resolves archived-purged PDF/attachment links
+ *    before opening so direct anchor links never 404 after purge.
  */
 export function installArchivedImageFallback(): void {
   if (fallbackInstalled || typeof window === "undefined") return;
@@ -216,6 +261,51 @@ export function installArchivedImageFallback(): void {
         if (restored && restored !== src && target.isConnected) {
           target.src = restored;
         }
+      });
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor || anchor.dataset.archiveResolved === "1") return;
+
+      const href = anchor.href || "";
+      const path = extractAttachmentsObjectPath(href);
+      if (!path) return;
+
+      const now = Date.now();
+      const activeUntil = activeCache.get(path);
+      if (activeUntil && activeUntil > now) return;
+
+      event.preventDefault();
+      const downloadAttr = anchor.getAttribute("download");
+      const isDownload = anchor.hasAttribute("download");
+      if (isDownload) {
+        void resolveArchivedUrl(href, { downloadFileName: downloadAttr || undefined }).then((resolved) => {
+          const temp = document.createElement("a");
+          temp.href = resolved || href;
+          temp.download = downloadAttr || "";
+          temp.rel = "noopener noreferrer";
+          temp.dataset.archiveResolved = "1";
+          document.body.appendChild(temp);
+          temp.click();
+          temp.remove();
+        });
+        return;
+      }
+      if (anchor.target === "_blank") {
+        openArchivedUrl(href);
+        return;
+      }
+      void resolveArchivedUrl(href).then((resolved) => {
+        window.location.assign(resolved || href);
       });
     },
     true,

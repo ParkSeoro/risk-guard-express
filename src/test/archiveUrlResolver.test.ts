@@ -17,6 +17,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 import {
   clearArchiveResolverCache,
   extractAttachmentsObjectPath,
+  openArchivedUrl,
   resolveArchivedUrl,
   resolveArchivedUrlsInHtml,
 } from "@/lib/archiveUrlResolver";
@@ -86,5 +87,32 @@ describe("archiveUrlResolver", () => {
     expect(out).toContain(`${BASE}/${activePath}`);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("openArchivedUrl pre-opens blank tab and navigates to restored Signed URL for archived files", async () => {
+    const path = "safety-cost/proj1/rep1/doc.pdf";
+    const url = `${BASE}/${path}`;
+    const signed = "https://signed.example/doc.pdf?token=abc";
+    const replaceSpy = vi.fn();
+    const openSpy = vi.spyOn(window, "open").mockReturnValue({
+      closed: false,
+      opener: window,
+      location: { replace: replaceSpy },
+    } as unknown as Window);
+
+    mocks.rpc.mockResolvedValue({
+      data: [{ object_path: path, archive_status: "archived_purged" }],
+      error: null,
+    });
+    mocks.invoke.mockResolvedValue({
+      data: { mode: "restored", url: signed, expires_in: 300 },
+      error: null,
+    });
+
+    openArchivedUrl(url);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(openSpy).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(replaceSpy).toHaveBeenCalledWith(signed);
+    openSpy.mockRestore();
   });
 });

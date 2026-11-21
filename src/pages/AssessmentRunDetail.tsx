@@ -12,6 +12,7 @@ import MobileAssessmentViewer from '@/pages/MobileAssessmentViewer';
 import { validateRiskItemField } from '@/lib/inputValidation';
 import { sendNotification } from '@/lib/notificationService';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
+import { openArchivedUrl } from '@/lib/archiveUrlResolver';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -3599,7 +3600,7 @@ const AssessmentRunDetail = () => {
                   <div className="flex gap-2 flex-wrap">
                     {(run.worker_participation_images || []).map((url: string, i: number) => (
                       <div key={i} className="relative">
-                        <img src={url} alt={`참여사진${i + 1}`} className="w-20 h-20 rounded object-cover border cursor-pointer" onClick={() => window.open(url, '_blank')} />
+                        <img src={url} alt={`참여사진${i + 1}`} className="w-20 h-20 rounded object-cover border cursor-pointer" onClick={() => openArchivedUrl(url)} />
                         {(canEdit || canForceEdit) && (
                           <button
                             type="button"

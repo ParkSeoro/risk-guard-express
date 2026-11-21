@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { mapPermitExtendRequestError, permitFormDataForClone } from '@/lib/permitExtend';
+import { chunkArray } from '@/lib/chunkArray';
 import { Plus, FileSignature, Pencil, Trash2, Users, Copy, Clock, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
@@ -153,6 +154,8 @@ export default function WorkPermits() {
   const [listLoading, setListLoading] = useState(true);
   const loadSeqRef = useRef(0);
   const [approvalNameRows, setApprovalNameRows] = useState<PermitApprovalNameRow[]>([]);
+  const [profileNameByUser, setProfileNameByUser] = useState<Record<string, string>>({});
+  const approvalFetchSeqRef = useRef(0);
   const [involvedPermitIds, setInvolvedPermitIds] = useState<Set<string>>(new Set());
   const [listTab, setListTab] = useState<'all' | 'involved'>('all');
   const [listSearch, setListSearch] = useState('');
@@ -207,6 +210,74 @@ export default function WorkPermits() {
     });
   }, [permits, visibilityOpts, listTab, listPeriod, listStatus, listSearch, companyNameById]);
 
+  const visiblePermitIdsKey = useMemo(
+    () => visiblePermits.map((p) => p.id).join(','),
+    [visiblePermits],
+  );
+
+  // Fetch approval name rows + profile fallback ONLY for visible permit IDs
+  // (approvals chunked by 20 to stay well under PostgREST's 1,000-row cap even on re-submitted permits).
+  useEffect(() => {
+    if (!projectId) {
+      setApprovalNameRows([]);
+      setProfileNameByUser({});
+      return;
+    }
+    const ids = visiblePermits.map((p) => p.id).filter(Boolean);
+    if (ids.length === 0) {
+      setApprovalNameRows([]);
+      return;
+    }
+    const seq = ++approvalFetchSeqRef.current;
+    const approvalChunks = chunkArray(ids, 20);
+
+    const userIds = Array.from(
+      new Set(
+        visiblePermits
+          .flatMap((p) => [p.submitted_by, p.approved_by, p.reviewed_by])
+          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    );
+    const userChunks = chunkArray(userIds, 50);
+
+    void (async () => {
+      const [approvalChunkResults, profChunkResults] = await Promise.all([
+        Promise.all(
+          approvalChunks.map((chunk) =>
+            supabase
+              .from('approvals')
+              .select('entity_id, position, status, approver_name, approved_at, approval_version')
+              .eq('project_id', projectId)
+              .eq('entity_type', 'work_permit')
+              .in('entity_id', chunk)
+              .order('approval_version', { ascending: false }),
+          ),
+        ),
+        Promise.all(
+          userChunks.map((uChunk) =>
+            supabase.from('profiles').select('user_id, display_name').in('user_id', uChunk),
+          ),
+        ),
+      ]);
+      if (seq !== approvalFetchSeqRef.current) return;
+      const mergedApprovals: PermitApprovalNameRow[] = [];
+      for (const res of approvalChunkResults) {
+        for (const r of (res.data as PermitApprovalNameRow[] | null) || []) {
+          mergedApprovals.push(r);
+        }
+      }
+      setApprovalNameRows(mergedApprovals);
+      const profMap: Record<string, string> = {};
+      for (const res of profChunkResults) {
+        for (const pr of ((res.data as Array<{ user_id?: string; display_name?: string | null }>) || [])) {
+          if (pr.user_id && pr.display_name) profMap[pr.user_id] = pr.display_name;
+        }
+      }
+      setProfileNameByUser(profMap);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, visiblePermitIdsKey]);
+
   const load = async () => {
     if (!projectId || scopeStatus !== 'ready') return;
     const seq = ++loadSeqRef.current;
@@ -224,7 +295,7 @@ export default function WorkPermits() {
     // assessment_runs: no company_id — filter by target_company_ids / creator for subordinates
     let runsQ: any = supabase.from('assessment_runs').select('id, period_label, status, created_by, author_user_id, target_company_ids').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(200);
 
-    const [{ data: p }, { data: wp }, { data: ar }, { data: myApprovals }, { data: nameApprovals }] = await Promise.all([
+    const [{ data: p }, { data: wp }, { data: ar }, { data: myApprovals }] = await Promise.all([
       permitQuery,
       plansQ,
       runsQ,
@@ -236,16 +307,10 @@ export default function WorkPermits() {
             .eq('entity_type', 'work_permit')
             .eq('approver_id', user.id)
         : Promise.resolve({ data: [] as any[] }),
-      supabase
-        .from('approvals')
-        .select('entity_id, position, status, approver_name, approved_at')
-        .eq('project_id', projectId)
-        .eq('entity_type', 'work_permit'),
     ]);
     const permitRows = (p as any[]) || [];
     if (seq !== loadSeqRef.current) return;
     setPermits(permitRows);
-    setApprovalNameRows((nameApprovals as PermitApprovalNameRow[]) || []);
     setInvolvedPermitIds(
       new Set(
         ((myApprovals as any[]) || [])
@@ -561,17 +626,25 @@ export default function WorkPermits() {
           <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">
             {listTab === 'involved'
               ? '내가 작성·결재한 작업허가서가 없습니다.'
-              : listPeriod !== 'all' || listSearch || listStatus !== 'all'
+              : listPeriod !== 'all'
                 ? '조건에 맞는 작업허가서가 없습니다. 기간을 「전체 기간」으로 바꿔 보세요.'
-                : '등록된 작업허가서가 없습니다.'}
+                : listSearch || listStatus !== 'all'
+                  ? '조건에 맞는 작업허가서가 없습니다.'
+                  : '등록된 작업허가서가 없습니다.'}
           </CardContent></Card>
         ) : visiblePermits.map((p) => {
           const workDate = resolvePermitWorkDate(p);
           const today = todayKst();
           const validity = shouldShowPermitValidityBadge(p.status) ? permitValidityKind(workDate, today) : null;
           const companyLabel = resolvePermitCompanyName(p, companyNameById);
-          const submittedName = resolvePermitSubmittedByName(p, approvalNameRows);
-          const approvedName = resolvePermitApprovedByName(p, approvalNameRows);
+          const submittedName =
+            String(p.submitted_by_name || '').trim()
+            || (p.submitted_by ? profileNameByUser[p.submitted_by] || '' : '')
+            || resolvePermitSubmittedByName(p, approvalNameRows);
+          const approvedName =
+            String(p.approved_by_name || '').trim()
+            || resolvePermitApprovedByName(p, approvalNameRows)
+            || (p.approved_by ? profileNameByUser[p.approved_by] || '' : '');
           const closureProg = CLOSURE_PENDING_STATUSES.has(p.status)
             ? closureListProgress(p.id, approvalNameRows)
             : null;

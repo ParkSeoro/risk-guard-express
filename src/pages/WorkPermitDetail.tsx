@@ -911,7 +911,8 @@ export default function WorkPermitDetail() {
             onClick={() => setWorkersDialogOpen(true)}
             title="작업 인원 배정"
           >
-            <Users className="h-4 w-4 mr-1" />인원 {assignedWorkers.length}
+            <Users className="h-4 w-4 mr-1" />배정 {assignedWorkers.length}
+            {Number(data.personnel_count || 0) > 0 && assignedWorkers.length === 0 ? ` (신고 ${data.personnel_count})` : ''}
           </Button>
           <Button
             size="sm"
@@ -1001,10 +1002,12 @@ export default function WorkPermitDetail() {
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Users className="h-4 w-4" />
               작업 인원
-              <Badge variant="secondary">{assignedWorkers.length}명</Badge>
-              {Number(data.personnel_count || 0) !== assignedWorkers.length && assignedWorkers.length > 0 && (
+              <Badge variant="secondary">배정 {assignedWorkers.length}명</Badge>
+              {Number(data.personnel_count || 0) !== assignedWorkers.length && (
                 <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-400">
-                  양식 인원 {data.personnel_count ?? 0}명 — 배정 저장 시 자동 맞춤
+                  {assignedWorkers.length === 0
+                    ? `신고 인원 ${data.personnel_count ?? 0}명 · 배정 명단 미등록`
+                    : `신고 인원 ${data.personnel_count ?? 0}명 — 배정 저장 시 자동 맞춤`}
                 </Badge>
               )}
             </div>

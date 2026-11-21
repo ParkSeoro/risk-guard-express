@@ -92,6 +92,7 @@ import { AssessmentWritingGuide } from '@/components/assessment/AssessmentWritin
 import {
   assessmentAuthorSubmitMessage,
   canAssistAssessmentWrite,
+  canPrintAssessmentRun,
   canSubmitAssessmentRun,
   hasAssessmentLegalAuthor,
 } from '@/lib/assessmentAuthor';
@@ -2076,7 +2077,7 @@ const AssessmentRunDetail = () => {
 
   const handleExportPDF = async () => {
     if (!run) return;
-    if (!hasAssessmentLegalAuthor(run.author_user_id)) {
+    if (!canPrintAssessmentRun({ status: run.status, authorUserId: run.author_user_id, createdBy: run.created_by })) {
       toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
       return;
     }
@@ -2106,7 +2107,7 @@ const AssessmentRunDetail = () => {
   // We open the window SYNCHRONOUSLY here so popup blockers don't block it.
   const handlePrint = async () => {
     if (!run) return;
-    if (!hasAssessmentLegalAuthor(run.author_user_id)) {
+    if (!canPrintAssessmentRun({ status: run.status, authorUserId: run.author_user_id, createdBy: run.created_by })) {
       toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
       return;
     }
@@ -2597,7 +2598,9 @@ const AssessmentRunDetail = () => {
           <p className="font-medium">
             {hasAssessmentLegalAuthor(run.author_user_id)
               ? `보좌 입력 — 작성 주체: ${authorDisplayName || '관리감독자'}. 상신은 관리감독자만 가능합니다.`
-              : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
+              : canPrintAssessmentRun({ status: run.status, authorUserId: run.author_user_id, createdBy: run.created_by })
+                ? '과거 문서로 작성 주체(관리감독자)가 미지정 상태입니다. 인쇄·PDF는 기존 작성자 기준으로 출력됩니다.'
+                : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
           </p>
           {canAssignAuthor && (
             <AssessmentAuthorPicker

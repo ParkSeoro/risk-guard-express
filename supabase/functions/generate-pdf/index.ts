@@ -541,11 +541,11 @@ Deno.serve(async (req) => {
     }
     if (bundledAuthorName !== null) {
       legalAuthorName = bundledAuthorName.trim();
-    } else if (run.author_user_id) {
+    } else if (legalAuthorId) {
       const { data: authorProf } = await supabase
         .from("profiles")
         .select("display_name")
-        .eq("user_id", run.author_user_id)
+        .eq("user_id", legalAuthorId)
         .maybeSingle();
       legalAuthorName = String(authorProf?.display_name || "").trim();
     }

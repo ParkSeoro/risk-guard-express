@@ -68,6 +68,7 @@ import {
   prefillOverviewSupervisor,
   workPlanAuthorDisplayMessage,
   workPlanAuthorCompanyIds,
+  workPlanPrintAuthorBlockMessage,
 } from '@/lib/workPlanAuthor';
 import { format, parseISO } from 'date-fns';
 import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
@@ -560,7 +561,10 @@ const WorkPlanDetail = () => {
 
 
   const handlePrint = async () => {
-    const authorBlock = workPlanAuthorDisplayMessage(plan?.author_user_id);
+    const authorBlock = workPlanPrintAuthorBlockMessage({
+      status: plan?.status,
+      authorUserId: plan?.author_user_id,
+    });
     if (authorBlock) {
       toast({ title: '작성 주체를 지정하세요', description: authorBlock, variant: 'destructive' });
       return;
@@ -613,7 +617,10 @@ const WorkPlanDetail = () => {
   };
 
   const handleSavePdf = async () => {
-    const authorBlock = workPlanAuthorDisplayMessage(plan?.author_user_id);
+    const authorBlock = workPlanPrintAuthorBlockMessage({
+      status: plan?.status,
+      authorUserId: plan?.author_user_id,
+    });
     if (authorBlock) {
       toast({ title: '작성 주체를 지정하세요', description: authorBlock, variant: 'destructive' });
       return;

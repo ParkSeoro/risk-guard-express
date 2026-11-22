@@ -101,6 +101,7 @@
 - **근로자 분포 (`get_worker_distribution_*`)**: 회사·구역·인원 집계와 익명 좌표만 노출하며(이름·전화 비노출), DB RPC가 선택 현장의 관리 역할(`master`/`project_admin`/`safety_manager`/`site_manager`/`supervisor`/`site_supervisor`)과 `can_access_company_data` 회사 범위를 함께 강제한다. PC 사이드바/`ContractorGate`·화면 `canView` 가드와 모바일 모두 선택 현장 관리 역할에 개방한다(협력사는 자사 범위만, 일반 근로자·열람자는 차단).
 - **구역 출입 모니터링 (`/zone-events`)**: PC 사이드바·`ContractorGate`·라우트 `RoleGuard` 및 선택 현장 `canView` 가드 모두 관리 역할(`master`/`project_admin`/`safety_manager`/`site_manager`/`supervisor`/`site_supervisor`, 협력사 관리자 포함)에만 개방하며, DB RLS(`can_view_zone_event`/`can_ack_zone_event`)로 선택 현장 역할과 회사 범위를 강제한다.
 - **위치 추적 점검 (`AdminTrackingHealth` / `get_gps_tracking_health`)**: PC 사이드바·`ContractorGate`·라우트 `RoleGuard` 및 선택 현장 `canView` 가드 모두 관리 역할(`master`/`project_admin`/`safety_manager`/`site_manager`/`supervisor`/`site_supervisor`, 협력사 관리자 포함)에 개방하며, DB RPC(`get_gps_tracking_health`)가 선택 현장의 관리 역할과 `can_access_company_data` 회사 범위(협력사 자사, 시공사 자사+하위, 발주처·마스터 현장 전체)를 강제한다. `worker`/`viewer`는 다중 현장 계정이더라도 선택 현장 역할이 관리 역할이 아니면 차단된다.
+- **현장 도면 GPS 보정 (`MobileMapCalibration` / `save_site_map_georef` / `save_project_gps_calibration`)**: 전역 마스터(`master`)와 비협력사(발주처·시공사) 소속의 선택 현장 프로젝트 관리자(`project_admin`)·안전관리자(`safety_manager`)만 실행할 수 있다 (`can_calibrate_site_map`). 협력사·공급사 계정 및 `site_manager`/`supervisor`/`site_supervisor`/`worker`/`viewer`는 차단되며, DB 쓰기는 최소 권한 `SECURITY DEFINER` RPC로 `geo_transform`·앵커 및 `projects.gps_calibration` 컬럼만 갱신한다.
 
 ## 변경 기록
 
@@ -115,3 +116,4 @@
 | 2026-11-21 | 안전점검 `completed`·`완료`·`승인완료`·`결재진행`은 전 유형·전 필드 읽기 전용. 수정·삭제·결재선 예외는 전역 마스터만이며 DB 트리거에도 같다. |
 | 2026-11-22 | 위치·구역 경보·분포 접근 규칙 추가. `worker_zone_events` SELECT를 `workers.id` 직조인 + `can_read_company_data`로 수정하고, UPDATE(ack)를 위험구역 푸시 수신 관리자(`project_admin`/`OWNER_PM`/`OWNER_CM` 전역, `safety_manager`/`site_manager`/`site_supervisor` 및 대응 직책은 위반자 동일 회사 `pm.company_id = violator_company_id`만, `worker`/`viewer` 제외)와 정확히 일치시키며 원본 컬럼 불변 트리거를 추가함. |
 | 2026-11-22 | 위치 관제 3화면(`/worker-distribution`, `/zone-events`, `/admin/tracking-health`)의 PC 메뉴·`ContractorGate`·`RoleGuard` 권한을 관리 역할(`master`/`project_admin`/`safety_manager`/`site_manager`/`supervisor`/`site_supervisor`, 협력사 관리자 포함, `worker`/`viewer` 제외)로 통일하고 자사/하위/전체 회사 범위는 DB RPC·RLS로 강제함. |
+| 2026-11-23 | 모바일 현장 도면 GPS 보정(`MobileMapCalibration` · `save_site_map_georef` · `save_project_gps_calibration`) 권한을 마스터 + 비협력사 프로젝트 관리자(`project_admin`)·안전관리자(`safety_manager`)로 확대하고 최소 권한 `SECURITY DEFINER` RPC로 보호함. |

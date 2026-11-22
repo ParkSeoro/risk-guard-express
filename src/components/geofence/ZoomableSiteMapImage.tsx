@@ -1,7 +1,7 @@
 /**
  * Pinch / wheel / double-tap zoom + pan for precise UV picks on site map photos.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -21,6 +21,8 @@ type Props = {
   /** Extra labeled markers (walk recommendations / captured). */
   markers?: MapMarker[];
   onPick: (uv: Uv) => void;
+  /** Reports natural image dimensions once loaded (for aspect-preserving calibration fit). */
+  onImageSize?: (size: { w: number; h: number }) => void;
   className?: string;
 };
 
@@ -48,13 +50,31 @@ export default function ZoomableSiteMapImage({
   marker,
   markers,
   onPick,
+  onImageSize,
   className,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const lastTouchAtRef = useRef<number>(0);
+  const pendingPickTimerRef = useRef<number | null>(null);
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
+
+  useEffect(() => {
+    const el = imgRef.current;
+    if (el && el.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
+      onImageSize?.({ w: el.naturalWidth, h: el.naturalHeight });
+    }
+  }, [src, onImageSize]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingPickTimerRef.current != null) {
+        window.clearTimeout(pendingPickTimerRef.current);
+      }
+    };
+  }, []);
 
   const gesture = useRef<{
     mode: "none" | "pan" | "pinch";
@@ -173,11 +193,16 @@ export default function ZoomableSiteMapImage({
 
   const onTouchEnd = (e: React.TouchEvent) => {
     const g = gesture.current;
+    lastTouchAtRef.current = Date.now();
     if (g.mode === "pan" && !g.moved && e.changedTouches[0]) {
       const t = e.changedTouches[0];
       const now = Date.now();
-      if (now - g.lastTapAt < 320) {
-        // double-tap zoom toggle
+      if (now - g.lastTapAt < 260) {
+        // Double-tap zoom toggle — cancel pending single-tap pick so pin never jumps
+        if (pendingPickTimerRef.current != null) {
+          window.clearTimeout(pendingPickTimerRef.current);
+          pendingPickTimerRef.current = null;
+        }
         const next = scale < 2.2 ? 3.5 : 1;
         if (next === 1) {
           setScale(1);
@@ -190,15 +215,25 @@ export default function ZoomableSiteMapImage({
       } else {
         g.lastTapAt = now;
         const uv = clientToUv(t.clientX, t.clientY);
-        if (uv) onPick(uv);
+        if (uv) {
+          if (pendingPickTimerRef.current != null) {
+            window.clearTimeout(pendingPickTimerRef.current);
+          }
+          // Delay strictly exceeds the 260ms double-tap window so a 2nd tap always cancels pick
+          pendingPickTimerRef.current = window.setTimeout(() => {
+            pendingPickTimerRef.current = null;
+            onPick(uv);
+          }, 300);
+        }
       }
     }
     if (e.touches.length === 0) g.mode = "none";
   };
 
   const onClick = (e: React.MouseEvent) => {
-    // touch devices already handled via touchend
+    // Ignore synthetic click fired by mobile browsers right after touchend
     if ((e as any).detail === 0) return;
+    if (Date.now() - lastTouchAtRef.current < 500) return;
     const uv = clientToUv(e.clientX, e.clientY);
     if (uv) onPick(uv);
   };
@@ -245,6 +280,12 @@ export default function ZoomableSiteMapImage({
             alt={alt}
             draggable={false}
             className="block w-full h-auto max-w-none pointer-events-auto"
+            onLoad={(e) => {
+              const el = e.currentTarget;
+              if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+                onImageSize?.({ w: el.naturalWidth, h: el.naturalHeight });
+              }
+            }}
             onClick={onClick}
           />
           {marker && (

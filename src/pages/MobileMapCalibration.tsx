@@ -1,10 +1,11 @@
 /**
- * Master: map↔GPS align
- * - 1점: residual phone bias
- * - 워킹: fixed slots A/B/C (labels never recycled) → capture GPS → fit geo_transform
- *
- * Bugfix: previously recommendControlPoints re-labeled every refresh as A/B/C,
- * so capturing "B" could overwrite captured "A" when ids collided.
+ * Mobile Map ↔ GPS Walking Calibration (v2):
+ * - Accessible to `master` + non-contractor `project_admin` + `safety_manager`
+ *   (enforced in UI via `canCalibrateSiteMap` and in DB via `save_site_map_georef` / `save_project_gps_calibration`).
+ * - Walk mode: tap your real standing landmark on the drone photo → collect 3.5s multi-sample
+ *   weighted-average GPS fix → fit 4-DOF Similarity Transform (preserves aspect ratio & 90° corners,
+ *   produces REAL residual RMS error even at 3 points) → immediately verify with live blue GPS dot!
+ * - Bias mode: optional 1-point residual offset cleanup after walking georef.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMobileSubpageBack, useNavigateMobileHome } from "@/lib/mobileNav";
@@ -17,12 +18,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
+  CheckCircle2,
   Crosshair,
+  Footprints,
   Loader2,
   MapPin,
-  RefreshCw,
   Trash2,
-  Footprints,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cornersToPersistPayload, loadCornersFromMap, parseSiteMapView } from "@/lib/mapBounds";
@@ -39,12 +41,11 @@ import {
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
 import { notifyGpsCalibrationChanged } from "@/lib/tracking/gpsCalibrationRealtime";
+import { canCalibrateSiteMap } from "@/lib/tracking/mapCalibrationAccess";
 import {
-  recommendControlPoints,
-  withSlotLabels,
-} from "@/lib/tracking/recommendControlPoints";
-import {
-  fitAffineFromControlPoints,
+  aggregateGpsSamples,
+  fitSimilarityFromControlPoints,
+  type GpsSample,
   type WalkControlPoint,
 } from "@/lib/tracking/fitAffineFromControlPoints";
 
@@ -61,23 +62,22 @@ type SiteMapRow = {
 
 type Mode = "walk" | "bias";
 
-/** One walk target — label is permanent for the session. */
-type WalkSlot = {
+type CapturedPoint = {
+  id: string;
   label: string;
   u: number;
   v: number;
-  reason: string;
-  status: "pending" | "done";
-  lat?: number;
-  lng?: number;
-  accuracy_m?: number;
+  lat: number;
+  lng: number;
+  accuracy_m: number;
+  sampleCount: number;
+  spreadM: number;
 };
 
-const SLOT_LABELS = ["A", "B", "C"] as const;
+const SAMPLE_WINDOW_MS = 3500;
+const SAMPLE_TARGET_COUNT = 6;
 
-type GpsFix = { lat: number; lng: number; accuracy: number };
-
-async function getCurrentPosition(): Promise<GpsFix> {
+async function getCurrentPosition(): Promise<GpsSample> {
   if (Capacitor.isNativePlatform()) {
     try {
       const { Geolocation } = await import("@capacitor/geolocation");
@@ -113,9 +113,8 @@ async function getCurrentPosition(): Promise<GpsFix> {
   });
 }
 
-/** Continuous high-accuracy watch — returns stop(). */
 async function watchPosition(
-  onFix: (fix: GpsFix) => void,
+  onFix: (fix: GpsSample) => void,
   onError?: (msg: string) => void,
 ): Promise<() => void> {
   if (Capacitor.isNativePlatform()) {
@@ -140,7 +139,7 @@ async function watchPosition(
         void Geolocation.clearWatch({ id });
       };
     } catch {
-      /* fall through to browser */
+      /* fall through */
     }
   }
   if (!navigator.geolocation) {
@@ -155,100 +154,54 @@ async function watchPosition(
         accuracy: p.coords.accuracy ?? 20,
       }),
     (e) => onError?.(e.message || "위치 수신 실패"),
-    { enableHighAccuracy: true, maximumAge: 1000, timeout: 25000 },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 },
   );
   return () => navigator.geolocation.clearWatch(id);
-}
-
-function buildSlots(
-  zoneRingsUv: { u: number; v: number }[][],
-  gpsHistoryUv: { u: number; v: number }[],
-  excluded: { u: number; v: number }[] = [],
-): WalkSlot[] {
-  const recs = withSlotLabels(
-    recommendControlPoints({
-      count: SLOT_LABELS.length,
-      excluded,
-      captured: [],
-      zoneRingsUv,
-      gpsHistoryUv,
-    }),
-    [...SLOT_LABELS],
-  );
-  return SLOT_LABELS.map((label, i) => {
-    const r = recs[i];
-    return {
-      label,
-      u: r?.u ?? 0.25 + i * 0.25,
-      v: r?.v ?? 0.35,
-      reason: r?.reason ?? "맵 분산 후보",
-      status: "pending" as const,
-    };
-  });
 }
 
 export default function MobileMapCalibration() {
   const goHome = useNavigateMobileHome();
   const onBack = useMobileSubpageBack("/app/worker/more");
   const { hasRole, user } = useAuth();
-  const { projectId } = useMobileAccess();
-  const isMaster = hasRole("master");
+  const { projectId, role, companyType, isMaster: mobileMaster, loading: accessLoading } =
+    useMobileAccess();
+  const isMaster = hasRole("master") || mobileMaster;
+  const canCalibrate = canCalibrateSiteMap({ isMaster, role, companyType });
 
   const [mode, setMode] = useState<Mode>("walk");
   const [maps, setMaps] = useState<SiteMapRow[]>([]);
   const [mapId, setMapId] = useState("");
+  const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
   const [existing, setExisting] = useState<GpsCalibration | null>(null);
-  /** True standing point on the map (user taps / nudges). */
+
+  /** Tapped standing spot on the drone photo (both walk & bias modes). */
   const [tapUv, setTapUv] = useState<{ u: number; v: number } | null>(null);
-  /** Live raw GPS projected onto the map image. */
-  const [liveGps, setLiveGps] = useState<GpsFix | null>(null);
+  /** Captured walking control points (each individually removable). */
+  const [points, setPoints] = useState<CapturedPoint[]>([]);
+  const [savedNotice, setSavedNotice] = useState<{ rmsM: number; widthM: number; heightM: number } | null>(
+    null,
+  );
+
+  /** Always-on live GPS watch for warm-up, multi-sample capture, and instant post-save verification. */
+  const [liveGps, setLiveGps] = useState<GpsSample | null>(null);
   const [liveWatching, setLiveWatching] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [captureProgress, setCaptureProgress] = useState<{ count: number; target: number } | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
+
   const stopWatchRef = useRef<(() => void) | null>(null);
-  const liveGpsRef = useRef<GpsFix | null>(null);
-
-  const [zoneRingsUv, setZoneRingsUv] = useState<{ u: number; v: number }[][]>([]);
-  const [gpsHistoryUv, setGpsHistoryUv] = useState<{ u: number; v: number }[]>([]);
-  const [excluded, setExcluded] = useState<{ u: number; v: number }[]>([]);
-  const [slots, setSlots] = useState<WalkSlot[]>([]);
-  const [activeLabel, setActiveLabel] = useState<string | null>(null);
-  const [fitPreview, setFitPreview] = useState<{ rmsM: number } | null>(null);
-
-  /** Prevent reload from wiping in-progress walk captures. */
-  const walkDirtyRef = useRef(false);
-  const loadedMapRef = useRef<string>("");
+  const liveGpsRef = useRef<GpsSample | null>(null);
+  const sampleCollectorRef = useRef<((fix: GpsSample) => void) | null>(null);
+  const pointSeqRef = useRef(1);
 
   const active = maps.find((m) => m.id === mapId) || null;
   const corners = active ? loadCornersFromMap(active as any) : null;
-
-  const pendingSlots = useMemo(() => slots.filter((s) => s.status === "pending"), [slots]);
-  const doneSlots = useMemo(() => slots.filter((s) => s.status === "done"), [slots]);
-  const activeSlot =
-    slots.find((s) => s.label === activeLabel && s.status === "pending") ||
-    pendingSlots[0] ||
-    null;
-
-  const initOrPreserveSlots = useCallback(
-    (
-      rings: { u: number; v: number }[][],
-      hist: { u: number; v: number }[],
-      opts: { force: boolean; mapChanged: boolean },
-    ) => {
-      if (!opts.force && walkDirtyRef.current && !opts.mapChanged) {
-        return; // keep A/B/C captures
-      }
-      walkDirtyRef.current = false;
-      setExcluded([]);
-      setFitPreview(null);
-      const next = buildSlots(rings, hist, []);
-      setSlots(next);
-      setActiveLabel(next.find((s) => s.status === "pending")?.label || next[0]?.label || null);
-    },
-    [],
-  );
+  const imageAspectRatio = imageSize && imageSize.h > 0 ? imageSize.w / imageSize.h : 4 / 3;
 
   const reload = useCallback(
-    async (opts?: { forceWalkReset?: boolean }) => {
+    async (explicitMapId?: string) => {
       if (!projectId) return;
       const [{ data: mapRows }, { data: proj }] = await Promise.all([
         supabase
@@ -263,86 +216,29 @@ export default function MobileMapCalibration() {
       ]);
       const list = (mapRows || []) as SiteMapRow[];
       setMaps(list);
-      const chosenId = mapId || list[0]?.id || "";
-      if (!mapId && list[0]?.id) setMapId(list[0].id);
+      const chosenId =
+        explicitMapId && list.some((m) => m.id === explicitMapId)
+          ? explicitMapId
+          : list.some((m) => m.id === mapId)
+            ? mapId
+            : list[0]?.id || "";
+      if (chosenId !== mapId) setMapId(chosenId);
       setExisting(
         parseGpsCalibration((proj as { gps_calibration?: unknown } | null)?.gps_calibration),
       );
-
-      const mapRow = list.find((m) => m.id === chosenId) || list[0];
-      const c = mapRow ? loadCornersFromMap(mapRow as any) : null;
-
-      let rings: { u: number; v: number }[][] = [];
-      let hist: { u: number; v: number }[] = [];
-
-      if (c) {
-        const [{ data: zones }, { data: positions }] = await Promise.all([
-          supabase
-            .from("restricted_zones")
-            .select("geo_polygon, geometry_type, center_lat, center_lng, radius_m")
-            .eq("project_id", projectId)
-            .eq("is_deleted", false)
-            .limit(40),
-          (supabase as any)
-            .from("worker_last_positions")
-            .select("lat, lng")
-            .eq("project_id", projectId)
-            .order("updated_at", { ascending: false })
-            .limit(40),
-        ]);
-
-        for (const z of (zones || []) as any[]) {
-          const gp = z?.geo_polygon;
-          if (Array.isArray(gp) && gp.length >= 3) {
-            rings.push(
-              gp
-                .filter((p: any) => Number.isFinite(p?.lat) && Number.isFinite(p?.lng))
-                .map((p: any) => latLngToUv({ lat: Number(p.lat), lng: Number(p.lng) }, c)),
-            );
-          } else {
-            const clat = Number(z?.center_lat);
-            const clng = Number(z?.center_lng);
-            if (Number.isFinite(clat) && Number.isFinite(clng)) {
-              rings.push([latLngToUv({ lat: clat, lng: clng }, c)]);
-            }
-          }
-        }
-
-        hist = ((positions as any[]) || [])
-          .map((p) => latLngToUv({ lat: Number(p.lat), lng: Number(p.lng) }, c))
-          .filter((uv) => uv.u >= 0 && uv.u <= 1 && uv.v >= 0 && uv.v <= 1);
-      }
-
-      setZoneRingsUv(rings);
-      setGpsHistoryUv(hist);
-
-      const mapChanged = loadedMapRef.current !== chosenId;
-      if (chosenId) loadedMapRef.current = chosenId;
-      initOrPreserveSlots(rings, hist, {
-        force: !!opts?.forceWalkReset,
-        mapChanged: mapChanged || !!opts?.forceWalkReset,
-      });
     },
-    [projectId, mapId, initOrPreserveSlots],
+    [projectId, mapId],
   );
 
   useEffect(() => {
-    if (!isMaster) return;
+    if (!canCalibrate || !projectId) return;
     void reload();
-  }, [isMaster, projectId]); // intentionally not mapId — map select handler calls reload
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canCalibrate, projectId]);
 
-  const hasCorners = !!corners;
-
-  // Live GPS watch while in map-align mode (deps: mode/map — not corners object identity)
+  // Always-on live GPS watch while on this screen (warms up GNSS + powers instant verification dot)
   useEffect(() => {
-    if (!isMaster || mode !== "bias" || !hasCorners) {
-      stopWatchRef.current?.();
-      stopWatchRef.current = null;
-      setLiveWatching(false);
-      setLiveGps(null);
-      liveGpsRef.current = null;
-      return;
-    }
+    if (!canCalibrate) return;
     let cancelled = false;
     setLiveWatching(true);
     void watchPosition(
@@ -350,6 +246,7 @@ export default function MobileMapCalibration() {
         if (cancelled) return;
         liveGpsRef.current = fix;
         setLiveGps(fix);
+        sampleCollectorRef.current?.(fix);
       },
       (msg) => {
         if (!cancelled) toast.error(msg);
@@ -367,14 +264,84 @@ export default function MobileMapCalibration() {
       stopWatchRef.current = null;
       setLiveWatching(false);
     };
-  }, [isMaster, mode, hasCorners, mapId]);
+  }, [canCalibrate]);
 
+  /** Collect multi-sample GPS fixes over ~3.5 seconds while standing still. */
+  const collectAveragedFix = useCallback(async (): Promise<GpsSample & { sampleCount: number; spreadM: number }> => {
+    const startedAt = Date.now();
+    const MIN_COLLECT_MS = 2000;
+    const collected: GpsSample[] = [];
+    if (liveGpsRef.current) {
+      collected.push(liveGpsRef.current);
+    }
+    setCaptureProgress({ count: collected.length, target: SAMPLE_TARGET_COUNT });
+
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        sampleCollectorRef.current = null;
+        window.clearTimeout(timer);
+        resolve();
+      };
+      sampleCollectorRef.current = (fix) => {
+        const prev = collected[collected.length - 1];
+        // Ignore identical consecutive cached coordinates from native watchPosition
+        if (prev && prev.lat === fix.lat && prev.lng === fix.lng && prev.accuracy === fix.accuracy) {
+          return;
+        }
+        collected.push(fix);
+        setCaptureProgress({ count: collected.length, target: SAMPLE_TARGET_COUNT });
+        if (collected.length >= SAMPLE_TARGET_COUNT && Date.now() - startedAt >= MIN_COLLECT_MS) {
+          finish();
+        }
+      };
+      const timer = window.setTimeout(finish, SAMPLE_WINDOW_MS);
+    });
+
+    if (collected.length === 0) {
+      const fresh = await getCurrentPosition();
+      collected.push(fresh);
+    }
+
+    const agg = aggregateGpsSamples(collected, GPS_CAL_MAX_ACCURACY_M);
+    if ("error" in agg) {
+      throw new Error(agg.error);
+    }
+    return {
+      lat: agg.lat,
+      lng: agg.lng,
+      accuracy: agg.accuracy_m,
+      sampleCount: agg.keptCount,
+      spreadM: agg.spreadM,
+    };
+  }, []);
+
+  /** Live 4-DOF Similarity Fit preview as soon as 3+ points are recorded. */
+  const liveFit = useMemo(() => {
+    if (points.length < 3) return null;
+    const ctrl: WalkControlPoint[] = points.map((p) => ({
+      id: p.id,
+      u: p.u,
+      v: p.v,
+      lat: p.lat,
+      lng: p.lng,
+      accuracy_m: p.accuracy_m,
+    }));
+    return fitSimilarityFromControlPoints(ctrl, imageAspectRatio);
+  }, [points, imageAspectRatio]);
+
+  /** Project live GPS onto the map (prefers preview corners when 3+ points fit cleanly, else saved corners). */
+  const previewCorners = liveFit && !("error" in liveFit) ? liveFit.corners : corners;
   const liveGpsUv = useMemo(() => {
-    if (!liveGps || !corners) return null;
-    return latLngToUv({ lat: liveGps.lat, lng: liveGps.lng }, corners);
-  }, [liveGps, corners]);
+    if (!liveGps || !previewCorners) return null;
+    const uv = latLngToUv({ lat: liveGps.lat, lng: liveGps.lng }, previewCorners);
+    if (!Number.isFinite(uv.u) || !Number.isFinite(uv.v)) return null;
+    if (uv.u < -0.2 || uv.u > 1.2 || uv.v < -0.2 || uv.v > 1.2) return null;
+    return uv;
+  }, [liveGps, previewCorners]);
 
-  /** After aligning, preview where GPS would sit once bias is applied. */
   const previewOffsetM = useMemo(() => {
     if (!tapUv || !liveGps || !corners) return null;
     const mapPt = uvToLatLng(tapUv, corners);
@@ -383,18 +350,30 @@ export default function MobileMapCalibration() {
   }, [tapUv, liveGps, corners]);
 
   const walkMarkers: MapMarker[] = useMemo(() => {
-    return slots.map((s) => ({
-      u: s.u,
-      v: s.v,
-      label: s.status === "done" ? `✓${s.label}` : s.label,
-      tone:
-        s.status === "done"
-          ? "emerald"
-          : s.label === activeSlot?.label
-            ? "amber"
-            : "blue",
+    const list: MapMarker[] = points.map((p) => ({
+      u: p.u,
+      v: p.v,
+      label: `✓${p.label}`,
+      tone: "emerald",
     }));
-  }, [slots, activeSlot?.label]);
+    if (tapUv) {
+      list.push({
+        u: tapUv.u,
+        v: tapUv.v,
+        label: "선택 지점",
+        tone: "amber",
+      });
+    }
+    if (liveGpsUv) {
+      list.push({
+        u: liveGpsUv.u,
+        v: liveGpsUv.v,
+        label: liveGps ? `내 GPS ±${Math.round(liveGps.accuracy)}m` : "내 GPS",
+        tone: "blue",
+      });
+    }
+    return list;
+  }, [points, tapUv, liveGpsUv, liveGps]);
 
   const biasMarkers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = [];
@@ -417,16 +396,103 @@ export default function MobileMapCalibration() {
     return list;
   }, [liveGpsUv, liveGps, tapUv]);
 
-  if (!isMaster) {
+  if (!accessLoading && !canCalibrate) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">
-        마스터 전용 기능입니다.
-        <Button className="mt-3" variant="outline" onClick={() => goHome()}>
+      <div className="p-6 text-sm text-muted-foreground space-y-3">
+        <p>
+          맵·GPS 보정은 마스터·프로젝트 관리자·안전관리자(발주처·시공사) 전용 기능입니다.
+        </p>
+        <Button variant="outline" onClick={() => goHome()}>
           홈으로
         </Button>
       </div>
     );
   }
+
+  const captureCurrentPoint = async () => {
+    if (!tapUv) {
+      toast.error("먼저 도면에서 지금 서 있는 지점을 탭해 주세요");
+      return;
+    }
+    setCapturing(true);
+    try {
+      const fix = await collectAveragedFix();
+      const seq = pointSeqRef.current++;
+      const nextPt: CapturedPoint = {
+        id: `pt-${seq}`,
+        label: String(seq),
+        u: tapUv.u,
+        v: tapUv.v,
+        lat: fix.lat,
+        lng: fix.lng,
+        accuracy_m: fix.accuracy,
+        sampleCount: fix.sampleCount,
+        spreadM: fix.spreadM,
+      };
+      setPoints((prev) => [...prev, nextPt]);
+      setTapUv(null);
+      setSavedNotice(null);
+      toast.success(
+        `지점 #${seq} 측정 완료 · ${fix.sampleCount}샘플 평균 (±${Math.round(fix.accuracy)}m)`,
+      );
+    } catch (e: any) {
+      toast.error(e?.message || "GPS 측정 실패");
+    } finally {
+      setCapturing(false);
+      setCaptureProgress(null);
+    }
+  };
+
+  const removePoint = (id: string) => {
+    setPoints((prev) => prev.filter((p) => p.id !== id));
+    setSavedNotice(null);
+  };
+
+  const applyWalkFit = async () => {
+    if (!projectId || !active) return;
+    if (!liveFit || "error" in liveFit) {
+      toast.error(liveFit && "error" in liveFit ? liveFit.error : "최소 3개 지점을 측정해 주세요");
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = cornersToPersistPayload(liveFit.corners, 0.85, {
+        view: parseSiteMapView(active.geo_transform),
+        source: "walk",
+      });
+      const { error } = await supabase.rpc("save_site_map_georef" as any, {
+        _site_map_id: active.id,
+        _geo_transform: payload.geo_transform,
+        _nw_lat: payload.geo_anchor_nw_lat,
+        _nw_lng: payload.geo_anchor_nw_lng,
+        _se_lat: payload.geo_anchor_se_lat,
+        _se_lng: payload.geo_anchor_se_lng,
+        _clear_gps_calibration: true,
+      });
+      if (error) throw error;
+
+      await notifyGpsCalibrationChanged(projectId);
+      setExisting(null);
+      await reload(active.id);
+      setSavedNotice({
+        rmsM: liveFit.rmsM,
+        widthM: liveFit.widthM,
+        heightM: liveFit.heightM,
+      });
+      toast.success(
+        `현장맵 워킹 보정 저장 완료 · 잔차 RMS ≈${liveFit.rmsM.toFixed(1)}m`,
+        {
+          description:
+            "도면 위 파란 '내 GPS' 점으로 정확도를 바로 확인하세요. 기존 위험구역이 있다면 PC 관제맵에서 위치를 다시 확인해 주세요.",
+          duration: 8000,
+        },
+      );
+    } catch (e: any) {
+      toast.error(e?.message || "저장 실패");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const saveBias = async () => {
     if (!projectId || !active || !corners || !tapUv) {
@@ -440,18 +506,8 @@ export default function MobileMapCalibration() {
     setBusy(true);
     try {
       const mapPt = uvToLatLng(tapUv, corners);
-      // Prefer live watch fix; fall back to a fresh one-shot.
-      let raw = liveGpsRef.current;
-      if (!raw || raw.accuracy > GPS_CAL_MAX_ACCURACY_M) {
-        raw = await getCurrentPosition();
-      }
-      if (raw.accuracy > GPS_CAL_MAX_ACCURACY_M) {
-        toast.error(
-          `GPS 정확도 ±${Math.round(raw.accuracy)}m — ${GPS_CAL_MAX_ACCURACY_M}m 이하일 때만 저장합니다`,
-        );
-        return;
-      }
-      const { d_lat, d_lng } = computeGpsOffset(mapPt, raw);
+      const avg = await collectAveragedFix();
+      const { d_lat, d_lng } = computeGpsOffset(mapPt, avg);
       const mag = offsetMagnitudeM(d_lat, d_lng, mapPt.lat);
       if (mag > GPS_CAL_MAX_OFFSET_M) {
         toast.error(`보정량 ≈${Math.round(mag)}m 로 너무 큽니다 (한도 ${GPS_CAL_MAX_OFFSET_M}m)`);
@@ -460,26 +516,23 @@ export default function MobileMapCalibration() {
       const payload: GpsCalibration = {
         d_lat,
         d_lng,
-        accuracy_m: raw.accuracy,
+        accuracy_m: avg.accuracy,
         site_map_id: active.id,
         map_lat: mapPt.lat,
         map_lng: mapPt.lng,
-        raw_lat: raw.lat,
-        raw_lng: raw.lng,
+        raw_lat: avg.lat,
+        raw_lng: avg.lng,
         calibrated_at: new Date().toISOString(),
         calibrated_by: user?.id ?? null,
       };
-      const { error } = await supabase
-        .from("projects")
-        .update({ gps_calibration: payload as any })
-        .eq("id", projectId);
+      const { error } = await supabase.rpc("save_project_gps_calibration" as any, {
+        _project_id: projectId,
+        _calibration: payload,
+      });
       if (error) throw error;
       await notifyGpsCalibrationChanged(projectId);
       setExisting(payload);
-      toast.success(`맵 정렬 보정 저장 · 약 ${Math.round(mag)}m`, {
-        description: "이후 트래킹 GPS에 이 오프셋이 적용됩니다.",
-        duration: 5000,
-      });
+      toast.success(`1점 미세 보정 저장 · 약 ${Math.round(mag)}m (${avg.sampleCount}샘플 평균)`);
     } catch (e: any) {
       toast.error(e?.message || "저장 실패");
     } finally {
@@ -490,10 +543,10 @@ export default function MobileMapCalibration() {
   const clearBias = async () => {
     if (!projectId) return;
     setBusy(true);
-    const { error } = await supabase
-      .from("projects")
-      .update({ gps_calibration: null as any })
-      .eq("id", projectId);
+    const { error } = await supabase.rpc("save_project_gps_calibration" as any, {
+      _project_id: projectId,
+      _calibration: null,
+    });
     setBusy(false);
     if (error) {
       toast.error(error.message);
@@ -503,162 +556,6 @@ export default function MobileMapCalibration() {
     setExisting(null);
     setTapUv(null);
     toast.message("1점 보정을 초기화했습니다");
-  };
-
-  const captureWalkPoint = async () => {
-    if (!activeSlot) {
-      toast.error("남은 추천 지점이 없습니다");
-      return;
-    }
-    const label = activeSlot.label;
-    const uv = { u: activeSlot.u, v: activeSlot.v };
-    setBusy(true);
-    try {
-      const raw = await getCurrentPosition();
-      if (raw.accuracy > GPS_CAL_MAX_ACCURACY_M) {
-        toast.error(
-          `GPS 정확도 ±${Math.round(raw.accuracy)}m — ${GPS_CAL_MAX_ACCURACY_M}m 이하일 때 다시 시도하세요`,
-        );
-        return;
-      }
-      walkDirtyRef.current = true;
-      setSlots((prev) => {
-        const next = prev.map((s) =>
-          s.label === label
-            ? {
-                ...s,
-                status: "done" as const,
-                u: uv.u,
-                v: uv.v,
-                lat: raw.lat,
-                lng: raw.lng,
-                accuracy_m: raw.accuracy,
-              }
-            : s,
-        );
-        const nextPending = next.find((s) => s.status === "pending");
-        setActiveLabel(nextPending?.label || null);
-        return next;
-      });
-      setFitPreview(null);
-      const doneCount = doneSlots.length + 1;
-      toast.success(
-        `지점 ${label} 기록 완료 · GPS ±${Math.round(raw.accuracy)}m (${doneCount}/${SLOT_LABELS.length})`,
-      );
-    } catch (e: any) {
-      toast.error(e?.message || "GPS 수신 실패");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const skipRecommendation = () => {
-    if (!activeSlot) return;
-    const label = activeSlot.label;
-    const nextExcluded = [...excluded, { u: activeSlot.u, v: activeSlot.v }];
-    setExcluded(nextExcluded);
-
-    // Replace ONLY this slot's UV — keep label; never touch done slots.
-    const blocked = [
-      ...nextExcluded,
-      ...slots.filter((s) => s.status === "done" || s.label !== label).map((s) => ({ u: s.u, v: s.v })),
-    ];
-    const [fresh] = recommendControlPoints({
-      count: 1,
-      excluded: blocked,
-      zoneRingsUv,
-      gpsHistoryUv,
-    });
-    if (!fresh) {
-      toast.error("대체 추천 지점을 찾지 못했습니다");
-      return;
-    }
-    walkDirtyRef.current = true;
-    setSlots((prev) =>
-      prev.map((s) =>
-        s.label === label && s.status === "pending"
-          ? { ...s, u: fresh.u, v: fresh.v, reason: fresh.reason || "대체 추천" }
-          : s,
-      ),
-    );
-    toast.message(`지점 ${label} 위치만 교체 · 라벨 ${label} 유지`);
-  };
-
-  const applyWalkFit = async () => {
-    if (!projectId || !active) return;
-    const captured: WalkControlPoint[] = slots
-      .filter((s) => s.status === "done" && s.lat != null && s.lng != null)
-      .map((s) => ({
-        id: s.label,
-        u: s.u,
-        v: s.v,
-        lat: s.lat!,
-        lng: s.lng!,
-        accuracy_m: s.accuracy_m,
-      }));
-    if (captured.length < 3) {
-      toast.error("A·B·C 세 지점을 모두 찍어주세요");
-      return;
-    }
-    setBusy(true);
-    try {
-      const fit = fitAffineFromControlPoints(captured);
-      if ("error" in fit) {
-        toast.error(fit.error);
-        return;
-      }
-      const payload = cornersToPersistPayload(fit.corners, 0.85, {
-        view: parseSiteMapView(active.geo_transform),
-        source: "walk",
-      });
-      const { error } = await supabase
-        .from("site_maps")
-        .update({
-          ...payload,
-          updated_at: new Date().toISOString(),
-        } as any)
-        .eq("id", active.id);
-      if (error) throw error;
-
-      // Walk georef is the spatial SSOT — stale 1-point bias would double-shift GPS
-      // and pull points outside freshly drawn DENY polygons.
-      const hadBias = !!existing;
-      const { error: clearErr } = await supabase
-        .from("projects")
-        .update({ gps_calibration: null as any })
-        .eq("id", projectId);
-      if (clearErr) {
-        console.warn("[map-cal] failed to clear stale gps_calibration", clearErr);
-      } else {
-        await notifyGpsCalibrationChanged(projectId);
-        setExisting(null);
-      }
-
-      const zoneCount = zoneRingsUv.length;
-      setFitPreview({ rmsM: fit.rmsM });
-      toast.success(`현장맵 지오레프 저장 · 잔차 RMS ≈${Math.round(fit.rmsM)}m`, {
-        description: [
-          hadBias ? "기존 1점 보정은 자동 초기화했습니다." : null,
-          zoneCount > 0
-            ? `위험구역 ${zoneCount}개 — 좌표가 바뀌었으니 PC 관제맵에서 구역을 다시 그려 주세요.`
-            : "재보정은 더보기 → 맵·GPS 재보정에서 할 수 있습니다.",
-        ]
-          .filter(Boolean)
-          .join(" "),
-        duration: 9000,
-      });
-      goHome();
-    } catch (e: any) {
-      toast.error(e?.message || "저장 실패");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetWalk = () => {
-    walkDirtyRef.current = false;
-    initOrPreserveSlots(zoneRingsUv, gpsHistoryUv, { force: true, mapChanged: true });
-    toast.message("워킹 보정 A/B/C를 새로 배정했습니다");
   };
 
   const previewMag =
@@ -679,10 +576,10 @@ export default function MobileMapCalibration() {
         </Button>
         <div className="flex-1">
           <h1 className="font-bold text-base">맵·GPS 맞추기</h1>
-          <p className="text-[11px] opacity-90">마스터 · 워킹 지오레프 / 실시간 맵 정렬</p>
+          <p className="text-[11px] opacity-90">현장 워킹 정밀 보정 (4자유도 유사변환 · 다중 평균)</p>
         </div>
         <Badge variant="secondary" className="text-[10px]">
-          {mode === "walk" ? "워킹" : "정렬"}
+          {liveGps ? `GPS ±${Math.round(liveGps.accuracy)}m` : liveWatching ? "GPS 수신중…" : "대기"}
         </Badge>
       </header>
 
@@ -693,14 +590,14 @@ export default function MobileMapCalibration() {
             className="h-10"
             onClick={() => setMode("walk")}
           >
-            <Footprints className="h-4 w-4 mr-1.5" /> 워킹 보정
+            <Footprints className="h-4 w-4 mr-1.5" /> 워킹 보정 (권장)
           </Button>
           <Button
             variant={mode === "bias" ? "default" : "outline"}
             className="h-10"
             onClick={() => setMode("bias")}
           >
-            <Crosshair className="h-4 w-4 mr-1.5" /> 맵 정렬
+            <Crosshair className="h-4 w-4 mr-1.5" /> 1점 미세 보정
           </Button>
         </div>
 
@@ -709,23 +606,18 @@ export default function MobileMapCalibration() {
             {mode === "walk" ? (
               <>
                 <p>
-                  <b>A·B·C 라벨은 바뀌지 않습니다.</b> A를 찍은 뒤에도 A는 ✓A로 남고, 다음은
-                  B입니다. 「여기 못 감」은 그 라벨의 위치만 교체합니다.
+                  <b>사용법:</b> 현장의 뚜렷한 모서리 <b>3~4곳</b>(정문·건물 코너 등)을 직접 걸어가서 →
+                  도면을 확대해 <b>내가 서 있는 위치 탭</b> → <b>[이 위치 GPS 측정]</b>을 누르세요.
                 </p>
                 <p>
-                  추천은 구역·최근 GPS·맵 분산 기준입니다. 핀을 탭해 미세 조정한 뒤 좌표를
-                  잡으세요.
+                  3.5초간 여러 번 측정해 튄 값을 걸러내며, 도면 비율을 유지(찌그러짐 방지)하면서 실제 오차(RMS)를 계산합니다.
                 </p>
               </>
             ) : (
               <>
                 <p>
-                  <b>실시간 GPS(분홍)</b>가 도면에 표시됩니다. 지금 서 있는{" "}
-                  <b>참위치(파란)</b>를 탭하면 시스템이 오프셋을 재계산합니다.
-                </p>
-                <p>
-                  워킹 보정 후 남는 수 m 오차용입니다. GPS ≤{GPS_CAL_MAX_ACCURACY_M}m, 보정량 ≤
-                  {GPS_CAL_MAX_OFFSET_M}m 일 때만 저장됩니다.
+                  워킹 보정 후 전체가 몇 m씩 일정하게 어긋날 때만 사용합니다. 지금 서 있는{" "}
+                  <b>참위치(파란)</b>를 탭하고 저장하세요.
                 </p>
               </>
             )}
@@ -744,9 +636,10 @@ export default function MobileMapCalibration() {
               const next = e.target.value;
               setMapId(next);
               setTapUv(null);
-              walkDirtyRef.current = false;
-              loadedMapRef.current = ""; // force slot rebuild for new map
-              void reload({ forceWalkReset: true });
+              setPoints([]);
+              setSavedNotice(null);
+              setImageSize(null);
+              void reload(next);
             }}
           >
             {maps.map((m) => (
@@ -763,22 +656,8 @@ export default function MobileMapCalibration() {
             alt={active.name}
             marker={null}
             markers={mode === "walk" ? walkMarkers : biasMarkers}
-            onPick={(uv) => {
-              if (mode === "bias") {
-                setTapUv(uv);
-                return;
-              }
-              if (!activeSlot) return;
-              walkDirtyRef.current = true;
-              const label = activeSlot.label;
-              setSlots((prev) =>
-                prev.map((s) =>
-                  s.label === label && s.status === "pending"
-                    ? { ...s, u: uv.u, v: uv.v, reason: `${s.reason} · 수동조정` }
-                    : s,
-                ),
-              );
-            }}
+            onImageSize={setImageSize}
+            onPick={(uv) => setTapUv(uv)}
           />
         ) : (
           <Card>
@@ -786,7 +665,7 @@ export default function MobileMapCalibration() {
               {maps.length === 0
                 ? "등록된 현장 도면이 없습니다. PC 「통합 현장 관제맵」에서 도면을 먼저 업로드하세요."
                 : mode === "bias"
-                  ? "이 맵에 지오레프가 없습니다. 워킹 보정(권장)을 먼저 하세요. PC 위성 정렬은 선택입니다."
+                  ? "이 맵에 지오레프가 없습니다. 먼저 워킹 보정으로 3곳 이상을 측정해 주세요."
                   : "맵 이미지를 불러올 수 없습니다."}
             </CardContent>
           </Card>
@@ -794,108 +673,135 @@ export default function MobileMapCalibration() {
 
         {mode === "walk" && (
           <>
-            <div className="flex flex-wrap gap-1.5">
-              {slots.map((s) => (
-                <Button
-                  key={s.label}
-                  size="sm"
-                  variant={
-                    s.status === "done"
-                      ? "secondary"
-                      : s.label === activeSlot?.label
-                        ? "default"
-                        : "outline"
-                  }
-                  className="h-8"
-                  disabled={s.status === "done"}
-                  onClick={() => setActiveLabel(s.label)}
-                >
-                  {s.status === "done" ? `✓${s.label}` : s.label}
-                </Button>
-              ))}
-              <Badge variant="secondary" className="h-8 px-2 text-[10px]">
-                완료 {doneSlots.length}/{SLOT_LABELS.length}
-              </Badge>
+            <div className="grid gap-2">
+              <Button
+                className="h-12"
+                disabled={capturing || busy || !tapUv || !projectId || !active?.image_url}
+                onClick={() => void captureCurrentPoint()}
+              >
+                {capturing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    평균 측정 중… ({captureProgress?.count ?? 0}/{captureProgress?.target ?? SAMPLE_TARGET_COUNT})
+                  </>
+                ) : (
+                  <>
+                    <Crosshair className="h-4 w-4 mr-2" />
+                    {tapUv ? "이 위치 GPS 측정 (3.5초 평균)" : "먼저 도면에서 내 위치를 탭하세요"}
+                  </>
+                )}
+              </Button>
             </div>
 
-            {activeSlot && (
-              <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>
-                  지금 목표: <b>{activeSlot.label}</b> · {activeSlot.reason}
-                  <br />
-                  그 자리에 서서 좌표를 잡으세요. 못 가면 위치만 교체됩니다 (라벨 유지).
-                </span>
-              </p>
-            )}
+            {points.length > 0 && (
+              <Card>
+                <CardContent className="p-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">측정된 지점 ({points.length}곳 · 권장 3~4곳)</span>
+                    <button
+                      type="button"
+                      className="text-[11px] text-muted-foreground hover:text-destructive underline"
+                      onClick={() => {
+                        setPoints([]);
+                        setSavedNotice(null);
+                      }}
+                    >
+                      전체 초기화
+                    </button>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {points.map((p, idx) => {
+                      const resM =
+                        liveFit && !("error" in liveFit) ? liveFit.residualsM[idx] : null;
+                      const highErr = resM != null && resM > 10;
+                      return (
+                        <li
+                          key={p.id}
+                          className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 bg-background"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                              ✓#{p.label}
+                            </span>{" "}
+                            <span className="text-muted-foreground">
+                              ±{Math.round(p.accuracy_m)}m ({p.sampleCount}샘플)
+                            </span>
+                            {resM != null && (
+                              <span
+                                className={`ml-1.5 font-medium ${
+                                  highErr ? "text-destructive" : "text-emerald-700 dark:text-emerald-300"
+                                }`}
+                              >
+                                · 오차 {resM.toFixed(1)}m
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => removePoint(p.id)}
+                            title="이 지점 삭제"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
 
-            {doneSlots.length > 0 && (
-              <Card className="border-emerald-500/30 bg-emerald-500/5">
-                <CardContent className="p-3 text-xs space-y-1">
-                  {doneSlots.map((c) => (
-                    <div key={c.label}>
-                      ✓{c.label} · ±{Math.round(c.accuracy_m || 0)}m ·{" "}
-                      {c.lat!.toFixed(5)}, {c.lng!.toFixed(5)}
-                    </div>
-                  ))}
-                  {fitPreview && (
-                    <div className="text-emerald-800 dark:text-emerald-200 font-medium pt-1">
-                      마지막 적용 잔차 RMS ≈{Math.round(fitPreview.rmsM)}m
+                  {liveFit && "error" in liveFit && (
+                    <p className="text-destructive text-[11px] pt-1">{liveFit.error}</p>
+                  )}
+
+                  {liveFit && !("error" in liveFit) && (
+                    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 text-[11px] space-y-0.5">
+                      <div className="font-semibold text-emerald-800 dark:text-emerald-200">
+                        예상 보정 오차 RMS ≈ {liveFit.rmsM.toFixed(1)}m (최대{" "}
+                        {liveFit.maxResidualM.toFixed(1)}m)
+                      </div>
+                      <div className="text-muted-foreground">
+                        추정 도면 크기 {Math.round(liveFit.widthM)}m × {Math.round(liveFit.heightM)}m
+                        · 회전 {liveFit.rotationDeg}°
+                      </div>
                     </div>
                   )}
                 </CardContent>
               </Card>
             )}
 
-            <div className="grid gap-2">
-              <Button
-                className="h-12"
-                disabled={busy || !activeSlot || !projectId}
-                onClick={() => void captureWalkPoint()}
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Crosshair className="h-4 w-4 mr-2" />
-                )}
-                {activeSlot
-                  ? `지점 ${activeSlot.label} 좌표 잡기`
-                  : "A·B·C 모두 기록됨"}
-              </Button>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  className="h-11"
-                  disabled={busy || !activeSlot}
-                  onClick={skipRecommendation}
-                >
-                  <RefreshCw className="h-4 w-4 mr-1.5" /> 여기 못 감
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-11"
-                  disabled={busy}
-                  onClick={resetWalk}
-                >
-                  워킹 초기화
-                </Button>
-              </div>
-              <Button
-                className="h-12"
-                variant="secondary"
-                disabled={busy || doneSlots.length < 3 || !projectId}
-                onClick={() => void applyWalkFit()}
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Footprints className="h-4 w-4 mr-2" />
-                )}
-                {doneSlots.length < 3
-                  ? `맵에 적용 (아직 ${doneSlots.length}/3)`
-                  : "A·B·C로 맵 지오레프 저장"}
-              </Button>
-            </div>
+            <Button
+              className="h-12 w-full"
+              variant={liveFit && !("error" in liveFit) ? "default" : "secondary"}
+              disabled={busy || capturing || !imageSize || !liveFit || "error" in liveFit || !projectId}
+              onClick={() => void applyWalkFit()}
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Footprints className="h-4 w-4 mr-2" />
+              )}
+              {points.length < 3
+                ? `맵에 저장 (최소 3곳 필요 · 현재 ${points.length}곳)`
+                : `${points.length}개 지점으로 현장맵 GPS 저장`}
+            </Button>
+
+            {savedNotice && (
+              <Card className="border-emerald-500/50 bg-emerald-500/10">
+                <CardContent className="p-3 text-xs space-y-1">
+                  <div className="font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" />
+                    저장 완료 (RMS ≈ {savedNotice.rmsM.toFixed(1)}m · {Math.round(savedNotice.widthM)}m ×{" "}
+                    {Math.round(savedNotice.heightM)}m)
+                  </div>
+                  <p className="text-muted-foreground">
+                    지금 현장을 몇 걸음 걸어 다니면서 위 도면의 <b>파란 ‘내 GPS’ 점</b>이 실제 위치와
+                    정확히 따라오는지 확인해 보세요.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </>
         )}
 
@@ -925,21 +831,17 @@ export default function MobileMapCalibration() {
                 )}
               </CardContent>
             </Card>
-            {tapUv ? (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" /> 참위치 선택됨 — 저장하면 GPS↔맵 오프셋을
-                재계산합니다
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" /> 지금 서 있는 자리를 도면에서 탭하세요
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" />
+              {tapUv
+                ? "참위치 선택됨 — 저장하면 3.5초 평균 GPS로 오프셋을 계산합니다"
+                : "지금 서 있는 자리를 도면에서 탭하세요"}
+            </p>
             {existing && (
               <Card className="border-emerald-500/40 bg-emerald-500/5">
                 <CardContent className="p-3 text-xs space-y-1">
                   <div className="font-medium text-emerald-800 dark:text-emerald-200">
-                    맵 정렬 보정 적용 중
+                    1점 미세 보정 적용 중
                   </div>
                   <div className="text-muted-foreground">
                     ≈{previewMag != null ? Math.round(previewMag) : "?"}m · GPS ±
@@ -965,7 +867,7 @@ export default function MobileMapCalibration() {
                 ) : (
                   <Crosshair className="h-4 w-4 mr-2" />
                 )}
-                맵 정렬 보정 저장
+                1점 미세 보정 저장
               </Button>
               <Button
                 variant="outline"

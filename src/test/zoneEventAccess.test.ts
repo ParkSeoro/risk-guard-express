@@ -133,9 +133,11 @@ describe("PR 1-A: worker_zone_events RLS & access policy", () => {
       expect(ackFn).not.toContain("can_access_company_data");
     });
 
-    it("uses (SELECT auth.uid()) internally, guards immutable columns, and locks down helper grants", () => {
+    it("uses (SELECT auth.uid()) internally, guards immutable columns (including id), and locks down helper grants", () => {
       expect(sql).toContain("_uid uuid := (SELECT auth.uid())");
       expect(sql).toContain("CREATE TRIGGER trg_worker_zone_events_ack_guard");
+      expect(sql).toContain("NEW.id IS DISTINCT FROM OLD.id");
+      expect(sql).toContain("NEW.acknowledged_by := _uid;");
       expect(sql).toContain("IF _uid IS NULL OR public.is_master(_uid) THEN");
       expect(sql).toContain(
         "REVOKE ALL ON FUNCTION public.resolve_zone_event_company_id(uuid, uuid, text)\n  FROM PUBLIC, anon, authenticated;",

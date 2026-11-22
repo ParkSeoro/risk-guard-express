@@ -243,7 +243,8 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF NEW.project_id IS DISTINCT FROM OLD.project_id
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.project_id IS DISTINCT FROM OLD.project_id
      OR NEW.zone_id IS DISTINCT FROM OLD.zone_id
      OR NEW.restricted_zone_id IS DISTINCT FROM OLD.restricted_zone_id
      OR NEW.worker_qr_id IS DISTINCT FROM OLD.worker_qr_id
@@ -262,8 +263,8 @@ BEGIN
   END IF;
 
   IF NEW.acknowledged = true AND OLD.acknowledged IS DISTINCT FROM true THEN
-    NEW.acknowledged_by := COALESCE(NEW.acknowledged_by, _uid);
-    NEW.acknowledged_at := COALESCE(NEW.acknowledged_at, now());
+    NEW.acknowledged_by := _uid;
+    NEW.acknowledged_at := now();
   END IF;
 
   RETURN NEW;

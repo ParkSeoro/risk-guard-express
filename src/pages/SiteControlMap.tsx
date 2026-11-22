@@ -63,10 +63,8 @@ import {
   zoneCategorySchema,
   isPresenceZoneCategory,
 } from "@/lib/tracking/accessRules";
-import LeafletDrawControl, {
-  type DrawnShape,
-  type DrawTool,
-} from "@/components/geofence/LeafletDrawControl";
+import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
+import InteractiveLeafletDraw from "@/components/geofence/InteractiveLeafletDraw";
 import { looksLikeWgs84, looksLikeWgs84Ring, GPS_COORDS_INVALID_MSG } from "@/lib/tracking/imageSpaceGeo";
 import {
   ADDRESS_PIN_RADIUS_M,
@@ -2183,17 +2181,22 @@ export default function SiteControlMap() {
                   )}
                   {drawTool && !geometryEditZoneId && (
                     <p className="text-[10px] text-primary space-y-0.5">
-                      <span className="block">
-                        {drawTool === "rectangle"
-                          ? "사각형"
-                          : drawTool === "polygon"
-                            ? "다각형"
-                            : "원형"}{" "}
-                        모드 — 지도 이동(Panning)이 일시 차단됩니다. (Esc로 취소)
-                      </span>
-                      {drawTool === "polygon" && (
-                        <span className="block text-muted-foreground">
-                          클릭 = 꼭짓점 추가 · 더블클릭 = 닫기(Finish) 완료
+                      {drawTool === "polygon" ? (
+                        <>
+                          <span className="block">
+                            다각형 모드 — 클릭으로 꼭짓점 추가 · 드래그로 도면 이동 가능
+                          </span>
+                          <span className="block text-muted-foreground">
+                            첫 점 스냅 / 더블클릭 / Enter / 상단 [그리기 완료] · 우클릭·Ctrl+Z 되돌리기
+                          </span>
+                        </>
+                      ) : drawTool === "rectangle" ? (
+                        <span className="block">
+                          사각형 모드 — 드래그하거나 두 모서리를 클릭하세요. (Esc 취소)
+                        </span>
+                      ) : (
+                        <span className="block">
+                          원형 모드 — 중심에서 드래그하거나 중심→바깥을 클릭하세요. (Esc 취소)
                         </span>
                       )}
                     </p>
@@ -2309,8 +2312,9 @@ export default function SiteControlMap() {
                 <MapBridge onMap={onMapReady} seedRequest={seedRequest} onSeedCorners={onSeedCorners} />
                 <MapViewSync enabled={panelTab === "mapping" && hasDrawing} onView={onMapViewChange} />
                 {((addressPinMode && panelTab === "zones") || panelTab === "site") && (
-                  <LeafletDrawControl
+                  <InteractiveLeafletDraw
                     enabled
+                    coordinateMode="wgs84"
                     activeTool={drawTool}
                     drawColor={panelTab === "site" ? SITE_OUTLINE_COLOR : drawColor}
                     onShapeCreated={panelTab === "site" ? onSiteShapeCreated : onShapeCreated}

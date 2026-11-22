@@ -98,8 +98,8 @@ const EMPTY: DashboardData = {
   inspectionSum: EMPTY_INSP,
 };
 
-// 1시간 클라이언트 인메모리 캐시 (프로젝트별)
-const DASHBOARD_CACHE_TTL_MS = 60 * 60 * 1000;
+// 3분 클라이언트 인메모리 캐시 (프로젝트별) — Realtime 폭주 방지를 위해 짧은 TTL + 수동 새로고침 유지
+const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
 const dashboardCache = new Map<string, { data: DashboardData; timestamp: number }>();
 
 const Dashboard = () => {
@@ -202,6 +202,7 @@ const Dashboard = () => {
             .from("worker_zone_events")
             .select("id", { count: "exact", head: true })
             .eq("project_id", selectedProject)
+            .eq("event_type", "unauthorized_entry")
             .eq("acknowledged", false)
         : Promise.resolve({ count: 0 } as any);
 

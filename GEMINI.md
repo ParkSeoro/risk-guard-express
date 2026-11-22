@@ -49,7 +49,7 @@
   - UI 아카이브 복원 Fallback: `src/lib/archiveUrlResolver.ts`.
 - **텔레그램 일일 리포트**:
   - 기존 2회/일 GitHub Actions (`SafeNex Automated Health Check & Telegram Alert`, ID `401510706`)는 **비활성화(`disabled_manually`)**됨.
-  - 신규 `pg_cron` `safenex-nightly-telegram-report` (매일 `07:00 KST` 하루 1회) → `send-nightly-telegram-report` v5 + `public.get_nightly_ops_report()`.
+  - 신규 `pg_cron` `safenex-nightly-telegram-report` (매일 `06:30 KST` / `21:30 UTC` 하루 1회) → `send-nightly-telegram-report` v5 + `public.get_nightly_ops_report()`.
   - 리포트 내용: Google One 백업 실적·백업 대상 일자 범위·용량 + 새벽 정기 배치(`scan-work-plan-end-warnings`, `daily-consistency-audit`, `purge-worker-last-positions-0330-kst`) 결과.
 
 ---

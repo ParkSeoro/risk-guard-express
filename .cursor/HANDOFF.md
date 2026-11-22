@@ -133,7 +133,7 @@ K-엑사원 2.5는 현장 버튼의 기본 모델이 아니다. 배치는 `docs/
   - **Batch 3 (P1 3건, PR #691)**: 안전관리비 검증 탭 한글화(`submitted`→`결재중`, 실 RPC 위반 코드 4종 포함)·회사명 배지·OCR 연도 오인식 경고, 상단 헤더 겹침/카드 버튼 잘림 해소, 한국어 조사(`은/는`) 및 종료(`종료완료`/`마감`/`CLOSED`)/취소 허가서 TBM 안내 문구 정상화.
 - **텔레그램 새벽 작업 일일 리포트 개편** (PR #692 · #693):
   - 기존 2회/일(07:00·22:00 KST) GitHub Actions(`SafeNex Automated Health Check & Telegram Alert`, ID `401510706`) 비활성화(`disabled_manually`).
-  - Supabase `pg_cron` (`safenex-nightly-telegram-report`, 매일 `07:00 KST` 1회) → `send-nightly-telegram-report` v5 + `public.get_nightly_ops_report()` (`service_role` 전용).
+  - Supabase `pg_cron` (`safenex-nightly-telegram-report`, 매일 `06:30 KST` / `21:30 UTC` 1회) → `send-nightly-telegram-report` v5 + `public.get_nightly_ops_report()` (`service_role` 전용).
   - 리포트 내용: Google One 백업 실적·백업 대상 일자 범위·일일/누적 용량, 새벽 배치(`scan-work-plan-end-warnings`, `daily-consistency-audit`, `purge-worker-last-positions-0330-kst`) 결과. 텔레그램 시크릿(`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)은 Supabase Vault + `get_runtime_secret()`에 암호화 보관.
 - **GPS 기반 위치·위험구역·출퇴근·분포 관제 전면 정비 완료** (PR #697~#703, Antigravity ↔ Cursor 전 PR 교차 리뷰 + 운영 Supabase 라이브 마이그레이션 6건 반영):
   - **PR 1-A (#697)**: `worker_zone_events` SELECT(`can_view_zone_event`, `workers.id` 직조인 + `can_read_company_data`)·UPDATE(`can_ack_zone_event`, 위험구역 푸시 수신 관리자와 1:1 일치: `project_admin`/`OWNER_PM`/`OWNER_CM` 전역, 그 외 관리 역할은 위반자 동일 회사 `pm.company_id = violator_company_id`만, `worker`/`viewer` 제외) RLS 정비 및 원본 불변 트리거(`guard_worker_zone_events_ack_update`), `docs/access-policy.md` 동기화.

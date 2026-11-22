@@ -3,7 +3,7 @@
  *
  * Mirrors DB RLS helpers `can_view_zone_event` and `can_ack_zone_event` in
  * `supabase/migrations/20261122123500_worker_zone_events_rls_fix.sql` and
- * push recipient rules in `docs/zone-alarm-recipients.md`.
+ * push recipient rules in `docs/zone-alarm-recipients.md` / `trg_zone_event_notify`.
  */
 
 export const ZONE_EVENT_PROJECT_ADMIN_POSITIONS = new Set(["OWNER_PM", "OWNER_CM"]);
@@ -37,8 +37,12 @@ export type ZoneEventAccessSubject = {
   role?: string | null;
   position?: string | null;
   isClientSafetyViewer?: boolean;
+  /** Mirrors `can_read_company_data` (used for SELECT visibility). */
   canReadCompanyData?: boolean;
-  canAccessCompanyData?: boolean;
+  /** Caller's `project_members.company_id`. */
+  userCompanyId?: string | null;
+  /** Violator's resolved `company_id` (`resolve_zone_event_company_id`). */
+  violatorCompanyId?: string | null;
 };
 
 function normRole(role?: string | null): string {
@@ -72,7 +76,14 @@ export function canViewZoneEventAccess(s: ZoneEventAccessSubject): boolean {
   return Boolean(s.canReadCompanyData);
 }
 
-/** Whether the caller can acknowledge a `worker_zone_events` row (mirrors `can_ack_zone_event`). */
+/**
+ * Whether the caller can acknowledge a `worker_zone_events` row (mirrors `can_ack_zone_event`).
+ * Strictly matches `trg_zone_event_notify`:
+ * - master: always
+ * - project_admin / OWNER_PM / OWNER_CM: project-wide
+ * - safety_manager / site_manager / site_supervisor (and matching positions):
+ *   exact same company as violator (`userCompanyId === violatorCompanyId`, non-null)
+ */
 export function canAckZoneEventAccess(s: ZoneEventAccessSubject): boolean {
   if (s.isMaster) return true;
   const role = normRole(s.role);
@@ -85,5 +96,6 @@ export function canAckZoneEventAccess(s: ZoneEventAccessSubject): boolean {
     ZONE_EVENT_ACK_ROLES.has(role) || ZONE_EVENT_COMPANY_MANAGER_POSITIONS.has(pos);
 
   if (!isEligibleAckManager) return false;
-  return Boolean(s.canAccessCompanyData);
+  if (!s.userCompanyId || !s.violatorCompanyId) return false;
+  return s.userCompanyId === s.violatorCompanyId;
 }

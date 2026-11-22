@@ -7,18 +7,21 @@
 --      worker_daily_qr.id = worker_zone_events.worker_qr_id, making all new events
 --      invisible (0 rows) to every non-master admin.
 --   2) UPDATE policy "members ack events" (20260624003444) only checked project_members
---      membership without role or company scope checks, letting workers/viewers or
---      other companies acknowledge events outside their authority.
+--      membership without role, company, or column immutability checks.
 --
 -- Policy design (agreed by Antigravity & Cursor, approved by 박서로님 2026-11-22):
 --   - SELECT: master; project admins (project_admin / OWNER_PM / OWNER_CM) project-wide;
 --     management roles (safety_manager, site_manager, supervisor, site_supervisor and
 --     matching positions) + client_safety_viewer within can_read_company_data scope.
---     Plain workers are excluded from admin list visibility.
---   - UPDATE (ack): exact match with trg_zone_event_notify push recipients —
+--     Plain workers and non-safety viewers are excluded.
+--   - UPDATE (ack): EXACT match with trg_zone_event_notify push recipients —
 --     master; project admins (project_admin / OWNER_PM / OWNER_CM) project-wide;
---     company managers (safety_manager, site_manager, site_supervisor and matching
---     positions) within can_access_company_data scope. Workers and viewers cannot ack.
+--     violator's own company managers (pm.company_id = violator_company_id AND
+--     role/position in safety_manager/site_manager/site_supervisor set).
+--     Workers and viewers cannot ack.
+--   - Column guard: non-master authenticated UPDATEs may only modify acknowledge fields
+--     (acknowledged, acknowledged_by, acknowledged_at, notes); cron/service_role
+--     (auth.uid() IS NULL) remains unaffected so anonymize_old_location_data keeps working.
 
 ALTER TABLE public.worker_zone_events ENABLE ROW LEVEL SECURITY;
 
@@ -44,23 +47,13 @@ DECLARE
   _company_id uuid := NULL;
   _digits text;
 BEGIN
+  -- Primary path: worker_qr_id references workers(id) (post-20260811045000 FK)
   IF _worker_qr_id IS NOT NULL THEN
-    -- Primary path: worker_qr_id stores workers.id (post-20260811045000)
     SELECT w.company_id
       INTO _company_id
       FROM public.workers w
      WHERE w.id = _worker_qr_id
      LIMIT 1;
-
-    -- Legacy fallback: historical rows referencing worker_daily_qr.id
-    IF _company_id IS NULL THEN
-      SELECT w.company_id
-        INTO _company_id
-        FROM public.worker_daily_qr q
-        JOIN public.workers w ON w.id = q.worker_id
-       WHERE q.id = _worker_qr_id
-       LIMIT 1;
-    END IF;
   END IF;
 
   -- Phone fallback: historical NULL worker_qr_id rows & manager/admin triggers
@@ -164,7 +157,9 @@ $$;
 REVOKE ALL ON FUNCTION public.can_view_zone_event(uuid, uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.can_view_zone_event(uuid, uuid, text) TO authenticated;
 
--- RLS UPDATE (ack) predicate: matches trg_zone_event_notify push recipients exactly.
+-- RLS UPDATE (ack) predicate: EXACT match with trg_zone_event_notify push recipients.
+-- Group (2): project_admin / OWNER_PM / OWNER_CM (project-wide).
+-- Group (3): violator's exact company managers (pm.company_id = violator_company_id).
 -- Workers and read-only viewers are strictly excluded.
 CREATE OR REPLACE FUNCTION public.can_ack_zone_event(
   _project_id uuid,
@@ -204,12 +199,18 @@ BEGIN
     RETURN true;
   END IF;
 
-  -- Recipient group (3): Violator's company / overseeing managers
-  IF NOT EXISTS (
+  -- Recipient group (3): Violator's exact company managers only (matches notify_project_roles)
+  _company_id := public.resolve_zone_event_company_id(_project_id, _worker_qr_id, _worker_phone);
+  IF _company_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  RETURN EXISTS (
     SELECT 1
       FROM public.project_members pm
      WHERE pm.project_id = _project_id
        AND pm.user_id = _uid
+       AND pm.company_id = _company_id
        AND lower(COALESCE(pm.role_new::text, '')) NOT IN ('worker', 'viewer')
        AND (
          lower(COALESCE(pm.role_new::text, '')) IN (
@@ -220,17 +221,63 @@ BEGIN
            'SITE_SUPERVISOR', 'SUPERVISOR'
          )
        )
-  ) THEN
-    RETURN false;
-  END IF;
-
-  _company_id := public.resolve_zone_event_company_id(_project_id, _worker_qr_id, _worker_phone);
-  RETURN public.can_access_company_data(_uid, _project_id, _company_id);
+  );
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.can_ack_zone_event(uuid, uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.can_ack_zone_event(uuid, uuid, text) TO authenticated;
+
+-- Protect immutable audit columns on authenticated non-master UPDATEs (ack only).
+-- Cron/service_role (auth.uid() IS NULL) and master bypass so anonymize_old_location_data works.
+CREATE OR REPLACE FUNCTION public.guard_worker_zone_events_ack_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  _uid uuid := (SELECT auth.uid());
+BEGIN
+  IF _uid IS NULL OR public.is_master(_uid) THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.project_id IS DISTINCT FROM OLD.project_id
+     OR NEW.zone_id IS DISTINCT FROM OLD.zone_id
+     OR NEW.restricted_zone_id IS DISTINCT FROM OLD.restricted_zone_id
+     OR NEW.worker_qr_id IS DISTINCT FROM OLD.worker_qr_id
+     OR NEW.worker_name IS DISTINCT FROM OLD.worker_name
+     OR NEW.worker_phone IS DISTINCT FROM OLD.worker_phone
+     OR NEW.event_type IS DISTINCT FROM OLD.event_type
+     OR NEW.source IS DISTINCT FROM OLD.source
+     OR NEW.position_x IS DISTINCT FROM OLD.position_x
+     OR NEW.position_y IS DISTINCT FROM OLD.position_y
+     OR NEW.lat IS DISTINCT FROM OLD.lat
+     OR NEW.lng IS DISTINCT FROM OLD.lng
+     OR NEW.accuracy_m IS DISTINCT FROM OLD.accuracy_m
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'zone_event_immutable_columns'
+      USING ERRCODE = '42501', HINT = '구역 출입 이력의 원본 필드는 수정할 수 없습니다.';
+  END IF;
+
+  IF NEW.acknowledged = true AND OLD.acknowledged IS DISTINCT FROM true THEN
+    NEW.acknowledged_by := COALESCE(NEW.acknowledged_by, _uid);
+    NEW.acknowledged_at := COALESCE(NEW.acknowledged_at, now());
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.guard_worker_zone_events_ack_update()
+  FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_worker_zone_events_ack_guard ON public.worker_zone_events;
+CREATE TRIGGER trg_worker_zone_events_ack_guard
+  BEFORE UPDATE ON public.worker_zone_events
+  FOR EACH ROW
+  EXECUTE FUNCTION public.guard_worker_zone_events_ack_update();
 
 DROP POLICY IF EXISTS "admins view zone events" ON public.worker_zone_events;
 CREATE POLICY "admins view zone events"

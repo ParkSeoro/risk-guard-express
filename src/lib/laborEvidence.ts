@@ -61,6 +61,7 @@ export type ExceptionItem = {
 
 export type AttendanceExceptions = {
   date: string;
+  suspendedSiteEntry: ExceptionItem[];
   missingAttendance: ExceptionItem[];
   missingExit: ExceptionItem[];
   missingDailyAck: ExceptionItem[];
@@ -391,6 +392,7 @@ export async function fetchSignatureLedger(opts: {
 function emptyExceptions(date: string): AttendanceExceptions {
   return {
     date,
+    suspendedSiteEntry: [],
     missingAttendance: [],
     missingExit: [],
     missingDailyAck: [],
@@ -668,6 +670,7 @@ export async function fetchAttendanceExceptions(
     const d = data as any;
     return {
       date: d.date || date,
+      suspendedSiteEntry: asRows(d.suspended_site_entry).map(mapExItem),
       missingAttendance: asRows(d.missing_attendance).map(mapExItem),
       missingExit: asRows(d.missing_exit).map(mapExItem),
       missingDailyAck: asRows(d.missing_daily_ack).map(mapExItem),

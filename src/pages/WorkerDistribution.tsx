@@ -20,6 +20,7 @@ import {
   distributionDotJitter,
   distributionFixLabel,
   distributionImagePoint,
+  projectRadiusZoneToUvPolygon,
   summarizeDistributionFixes,
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
@@ -249,12 +250,23 @@ export default function WorkerDistribution() {
       setGeoZones(geo);
       if (corners) {
         for (const z of geo) {
-          const ring = z.geo_polygon;
-          if (!ring || ring.length < 3) continue;
-          const polygon = ring.map((p) => {
-            const uv = latLngToUv({ lat: Number(p.lat), lng: Number(p.lng) }, corners);
-            return { x: uv.u, y: uv.v };
-          });
+          let polygon: { x: number; y: number }[] = [];
+          if (z.geometry_type === "radius") {
+            if (z.center_lat != null && z.center_lng != null && z.radius_m) {
+              polygon = projectRadiusZoneToUvPolygon(
+                z.center_lat,
+                z.center_lng,
+                z.radius_m,
+                corners,
+              );
+            }
+          } else if (z.geo_polygon && z.geo_polygon.length >= 3) {
+            polygon = z.geo_polygon.map((p) => {
+              const uv = latLngToUv({ lat: Number(p.lat), lng: Number(p.lng) }, corners);
+              return { x: uv.u, y: uv.v };
+            });
+          }
+          if (polygon.length < 3) continue;
           fromUnified.push({
             id: z.id,
             site_map_id: activeMap.id,

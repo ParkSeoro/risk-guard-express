@@ -42,6 +42,42 @@ export function distributionImagePoint(
   return { x: uv.u * 100, y: uv.v * 100 };
 }
 
+/**
+ * Project a WGS84 circle (`geometry_type = 'radius'`) onto normalized sitemap UV space (0..1)
+ * as an N-vertex geodesic ring so `WorkerDistribution` renders radius zones (e.g. MobileGeofenceDrop)
+ * alongside polygon zones.
+ */
+export function projectRadiusZoneToUvPolygon(
+  centerLat: number,
+  centerLng: number,
+  radiusM: number,
+  corners: DistributionCorners,
+  steps = 24,
+): { x: number; y: number }[] {
+  if (
+    !Number.isFinite(centerLat) ||
+    !Number.isFinite(centerLng) ||
+    !Number.isFinite(radiusM) ||
+    radiusM <= 0
+  ) {
+    return [];
+  }
+  const n = Math.max(8, Math.floor(steps));
+  const dLat = radiusM / 111_320;
+  const cosLat = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const dLng = radiusM / (111_320 * cosLat);
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const theta = (2 * Math.PI * i) / n;
+    const lat = centerLat + Math.sin(theta) * dLat;
+    const lng = centerLng + Math.cos(theta) * dLng;
+    const uv = latLngToUv({ lat, lng }, corners);
+    if (!Number.isFinite(uv.u) || !Number.isFinite(uv.v)) return [];
+    out.push({ x: uv.u, y: uv.v });
+  }
+  return out;
+}
+
 export function zoneCategoryToType(
   category?: string | null,
 ): "normal" | "work" | "restricted" | "danger" {

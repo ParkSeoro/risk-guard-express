@@ -98,7 +98,8 @@
 
 - **구역 출입 경보 열람 (`worker_zone_events` SELECT)**: 마스터와 프로젝트 관리자(`project_admin`, 직책 `OWNER_PM`/`OWNER_CM`)는 현장 전체를 본다. 안전관리자·현장소장·감리·관리감독자(및 대응 직책)와 `client_safety_viewer`는 `can_read_company_data` 회사 범위(협력사 자사, 시공사 자사+하위, 발주처 현장 전체)만 본다. 일반 근로자(`worker`)와 비안전 열람자(`viewer`)는 목록을 열람하지 않는다.
 - **구역 출입 경보 확인 (`worker_zone_events` UPDATE / ack)**: 위험구역 진입 푸시 수신 관리자와 **정확히 동일**하다 (`docs/zone-alarm-recipients.md`, `trg_zone_event_notify`). 마스터와 프로젝트 관리자(`project_admin`, `OWNER_PM`/`OWNER_CM`)는 현장 전체, 위반자 소속 회사의 안전관리자·현장소장·관리감독자(및 대응 직책 `SITE_MANAGER`/`HSE_MANAGER`/`OWNER_HSE`/`OWNER_SM`/`SITE_SUPERVISOR`/`SUPERVISOR`)는 **해당 회사(`pm.company_id = violator_company_id`)만** 확인 처리할 수 있다. `worker`와 `viewer`는 확인 처리할 수 없으며, 비마스터 UPDATE는 확인 필드(`acknowledged`, `acknowledged_by`, `acknowledged_at`, `notes`) 외 원본 컬럼 변경이 트리거로 차단된다.
-- **근로자 분포 (`get_worker_distribution_*`)**: 회사·구역·인원 집계와 익명 좌표만 노출하며(이름·전화 비노출), `can_access_company_data` 회사 범위를 따른다.
+- **근로자 분포 (`get_worker_distribution_*`)**: 회사·구역·인원 집계와 익명 좌표만 노출하며(이름·전화 비노출), `can_access_company_data` 회사 범위를 따른다. PC 사이드바/`ContractorGate`와 모바일 모두 협력사 관리 역할(`project_admin`/`safety_manager`/`site_manager`/`supervisor`/`site_supervisor`)에 자사 범위로 개방한다.
+- **구역 출입 모니터링 (`/zone-events`)**: PC 사이드바/`ContractorGate`에서 협력사 관리 역할에도 개방하며, DB RLS(`can_view_zone_event`/`can_ack_zone_event`)로 자사 범위만 노출·확인한다.
 - **위치 추적 점검 (`AdminTrackingHealth` / `get_gps_tracking_health`)**: 화면 메뉴와 `RoleGuard` 기준 현재 마스터·프로젝트 관리자·안전관리자 전용이다(RPC 자체는 현장 구성원 + `can_access_company_data` 회사 범위로 행을 거르며, Phase 2에서 화면 노출을 현장소장·관리감독자·협력사 관리자 자사 범위로 확대 예정).
 
 ## 변경 기록

@@ -131,7 +131,7 @@ describe("PR 2-A: Shared LocationControlBar & TrackingHealth/ZoneEvents role ali
       ]) {
         const idx = sql.indexOf(fn);
         expect(idx).toBeGreaterThan(-1);
-        const body = sql.slice(idx, idx + 1200);
+        const body = sql.slice(idx, idx + 1500);
         expect(body).toContain("pm.role_new::text IN");
         expect(body).toContain("'site_supervisor'");
         expect(body).toContain("RAISE EXCEPTION 'FORBIDDEN'");

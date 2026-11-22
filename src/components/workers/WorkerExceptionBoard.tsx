@@ -15,6 +15,7 @@ import { formatGpsBlockReason } from "@/lib/tracking/gpsTrackingHealth";
 type SectionKey = Exclude<keyof Omit<AttendanceExceptions, "date">, "permitCrewTotal">;
 
 const SECTIONS: Array<{ key: SectionKey; title: string; hint: string }> = [
+  { key: "suspendedSiteEntry", title: "출입정지자 현장 진입", hint: "출입정지 기간 중 현장 GPS 진입이 감지된 인원입니다." },
   { key: "permitNoShow", title: "허가서 배정 미출역", hint: "승인된 당일 허가서에 넣은 사람만 봅니다. 미리 등록만 한 신규 입사자는 포함하지 않습니다." },
   { key: "missingAttendance", title: "미출역", hint: "활성 명부인데 당일 입장이 없습니다. 입사일이 아직 오지 않은 사람과 출입정지자는 제외합니다." },
   { key: "missingExit", title: "미퇴근", hint: "입장 후 퇴근이 없는 기록입니다. 추정 마감하지 않고 정정으로 처리하세요." },
@@ -168,9 +169,18 @@ export default function WorkerExceptionBoard() {
                               {it.itemName ? ` · ${it.itemName}` : ""}
                               {it.subtype ? ` · ${it.subtype}` : ""}
                               {blockLabel ? ` · ${blockLabel}` : ""}
+                              {sec.key === "suspendedSiteEntry" && it.detail ? ` · ${it.detail}` : ""}
                               {it.count ? ` · ${it.count}건` : ""}
                             </span>
                           </span>
+                          {sec.key === "missingExit" && (
+                            <Link
+                              className="shrink-0 text-xs text-primary hover:underline underline-offset-2"
+                              to={`/app/admin/workers?tab=attendance&date=${encodeURIComponent(it.workDate || date)}&status=no_exit`}
+                            >
+                              정정
+                            </Link>
+                          )}
                         </li>
                       );
                     })}

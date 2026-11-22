@@ -1,6 +1,10 @@
 /**
- * Pure helpers for PR 1-B (`Dashboard` zone alerts & `ZoneEvents` queries/residuals).
+ * Pure helpers for PR 1-B / PR 2-B (`Dashboard` zone alerts & `ZoneEvents` queries/residuals/live presence).
  */
+import {
+  pointInRestrictedZone,
+  type RestrictedZoneGeom,
+} from "@/lib/tracking/restrictedZoneGeom";
 
 export type ZoneEventRecord = {
   id: string;
@@ -13,6 +17,7 @@ export type ZoneEventRecord = {
   event_type: string;
   source?: string | null;
   notes?: string | null;
+  ack_note?: string | null;
   acknowledged: boolean;
   acknowledged_by?: string | null;
   acknowledged_at: string | null;
@@ -28,6 +33,29 @@ export type ZoneEventRecord = {
     color?: string | null;
   } | null;
 };
+
+export type ZoneEventLivePosition = {
+  worker_id: string;
+  lat: number | null;
+  lng: number | null;
+  updated_at: string | null;
+};
+
+export type ZoneEventLivePresence = {
+  status: "inside" | "left" | "stale";
+  label: string;
+  tone: "danger" | "safe" | "warn";
+};
+
+export const ZONE_ACK_QUICK_NOTES = [
+  "이탈 확인",
+  "전화 연락",
+  "현장 출동",
+  "작업중지 조치",
+] as const;
+
+export const LIVE_PRESENCE_FRESH_MS = 15 * 60 * 1000;
+const LIVE_PRESENCE_CLOCK_SKEW_MS = 2 * 60 * 1000;
 
 export type ZoneLogRangePreset = "today" | "7d" | "30d" | "all";
 export type ZoneEventTypeFilter = "all" | "unauthorized_entry" | "entry" | "exit";
@@ -125,4 +153,38 @@ export function resolveInitialZoneEventsTab(searchParams: URLSearchParams): "ale
     return "alerts";
   }
   return "alerts";
+}
+
+/**
+ * Cross-checks an alert/residual event against the worker's latest `worker_last_positions`
+ * row and the active `restricted_zones` geometry to show whether they are still inside.
+ * Returns `null` when required identifiers or zone geometry are unavailable.
+ */
+export function classifyZoneEventLivePresence(
+  event: Pick<ZoneEventRecord, "event_type" | "restricted_zone_id" | "worker_qr_id" | "created_at">,
+  position: ZoneEventLivePosition | null | undefined,
+  zone: RestrictedZoneGeom | null | undefined,
+  nowMs: number = Date.now(),
+): ZoneEventLivePresence | null {
+  if (event.event_type !== "unauthorized_entry") return null;
+  if (!event.worker_qr_id || !event.restricted_zone_id || !zone) return null;
+  if (!position || position.lat == null || position.lng == null || !position.updated_at) {
+    return null;
+  }
+
+  const posMs = Date.parse(position.updated_at);
+  const eventMs = Date.parse(event.created_at);
+  if (!Number.isFinite(posMs)) return null;
+
+  const isTooOld = nowMs - posMs > LIVE_PRESENCE_FRESH_MS;
+  const predatesEvent = Number.isFinite(eventMs) && posMs + LIVE_PRESENCE_CLOCK_SKEW_MS < eventMs;
+  if (isTooOld || predatesEvent) {
+    return { status: "stale", label: "위치 오래됨", tone: "warn" };
+  }
+
+  const inside = pointInRestrictedZone(Number(position.lat), Number(position.lng), zone);
+  if (inside) {
+    return { status: "inside", label: "현재 구역 내 체류중", tone: "danger" };
+  }
+  return { status: "left", label: "구역 이탈 확인", tone: "safe" };
 }

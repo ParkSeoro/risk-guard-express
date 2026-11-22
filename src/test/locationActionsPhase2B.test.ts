@@ -81,7 +81,7 @@ describe("PR 2-B: ZoneEvents ack memo & live presence + WorkerExceptionBoard act
       expect(r?.label).toBe("구역 이탈 확인");
     });
 
-    it("marks positions older than 15m or predating the event as stale", () => {
+    it("marks positions older than 15m or any position predating the event (even by 90s) as stale", () => {
       const oldPos = classifyZoneEventLivePresence(
         baseEvent,
         { worker_id: "w-1", lat: 37.5, lng: 127.0, updated_at: "2026-11-22T05:40:00Z" },
@@ -90,21 +90,30 @@ describe("PR 2-B: ZoneEvents ack memo & live presence + WorkerExceptionBoard act
       );
       expect(oldPos?.status).toBe("stale");
 
-      const preEvent = classifyZoneEventLivePresence(
+      // 90s BEFORE event outside the zone must NEVER produce a false-safe "left" badge
+      const preEventOutside = classifyZoneEventLivePresence(
         baseEvent,
-        { worker_id: "w-1", lat: 37.505, lng: 127.005, updated_at: "2026-11-22T05:50:00Z" },
+        { worker_id: "w-1", lat: 37.505, lng: 127.005, updated_at: "2026-11-22T05:53:30Z" },
         RADIUS_ZONE,
         nowMs,
       );
-      expect(preEvent?.status).toBe("stale");
+      expect(preEventOutside?.status).toBe("stale");
     });
 
-    it("returns null for non-danger events or missing geometry/position", () => {
+    it("returns null for non-danger events, inactive zones, or missing geometry/position", () => {
       expect(
         classifyZoneEventLivePresence(
           { ...baseEvent, event_type: "exit" },
           { worker_id: "w-1", lat: 37.5, lng: 127.0, updated_at: "2026-11-22T05:59:00Z" },
           RADIUS_ZONE,
+          nowMs,
+        ),
+      ).toBeNull();
+      expect(
+        classifyZoneEventLivePresence(
+          baseEvent,
+          { worker_id: "w-1", lat: 37.5, lng: 127.0, updated_at: "2026-11-22T05:59:00Z" },
+          { ...RADIUS_ZONE, is_active: false },
           nowMs,
         ),
       ).toBeNull();
@@ -121,15 +130,17 @@ describe("PR 2-B: ZoneEvents ack memo & live presence + WorkerExceptionBoard act
   });
 
   describe("SQL migration & UI integration", () => {
-    it("adds ack_note, protects notes & ack immutability, and adds suspended_site_entry in migration", () => {
+    it("adds ack_note, protects notes & ack_note immutability after ack, and adds active-suspension check in migration", () => {
       const sql = readFileSync(
         "supabase/migrations/20261122143500_phase2b_zone_ack_note_and_suspension_exception.sql",
         "utf8",
       ).replace(/\r\n/g, "\n");
       expect(sql).toContain("ADD COLUMN IF NOT EXISTS ack_note text");
       expect(sql).toContain("OR NEW.notes IS DISTINCT FROM OLD.notes");
+      expect(sql).toContain("OR NEW.ack_note IS DISTINCT FROM OLD.ack_note");
       expect(sql).toContain("zone_event_ack_immutable");
       expect(sql).toContain("'suspended_site_entry'");
+      expect(sql).toContain("w.site_entry_suspended_until > now()");
       expect(sql).toContain("public.worker_suspension_site_presence");
     });
 

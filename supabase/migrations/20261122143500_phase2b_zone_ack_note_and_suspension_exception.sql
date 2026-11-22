@@ -47,9 +47,10 @@ BEGIN
   IF OLD.acknowledged = true THEN
     IF NEW.acknowledged IS DISTINCT FROM OLD.acknowledged
        OR NEW.acknowledged_by IS DISTINCT FROM OLD.acknowledged_by
-       OR NEW.acknowledged_at IS DISTINCT FROM OLD.acknowledged_at THEN
+       OR NEW.acknowledged_at IS DISTINCT FROM OLD.acknowledged_at
+       OR NEW.ack_note IS DISTINCT FROM OLD.ack_note THEN
       RAISE EXCEPTION 'zone_event_ack_immutable'
-        USING ERRCODE = '42501', HINT = '이미 확인 처리된 구역 경보의 확인자·시각은 변경할 수 없습니다.';
+        USING ERRCODE = '42501', HINT = '이미 확인 처리된 구역 경보의 확인자·시각·조치 메모는 변경할 수 없습니다.';
     END IF;
   END IF;
 
@@ -152,7 +153,7 @@ BEGIN
       JOIN public.workers w ON w.id = p.worker_id
       WHERE p.project_id = _project_id
         AND (
-          (v_day = v_today AND p.inside = true)
+          (v_day = v_today AND p.inside = true AND w.site_entry_suspended_until IS NOT NULL AND w.site_entry_suspended_until > now())
           OR (p.last_alert_at IS NOT NULL AND p.last_alert_at BETWEEN v_start AND v_end)
         )
         AND (public.is_master(v_uid) OR public.can_access_company_data(v_uid, _project_id, w.company_id))), '[]'::jsonb),

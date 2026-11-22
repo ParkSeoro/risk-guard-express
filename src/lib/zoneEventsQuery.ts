@@ -55,7 +55,6 @@ export const ZONE_ACK_QUICK_NOTES = [
 ] as const;
 
 export const LIVE_PRESENCE_FRESH_MS = 15 * 60 * 1000;
-const LIVE_PRESENCE_CLOCK_SKEW_MS = 2 * 60 * 1000;
 
 export type ZoneLogRangePreset = "today" | "7d" | "30d" | "all";
 export type ZoneEventTypeFilter = "all" | "unauthorized_entry" | "entry" | "exit";
@@ -167,7 +166,9 @@ export function classifyZoneEventLivePresence(
   nowMs: number = Date.now(),
 ): ZoneEventLivePresence | null {
   if (event.event_type !== "unauthorized_entry") return null;
-  if (!event.worker_qr_id || !event.restricted_zone_id || !zone) return null;
+  if (!event.worker_qr_id || !event.restricted_zone_id || !zone || zone.is_active === false) {
+    return null;
+  }
   if (!position || position.lat == null || position.lng == null || !position.updated_at) {
     return null;
   }
@@ -177,7 +178,9 @@ export function classifyZoneEventLivePresence(
   if (!Number.isFinite(posMs)) return null;
 
   const isTooOld = nowMs - posMs > LIVE_PRESENCE_FRESH_MS;
-  const predatesEvent = Number.isFinite(eventMs) && posMs + LIVE_PRESENCE_CLOCK_SKEW_MS < eventMs;
+  // Strictly require a fix at or after the alert timestamp so pre-entry coordinates
+  // can never produce a false-safe "구역 이탈 확인" badge.
+  const predatesEvent = Number.isFinite(eventMs) && posMs < eventMs;
   if (isTooOld || predatesEvent) {
     return { status: "stale", label: "위치 오래됨", tone: "warn" };
   }

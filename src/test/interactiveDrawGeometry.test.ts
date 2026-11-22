@@ -15,6 +15,13 @@ import {
   translatePolygon,
 } from "@/lib/geofence/interactiveDrawGeometry";
 
+import {
+  getCachedMidpointIcon,
+  getCachedMoveHandleIcon,
+  getCachedVertexIcon,
+  isEditableEventTarget,
+} from "@/components/geofence/InteractiveLeafletDraw";
+
 describe("InteractiveLeafletDraw geometry helpers & wiring", () => {
   it("builds a normalized 4-corner ring from any two opposite corners", () => {
     const ring = buildRectangleRing({ lat: 10, lng: 50 }, { lat: 40, lng: 20 });
@@ -78,6 +85,22 @@ describe("InteractiveLeafletDraw geometry helpers & wiring", () => {
 
     expect(isWithinScreenRadius({ x: 10, y: 10 }, { x: 20, y: 10 }, 16)).toBe(true);
     expect(isWithinScreenRadius({ x: 10, y: 10 }, { x: 30, y: 10 }, 16)).toBe(false);
+  });
+
+  it("returns referentially stable cached icons and ignores editable form targets for shortcuts", () => {
+    expect(getCachedVertexIcon("1", "#ef4444", false)).toBe(
+      getCachedVertexIcon("1", "#ef4444", false),
+    );
+    expect(getCachedVertexIcon("1", "#ef4444", true)).not.toBe(
+      getCachedVertexIcon("1", "#ef4444", false),
+    );
+    expect(getCachedMidpointIcon()).toBe(getCachedMidpointIcon());
+    expect(getCachedMoveHandleIcon("#0f766e")).toBe(getCachedMoveHandleIcon("#0f766e"));
+
+    expect(isEditableEventTarget({ tagName: "INPUT" } as unknown as EventTarget)).toBe(true);
+    expect(isEditableEventTarget({ tagName: "TEXTAREA" } as unknown as EventTarget)).toBe(true);
+    expect(isEditableEventTarget({ tagName: "DIV", isContentEditable: true } as unknown as EventTarget)).toBe(true);
+    expect(isEditableEventTarget({ tagName: "DIV" } as unknown as EventTarget)).toBe(false);
   });
 
   it("replaces LeafletDrawControl with InteractiveLeafletDraw in OrthogonalZoneCanvas and SiteControlMap", () => {

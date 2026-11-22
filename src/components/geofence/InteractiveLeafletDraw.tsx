@@ -48,35 +48,58 @@ const SNAP_RADIUS_PX = 16;
 const CLICK_DRAG_THRESHOLD_PX = 6;
 const DUPLICATE_CLICK_PX = 8;
 
-function makeVertexIcon(label: string, color: string, opts?: { snap?: boolean }) {
-  const size = opts?.snap ? 24 : 20;
-  const ring = opts?.snap
+const vertexIconCache = new Map<string, L.DivIcon>();
+const moveHandleIconCache = new Map<string, L.DivIcon>();
+let cachedMidpointIcon: L.DivIcon | null = null;
+
+/** Stable cached DivIcon — avoids react-leaflet setIcon() resetting MarkerDrag mid-drag. */
+export function getCachedVertexIcon(label: string, color: string, snap = false): L.DivIcon {
+  const key = `${label}|${color}|${snap ? 1 : 0}`;
+  const hit = vertexIconCache.get(key);
+  if (hit) return hit;
+  const size = snap ? 24 : 20;
+  const ring = snap
     ? "box-shadow:0 0 0 4px rgba(16,185,129,0.45),0 2px 6px rgba(0,0,0,0.4);border-color:#10b981;"
     : `box-shadow:0 1px 4px rgba(0,0,0,0.45);border-color:${color};`;
-  return L.divIcon({
+  const icon = L.divIcon({
     className: "interactive-draw-vertex",
     html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:#ffffff;border:2.5px solid;${ring}display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0f172a;user-select:none;cursor:pointer;">${label}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
+  vertexIconCache.set(key, icon);
+  return icon;
 }
 
-function makeMidpointIcon() {
-  return L.divIcon({
+export function getCachedMidpointIcon(): L.DivIcon {
+  if (cachedMidpointIcon) return cachedMidpointIcon;
+  cachedMidpointIcon = L.divIcon({
     className: "interactive-draw-midpoint",
     html: `<div style="width:16px;height:16px;border-radius:9999px;background:rgba(255,255,255,0.88);border:1.5px solid #475569;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#334155;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;">+</div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });
+  return cachedMidpointIcon;
 }
 
-function makeMoveHandleIcon(color: string) {
-  return L.divIcon({
+export function getCachedMoveHandleIcon(color: string): L.DivIcon {
+  const hit = moveHandleIconCache.get(color);
+  if (hit) return hit;
+  const icon = L.divIcon({
     className: "interactive-draw-move",
     html: `<div style="width:26px;height:26px;border-radius:9999px;background:${color};border:2px solid #ffffff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#ffffff;box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:move;">✥</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
+  moveHandleIconCache.set(color, icon);
+  return icon;
+}
+
+export function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const el = target as { tagName?: string; isContentEditable?: boolean };
+  const tag = String(el.tagName || "").toUpperCase();
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
 }
 
 export default function InteractiveLeafletDraw({
@@ -103,6 +126,7 @@ export default function InteractiveLeafletDraw({
   // Edit states
   const [editPoly, setEditPoly] = useState<DrawPoint[] | null>(null);
   const [editCircle, setEditCircle] = useState<{ center: DrawPoint; radius: number } | null>(null);
+  const [circleEdgeDragPos, setCircleEdgeDragPos] = useState<DrawPoint | null>(null);
 
   const polyPtsRef = useRef<DrawPoint[]>([]);
   polyPtsRef.current = polyPts;
@@ -125,13 +149,22 @@ export default function InteractiveLeafletDraw({
   const isDrawing = enabled && !editShape && !!activeTool;
   const isEditing = enabled && !!editShape;
 
-  // Prevent Leaflet native map click/mousedown/wheel listeners from firing when
-  // interacting with the floating control bars mounted inside MapContainer.
+  // Prevent Leaflet native map click/mousedown/pointerdown/contextmenu/wheel listeners
+  // from firing when interacting with the floating control bars mounted inside MapContainer.
   useEffect(() => {
     const el = drawBarRef.current;
     if (!el) return;
     L.DomEvent.disableClickPropagation(el);
     L.DomEvent.disableScrollPropagation(el);
+    const stopNative = (ev: Event) => ev.stopPropagation();
+    el.addEventListener("pointerdown", stopNative);
+    el.addEventListener("mouseup", stopNative);
+    el.addEventListener("contextmenu", stopNative);
+    return () => {
+      el.removeEventListener("pointerdown", stopNative);
+      el.removeEventListener("mouseup", stopNative);
+      el.removeEventListener("contextmenu", stopNative);
+    };
   }, [isDrawing]);
 
   useEffect(() => {
@@ -139,6 +172,15 @@ export default function InteractiveLeafletDraw({
     if (!el) return;
     L.DomEvent.disableClickPropagation(el);
     L.DomEvent.disableScrollPropagation(el);
+    const stopNative = (ev: Event) => ev.stopPropagation();
+    el.addEventListener("pointerdown", stopNative);
+    el.addEventListener("mouseup", stopNative);
+    el.addEventListener("contextmenu", stopNative);
+    return () => {
+      el.removeEventListener("pointerdown", stopNative);
+      el.removeEventListener("mouseup", stopNative);
+      el.removeEventListener("contextmenu", stopNative);
+    };
   }, [isEditing]);
 
   // Reset draft whenever activeTool changes or drawing ends
@@ -244,10 +286,11 @@ export default function InteractiveLeafletDraw({
     };
   }, [map, isDrawing, activeTool]);
 
-  // Keyboard shortcuts (Esc, Enter, Ctrl+Z / Backspace)
+  // Keyboard shortcuts (Esc, Enter, Ctrl+Z / Backspace) — never hijack form inputs
   useEffect(() => {
     if (!isDrawing) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditableEventTarget(e.target)) return;
       if (e.key === "Escape") {
         e.preventDefault();
         cancelDraw();
@@ -488,8 +531,8 @@ export default function InteractiveLeafletDraw({
   const editCenter = useMemo(() => (editPoly ? polygonCentroid(editPoly) : null), [editPoly]);
   const editCircleEdge = useMemo(() => {
     if (!editCircle) return null;
-    return circleEastHandlePoint(editCircle.center, editCircle.radius, coordinateMode);
-  }, [editCircle, coordinateMode]);
+    return circleEdgeDragPos ?? circleEastHandlePoint(editCircle.center, editCircle.radius, coordinateMode);
+  }, [editCircle, circleEdgeDragPos, coordinateMode]);
 
   const stopEvent = (e: React.SyntheticEvent) => {
     e.stopPropagation();
@@ -609,9 +652,7 @@ export default function InteractiveLeafletDraw({
           <Marker
             key={`draw-v-${idx}`}
             position={[p.lat, p.lng]}
-            icon={makeVertexIcon(String(idx + 1), drawColor, {
-              snap: idx === 0 && snapToFirst,
-            })}
+            icon={getCachedVertexIcon(String(idx + 1), drawColor, idx === 0 && snapToFirst)}
             eventHandlers={
               idx === 0 && polyPts.length >= 3
                 ? {
@@ -657,7 +698,7 @@ export default function InteractiveLeafletDraw({
               key={`edit-v-${idx}`}
               position={[p.lat, p.lng]}
               draggable
-              icon={makeVertexIcon(String(idx + 1), drawColor)}
+              icon={getCachedVertexIcon(String(idx + 1), drawColor)}
               eventHandlers={{
                 drag: (ev) => {
                   const ll = (ev.target as L.Marker).getLatLng();
@@ -678,7 +719,7 @@ export default function InteractiveLeafletDraw({
             <Marker
               key={`edit-mid-${idx}`}
               position={[mid.lat, mid.lng]}
-              icon={makeMidpointIcon()}
+              icon={getCachedMidpointIcon()}
               eventHandlers={{
                 click: (ev) => {
                   L.DomEvent.stopPropagation(ev.originalEvent);
@@ -691,7 +732,7 @@ export default function InteractiveLeafletDraw({
             <Marker
               position={[editCenter.lat, editCenter.lng]}
               draggable
-              icon={makeMoveHandleIcon(drawColor)}
+              icon={getCachedMoveHandleIcon(drawColor)}
               eventHandlers={{
                 dragstart: (ev) => {
                   const ll = (ev.target as L.Marker).getLatLng();
@@ -727,10 +768,11 @@ export default function InteractiveLeafletDraw({
           <Marker
             position={[editCircle.center.lat, editCircle.center.lng]}
             draggable
-            icon={makeMoveHandleIcon(drawColor)}
+            icon={getCachedMoveHandleIcon(drawColor)}
             eventHandlers={{
               drag: (ev) => {
                 const ll = (ev.target as L.Marker).getLatLng();
+                setCircleEdgeDragPos(null);
                 setEditCircle((prev) =>
                   prev ? { ...prev, center: { lat: ll.lat, lng: ll.lng } } : prev,
                 );
@@ -741,21 +783,26 @@ export default function InteractiveLeafletDraw({
             <Marker
               position={[editCircleEdge.lat, editCircleEdge.lng]}
               draggable
-              icon={makeVertexIcon("↔", drawColor)}
+              icon={getCachedVertexIcon("↔", drawColor)}
               eventHandlers={{
                 drag: (ev) => {
                   const ll = (ev.target as L.Marker).getLatLng();
+                  const nextEdge = { lat: ll.lat, lng: ll.lng };
+                  setCircleEdgeDragPos(nextEdge);
                   setEditCircle((prev) => {
                     if (!prev) return prev;
                     const { mapRadius } = computeCircleRadius(
                       prev.center,
-                      { lat: ll.lat, lng: ll.lng },
+                      nextEdge,
                       coordinateMode,
                       metersPerUnit,
                     );
                     if (!(mapRadius > 0)) return prev;
                     return { ...prev, radius: mapRadius };
                   });
+                },
+                dragend: () => {
+                  setCircleEdgeDragPos(null);
                 },
               }}
             />

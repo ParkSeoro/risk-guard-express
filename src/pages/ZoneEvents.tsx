@@ -9,6 +9,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ShieldAlert, LogIn, LogOut, Check, AlertTriangle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
+import { canViewWorkerDistribution } from "@/hooks/useDistributionAccess";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import LocationControlBar from "@/components/geofence/LocationControlBar";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
@@ -46,7 +48,11 @@ const TYPE_OPTIONS: Array<{ value: ZoneEventTypeFilter; label: string }> = [
 ];
 
 export default function ZoneEvents() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const access = useGlobalProjectAccessOptional();
+  const isMaster = hasRole("master") || !!access?.isMaster;
+  const projectRoleLoading = !!access?.loading;
+  const canView = canViewWorkerDistribution(access?.userRole, isMaster);
   const [searchParams, setSearchParams] = useSearchParams();
   const { projectId, setProjectId } = useActiveProject();
   const appliedParamProjectRef = useRef<string | null>(null);
@@ -91,7 +97,7 @@ export default function ZoneEvents() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || projectRoleLoading || !canView) return;
     setLoading(true);
     try {
       const todayKst = todaySeoulDate();
@@ -144,10 +150,10 @@ export default function ZoneEvents() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, rangePreset, typeFilter]);
+  }, [projectId, rangePreset, typeFilter, projectRoleLoading, canView]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || projectRoleLoading || !canView) return;
     void load();
     const ch = supabase
       .channel(`wze:${projectId}`)
@@ -165,7 +171,7 @@ export default function ZoneEvents() {
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [projectId, load]);
+  }, [projectId, projectRoleLoading, canView, load]);
 
   const ack = async (id: string) => {
     const { data, error } = await supabase
@@ -218,6 +224,14 @@ export default function ZoneEvents() {
       </div>
     );
   };
+
+  if (!projectRoleLoading && !canView) {
+    return (
+      <div className="p-4 md:p-6 max-w-5xl mx-auto text-sm text-muted-foreground">
+        구역 출입 모니터링은 선택한 현장의 관리자(마스터·프로젝트관리자·안전관리자·현장소장·감리·관리감독자)만 볼 수 있습니다.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">

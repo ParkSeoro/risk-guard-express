@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import LocationControlBar from "@/components/geofence/LocationControlBar";
-import { distributionScopeLabel } from "@/hooks/useDistributionAccess";
+import { canViewWorkerDistribution, distributionScopeLabel } from "@/hooks/useDistributionAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,9 @@ export default function AdminTrackingHealth() {
     userRole,
     userCompanyType,
     seesAllCompanies,
+    loading: accessLoading,
   } = useGlobalProjectAccess();
+  const canView = canViewWorkerDistribution(userRole, isMaster);
   const scopeLabel = distributionScopeLabel({
     isMaster,
     role: userRole,
@@ -50,7 +52,7 @@ export default function AdminTrackingHealth() {
   const [nowTick, setNowTick] = useState(Date.now());
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || accessLoading || !canView) return;
     setLoading(true);
     setLoadError(null);
     try {
@@ -72,7 +74,7 @@ export default function AdminTrackingHealth() {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, accessLoading, canView]);
 
   useEffect(() => {
     setCompanyFilter("all");
@@ -80,12 +82,13 @@ export default function AdminTrackingHealth() {
   }, [load]);
 
   useEffect(() => {
+    if (accessLoading || !canView) return;
     const id = window.setInterval(() => {
       setNowTick(Date.now());
       void load();
     }, 30_000);
     return () => window.clearInterval(id);
-  }, [load]);
+  }, [accessLoading, canView, load]);
 
   const companies = useMemo(
     () =>
@@ -108,6 +111,14 @@ export default function AdminTrackingHealth() {
     () => visibleRows.filter((r) => r.bucket !== "live"),
     [visibleRows],
   );
+
+  if (!accessLoading && !canView) {
+    return (
+      <div className="p-4 md:p-6 max-w-6xl mx-auto text-sm text-muted-foreground">
+        위치 추적 상태 점검은 선택한 현장의 관리자(마스터·프로젝트관리자·안전관리자·현장소장·감리·관리감독자)만 볼 수 있습니다.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Activity, AlertTriangle, ArrowUpRight, Radio, ShieldAlert, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
+import { distributionScopeLabel } from "@/hooks/useDistributionAccess";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +26,7 @@ type Props = {
  * - 위험구역 경보 (/app/admin/zone-events)
  * - 출근자 GPS 상태 (/app/admin/admin/tracking-health)
  *
- * Non-blocking read-only summary: failures silently hide individual metrics rather than toasting.
+ * Non-blocking read-only summary: failed queries render "—" rather than misleading 0s.
  */
 export default function LocationControlBar({ projectId, activeTab, refreshKey = 0 }: Props) {
   const access = useGlobalProjectAccessOptional();
@@ -33,6 +34,14 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
     !!access &&
     !access.isMaster &&
     (access.userCompanyType === "contractor" || access.userCompanyType === "vendor");
+  const scopeLabel = access
+    ? distributionScopeLabel({
+        isMaster: access.isMaster,
+        role: access.userRole,
+        companyType: access.userCompanyType,
+        seesAll: access.seesAllCompanies,
+      })
+    : null;
 
   const [kpis, setKpis] = useState<LocationControlKpis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,21 +79,23 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
         const distRows =
           distRes.status === "fulfilled" && !distRes.value.error && Array.isArray(distRes.value.data)
             ? distRes.value.data
-            : [];
+            : null;
         const healthRows =
           healthRes.status === "fulfilled" &&
           !healthRes.value.error &&
           Array.isArray(healthRes.value.data)
             ? healthRes.value.data
-            : [];
+            : null;
         const unackCount =
-          unackRes.status === "fulfilled" && !unackRes.value.error ? unackRes.value.count ?? 0 : 0;
+          unackRes.status === "fulfilled" && !unackRes.value.error && unackRes.value.count != null
+            ? unackRes.value.count
+            : null;
         const zoneRows =
           zonesRes.status === "fulfilled" &&
           !zonesRes.value.error &&
           Array.isArray(zonesRes.value.data)
             ? zonesRes.value.data
-            : [];
+            : null;
 
         setKpis(
           summarizeLocationControlKpis({
@@ -103,7 +114,10 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
     };
   }, [projectId, refreshKey]);
 
-  const trackingIssues = (kpis?.trackingDelayed ?? 0) + (kpis?.trackingDisconnected ?? 0);
+  const trackingIssues =
+    kpis && kpis.trackingDelayed != null && kpis.trackingDisconnected != null
+      ? kpis.trackingDelayed + kpis.trackingDisconnected
+      : 0;
 
   return (
     <div
@@ -148,6 +162,11 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
               </Button>
             );
           })}
+          {scopeLabel && (
+            <Badge variant="secondary" className="text-[10px] font-normal">
+              조회 범위: {scopeLabel}
+            </Badge>
+          )}
         </nav>
 
         <div className="flex items-center gap-2 text-xs">
@@ -178,7 +197,11 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
               현장 체류
             </span>
             <span className="font-semibold text-sm">
-              {loading && !kpis ? "…" : `${kpis?.onSiteCount ?? 0}명`}
+              {loading && !kpis
+                ? "…"
+                : kpis?.onSiteCount == null
+                  ? "—"
+                  : `${kpis.onSiteCount}명`}
             </span>
           </div>
 
@@ -193,7 +216,7 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
                 : kpis?.trackingLivePct == null
                   ? "—"
                   : `${kpis.trackingLivePct}%`}
-              {kpis && kpis.trackingTotal > 0 && (
+              {kpis && kpis.trackingTotal != null && kpis.trackingTotal > 0 && kpis.trackingLive != null && (
                 <span className="ml-1 text-[11px] font-normal text-muted-foreground">
                   ({kpis.trackingLive}/{kpis.trackingTotal})
                 </span>
@@ -217,7 +240,11 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
             <span
               className={`font-semibold text-sm ${(kpis?.unackDangerCount ?? 0) > 0 ? "text-destructive" : ""}`}
             >
-              {loading && !kpis ? "…" : `${kpis?.unackDangerCount ?? 0}건`}
+              {loading && !kpis
+                ? "…"
+                : kpis?.unackDangerCount == null
+                  ? "—"
+                  : `${kpis.unackDangerCount}건`}
             </span>
           </div>
 
@@ -237,7 +264,11 @@ export default function LocationControlBar({ projectId, activeTab, refreshKey = 
               활성 위험구역
             </span>
             <span className="font-semibold text-sm flex items-center gap-1.5">
-              {loading && !kpis ? "…" : `${kpis?.activeDangerZoneCount ?? 0}개`}
+              {loading && !kpis
+                ? "…"
+                : kpis?.activeDangerZoneCount == null
+                  ? "—"
+                  : `${kpis.activeDangerZoneCount}개`}
               {kpis && kpis.activeDangerZoneCount === 0 && !isContractorCo && (
                 <Link
                   to="/app/admin/site-control-map"

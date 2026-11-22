@@ -4,14 +4,14 @@ import { summarizeGpsHealth, type GpsAgeBucket } from "@/lib/tracking/gpsTrackin
 export type LocationControlTab = "distribution" | "zone-events" | "tracking-health";
 
 export type LocationControlKpis = {
-  onSiteCount: number;
-  trackingTotal: number;
-  trackingLive: number;
-  trackingDelayed: number;
-  trackingDisconnected: number;
+  onSiteCount: number | null;
+  trackingTotal: number | null;
+  trackingLive: number | null;
+  trackingDelayed: number | null;
+  trackingDisconnected: number | null;
   trackingLivePct: number | null;
-  unackDangerCount: number;
-  activeDangerZoneCount: number;
+  unackDangerCount: number | null;
+  activeDangerZoneCount: number | null;
 };
 
 export const LOCATION_CONTROL_TABS: ReadonlyArray<{
@@ -30,35 +30,53 @@ export function summarizeLocationControlKpis(input: {
   unackDangerCount?: number | null;
   restrictedZones?: ReadonlyArray<AlarmZoneProbe> | null;
 }): LocationControlKpis {
-  const onSiteCount = (input.distributionRows ?? []).reduce((sum, row) => {
-    const n = Number(row?.headcount ?? 0);
-    return sum + (Number.isFinite(n) && n > 0 ? n : 0);
-  }, 0);
+  const onSiteCount =
+    input.distributionRows == null
+      ? null
+      : input.distributionRows.reduce((sum, row) => {
+          const n = Number(row?.headcount ?? 0);
+          return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+        }, 0);
 
-  const normalizedTracking = (input.trackingRows ?? []).map((r) => ({
-    bucket: (
-      r?.bucket === "live" || r?.bucket === "delayed" || r?.bucket === "disconnected"
-        ? r.bucket
-        : "disconnected"
-    ) as GpsAgeBucket,
-  }));
-  const health = summarizeGpsHealth(normalizedTracking);
-  const trackingLivePct =
-    health.total > 0 ? Math.round((health.live / health.total) * 100) : null;
+  let trackingTotal: number | null = null;
+  let trackingLive: number | null = null;
+  let trackingDelayed: number | null = null;
+  let trackingDisconnected: number | null = null;
+  let trackingLivePct: number | null = null;
 
-  const rawUnack = Number(input.unackDangerCount ?? 0);
-  const unackDangerCount = Number.isFinite(rawUnack) && rawUnack > 0 ? rawUnack : 0;
+  if (input.trackingRows != null) {
+    const normalizedTracking = input.trackingRows.map((r) => ({
+      bucket: (
+        r?.bucket === "live" || r?.bucket === "delayed" || r?.bucket === "disconnected"
+          ? r.bucket
+          : "disconnected"
+      ) as GpsAgeBucket,
+    }));
+    const health = summarizeGpsHealth(normalizedTracking);
+    trackingTotal = health.total;
+    trackingLive = health.live;
+    trackingDelayed = health.delayed;
+    trackingDisconnected = health.disconnected;
+    trackingLivePct = health.total > 0 ? Math.round((health.live / health.total) * 100) : null;
+  }
 
-  const activeDangerZoneCount = (input.restrictedZones ?? []).filter((z) =>
-    isActiveAlarmingZone(z),
-  ).length;
+  let unackDangerCount: number | null = null;
+  if (input.unackDangerCount != null) {
+    const rawUnack = Number(input.unackDangerCount);
+    unackDangerCount = Number.isFinite(rawUnack) && rawUnack > 0 ? rawUnack : 0;
+  }
+
+  const activeDangerZoneCount =
+    input.restrictedZones == null
+      ? null
+      : input.restrictedZones.filter((z) => isActiveAlarmingZone(z)).length;
 
   return {
     onSiteCount,
-    trackingTotal: health.total,
-    trackingLive: health.live,
-    trackingDelayed: health.delayed,
-    trackingDisconnected: health.disconnected,
+    trackingTotal,
+    trackingLive,
+    trackingDelayed,
+    trackingDisconnected,
     trackingLivePct,
     unackDangerCount,
     activeDangerZoneCount,

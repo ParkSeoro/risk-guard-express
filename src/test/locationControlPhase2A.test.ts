@@ -25,13 +25,13 @@ describe("PR 2-A: Shared LocationControlBar & TrackingHealth/ZoneEvents role ali
         ],
         unackDangerCount: 2,
         restrictedZones: [
-          { is_active: true, is_deleted: false, zone_category: "danger" },
-          { is_active: true, is_deleted: false, zone_category: "restricted" },
-          // Presence / normal zones should not count as alarming danger zones
-          { is_active: true, is_deleted: false, zone_category: "normal" },
-          { is_active: true, is_deleted: false, zone_category: "work" },
-          { is_active: false, is_deleted: false, zone_category: "danger" },
-          { is_active: true, is_deleted: true, zone_category: "danger" },
+          { is_active: true, is_deleted: false, zone_category: "추락위험" },
+          { is_active: true, is_deleted: false, zone_category: "화재위험" },
+          // Korean presence categories must not count as alarming danger zones
+          { is_active: true, is_deleted: false, zone_category: "일반" },
+          { is_active: true, is_deleted: false, zone_category: "작업구역" },
+          { is_active: false, is_deleted: false, zone_category: "추락위험" },
+          { is_active: true, is_deleted: true, zone_category: "밀폐공간" },
         ],
       });
 
@@ -60,9 +60,28 @@ describe("PR 2-A: Shared LocationControlBar & TrackingHealth/ZoneEvents role ali
       expect(res.unackDangerCount).toBe(0);
       expect(res.activeDangerZoneCount).toBe(0);
     });
+
+    it("preserves null for failed queries so errors never masquerade as 0", () => {
+      const res = summarizeLocationControlKpis({
+        distributionRows: null,
+        trackingRows: null,
+        unackDangerCount: null,
+        restrictedZones: null,
+      });
+      expect(res).toEqual({
+        onSiteCount: null,
+        trackingTotal: null,
+        trackingLive: null,
+        trackingDelayed: null,
+        trackingDisconnected: null,
+        trackingLivePct: null,
+        unackDangerCount: null,
+        activeDangerZoneCount: null,
+      });
+    });
   });
 
-  describe("Location control tabs & role guards", () => {
+  describe("Location control tabs & role guards (multi-project hardened)", () => {
     it("exposes all 3 location monitoring tabs", () => {
       expect(LOCATION_CONTROL_TABS.map((t) => t.to)).toEqual([
         "/app/admin/worker-distribution",
@@ -79,7 +98,7 @@ describe("PR 2-A: Shared LocationControlBar & TrackingHealth/ZoneEvents role ali
       expect(isAllowedForContractor("/app/admin/safety-cost")).toBe(false);
     });
 
-    it("enforces management RoleGuard on both zone-events and admin/tracking-health routes", () => {
+    it("enforces management RoleGuard + active-project canView guard on location routes and screens", () => {
       const routesSrc = readFileSync("src/routes/AdminAppRoutes.tsx", "utf8").replace(/\r\n/g, "\n");
       const zoneIdx = routesSrc.indexOf('path="zone-events"');
       const healthIdx = routesSrc.indexOf('path="admin/tracking-health"');
@@ -92,6 +111,30 @@ describe("PR 2-A: Shared LocationControlBar & TrackingHealth/ZoneEvents role ali
         expect(block).toContain("allowContractorCompany");
         expect(block).toContain('"site_manager"');
         expect(block).toContain('"site_supervisor"');
+      }
+
+      const zoneSrc = readFileSync("src/pages/ZoneEvents.tsx", "utf8").replace(/\r\n/g, "\n");
+      const healthSrc = readFileSync("src/pages/AdminTrackingHealth.tsx", "utf8").replace(/\r\n/g, "\n");
+      expect(zoneSrc).toContain("canViewWorkerDistribution(access?.userRole, isMaster)");
+      expect(healthSrc).toContain("canViewWorkerDistribution(userRole, isMaster)");
+    });
+
+    it("enforces active-project management role_new inside all 3 location RPCs in SQL migration", () => {
+      const sql = readFileSync(
+        "supabase/migrations/20261122142000_location_rpcs_project_role_guard.sql",
+        "utf8",
+      ).replace(/\r\n/g, "\n");
+      for (const fn of [
+        "public.get_gps_tracking_health",
+        "public.get_worker_distribution_counts",
+        "public.get_worker_distribution_positions",
+      ]) {
+        const idx = sql.indexOf(fn);
+        expect(idx).toBeGreaterThan(-1);
+        const body = sql.slice(idx, idx + 1200);
+        expect(body).toContain("pm.role_new::text IN");
+        expect(body).toContain("'site_supervisor'");
+        expect(body).toContain("RAISE EXCEPTION 'FORBIDDEN'");
       }
     });
 
@@ -112,6 +155,7 @@ describe("PR 2-A: Shared LocationControlBar & TrackingHealth/ZoneEvents role ali
     it("documents Phase 2-A location role alignment in docs/access-policy.md", () => {
       const doc = readFileSync("docs/access-policy.md", "utf8").replace(/\r\n/g, "\n");
       expect(doc).toContain("위치 관제 3화면(`/worker-distribution`, `/zone-events`, `/admin/tracking-health`)");
+      expect(doc).toContain("선택 현장의 관리 역할");
     });
   });
 });

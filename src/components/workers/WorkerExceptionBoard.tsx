@@ -35,6 +35,7 @@ export default function WorkerExceptionBoard() {
   const [data, setData] = useState<AttendanceExceptions | null>(null);
 
   useEffect(() => {
+    setCompanyFilter("all");
     if (!projectId) return;
     let cancelled = false;
     setLoading(true);
@@ -87,7 +88,7 @@ export default function WorkerExceptionBoard() {
           <p className="text-xs text-muted-foreground mt-1">미출역·미서명·미퇴근을 한 화면에서 봅니다. 퇴근 시각은 추정으로 넣지 않습니다.</p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
-          {companies.length > 0 && (
+          {(companies.length > 0 || companyFilter !== "all") && (
             <div>
               <Label>업체</Label>
               <Select value={companyFilter} onValueChange={setCompanyFilter}>
@@ -115,7 +116,8 @@ export default function WorkerExceptionBoard() {
       {loading && <Skeleton className="h-24 w-full" />}
       {!loading && data && (
         <p className="text-sm">
-          허가서 등록 {data.permitCrewTotal}명 · 출근 미처리 {filteredBySection.permitNoShow.length}명
+          허가서 등록 {data.permitCrewTotal}명{companyFilter !== "all" ? " (전체 기준)" : ""} ·{" "}
+          {companyFilter !== "all" ? `${companyFilter} ` : ""}출근 미처리 {filteredBySection.permitNoShow.length}명
         </p>
       )}
       {!loading && (

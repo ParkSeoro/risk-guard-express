@@ -80,7 +80,6 @@ BEGIN
         WHEN st.block_reason IS NOT NULL
          AND btrim(st.block_reason) <> ''
          AND st.block_reason <> 'no_checkin'
-         AND st.updated_at >= o.entry_at - interval '10 minutes'
         THEN st.block_reason
         ELSE NULL
       END AS block_reason
@@ -188,7 +187,6 @@ BEGIN
         AND st.block_reason IS NOT NULL
         AND btrim(st.block_reason) <> ''
         AND st.block_reason <> 'no_checkin'
-        AND st.updated_at BETWEEN v_start AND v_end
         AND EXISTS (
           SELECT 1
             FROM public.worker_entry_logs e
@@ -215,7 +213,7 @@ BEGIN
         AND NOT public.permit_roster_always_present(w.id, v_day)
         AND NOT EXISTS (SELECT 1 FROM public.worker_entry_logs e WHERE e.worker_id = pw.worker_id AND e.project_id = _project_id AND e.entry_at BETWEEN v_start AND v_end)
         AND (public.is_master(v_uid) OR public.can_access_company_data(v_uid, _project_id, w.company_id))), '[]'::jsonb),
-    'ppe_pending', COALESCE((SELECT jsonb_agg(jsonb_build_object('worker_id', e.worker_id, 'worker_name', e.worker_name, 'item_name', e.item_name, 'issued_at', e.issued_at) ORDER BY e.issued_at DESC)
+    'ppe_pending', COALESCE((SELECT jsonb_agg(jsonb_build_object('worker_id', e.worker_id, 'worker_name', e.worker_name, 'company_name', w.company_name, 'item_name', e.item_name, 'issued_at', e.issued_at) ORDER BY e.issued_at DESC)
       FROM public.safety_cost_ppe_ledger_entries e LEFT JOIN public.workers w ON w.id = e.worker_id
       WHERE e.project_id = _project_id AND COALESCE(e.is_deleted, false) = false AND e.receipt_status = 'pending'
         AND EXISTS (SELECT 1 FROM public.worker_entry_logs lg WHERE lg.project_id = _project_id AND lg.entry_at BETWEEN v_start AND v_end AND lg.worker_id = e.worker_id)

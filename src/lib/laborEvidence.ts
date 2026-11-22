@@ -605,8 +605,6 @@ async function fetchExceptionsFallback(projectId: string, date: string): Promise
     .eq("project_id", projectId)
     .not("block_reason", "is", null)
     .neq("block_reason", "no_checkin")
-    .gte("updated_at", range.start)
-    .lte("updated_at", range.end)
     .limit(500);
   for (const st of (gps as any[]) || []) {
     const reason = String(st.block_reason || "").trim();

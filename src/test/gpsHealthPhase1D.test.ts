@@ -27,17 +27,20 @@ describe("PR 1-D: GPS tracking health denominator & exceptions gps_blocked fixes
     ).replace(/\r\n/g, "\n");
     const laborSrc = readFileSync("src/lib/laborEvidence.ts", "utf8").replace(/\r\n/g, "\n");
 
-    it("bases get_gps_tracking_health on today's open worker_entry_logs (DISTINCT ON worker_id)", () => {
-      expect(sql).toContain("SELECT DISTINCT ON (e.worker_id)");
-      expect(sql).toContain("AND e.exit_at IS NULL");
-      expect(sql).toContain("AND st.block_reason <> 'no_checkin'");
+    it("bases get_gps_tracking_health on today's open worker_entry_logs (DISTINCT ON worker_id) without dropping persistent block_reason", () => {
+      const healthFn = sql.split("CREATE OR REPLACE FUNCTION public.get_gps_tracking_health")[1]?.split("CREATE OR REPLACE FUNCTION")[0] || "";
+      expect(healthFn).toContain("SELECT DISTINCT ON (e.worker_id)");
+      expect(healthFn).toContain("AND e.exit_at IS NULL");
+      expect(healthFn).toContain("(e.entry_at AT TIME ZONE 'Asia/Seoul')::date = _today");
+      expect(healthFn).toContain("AND st.block_reason <> 'no_checkin'");
+      expect(healthFn).not.toContain("st.updated_at >= o.entry_at");
     });
 
-    it("fixes list_attendance_exceptions gps_blocked to require non-null non-checkin reason + same-day entry", () => {
+    it("fixes list_attendance_exceptions gps_blocked to require non-null non-checkin reason + same-day entry (no updated_at cutoff)", () => {
       const gpsSection = sql.split("'gps_blocked'")[1]?.split("'permit_crew_total'")[0] || "";
       expect(gpsSection).toContain("AND st.block_reason IS NOT NULL");
       expect(gpsSection).toContain("AND st.block_reason <> 'no_checkin'");
-      expect(gpsSection).toContain("AND st.updated_at BETWEEN v_start AND v_end");
+      expect(gpsSection).not.toContain("st.updated_at BETWEEN");
       expect(gpsSection).toContain("FROM public.worker_entry_logs e");
     });
 

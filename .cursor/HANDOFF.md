@@ -122,6 +122,23 @@ K-엑사원 2.5는 현장 버튼의 기본 모델이 아니다. 배치는 `docs/
 - PR #568 허가서 전회차 복사: 연장 신청(`work_extend_requested_*`)과 이전 연장 도장은 복사하지 않는다. 10/21 대웅CT 허가서에 붙어 있던 20일 18:30 연장 대기는 라이브에서 제거했다.
 - PR #569 `__QA__` 시험 문서 숨김. 위 사고 참고. 시험 공유 서명만 서명 대장에서 뺐고, 실제 서명은 그대로다.
 
+## 2026-11-21~22 에 main 에 있는 것 (Antigravity ↔ Cursor 합동 작업)
+
+- **Google One(Drive) 장기 백업·복원 완료** (Issue #683 · PR #684 종료):
+  - `safenex-nightly-gdrive-backup` (`pg_cron`, 매일 `02:05~03:55 KST` 10분 간격 12틱) → `backup-storage-to-gdrive` v5 (틱당 최대 15건/50MB, 30일 경과 파일 백업, 서킷브레이커, `archive-restore-cache` 24시간 초과분 Storage API 정리).
+  - UI 아카이브 복원 Fallback 강화 (`src/lib/archiveUrlResolver.ts`, 인쇄/사진 팝업 포함) 및 `www.safenex.org` 실서버 E2E 복원 검증 완료.
+- **실화면 7개 모듈 전수 QA 12건 일괄 수정·배포·실서버 검증 완료** (RFC #688 종료):
+  - **Batch 1 (P0 5건, PR #689)**: TBM 참여자 `0명` 버그 수정(embedded count + 50행 페이지네이션), 과거 비초안 문서 인쇄/PDF 작성관리자 차단 해제(`generate-pdf` v31), 안전점검 목록 `PGRST200` 400 오류 해소, 결재 반려 탭·KPI 일치, 작업허가서 목록 작성자·복제 초기화 및 배정/신고 인원 표시 정리.
+  - **Batch 2 (P1 4건, PR #690)**: 서명원장 TBM 제목·한글 공유 출처 표시, **안전점검 완료/결재중 일괄 잠금(마스터만 예외 — UI + DB 트리거, `assessment_runs`/`risk_items`/`work_plans` 하드락 유지)** 및 `FAC-06` 오타 수정, 위험성평가 반려 라벨·비편집 시 엑셀 차단, 작업계획서 `작업취소` 칩·중복 TBM 버튼 제거. (라이브 마이그레이션 2건 적용 완료)
+  - **Batch 3 (P1 3건, PR #691)**: 안전관리비 검증 탭 한글화(`submitted`→`결재중`, 실 RPC 위반 코드 4종 포함)·회사명 배지·OCR 연도 오인식 경고, 상단 헤더 겹침/카드 버튼 잘림 해소, 한국어 조사(`은/는`) 및 종료(`종료완료`/`마감`/`CLOSED`)/취소 허가서 TBM 안내 문구 정상화.
+- **텔레그램 새벽 작업 일일 리포트 개편** (PR #692 · #693):
+  - 기존 2회/일(07:00·22:00 KST) GitHub Actions(`SafeNex Automated Health Check & Telegram Alert`, ID `401510706`) 비활성화(`disabled_manually`).
+  - Supabase `pg_cron` (`safenex-nightly-telegram-report`, 매일 `07:00 KST` 1회) → `send-nightly-telegram-report` v5 + `public.get_nightly_ops_report()` (`service_role` 전용).
+  - 리포트 내용: Google One 백업 실적·백업 대상 일자 범위·일일/누적 용량, 새벽 배치(`scan-work-plan-end-warnings`, `daily-consistency-audit`, `purge-worker-last-positions-0330-kst`) 결과. 텔레그램 시크릿(`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)은 Supabase Vault + `get_runtime_secret()`에 암호화 보관.
+- **협업/멀티 PC 참고**:
+  - 다른 PC에서 이어서 작업할 때는 `ParkSeoro/risk-guard-express` 최신 `main`을 pull하고, Supabase MCP 로그인 및 `gh auth login` 후 새 채팅에서 `.cursor/HANDOFF.md`를 읽게 하면 동일 맥락으로 이어짐.
+  - PR 리뷰 자동 협업 시 `@cursor`는 PR 본문이 아니라 **PR 코멘트(`gh pr comment`)**로 호출해야 안정적으로 트리거됨.
+
 위평 AI 문안을 사람이 행마다 확인하게 하는 방안은 **이야기만 했고 구현하지 않았다.** 다음 채팅에서 이어서 만들지 말 것.
 
 ## 보류된 옛 메모 (지시가 없으면 시작하지 말 것)

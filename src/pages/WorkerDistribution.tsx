@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Users, MapPin, Building2, Activity, Radio, RefreshCw } from "lucide-react";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
+import LocationControlBar from "@/components/geofence/LocationControlBar";
 import NoActiveDangerZoneBanner from "@/components/geofence/NoActiveDangerZoneBanner";
 import { useMobileSubpageBack } from "@/lib/mobileNav";
 import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
@@ -88,10 +89,14 @@ export default function WorkerDistribution() {
     projects,
     selectedProject,
     setSelectedProject,
+    isMaster,
+    userCompanyType,
     canView,
     scopeLabel,
     compact,
   } = useDistributionAccess();
+  const isContractorCo =
+    !isMaster && (userCompanyType === "contractor" || userCompanyType === "vendor");
   const onBack = useMobileSubpageBack("/app/worker/tasks");
   const projectId = selectedProject || "";
   const [maps, setMaps] = useState<SiteMap[]>([]);
@@ -503,7 +508,15 @@ export default function WorkerDistribution() {
         </div>
       </div>
 
-      <NoActiveDangerZoneBanner projectId={projectId} />
+      {!compact && (
+        <LocationControlBar
+          projectId={projectId}
+          activeTab="distribution"
+          refreshKey={lastUpdated?.getTime() ?? 0}
+        />
+      )}
+
+      <NoActiveDangerZoneBanner projectId={projectId} showManageLink={!isContractorCo} />
 
       {loadError && (
         <Card className="border-destructive/40">

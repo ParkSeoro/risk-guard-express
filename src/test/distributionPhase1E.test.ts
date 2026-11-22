@@ -41,9 +41,9 @@ describe("PR 1-E: Distribution radius projection & contractor PC location access
       expect(isAllowedForContractor("/worker-distribution")).toBe(true);
       expect(isAllowedForContractor("/app/admin/zone-events")).toBe(true);
       expect(isAllowedForContractor("/app/admin/zone-events?project=abc")).toBe(true);
-      // Still blocks admin-only site setup & tracking-health in Phase 1
+      // Still blocks admin-only site setup; tracking-health opened in Phase 2-A
       expect(isAllowedForContractor("/app/admin/site-control-map")).toBe(false);
-      expect(isAllowedForContractor("/app/admin/admin/tracking-health")).toBe(false);
+      expect(isAllowedForContractor("/app/admin/admin/tracking-health")).toBe(true);
     });
 
     it("wires radius projection in WorkerDistribution and contractor menu in AppSidebar", () => {
@@ -51,7 +51,7 @@ describe("PR 1-E: Distribution radius projection & contractor PC location access
       const sidebarSrc = readFileSync("src/components/AppSidebar.tsx", "utf8").replace(/\r\n/g, "\n");
       expect(distSrc).toContain("projectRadiusZoneToUvPolygon");
       expect(sidebarSrc).toContain("canViewContractorLocation");
-      expect(sidebarSrc).toContain("'/worker-distribution', '/zone-events'");
+      expect(sidebarSrc).toContain("'/worker-distribution', '/zone-events', '/admin/tracking-health'");
     });
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   MapContainer,
   Polygon,
@@ -25,7 +26,7 @@ import {
 import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler, Maximize2,
+  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler, Maximize2, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1538,10 +1539,11 @@ export default function SiteControlMap() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Map className="h-6 w-6 text-primary" />
             통합 현장 관제맵
+            <Badge variant="outline" className="text-xs font-normal">편집 전용</Badge>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            현장 도면·위성·워킹 보정은 같은 좌표(geo_transform)를 씁니다. 도면 크기·지도 확대는
-            자동 저장됩니다.
+            현장 도면·GPS 개소·위험구역을 설정합니다(같은 좌표 <code>geo_transform</code> 사용 · 자동 저장).
+            실시간 인원 현황은 <b>실시간 분포</b>에서 확인하세요.
           </p>
           {gpsCal && (
             <div className="mt-2">
@@ -1556,16 +1558,24 @@ export default function SiteControlMap() {
             </div>
           )}
         </div>
-        <Select value={projectId} onValueChange={setProjectId}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="프로젝트 선택" />
-          </SelectTrigger>
-          <SelectContent>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button asChild variant="outline" size="sm">
+            <Link to="/app/admin/worker-distribution">
+              <Users className="h-4 w-4 mr-1.5" />
+              실시간 분포 보기
+            </Link>
+          </Button>
+          <Select value={projectId} onValueChange={setProjectId}>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="프로젝트 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <NoActiveDangerZoneBanner

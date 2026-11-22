@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
+import LocationControlBar from "@/components/geofence/LocationControlBar";
+import { distributionScopeLabel } from "@/hooks/useDistributionAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,21 @@ const BUCKET_LABEL: Record<GpsAgeBucket, string> = {
 };
 
 export default function AdminTrackingHealth() {
-  const { selectedProject: projectId, projects, setSelectedProject } = useGlobalProjectAccess();
+  const {
+    selectedProject: projectId,
+    projects,
+    setSelectedProject,
+    isMaster,
+    userRole,
+    userCompanyType,
+    seesAllCompanies,
+  } = useGlobalProjectAccess();
+  const scopeLabel = distributionScopeLabel({
+    isMaster,
+    role: userRole,
+    companyType: userCompanyType,
+    seesAll: seesAllCompanies,
+  });
   const [rows, setRows] = useState<GpsHealthRow[]>([]);
   const [companyFilter, setCompanyFilter] = useState("all");
   const [loading, setLoading] = useState(false);
@@ -134,8 +150,14 @@ export default function AdminTrackingHealth() {
         </div>
       </div>
 
+      <LocationControlBar
+        projectId={projectId}
+        activeTab="tracking-health"
+        refreshKey={`${summary.total}:${summary.live}:${summary.delayed}:${summary.disconnected}`}
+      />
+
       <p className="text-sm text-muted-foreground">
-        오늘 미퇴근 출근자 기준 ({summary.total}명). 추적중 = 5분 이내, 지연 = 5~30분, 두절 = 30분 초과 또는 미수신.
+        오늘 미퇴근 출근자 기준 ({summary.total}명 · {scopeLabel}). 추적중 = 5분 이내, 지연 = 5~30분, 두절 = 30분 초과 또는 미수신.
         미출근자·퇴근자는 포함하지 않으며 좌표는 이 화면에 표시하지 않습니다.
       </p>
 

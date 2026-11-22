@@ -10,6 +10,7 @@ import { ShieldAlert, LogIn, LogOut, Check, AlertTriangle, RefreshCw } from "luc
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import LocationControlBar from "@/components/geofence/LocationControlBar";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import {
   computeActiveDangerResiduals,
@@ -244,6 +245,12 @@ export default function ZoneEvents() {
           </Button>
         </div>
       </div>
+
+      <LocationControlBar
+        projectId={projectId}
+        activeTab="zone-events"
+        refreshKey={`${alerts.length}:${events.length}`}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as "alerts" | "residual" | "all")}>
         <TabsList>

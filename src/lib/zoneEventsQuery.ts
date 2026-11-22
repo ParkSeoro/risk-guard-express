@@ -87,7 +87,11 @@ export function computeActiveDangerResiduals<T extends ZoneEventRecord>(todayEve
 
     if (evType === "unauthorized_entry") {
       latestDangerByWorker.set(wKey, e);
-    } else if (evType === "entry" || /^(exit|leave|depart)/i.test(evType)) {
+    } else if (/^(exit|leave|depart)/i.test(evType)) {
+      latestDangerByWorker.delete(wKey);
+    } else if (evType === "entry" && !e.restricted_zone_id) {
+      // Only clear danger residual when moving into a non-restricted zone;
+      // an `entry` carrying `restricted_zone_id` means the worker is still inside that danger zone.
       latestDangerByWorker.delete(wKey);
     }
   }

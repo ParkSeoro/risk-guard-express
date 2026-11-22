@@ -98,12 +98,15 @@ describe("PR 1-B: Dashboard alert accuracy & ZoneEvents query/join fixes", () =>
         // Worker 1 moved Danger A -> Danger B (track-location emits no exit(A)) -> only B remains residual
         makeEvent({ id: "a", worker_qr_id: "w1", restricted_zone_id: "rz-A", event_type: "unauthorized_entry", created_at: "2026-11-22T00:10:00Z" }),
         makeEvent({ id: "b", worker_qr_id: "w1", restricted_zone_id: "rz-B", event_type: "unauthorized_entry", created_at: "2026-11-22T00:20:00Z" }),
-        // Worker 2 moved Danger A -> Normal entry -> Exit(normal) -> cleared (no longer in Danger A)
+        // Worker 2 moved Danger A -> Normal entry (no restricted_zone_id) -> Exit -> cleared
         makeEvent({ id: "c", worker_qr_id: "w2", restricted_zone_id: "rz-A", event_type: "unauthorized_entry", created_at: "2026-11-22T00:11:00Z" }),
         makeEvent({ id: "d", worker_qr_id: "w2", restricted_zone_id: null, zone_id: "sz-normal", event_type: "entry", created_at: "2026-11-22T00:15:00Z" }),
         makeEvent({ id: "e", worker_qr_id: "w2", restricted_zone_id: null, zone_id: "sz-normal", event_type: "exit", created_at: "2026-11-22T00:25:00Z" }),
+        // Worker 3 still inside Danger A while matching overlapping site_zone (`entry` carries restricted_zone_id) -> stays residual
+        makeEvent({ id: "f", worker_qr_id: "w3", restricted_zone_id: "rz-A", event_type: "unauthorized_entry", created_at: "2026-11-22T00:12:00Z" }),
+        makeEvent({ id: "g", worker_qr_id: "w3", restricted_zone_id: "rz-A", zone_id: "sz-overlap", event_type: "entry", created_at: "2026-11-22T00:18:00Z" }),
       ];
-      expect(computeActiveDangerResiduals(events).map((e) => e.id)).toEqual(["b"]);
+      expect(computeActiveDangerResiduals(events).map((e) => e.id)).toEqual(["b", "f"]);
     });
 
     it("handles worker_qr_id preference and phone-digit normalization", () => {

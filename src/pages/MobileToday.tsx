@@ -157,7 +157,7 @@ function ManagerToday({
             .from("v_worker_attendance_today" as any)
             .select("worker_id", { count: "exact", head: true })
             .eq("project_id", projectId)
-            .eq("attended", true)
+            .not("entry_at", "is", null)
             .eq("exited", false)
             .then((r) => r.count),
           supabase

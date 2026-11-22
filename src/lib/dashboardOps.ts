@@ -182,8 +182,23 @@ export function buildAttentionItems(input: {
   return items.sort((a, b) => rank[a.severity] - rank[b.severity] || b.count - a.count);
 }
 
-export function countOnSite(logs: Array<{ entry_at?: string | null; exit_at?: string | null }>) {
-  const todayEntries = logs.length;
-  const onSiteWorkers = logs.filter((l) => l.entry_at && !l.exit_at).length;
-  return { todayEntries, onSiteWorkers };
+/**
+ * Distinct worker attendance / on-site SSOT (PR 1-C):
+ * - `todayEntries`: distinct workers who checked in today
+ * - `onSiteWorkers`: distinct workers with at least one open entry (`entry_at && !exit_at`)
+ * Falls back to row index when `worker_id` is omitted (backward-compatible with legacy callers).
+ */
+export function countOnSite(
+  logs: Array<{ worker_id?: string | null; entry_at?: string | null; exit_at?: string | null }>,
+) {
+  const entered = new Set<string>();
+  const onSite = new Set<string>();
+  logs.forEach((l, idx) => {
+    const key = l.worker_id ? `w:${l.worker_id}` : `row:${idx}`;
+    entered.add(key);
+    if (l.entry_at && !l.exit_at) {
+      onSite.add(key);
+    }
+  });
+  return { todayEntries: entered.size, onSiteWorkers: onSite.size };
 }

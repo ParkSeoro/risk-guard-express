@@ -33,6 +33,7 @@ import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { countOnSite } from "@/lib/dashboardOps";
 import { buildWorkHourRow, formatWorkHours } from "@/lib/workHours";
 import { hoursDisclaimer, resolvePledgeText } from "@/lib/laborEvidence";
 import { NO_ACCIDENT_PLEDGE } from "@/lib/legal/dailyPledges";
@@ -314,18 +315,6 @@ export default function WorkerAttendance() {
   /** 퇴근은 됐는데 무재해 서약이 없는 비정상 */
   const isPledgeWarn = (l: EntryLog) => !!l.exit_at && !l.no_accident_confirmed;
 
-  const counts = useMemo(() => {
-    const c = { all: logs.length, inside: 0, exited: 0, incomplete: 0, noAccident: 0, pledgeWarn: 0 };
-    for (const l of logs) {
-      if (l.exit_at) c.exited++;
-      else c.inside++;
-      if (isIncomplete(l)) c.incomplete++;
-      if (l.no_accident_confirmed) c.noAccident++;
-      if (isPledgeWarn(l)) c.pledgeWarn++;
-    }
-    return c;
-  }, [logs]);
-
   // Logs whose worker is outside company scope are dropped (workersMap already scoped).
   const scopedLogs = useMemo(() => {
     if (seesAllCompanies) return logs;
@@ -337,6 +326,26 @@ export default function WorkerAttendance() {
       return !!(l as any).workers;
     });
   }, [logs, seesAllCompanies, accessibleCompanyIds]);
+
+  const counts = useMemo(() => {
+    const distinct = countOnSite(scopedLogs);
+    let incomplete = 0;
+    let noAccident = 0;
+    let pledgeWarn = 0;
+    for (const l of scopedLogs) {
+      if (isIncomplete(l)) incomplete++;
+      if (l.no_accident_confirmed) noAccident++;
+      if (isPledgeWarn(l)) pledgeWarn++;
+    }
+    return {
+      all: distinct.todayEntries,
+      inside: distinct.onSiteWorkers,
+      exited: Math.max(0, distinct.todayEntries - distinct.onSiteWorkers),
+      incomplete,
+      noAccident,
+      pledgeWarn,
+    };
+  }, [scopedLogs]);
 
   const filteredLogs = useMemo(() => {
     const q = search.trim().toLowerCase();

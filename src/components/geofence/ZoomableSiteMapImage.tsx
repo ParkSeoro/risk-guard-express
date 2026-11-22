@@ -190,7 +190,7 @@ export default function ZoomableSiteMapImage({
     if (g.mode === "pan" && !g.moved && e.changedTouches[0]) {
       const t = e.changedTouches[0];
       const now = Date.now();
-      if (now - g.lastTapAt < 280) {
+      if (now - g.lastTapAt < 260) {
         // Double-tap zoom toggle — cancel pending single-tap pick so pin never jumps
         if (pendingPickTimerRef.current != null) {
           window.clearTimeout(pendingPickTimerRef.current);
@@ -212,10 +212,11 @@ export default function ZoomableSiteMapImage({
           if (pendingPickTimerRef.current != null) {
             window.clearTimeout(pendingPickTimerRef.current);
           }
+          // Delay strictly exceeds the 260ms double-tap window so a 2nd tap always cancels pick
           pendingPickTimerRef.current = window.setTimeout(() => {
             pendingPickTimerRef.current = null;
             onPick(uv);
-          }, 240);
+          }, 300);
         }
       }
     }

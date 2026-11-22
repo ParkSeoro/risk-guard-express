@@ -1,10 +1,10 @@
 /**
  * Access predicate for mobile & PC site map GPS georeferencing / calibration.
- * Must stay 1:1 with `public.can_calibrate_site_map(_uid, _project_id)` in Postgres.
+ * Uses an explicit client/GC company-type allowlist matching `public.can_calibrate_site_map`.
  */
 
 const CALIBRATION_ROLES = new Set(["master", "project_admin", "safety_manager"]);
-const CONTRACTOR_COMPANY_TYPES = new Set(["contractor", "vendor", "협력사", "공급사"]);
+const ALLOWED_COMPANY_TYPES = new Set(["client", "owner", "gc", "발주처", "시공사", "원청"]);
 
 export function canCalibrateSiteMap(opts: {
   isMaster?: boolean;
@@ -15,6 +15,5 @@ export function canCalibrateSiteMap(opts: {
   const role = String(opts.role || "").trim().toLowerCase();
   if (!CALIBRATION_ROLES.has(role)) return false;
   const cType = String(opts.companyType || "").trim().toLowerCase();
-  if (CONTRACTOR_COMPANY_TYPES.has(cType)) return false;
-  return true;
+  return ALLOWED_COMPANY_TYPES.has(cType);
 }

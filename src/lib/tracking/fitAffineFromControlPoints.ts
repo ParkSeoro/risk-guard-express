@@ -239,8 +239,12 @@ export function aggregateGpsSamples(
   const medAcc = median(valid.map((s) => s.accuracy));
   const outlierGateM = Math.max(15, medAcc * 2);
 
-  let kept = valid.filter((s) => calculateDistance(s.lat, s.lng, medLat, medLng) <= outlierGateM);
-  if (kept.length === 0) kept = valid;
+  const kept = valid.filter((s) => calculateDistance(s.lat, s.lng, medLat, medLng) <= outlierGateM);
+  if (kept.length === 0) {
+    return {
+      error: "GPS 신호가 크게 흔들리고 있습니다. 제자리에 잠시 멈춘 뒤 다시 측정하세요",
+    };
+  }
 
   let wSum = 0;
   let latSum = 0;
@@ -262,6 +266,11 @@ export function aggregateGpsSamples(
     (maxD, s) => Math.max(maxD, calculateDistance(lat, lng, s.lat, s.lng)),
     0,
   );
+  if (spreadM > 25) {
+    return {
+      error: `측정 중 위치 흔들림이 큽니다(±${Math.round(spreadM)}m). 하늘이 트인 곳에서 멈춘 채 다시 측정하세요`,
+    };
+  }
 
   return {
     lat,

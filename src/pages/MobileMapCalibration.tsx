@@ -268,6 +268,8 @@ export default function MobileMapCalibration() {
 
   /** Collect multi-sample GPS fixes over ~3.5 seconds while standing still. */
   const collectAveragedFix = useCallback(async (): Promise<GpsSample & { sampleCount: number; spreadM: number }> => {
+    const startedAt = Date.now();
+    const MIN_COLLECT_MS = 2000;
     const collected: GpsSample[] = [];
     if (liveGpsRef.current) {
       collected.push(liveGpsRef.current);
@@ -284,9 +286,14 @@ export default function MobileMapCalibration() {
         resolve();
       };
       sampleCollectorRef.current = (fix) => {
+        const prev = collected[collected.length - 1];
+        // Ignore identical consecutive cached coordinates from native watchPosition
+        if (prev && prev.lat === fix.lat && prev.lng === fix.lng && prev.accuracy === fix.accuracy) {
+          return;
+        }
         collected.push(fix);
         setCaptureProgress({ count: collected.length, target: SAMPLE_TARGET_COUNT });
-        if (collected.length >= SAMPLE_TARGET_COUNT) {
+        if (collected.length >= SAMPLE_TARGET_COUNT && Date.now() - startedAt >= MIN_COLLECT_MS) {
           finish();
         }
       };
@@ -476,8 +483,8 @@ export default function MobileMapCalibration() {
         `현장맵 워킹 보정 저장 완료 · 잔차 RMS ≈${liveFit.rmsM.toFixed(1)}m`,
         {
           description:
-            "도면 위 파란 '내 GPS' 점이 실제 서 있는 자리와 맞는지 걸어 다니며 바로 확인해 보세요.",
-          duration: 7000,
+            "도면 위 파란 '내 GPS' 점으로 정확도를 바로 확인하세요. 기존 위험구역이 있다면 PC 관제맵에서 위치를 다시 확인해 주세요.",
+          duration: 8000,
         },
       );
     } catch (e: any) {

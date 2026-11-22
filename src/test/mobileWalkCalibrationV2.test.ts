@@ -101,6 +101,16 @@ describe("Mobile Walking GPS Calibration v2 (4-DOF Similarity Fit + Multi-Sample
       expect(agg.spreadM).toBeLessThan(5);
     });
 
+    it("rejects bimodal split clusters instead of averaging two distant multipath points", () => {
+      const split = aggregateGpsSamples([
+        { lat: 37.5, lng: 127.0, accuracy: 5 },
+        { lat: 37.5, lng: 127.0, accuracy: 5 },
+        { lat: 37.5005, lng: 127.0005, accuracy: 5 },
+        { lat: 37.5005, lng: 127.0005, accuracy: 5 },
+      ]);
+      expect("error" in split).toBe(true);
+    });
+
     it("returns an error when all samples exceed accuracy cap", () => {
       const agg = aggregateGpsSamples([{ lat: 37.5, lng: 127.0, accuracy: 55 }], 35);
       expect("error" in agg).toBe(true);
@@ -115,8 +125,10 @@ describe("Mobile Walking GPS Calibration v2 (4-DOF Similarity Fit + Multi-Sample
       expect(canCalibrateSiteMap({ isMaster: false, role: "safety_manager", companyType: "gc" })).toBe(true);
       expect(canCalibrateSiteMap({ isMaster: false, role: "safety_manager", companyType: "client" })).toBe(true);
 
-      // Blocked roles & contractor/vendor accounts
+      // Blocked roles, contractor/subcontractor variants, and missing companyType
       expect(canCalibrateSiteMap({ isMaster: false, role: "safety_manager", companyType: "contractor" })).toBe(false);
+      expect(canCalibrateSiteMap({ isMaster: false, role: "safety_manager", companyType: "하청" })).toBe(false);
+      expect(canCalibrateSiteMap({ isMaster: false, role: "safety_manager", companyType: null })).toBe(false);
       expect(canCalibrateSiteMap({ isMaster: false, role: "project_admin", companyType: "vendor" })).toBe(false);
       expect(canCalibrateSiteMap({ isMaster: false, role: "site_manager", companyType: "gc" })).toBe(false);
       expect(canCalibrateSiteMap({ isMaster: false, role: "site_supervisor", companyType: "gc" })).toBe(false);
@@ -124,9 +136,13 @@ describe("Mobile Walking GPS Calibration v2 (4-DOF Similarity Fit + Multi-Sample
       expect(canCalibrateSiteMap({ isMaster: false, role: "viewer", companyType: "client" })).toBe(false);
     });
 
-    it("wires SQL RPCs, ZoomableSiteMapImage double-tap fix, and docs/access-policy.md", () => {
+    it("wires SQL RPCs, hardening migration, ZoomableSiteMapImage double-tap fix, and docs/access-policy.md", () => {
       const sql = readFileSync(
         "supabase/migrations/20261123081000_site_map_calibration_rpcs.sql",
+        "utf8",
+      ).replace(/\r\n/g, "\n");
+      const hardSql = readFileSync(
+        "supabase/migrations/20261123084500_site_map_calibration_rpcs_hardening.sql",
         "utf8",
       ).replace(/\r\n/g, "\n");
       const calSrc = readFileSync("src/pages/MobileMapCalibration.tsx", "utf8").replace(/\r\n/g, "\n");
@@ -136,6 +152,8 @@ describe("Mobile Walking GPS Calibration v2 (4-DOF Similarity Fit + Multi-Sample
       expect(sql).toContain("public.can_calibrate_site_map");
       expect(sql).toContain("public.save_site_map_georef");
       expect(sql).toContain("public.save_project_gps_calibration");
+      expect(hardSql).toContain("REVOKE ALL ON FUNCTION public.can_calibrate_site_map");
+      expect(hardSql).toContain("GPS_CALIBRATION_OFFSET_TOO_LARGE");
       expect(calSrc).toContain("fitSimilarityFromControlPoints");
       expect(calSrc).toContain("aggregateGpsSamples");
       expect(calSrc).toContain("save_site_map_georef");

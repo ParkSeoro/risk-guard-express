@@ -67,50 +67,34 @@ export function zoneEventZoneKey(e: Pick<ZoneEventRecord, "restricted_zone_id" |
 
 /**
  * Compute currently residual danger-zone entries for today (Phase 1 SSOT):
- * returns today's `unauthorized_entry` events with no subsequent `exit`
- * for the same worker + zone, ordered newest first.
+ * tracks each worker's LATEST zone event chronologically because `track-location`
+ * emits only one event per transition (e.g. Danger A -> Danger B emits only
+ * `unauthorized_entry(B)` without `exit(A)`, and Danger A -> Normal emits `entry`).
+ * A worker is residual iff their latest today event is `unauthorized_entry`.
  */
 export function computeActiveDangerResiduals<T extends ZoneEventRecord>(todayEvents: T[]): T[] {
   const chronological = [...todayEvents].sort(
     (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
   );
 
-  // workerKey -> Map<zoneKey, latest unauthorized_entry event>
-  const activeByWorker = new Map<string, Map<string, T>>();
+  // workerKey -> latest active unauthorized_entry event (cleared on normal entry or exit)
+  const latestDangerByWorker = new Map<string, T>();
 
   for (const e of chronological) {
     const wKey = zoneEventWorkerKey(e);
     if (wKey === "unknown") continue;
-    const zKey = zoneEventZoneKey(e);
     const evType = String(e.event_type || "").toLowerCase();
 
     if (evType === "unauthorized_entry") {
-      let zones = activeByWorker.get(wKey);
-      if (!zones) {
-        zones = new Map<string, T>();
-        activeByWorker.set(wKey, zones);
-      }
-      zones.set(zKey, e);
-    } else if (/^(exit|leave|depart)/i.test(evType)) {
-      const zones = activeByWorker.get(wKey);
-      if (!zones) continue;
-      if (zKey === "any") {
-        zones.clear();
-      } else {
-        zones.delete(zKey);
-        zones.delete("any");
-      }
+      latestDangerByWorker.set(wKey, e);
+    } else if (evType === "entry" || /^(exit|leave|depart)/i.test(evType)) {
+      latestDangerByWorker.delete(wKey);
     }
   }
 
-  const out: T[] = [];
-  for (const zones of activeByWorker.values()) {
-    for (const ev of zones.values()) {
-      out.push(ev);
-    }
-  }
-  out.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-  return out;
+  return [...latestDangerByWorker.values()].sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+  );
 }
 
 /**

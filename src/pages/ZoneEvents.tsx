@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,8 +46,9 @@ const TYPE_OPTIONS: Array<{ value: ZoneEventTypeFilter; label: string }> = [
 
 export default function ZoneEvents() {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { projectId, setProjectId } = useActiveProject();
+  const appliedParamProjectRef = useRef<string | null>(null);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [alerts, setAlerts] = useState<ZoneEventRecord[]>([]);
   const [residual, setResidual] = useState<ZoneEventRecord[]>([]);
@@ -59,13 +60,26 @@ export default function ZoneEvents() {
   const [rangePreset, setRangePreset] = useState<ZoneLogRangePreset>("7d");
   const [typeFilter, setTypeFilter] = useState<ZoneEventTypeFilter>("all");
 
-  // Respect push notification deep link (?project=<uuid>)
+  // Apply push deep link (?project=<uuid>) once per URL param value; never snap back manual Select changes
+  const paramProject = searchParams.get("project");
   useEffect(() => {
-    const paramProject = searchParams.get("project");
-    if (paramProject && paramProject !== projectId) {
-      setProjectId(paramProject);
+    if (!paramProject) {
+      appliedParamProjectRef.current = null;
+      return;
     }
-  }, [searchParams, projectId, setProjectId]);
+    if (appliedParamProjectRef.current === paramProject) return;
+    appliedParamProjectRef.current = paramProject;
+    setProjectId(paramProject);
+  }, [paramProject, setProjectId]);
+
+  const handleSelectProject = (nextId: string) => {
+    setProjectId(nextId);
+    if (searchParams.has("project")) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("project");
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
 
   useEffect(() => {
     supabase
@@ -139,7 +153,7 @@ export default function ZoneEvents() {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "worker_zone_events",
           filter: `project_id=eq.${projectId}`,
@@ -212,7 +226,7 @@ export default function ZoneEvents() {
           <h1 className="text-2xl font-bold">구역 출입 모니터링</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={projectId} onValueChange={setProjectId}>
+          <Select value={projectId} onValueChange={handleSelectProject}>
             <SelectTrigger className="w-56">
               <SelectValue placeholder="프로젝트 선택" />
             </SelectTrigger>
@@ -272,7 +286,7 @@ export default function ZoneEvents() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">위험구역 내 미이탈 인원 (오늘 이벤트 기준)</CardTitle>
               <p className="text-xs text-muted-foreground">
-                오늘 무단 진입 이후 동일 구역 이탈(exit) 기록이 없는 인원만 표시합니다. 전체 현장 체류 인원은 입퇴장 현황·근로자 분포에서 확인하세요.
+                오늘 마지막 구역 이벤트가 무단 진입(이탈·일반구역 이동 없음)인 인원만 표시합니다. 전체 현장 체류 인원은 입퇴장 현황·근로자 분포에서 확인하세요.
               </p>
             </CardHeader>
             <CardContent className="p-0">

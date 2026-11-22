@@ -94,6 +94,13 @@
 - 안관비 결재선에는 작성자, 현장소장, 발주처 안전이 있어야 한다.
 - 안전점검이 `completed`·`완료`·`승인완료`·`결재진행`이면 유형과 상관없이 본문·항목·조치·삭제·결재선이 잠긴다. 예외는 전역 마스터뿐이고, 그 예외는 DB 잠금 트리거에도 있다. 복제·인쇄는 그대로다.
 
+## 위치 · 구역 경보 · 분포
+
+- **구역 출입 경보 열람 (`worker_zone_events` SELECT)**: 마스터와 프로젝트 관리자(`project_admin`, 직책 `OWNER_PM`/`OWNER_CM`)는 현장 전체를 본다. 안전관리자·현장소장·감리·관리감독자(및 대응 직책)와 `client_safety_viewer`는 `can_read_company_data` 회사 범위(협력사 자사, 시공사 자사+하위, 발주처 현장 전체)만 본다. 일반 근로자(`worker`)는 목록을 열람하지 않는다.
+- **구역 출입 경보 확인 (`worker_zone_events` UPDATE / ack)**: 위험구역 진입 푸시 수신 관리자와 동일하다 (`docs/zone-alarm-recipients.md`). 마스터와 프로젝트 관리자(`project_admin`, `OWNER_PM`/`OWNER_CM`)는 현장 전체, 안전관리자·현장소장·관리감독자(및 대응 직책 `SITE_MANAGER`/`HSE_MANAGER`/`OWNER_HSE`/`OWNER_SM`/`SITE_SUPERVISOR`/`SUPERVISOR`)는 `can_access_company_data` 회사 범위만 확인 처리할 수 있다. `worker`와 `viewer`는 확인 처리할 수 없다.
+- **근로자 분포 (`get_worker_distribution_*`)**: 회사·구역·인원 집계와 익명 좌표만 노출하며(이름·전화 비노출), `can_access_company_data` 회사 범위를 따른다.
+- **위치 추적 점검 (`get_gps_tracking_health`)**: 현재 마스터·프로젝트 관리자·안전관리자 전용이다(Phase 2에서 현장소장·관리감독자·협력사 관리자 자사 범위 확대 예정).
+
 ## 변경 기록
 
 | 날짜 | 내용 |
@@ -105,3 +112,4 @@
 | 2026-11-15 | 법적업무의 안전보건대장·건진법 칸은 현장소장·감리·관리감독자를 포함한 관리 역할이 본다. 목록은 회사 범위(자사, 시공사는 하위 협력사, 발주처·마스터는 현장 전체)만. 대장 확인 완료는 발주처 관리자·프로젝트 관리자·마스터만. 건진법 작성은 현장소장·감리·프로젝트 관리자와 공사 직책. 관리감독자 권한만으로는 열람. |
 | 2026-11-20 | Google One 보관·삭제 정책 화면(`/settings/storage-archive`)과 `arm_storage_purge_policy` / `disarm_storage_purge_policy` / `get_storage_purge_policy_status`는 마스터만. 초기값 무장 OFF. |
 | 2026-11-21 | 안전점검 `completed`·`완료`·`승인완료`·`결재진행`은 전 유형·전 필드 읽기 전용. 수정·삭제·결재선 예외는 전역 마스터만이며 DB 트리거에도 같다. |
+| 2026-11-22 | 위치·구역 경보·분포 접근 규칙 추가. `worker_zone_events` SELECT를 `workers.id` 직조인 + `can_read_company_data`로 수정하고, UPDATE(ack)를 위험구역 푸시 수신 관리자(`project_admin`/`OWNER_PM`/`OWNER_CM` 전역, `safety_manager`/`site_manager`/`site_supervisor` 및 대응 직책은 `can_access_company_data` 범위, `worker`/`viewer` 제외)와 일치시킴. |

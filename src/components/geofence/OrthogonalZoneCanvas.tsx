@@ -8,11 +8,8 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "leaflet-draw/dist/leaflet.draw.css";
-import LeafletDrawControl, {
-  type DrawnShape,
-  type DrawTool,
-} from "@/components/geofence/LeafletDrawControl";
+import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
+import InteractiveLeafletDraw from "@/components/geofence/InteractiveLeafletDraw";
 import type { GeoCorners } from "@/lib/mapBounds";
 import {
   crsCircleToGeo,
@@ -23,6 +20,7 @@ import {
   latLngToUv,
   looksLikeWgs84,
   looksLikeWgs84Ring,
+  metersPerCrsUnit,
 } from "@/lib/tracking/imageSpaceGeo";
 
 export type OrthogonalZone = {
@@ -340,23 +338,10 @@ export default function OrthogonalZoneCanvas({
           }
         : null;
 
-  const guideText = editingZoneId
-    ? "도형 수정: 흰 꼭짓점을 드래그하거나 도형 내부를 끌어 이동하세요. 끝나면 「도형 저장」."
-    : activeTool === "polygon"
-      ? "다각형: 클릭할 때마다 꼭짓점(Vertex)이 찍히고, 더블클릭 시 닫히며(Finish) 완료됩니다. · 지도 이동(Panning) 일시 차단"
-      : activeTool === "rectangle"
-        ? "사각형: 클릭 후 드래그로 영역을 지정하세요. · 지도 이동(Panning) 일시 차단"
-        : activeTool === "circle"
-          ? "원형: 중심을 클릭한 뒤 드래그로 반경을 지정하세요. · 지도 이동(Panning) 일시 차단"
-          : null;
+  const metersPerUnit = metersPerCrsUnit(corners, size.w, size.h);
 
   return (
     <div className={`relative z-0 bg-neutral-900 ${className || ""}`}>
-      {guideText && (
-        <div className="pointer-events-none absolute top-3 left-1/2 z-[1100] w-[min(92%,28rem)] -translate-x-1/2 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-center text-[11px] font-medium text-amber-950 shadow-md dark:bg-amber-950/90 dark:text-amber-50">
-          {guideText}
-        </div>
-      )}
       {offImageCount > 0 && (
         <div className="pointer-events-none absolute top-3 right-3 z-[1100] max-w-[14rem] rounded-md border border-amber-500/50 bg-amber-50/95 px-2.5 py-1.5 text-[10px] text-amber-950 shadow dark:bg-amber-950/90 dark:text-amber-50">
           도면 밖 구역 {offImageCount}개 — 목록에서 선택하거나 고급 위성 정렬에서 확인. 모바일
@@ -379,11 +364,12 @@ export default function OrthogonalZoneCanvas({
         <ImageOverlay url={imageUrl} bounds={imageBounds} opacity={1} />
         <FitImage bounds={imageBounds} />
         <FocusCrsZone zoneId={focusZoneId} zones={zones} corners={corners} size={size} />
-        <LeafletDrawControl
-          showToolbar={false}
+        <InteractiveLeafletDraw
           enabled
+          coordinateMode="crs"
+          metersPerUnit={metersPerUnit}
           activeTool={editingZoneId ? null : activeTool}
-          drawColor={editingZoneId ? drawColor : drawColor}
+          drawColor={drawColor}
           onShapeCreated={onCrsShape}
           onToolFinished={onToolFinished}
           editShape={editCrsShape}

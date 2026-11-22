@@ -135,6 +135,15 @@ K-엑사원 2.5는 현장 버튼의 기본 모델이 아니다. 배치는 `docs/
   - 기존 2회/일(07:00·22:00 KST) GitHub Actions(`SafeNex Automated Health Check & Telegram Alert`, ID `401510706`) 비활성화(`disabled_manually`).
   - Supabase `pg_cron` (`safenex-nightly-telegram-report`, 매일 `07:00 KST` 1회) → `send-nightly-telegram-report` v5 + `public.get_nightly_ops_report()` (`service_role` 전용).
   - 리포트 내용: Google One 백업 실적·백업 대상 일자 범위·일일/누적 용량, 새벽 배치(`scan-work-plan-end-warnings`, `daily-consistency-audit`, `purge-worker-last-positions-0330-kst`) 결과. 텔레그램 시크릿(`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)은 Supabase Vault + `get_runtime_secret()`에 암호화 보관.
+- **GPS 기반 위치·위험구역·출퇴근·분포 관제 전면 정비 완료** (PR #697~#703, Antigravity ↔ Cursor 전 PR 교차 리뷰 + 운영 Supabase 라이브 마이그레이션 6건 반영):
+  - **PR 1-A (#697)**: `worker_zone_events` SELECT(`can_view_zone_event`, `workers.id` 직조인 + `can_read_company_data`)·UPDATE(`can_ack_zone_event`, 위험구역 푸시 수신 관리자와 1:1 일치: `project_admin`/`OWNER_PM`/`OWNER_CM` 전역, 그 외 관리 역할은 위반자 동일 회사 `pm.company_id = violator_company_id`만, `worker`/`viewer` 제외) RLS 정비 및 원본 불변 트리거(`guard_worker_zone_events_ack_update`), `docs/access-policy.md` 동기화.
+  - **PR 1-B (#698)**: 대시보드 구역 경보 `event_type = 'unauthorized_entry'` 필터 + 3분 TTL(가짜 614건 제거), `ZoneEvents` `restricted_zones` 조인·미확인 경고 쿼리 분리·잔류 인원 최신 이벤트 기준 정확화·기간/유형 필터·`?project=` 스냅백 버그 수정.
+  - **PR 1-C (#699)**: 현장 체류·금일 출역 `COUNT(DISTINCT worker_id)` SSOT 통일 (`get_worker_distribution_counts/positions`, `countOnSite`, `WorkerAttendance`, `MobileToday` `현재 현장 인원` RPC 직결).
+  - **PR 1-D (#700)**: `get_gps_tracking_health` 분모를 오늘(KST) 미퇴근 출근자로 전환(`no_checkin` 제외, 전일 지속 `block_reason` 유지), `AdminTrackingHealth` 죽은 Wi-Fi 카드 제거·업체 필터 추가, `list_attendance_exceptions` `gps_blocked` 보정·`ppe_pending` 회사명 추가·예외보드 차단 사유 한글화.
+  - **PR 1-E (#701)**: `WorkerDistribution` 원형(`radius`) 위험구역 24각 UV 투영 추가, 협력사 관리 역할 PC 위치 메뉴(`/worker-distribution`, `/zone-events`) 및 `ContractorGate` 개방.
+  - **PR 2-A (#702)**: 위치 관제 3화면 공통 상단 KPI 바(`LocationControlBar`: 현장 체류·GPS 정상률·미확인 위험진입·활성 위험구역, 오류 시 `—` 표기·조회 범위 배지) 마운트, `SiteControlMap` 편집 전용 명확화 + 분포 바로가기, `/admin/tracking-health`·`/zone-events`를 관리 역할(`site_manager`/`supervisor`/`site_supervisor`/협력사 관리자 포함, `worker`/`viewer` 제외)로 정합화 + **DB RPC 3종(`get_gps_tracking_health`, `get_worker_distribution_counts/positions`) 선택 현장 `role_new` 강제**(다중 현장 우회 차단).
+  - **PR 2-B (#703)**: `worker_zone_events.ack_note` 추가 + 확인 후 `ack_note` 포함 확인 필드 불변 트리거 강화, `ZoneEvents` 인라인 조치 메모 입력·확인자/시각/메모 표기 및 `worker_last_positions`×`restricted_zones` 실시간 체류·이탈 배지(`posMs < eventMs` 역방향 오판 차단), `WorkerExceptionBoard` 미퇴근 즉시 `정정` 링크(`status=no_exit`) 및 `출입정지자 현장 진입`(`suspended_site_entry`) 카드 추가.
+  - 참고: 현재 실운영 현장 2곳은 활성 `restricted_zones`가 0건이므로, 추후 위험구역을 등록한 뒤 실제 단말 출입·경보 테스트 진행 예정.
 - **협업/멀티 PC 참고**:
   - 다른 PC에서 이어서 작업할 때는 `ParkSeoro/risk-guard-express` 최신 `main`을 pull하고, Supabase MCP 로그인 및 `gh auth login` 후 새 채팅에서 `.cursor/HANDOFF.md`를 읽게 하면 동일 맥락으로 이어짐.
   - PR 리뷰 자동 협업 시 `@cursor`는 PR 본문이 아니라 **PR 코멘트(`gh pr comment`)**로 호출해야 안정적으로 트리거됨.

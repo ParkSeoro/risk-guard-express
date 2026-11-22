@@ -31,6 +31,7 @@ import {
   readMasterOffsiteAlarmTest,
   writeMasterOffsiteAlarmTest,
 } from "@/lib/tracking/masterOffsiteAlarmTest";
+import { canCalibrateSiteMap } from "@/lib/tracking/mapCalibrationAccess";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { anyMapHasGeoref } from "@/lib/mapBounds";
 import { useGpsUi } from "@/lib/tracking/gpsStatusUi";
@@ -40,7 +41,7 @@ import { managerMoreLinks, workerMoreLinks } from "@/lib/mobileFieldMenu";
 
 export default function MobileMore() {
   const { signOut, profile } = useAuth();
-  const { role, isMaster, projectId } = useMobileAccess();
+  const { role, isMaster, projectId, companyType } = useMobileAccess();
   const { t, roleLabel } = useWorkerLocale();
   const preview = usePreview();
   const navigate = useNavigate();
@@ -104,11 +105,19 @@ export default function MobileMore() {
         </p>
       )}
 
-      {/* Master field tools — MobileHome is orphaned (redirects to today); live here. */}
-      {(isMaster || (preview.isPreview && effectiveRole === "master")) && (
+      {/* Site map GPS calibration: master + non-contractor project_admin / safety_manager */}
+      {canCalibrateSiteMap({
+        isMaster: isMaster || (preview.isPreview && effectiveRole === "master"),
+        role: effectiveRole,
+        companyType,
+      }) && (
         <Card>
           <CardContent className="p-3 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">마스터 · 현장 GPS</div>
+            <div className="text-xs font-medium text-muted-foreground">
+              {isMaster || (preview.isPreview && effectiveRole === "master")
+                ? "마스터 · 현장 GPS"
+                : "현장 GPS 도면 보정"}
+            </div>
             <Button
               className="w-full h-11"
               disabled={!projectId && !preview.previewProjectId}
@@ -116,36 +125,40 @@ export default function MobileMore() {
             >
               <Crosshair className="h-4 w-4 mr-2" /> {mapGeorefDone ? "맵·GPS 재보정" : "맵·GPS 맞추기"}
             </Button>
-            <Button
-              variant="secondary"
-              className="w-full h-11"
-              disabled={!projectId && !preview.previewProjectId}
-              onClick={() => navigate("/app/worker/geofence-drop")}
-            >
-              <MapPin className="h-4 w-4 mr-2" /> 내 위치를 위험 구역으로
-            </Button>
-            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              {mapGeorefDone
-                ? "워킹 보정은 완료됐습니다. 도면이 바뀌었거나 알람이 어긋날 때만 다시 맞추세요."
-                : "PC에서 도면만 올리면 됩니다. 위성 맵핑은 필수가 아닙니다. 워킹 보정으로 A·B·C 좌표를 잡으세요. (프로젝트를 먼저 선택)"}
-            </p>
-            <MasterAlarmSimulator projectId={projectId || preview.previewProjectId || ""} />
-            <label className="flex items-start gap-3 rounded-md border p-3">
-              <Switch
-                checked={offsiteAlarmTest}
-                onCheckedChange={(on) => {
-                  setOffsiteAlarmTest(on);
-                  writeMasterOffsiteAlarmTest(on);
-                }}
-                className="mt-0.5"
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">현장 외 알람 테스트</span>
-                <span className="block text-[11px] text-muted-foreground leading-relaxed">
-                  기본은 꺼짐(현장 펜스와 동일). 켜면 실제 GPS로 사이렌을 시험하지만 관제 지도에는 찍히지 않습니다.
-                </span>
-              </span>
-            </label>
+            {(isMaster || (preview.isPreview && effectiveRole === "master")) && (
+              <>
+                <Button
+                  variant="secondary"
+                  className="w-full h-11"
+                  disabled={!projectId && !preview.previewProjectId}
+                  onClick={() => navigate("/app/worker/geofence-drop")}
+                >
+                  <MapPin className="h-4 w-4 mr-2" /> 내 위치를 위험 구역으로
+                </Button>
+                <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                  {mapGeorefDone
+                    ? "워킹 보정은 완료됐습니다. 도면이 바뀌었거나 알람이 어긋날 때만 다시 맞추세요."
+                    : "PC에서 도면만 올리면 됩니다. 현장에서 3~4곳 모서리를 걸으며 워킹 보정으로 맞추세요."}
+                </p>
+                <MasterAlarmSimulator projectId={projectId || preview.previewProjectId || ""} />
+                <label className="flex items-start gap-3 rounded-md border p-3">
+                  <Switch
+                    checked={offsiteAlarmTest}
+                    onCheckedChange={(on) => {
+                      setOffsiteAlarmTest(on);
+                      writeMasterOffsiteAlarmTest(on);
+                    }}
+                    className="mt-0.5"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">현장 외 알람 테스트</span>
+                    <span className="block text-[11px] text-muted-foreground leading-relaxed">
+                      기본은 꺼짐(현장 펜스와 동일). 켜면 실제 GPS로 사이렌을 시험하지만 관제 지도에는 찍히지 않습니다.
+                    </span>
+                  </span>
+                </label>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

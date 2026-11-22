@@ -598,18 +598,24 @@ async function fetchExceptionsFallback(projectId: string, date: string): Promise
     }
   }
 
+  const checkedInIds = new Set(todayLogs.map((l) => l.worker_id).filter(Boolean));
   const { data: gps } = await supabase
     .from("worker_gps_status" as any)
     .select("worker_id, block_reason, updated_at")
     .eq("project_id", projectId)
+    .not("block_reason", "is", null)
+    .neq("block_reason", "no_checkin")
     .limit(500);
   for (const st of (gps as any[]) || []) {
+    const reason = String(st.block_reason || "").trim();
+    if (!reason || reason === "no_checkin") continue;
+    if (!checkedInIds.has(st.worker_id)) continue;
     const w = roster.find((x) => x.id === st.worker_id);
     out.gpsBlocked.push({
       workerId: st.worker_id,
       workerName: w?.name || "",
       companyName: w?.company_name,
-      blockReason: st.block_reason,
+      blockReason: reason,
       detail: st.updated_at,
     });
   }

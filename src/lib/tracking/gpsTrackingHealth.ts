@@ -23,6 +23,16 @@ export const GPS_BLOCK_REASON_ADMIN: Record<Exclude<GpsBlockReason, null>, strin
   identity_mismatch: "명부 신원 불일치",
 };
 
+/** Format a raw GPS block_reason code into Korean for admin UIs. */
+export function formatGpsBlockReason(reason?: string | null): string | null {
+  const key = String(reason || "").trim();
+  if (!key) return null;
+  if (key in GPS_BLOCK_REASON_ADMIN) {
+    return GPS_BLOCK_REASON_ADMIN[key as Exclude<GpsBlockReason, null>];
+  }
+  return key;
+}
+
 export function gpsAgeBucket(updatedAt: string | Date | null | undefined, now = Date.now()): GpsAgeBucket {
   if (!updatedAt) return "disconnected";
   const t = updatedAt instanceof Date ? updatedAt.getTime() : Date.parse(String(updatedAt));

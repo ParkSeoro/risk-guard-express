@@ -26,6 +26,7 @@ export const CONTRACTOR_ALLOWED_PREFIXES = [
   "/workers",
   "/worker-distribution",
   "/zone-events",
+  "/admin/tracking-health",
   "/ai-assistant",
   "/verification-center",
   "/profile",

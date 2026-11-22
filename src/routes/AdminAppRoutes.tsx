@@ -202,9 +202,23 @@ function AdminAppRoutesInner() {
             <Route path="site-maps" element={<Navigate to="/app/admin/site-control-map" replace />} />
             <Route path="restricted-zones" element={<Navigate to="/app/admin/site-control-map" replace />} />
             <Route path="georef-map" element={<Navigate to="/app/admin/site-control-map" replace />} />
-            <Route path="zone-events" element={<P.LazyZoneEvents />} />
+            <Route
+              path="zone-events"
+              element={
+                <RoleGuard allowed={["master", "project_admin", "safety_manager", "site_manager", "supervisor", "site_supervisor"]} allowContractorCompany>
+                  <P.LazyZoneEvents />
+                </RoleGuard>
+              }
+            />
             <Route path="worker-distribution" element={<P.LazyWorkerDistribution />} />
-            <Route path="admin/tracking-health" element={<RoleGuard><P.LazyAdminTrackingHealth /></RoleGuard>} />
+            <Route
+              path="admin/tracking-health"
+              element={
+                <RoleGuard allowed={["master", "project_admin", "safety_manager", "site_manager", "supervisor", "site_supervisor"]} allowContractorCompany>
+                  <P.LazyAdminTrackingHealth />
+                </RoleGuard>
+              }
+            />
             <Route path="companies" element={<P.LazyCompanies />} />
             <Route path="companies/:id" element={<P.LazyCompanyDetail />} />
             <Route path="*" element={<P.LazyNotFound />} />

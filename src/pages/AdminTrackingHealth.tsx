@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
+import LocationControlBar from "@/components/geofence/LocationControlBar";
+import { canViewWorkerDistribution, distributionScopeLabel } from "@/hooks/useDistributionAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,23 @@ const BUCKET_LABEL: Record<GpsAgeBucket, string> = {
 };
 
 export default function AdminTrackingHealth() {
-  const { selectedProject: projectId, projects, setSelectedProject } = useGlobalProjectAccess();
+  const {
+    selectedProject: projectId,
+    projects,
+    setSelectedProject,
+    isMaster,
+    userRole,
+    userCompanyType,
+    seesAllCompanies,
+    loading: accessLoading,
+  } = useGlobalProjectAccess();
+  const canView = canViewWorkerDistribution(userRole, isMaster);
+  const scopeLabel = distributionScopeLabel({
+    isMaster,
+    role: userRole,
+    companyType: userCompanyType,
+    seesAll: seesAllCompanies,
+  });
   const [rows, setRows] = useState<GpsHealthRow[]>([]);
   const [companyFilter, setCompanyFilter] = useState("all");
   const [loading, setLoading] = useState(false);
@@ -34,7 +52,7 @@ export default function AdminTrackingHealth() {
   const [nowTick, setNowTick] = useState(Date.now());
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || accessLoading || !canView) return;
     setLoading(true);
     setLoadError(null);
     try {
@@ -56,7 +74,7 @@ export default function AdminTrackingHealth() {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, accessLoading, canView]);
 
   useEffect(() => {
     setCompanyFilter("all");
@@ -64,12 +82,13 @@ export default function AdminTrackingHealth() {
   }, [load]);
 
   useEffect(() => {
+    if (accessLoading || !canView) return;
     const id = window.setInterval(() => {
       setNowTick(Date.now());
       void load();
     }, 30_000);
     return () => window.clearInterval(id);
-  }, [load]);
+  }, [accessLoading, canView, load]);
 
   const companies = useMemo(
     () =>
@@ -92,6 +111,14 @@ export default function AdminTrackingHealth() {
     () => visibleRows.filter((r) => r.bucket !== "live"),
     [visibleRows],
   );
+
+  if (!accessLoading && !canView) {
+    return (
+      <div className="p-4 md:p-6 max-w-6xl mx-auto text-sm text-muted-foreground">
+        위치 추적 상태 점검은 선택한 현장의 관리자(마스터·프로젝트관리자·안전관리자·현장소장·감리·관리감독자)만 볼 수 있습니다.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
@@ -134,8 +161,14 @@ export default function AdminTrackingHealth() {
         </div>
       </div>
 
+      <LocationControlBar
+        projectId={projectId}
+        activeTab="tracking-health"
+        refreshKey={`${summary.total}:${summary.live}:${summary.delayed}:${summary.disconnected}`}
+      />
+
       <p className="text-sm text-muted-foreground">
-        오늘 미퇴근 출근자 기준 ({summary.total}명). 추적중 = 5분 이내, 지연 = 5~30분, 두절 = 30분 초과 또는 미수신.
+        오늘 미퇴근 출근자 기준 ({summary.total}명 · {scopeLabel}). 추적중 = 5분 이내, 지연 = 5~30분, 두절 = 30분 초과 또는 미수신.
         미출근자·퇴근자는 포함하지 않으며 좌표는 이 화면에 표시하지 않습니다.
       </p>
 

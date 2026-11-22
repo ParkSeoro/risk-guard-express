@@ -161,7 +161,6 @@ export function AppSidebar() {
     '/safety-cost',
     '/contractor-scorecard',
     '/assessment-notices',
-    '/admin/tracking-health',
   ]);
   const canViewVision = isMaster || roles.some((r) => (VISION_VIEW_ROLES as readonly string[]).includes(r));
   const location = useLocation();
@@ -182,7 +181,7 @@ export function AppSidebar() {
     '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/alerts', '/work-stop',
     '/workers',
-    ...(canViewContractorLocation ? ['/worker-distribution', '/zone-events'] : []),
+    ...(canViewContractorLocation ? ['/worker-distribution', '/zone-events', '/admin/tracking-health'] : []),
     '/project-library', '/education-materials', '/worker-education',
     '/profile', '/settings/account', '/manual',
     ...(canViewVision ? ['/vision-fleet'] : []),
@@ -206,6 +205,9 @@ export function AppSidebar() {
     }
     if (isPureWorkerUser(roles)) {
       items = items.filter((i) => i.url !== "/messenger");
+    }
+    if (g.key === "location" && access && !access.loading && !canViewContractorLocation) {
+      items = [];
     }
     if (!isSystemAdmin) {
       items = items.filter((i) => !ADMIN_ONLY_GROUP_URLS.has(i.url));

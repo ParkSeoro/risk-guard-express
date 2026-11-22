@@ -774,7 +774,7 @@ export default function MobileMapCalibration() {
             <Button
               className="h-12 w-full"
               variant={liveFit && !("error" in liveFit) ? "default" : "secondary"}
-              disabled={busy || capturing || !liveFit || "error" in liveFit || !projectId}
+              disabled={busy || capturing || !imageSize || !liveFit || "error" in liveFit || !projectId}
               onClick={() => void applyWalkFit()}
             >
               {busy ? (

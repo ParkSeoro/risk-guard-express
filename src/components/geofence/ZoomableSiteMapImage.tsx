@@ -62,6 +62,13 @@ export default function ZoomableSiteMapImage({
   const [ty, setTy] = useState(0);
 
   useEffect(() => {
+    const el = imgRef.current;
+    if (el && el.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
+      onImageSize?.({ w: el.naturalWidth, h: el.naturalHeight });
+    }
+  }, [src, onImageSize]);
+
+  useEffect(() => {
     return () => {
       if (pendingPickTimerRef.current != null) {
         window.clearTimeout(pendingPickTimerRef.current);

@@ -119,8 +119,27 @@ export default function InteractiveLeafletDraw({
   const editCircleRef = useRef<{ center: DrawPoint; radius: number } | null>(null);
   editCircleRef.current = editCircle;
 
+  const drawBarRef = useRef<HTMLDivElement | null>(null);
+  const editBarRef = useRef<HTMLDivElement | null>(null);
+
   const isDrawing = enabled && !editShape && !!activeTool;
   const isEditing = enabled && !!editShape;
+
+  // Prevent Leaflet native map click/mousedown/wheel listeners from firing when
+  // interacting with the floating control bars mounted inside MapContainer.
+  useEffect(() => {
+    const el = drawBarRef.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, [isDrawing]);
+
+  useEffect(() => {
+    const el = editBarRef.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, [isEditing]);
 
   // Reset draft whenever activeTool changes or drawing ends
   useEffect(() => {
@@ -481,6 +500,7 @@ export default function InteractiveLeafletDraw({
       {/* Floating interactive control bar while drawing */}
       {isDrawing && (
         <div
+          ref={drawBarRef}
           data-testid="interactive-draw-bar"
           onMouseDown={stopEvent}
           onClick={stopEvent}
@@ -544,6 +564,7 @@ export default function InteractiveLeafletDraw({
       {/* Floating readout pill in edit mode */}
       {isEditing && (
         <div
+          ref={editBarRef}
           data-testid="interactive-edit-bar"
           onMouseDown={stopEvent}
           onClick={stopEvent}

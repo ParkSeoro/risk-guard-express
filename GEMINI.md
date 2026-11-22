@@ -55,5 +55,6 @@
 ---
 
 ## 5. 멀티 PC 기억 동기화 규칙
-- 큰 기능 완료, 정책 결정, 인프라/스케줄 변경이 끝나면 박서로님이 요청하거나 작업 마무리 시 `.cursor/HANDOFF.md` (및 필요 시 이 `GEMINI.md`)를 갱신해 `main`에 머지한다.
-- 다른 PC에서 새 대화를 시작할 때는 항상 `git pull origin main`으로 최신 기억을 먼저 맞춘다.
+- 큰 기능 완료, 정책 결정, 인프라/스케줄 변경이 끝나면 `.agents/skills/sync-memory/SKILL.md` 절차에 따라 `.cursor/HANDOFF.md` 및 `GEMINI.md`를 갱신해 `main`에 머지한다.
+- 다른 PC에서 새 대화를 시작할 때는 필요 시 `git fetch origin`으로 `main` 최신 여부를 확인하고, 이어서 진행할 맥락이 필요하면 `.cursor/HANDOFF.md`를 먼저 읽고 시작한다.
+- 박서로님이 **"기억 저장해줘 / 동기화해줘 / 다른 PC에서 이어할게"**라고 하면 즉시 `sync-memory` 스킬을 실행해 현재 세션의 결정·완료 내역을 `main`에 반영한다.

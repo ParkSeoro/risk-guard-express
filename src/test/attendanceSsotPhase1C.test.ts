@@ -32,11 +32,10 @@ describe("PR 1-C: Distinct worker attendance / on-site SSOT", () => {
     expect(src).toContain("inside: distinct.onSiteWorkers,");
   });
 
-  it("excludes TBM-only rows from MobileToday 현재 현장 인원", () => {
+  it("uses get_worker_distribution_counts RPC for MobileToday 현재 현장 인원 (re-entry & TBM-only safe)", () => {
     const src = readFileSync("src/pages/MobileToday.tsx", "utf8").replace(/\r\n/g, "\n");
-    expect(src).toMatch(
-      /\.from\("v_worker_attendance_today" as any\)[\s\S]*?\.not\("entry_at", "is", null\)[\s\S]*?\.eq\("exited", false\)/,
-    );
+    expect(src).toContain('.rpc("get_worker_distribution_counts" as any, { _project_id: projectId })');
+    expect(src).not.toContain('.from("v_worker_attendance_today" as any)');
   });
 
   it("deduplicates open worker_entry_logs per worker_id in both distribution RPCs", () => {

@@ -154,12 +154,11 @@ function ManagerToday({
             .in("status", ["접수", "확인중"])
             .then((r) => r.count),
           supabase
-            .from("v_worker_attendance_today" as any)
-            .select("worker_id", { count: "exact", head: true })
-            .eq("project_id", projectId)
-            .not("entry_at", "is", null)
-            .eq("exited", false)
-            .then((r) => r.count),
+            .rpc("get_worker_distribution_counts" as any, { _project_id: projectId })
+            .then((r) => {
+              const rows = Array.isArray(r.data) ? r.data : [];
+              return rows.reduce((sum: number, row: any) => sum + Number(row?.headcount || 0), 0);
+            }),
           supabase
             .from("site_maps")
             .select(

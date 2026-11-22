@@ -27,6 +27,7 @@ import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 import { canViewLegalCompanyDocs } from "@/lib/legalDutyAccess";
 import { canOpenCouncil } from "@/lib/councilAccess";
+import { canViewWorkerDistribution } from "@/hooks/useDistributionAccess";
 import { isWindowsDesktopApp } from "@/lib/desktopBridge";
 
 export { ADMIN_APP_BASE } from "@/lib/adminNav";
@@ -174,12 +175,14 @@ export function AppSidebar() {
 
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
   const CONTRACTOR_GROUP_KEYS = new Set(["today", "site", "docs", "incident", "location", "health", "ops"]);
+  const canViewContractorLocation = canViewWorkerDistribution(access?.userRole, isMaster);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
     '/', '/approvals', '/messenger',
     '/work-plans', '/work-permits', '/tbm-logs',
     '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/alerts', '/work-stop',
     '/workers',
+    ...(canViewContractorLocation ? ['/worker-distribution', '/zone-events'] : []),
     '/project-library', '/education-materials', '/worker-education',
     '/profile', '/settings/account', '/manual',
     ...(canViewVision ? ['/vision-fleet'] : []),

@@ -14,7 +14,10 @@ import {
   cmpDesktopVersion,
   desktopShellEndpoints,
 } from "@/lib/desktopBridge";
-import { DESKTOP_RAIL_ITEMS } from "@/components/desktop/DesktopRailSidebar";
+import {
+  DESKTOP_RAIL_ITEMS,
+  filterDesktopRailItems,
+} from "@/components/desktop/DesktopRailSidebar";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { postConsentHomePath } from "@/components/AuthGuard";
 
@@ -168,5 +171,100 @@ describe("SafeNex Windows Desktop Bridge & KakaoTalk Workspace Settings", () => 
     expect(desktopShellEndpoints("/__desktop/apply-ota?version=1", "https://safenex.org")).toEqual([
       "/__desktop/apply-ota?version=1",
     ]);
+  });
+
+  it("exposes team-specific rail menus only to authorized team members and hides them from other teams", () => {
+    const baseAccess = {
+      isMaster: false,
+      userRole: "safety_manager",
+      userCompanyType: "gc",
+      userPosition: null,
+      loading: false,
+    } as any;
+
+    // 1. 건설안전팀(발주처 안전관리자) -> 보임
+    const clientSmItems = filterDesktopRailItems({
+      restrictToContractorUI: false,
+      isMaster: false,
+      currentSiteRole: "safety_manager",
+      roles: ["safety_manager"],
+      hasRole: (r) => r === "safety_manager",
+      user: { email: "sm@client.com" },
+      displayName: "김발주",
+      projectAccess: { ...baseAccess, userCompanyType: "client", userRole: "safety_manager" },
+    });
+    expect(clientSmItems.some((i) => i.id === "owner-safety")).toBe(true);
+
+    // 2. OWNER_SM 직책 지정자 -> 보임
+    const ownerPosItems = filterDesktopRailItems({
+      restrictToContractorUI: false,
+      isMaster: false,
+      currentSiteRole: "site_manager",
+      roles: ["site_manager"],
+      hasRole: (r) => r === "site_manager",
+      user: { email: "hse@client.com" },
+      displayName: "이안전",
+      projectAccess: { ...baseAccess, userCompanyType: "gc", userRole: "site_manager", userPosition: "OWNER_SM" },
+    });
+    expect(ownerPosItems.some((i) => i.id === "owner-safety")).toBe(true);
+
+    // 3. 마스터 -> 보임
+    const masterItems = filterDesktopRailItems({
+      restrictToContractorUI: false,
+      isMaster: true,
+      currentSiteRole: "master",
+      roles: ["master"],
+      hasRole: (r) => r === "master",
+      user: { email: "admin@safenex.org" },
+      displayName: "마스터",
+      projectAccess: { ...baseAccess, isMaster: true },
+    });
+    expect(masterItems.some((i) => i.id === "owner-safety")).toBe(true);
+
+    // 4. 타팀(일반 시공사 안전관리자) -> 안 보임
+    const otherTeamItems = filterDesktopRailItems({
+      restrictToContractorUI: false,
+      isMaster: false,
+      currentSiteRole: "safety_manager",
+      roles: ["safety_manager"],
+      hasRole: (r) => r === "safety_manager",
+      user: { email: "sm@gc-builder.com" },
+      displayName: "박시공",
+      projectAccess: { ...baseAccess, userCompanyType: "gc", userRole: "safety_manager", userPosition: null },
+    });
+    expect(otherTeamItems.some((i) => i.id === "owner-safety")).toBe(false);
+
+    // 5. 발주처 일반 관리감독자/열람자 -> 안 보임
+    const clientSupervisorItems = filterDesktopRailItems({
+      restrictToContractorUI: false,
+      isMaster: false,
+      currentSiteRole: "site_supervisor",
+      roles: ["site_supervisor"],
+      hasRole: (r) => r === "site_supervisor",
+      user: { email: "sup@client.com" },
+      displayName: "최감독",
+      projectAccess: { ...baseAccess, userCompanyType: "client", userRole: "site_supervisor", userPosition: null },
+    });
+    expect(clientSupervisorItems.some((i) => i.id === "owner-safety")).toBe(false);
+
+    // 6. 협력사 -> 안 보임
+    const contractorItems = filterDesktopRailItems({
+      restrictToContractorUI: true,
+      isMaster: false,
+      currentSiteRole: "safety_manager",
+      roles: ["safety_manager"],
+      hasRole: (r) => r === "safety_manager",
+      user: { email: "sm@contractor.com" },
+      displayName: "정협력",
+      projectAccess: { ...baseAccess, userCompanyType: "contractor", userRole: "safety_manager", userPosition: "OWNER_SM" },
+    });
+    expect(contractorItems.some((i) => i.id === "owner-safety")).toBe(false);
+
+    // 7. 건설안전팀 경로 창 크기는 1260x820 업무 모드
+    expect(resolveDesktopRouteWindowSize("/app/admin/owner-safety")).toEqual({
+      width: 1260,
+      height: 820,
+      isMessengerView: false,
+    });
   });
 });

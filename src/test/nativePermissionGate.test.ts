@@ -24,9 +24,12 @@ describe("nativePermissionGate", () => {
     expect(locationPermissionTriState({ location: "prompt-with-rationale" })).toBeNull();
   });
 
-  it("does not mark onboarding done without location", () => {
+  it("does not mark onboarding done without location on Android, but allows iOS users to proceed (Guideline 5.1.1(iv))", () => {
     expect(canMarkNativePermissionsDone({ locationGranted: false })).toBe(false);
+    expect(canMarkNativePermissionsDone({ locationGranted: false, platform: "android" })).toBe(false);
     expect(canMarkNativePermissionsDone({ locationGranted: true })).toBe(true);
+    expect(canMarkNativePermissionsDone({ locationGranted: false, platform: "ios" })).toBe(true);
+    expect(canMarkNativePermissionsDone({ locationGranted: true, platform: "ios" })).toBe(true);
   });
 
   it("treats push receive granted as allowed", () => {
@@ -39,12 +42,15 @@ describe("nativePermissionGate", () => {
     expect(BATTERY_ALLOW_DIALOG_KO).not.toContain("앱 설정");
   });
 
-  it("tells Android workers to tap 정확한 위치 and 항상 허용", () => {
+  it("tells Android workers to tap 정확한 위치 and 항상 허용, while keeping iOS copy neutral (Guideline 5.1.1(iv))", () => {
     expect(ANDROID_LOCATION_TAP_STEPS_KO.some((s) => s.includes("정확한 위치"))).toBe(true);
     expect(ANDROID_LOCATION_TAP_STEPS_KO.some((s) => s.includes("항상 허용"))).toBe(true);
     expect(ANDROID_LOCATION_TAP_STEPS_KO.some((s) => s.includes("앱 사용 중에만"))).toBe(true);
-    expect(locationTapStepsKo("ios").some((s) => s.includes("앱을 사용하는 동안"))).toBe(true);
-    expect(locationTapStepsKo("ios").some((s) => s.includes("항상"))).toBe(false);
+    const iosSteps = locationTapStepsKo("ios");
+    expect(iosSteps.some((s) => s.includes("설정"))).toBe(true);
+    // Apple Guideline 5.1.1(iv): never instruct iOS users to tap Allow
+    expect(iosSteps.some((s) => s.includes("누르세요"))).toBe(false);
+    expect(iosSteps.some((s) => s.includes("항상"))).toBe(false);
   });
 
   it("blocks check-in when OS location is denied", () => {

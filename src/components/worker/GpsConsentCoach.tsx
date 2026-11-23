@@ -111,7 +111,9 @@ export default function GpsConsentCoach({
   });
   if (!visible) return null;
 
-  const steps = locationTapStepsKo(platformForGuide());
+  const platform = platformForGuide();
+  const isIos = platform === "ios";
+  const steps = locationTapStepsKo(platform);
   const gate = checkInBlockedByLocation({ osLocationGranted: osGranted, hasFix });
 
   return (
@@ -123,12 +125,22 @@ export default function GpsConsentCoach({
         <MapPin className="h-5 w-5 text-amber-800 shrink-0 mt-0.5" />
         <div>
           <div className="text-sm font-bold text-amber-950">
-            {denied ? "위치 권한이 없어 출근·분포가 안 됩니다" : "분포 점이 멈추면 「항상 허용」을 누르세요"}
+            {denied
+              ? isIos
+                ? "위치 권한이 꺼져 있어 출근 확인이 제한됩니다"
+                : "위치 권한이 없어 출근·분포가 안 됩니다"
+              : isIos
+                ? "현장 위치 업데이트 안내"
+                : "분포 점이 멈추면 「항상 허용」을 누르세요"}
           </div>
           <p className="text-xs text-amber-900/80 mt-1 leading-relaxed">
             {denied
-              ? "아래 항목을 그대로 눌러 주세요. 「거부」나 「앱 사용 중에만」이면 출근 GPS만 찍히고 점이 안 움직입니다."
-              : "출근 때 한 번 허용해도, 「앱 사용 중에만」이면 화면을 끈 뒤 점이 아침 위치에 남습니다."}
+              ? isIos
+                ? "현장 출근 확인과 위험구역 안전 알림을 사용하려면 기기 설정에서 위치 권한을 변경할 수 있습니다."
+                : "아래 항목을 그대로 눌러 주세요. 「거부」나 「앱 사용 중에만」이면 출근 GPS만 찍히고 점이 안 움직입니다."
+              : isIos
+                ? "화면이 꺼진 상태에서는 위치 업데이트가 일시 중지될 수 있습니다."
+                : "출근 때 한 번 허용해도, 「앱 사용 중에만」이면 화면을 끈 뒤 점이 아침 위치에 남습니다."}
           </p>
         </div>
       </div>
@@ -138,11 +150,15 @@ export default function GpsConsentCoach({
         ))}
       </ul>
       {gate.reason === "os" && !isCheckedIn && (
-        <p className="text-xs font-semibold text-destructive">위치를 허용하기 전에는 출근할 수 없습니다.</p>
+        <p className="text-xs font-semibold text-destructive">
+          {isIos
+            ? "위치 권한이 꺼져 있어 현장 출근 확인을 진행할 수 없습니다."
+            : "위치를 허용하기 전에는 출근할 수 없습니다."}
+        </p>
       )}
       <div className="flex flex-col gap-2">
         <Button className="w-full h-11" disabled={busy} onClick={() => void requestOsLocation()}>
-          위치 허용 (시스템 팝업)
+          {isIos ? "계속" : "위치 허용 (시스템 팝업)"}
         </Button>
         <Button
           type="button"
@@ -163,7 +179,7 @@ export default function GpsConsentCoach({
               setDismissed(true);
             }}
           >
-            항상 허용으로 바꿨습니다
+            {isIos ? "확인" : "항상 허용으로 바꿨습니다"}
           </Button>
         )}
       </div>

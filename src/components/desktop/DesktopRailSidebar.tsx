@@ -8,6 +8,8 @@ import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { canOpenCouncil } from "@/lib/councilAccess";
+import { isOwnerSafetyManager } from "@/lib/ownerSafetyAccess";
+import type { ProjectAccess } from "@/hooks/useProjectAccess";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 import { isAllowedForContractor } from "@/lib/contractorRouteAccess";
 import {
@@ -34,6 +36,7 @@ import {
   Receipt,
   FileCheck2,
   ShieldAlert,
+  ShieldCheck,
   ClipboardList,
   HardHat,
   MapPin,
@@ -69,14 +72,19 @@ export type RailTargetId =
   | "tbm-logs"
   | "safety-inspections"
   | "safety-cost"
-  | "site-control-map";
+  | "site-control-map"
+  | "owner-safety";
+
+export type RailTeamKey = "owner-safety";
 
 export interface RailMenuItem {
   id: RailTargetId;
   label: string;
   path: string;
   icon: typeof Bell;
-  group: "comm" | "feature";
+  group: "comm" | "feature" | "team";
+  /** 팀별 특화 기능 키 — 해당 팀 권한자에게만 표시 (타팀 미노출) */
+  teamKey?: RailTeamKey;
   /** 해당 메뉴 선택 시 자동으로 맞춰질 창 가로 크기 */
   windowWidth: number;
   /** 해당 메뉴 선택 시 자동으로 맞춰질 창 세로 크기 */
@@ -213,7 +221,74 @@ export const DESKTOP_RAIL_ITEMS: RailMenuItem[] = [
     windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
     windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
   },
+  {
+    id: "owner-safety",
+    label: "건설안전팀",
+    path: "/app/admin/owner-safety",
+    icon: ShieldCheck,
+    group: "team",
+    teamKey: "owner-safety",
+    windowWidth: DESKTOP_WORK_WINDOW_SIZE.width,
+    windowHeight: DESKTOP_WORK_WINDOW_SIZE.height,
+  },
 ];
+
+export interface DesktopRailFilterContext {
+  items?: RailMenuItem[];
+  restrictToContractorUI: boolean;
+  isMaster: boolean;
+  currentSiteRole: string | null;
+  roles: string[];
+  hasRole: (role: string) => boolean;
+  user?: { email?: string | null } | null;
+  displayName?: string | null;
+  projectAccess?: ProjectAccess | null;
+}
+
+/**
+ * PC 메신저 좌측 레일 메뉴 가시성 필터.
+ * - 팀별 특화 기능(`group === "team"`)은 해당 팀 권한자에게만 노출되며 타팀/협력사에는 완전히 숨겨집니다.
+ */
+export function filterDesktopRailItems(ctx: DesktopRailFilterContext): RailMenuItem[] {
+  const {
+    items = DESKTOP_RAIL_ITEMS,
+    restrictToContractorUI,
+    isMaster,
+    currentSiteRole,
+    roles,
+    hasRole,
+    user,
+    displayName,
+    projectAccess,
+  } = ctx;
+
+  return items.filter((item) => {
+    if ((item.id as string) === "ai-council") return canOpenCouncil(user as any);
+    if (item.group === "comm") return true;
+    if (item.group === "team") {
+      if (restrictToContractorUI) return false;
+      if (item.teamKey === "owner-safety") {
+        return isOwnerSafetyManager(projectAccess, roles, user?.email, displayName);
+      }
+      return false;
+    }
+    if (restrictToContractorUI) {
+      if (item.adminOnly) return false;
+      return isAllowedForContractor(item.path);
+    }
+    if (item.adminOnly) {
+      if (isMaster) return true;
+      if (currentSiteRole) {
+        return (
+          currentSiteRole === "project_admin" ||
+          currentSiteRole === "safety_manager"
+        );
+      }
+      return hasRole("project_admin") || hasRole("safety_manager");
+    }
+    return true;
+  });
+}
 
 const PRESENCE_OPTIONS: {
   value: DesktopPresenceStatus;
@@ -274,29 +349,26 @@ export function DesktopRailSidebar() {
   const restrictToContractorUI = isContractorCo || isLowPriv;
 
   const visibleItems = useMemo(() => {
-    return DESKTOP_RAIL_ITEMS.filter((item) => {
-      if ((item.id as string) === "ai-council") return canOpenCouncil(user);
-      if (item.group === "comm") return true;
-      if (restrictToContractorUI) {
-        if (item.adminOnly) return false;
-        return isAllowedForContractor(item.path);
-      }
-      if (item.adminOnly) {
-        if (isMaster) return true;
-        if (currentSiteRole) {
-          return (
-            currentSiteRole === "project_admin" ||
-            currentSiteRole === "safety_manager"
-          );
-        }
-        return (
-          hasRole("project_admin" as any) ||
-          hasRole("safety_manager" as any)
-        );
-      }
-      return true;
+    return filterDesktopRailItems({
+      restrictToContractorUI,
+      isMaster,
+      currentSiteRole,
+      roles: roles as string[],
+      hasRole: (r) => hasRole(r as any),
+      user,
+      displayName: profile?.display_name,
+      projectAccess,
     });
-  }, [restrictToContractorUI, isMaster, currentSiteRole, hasRole, user]);
+  }, [
+    restrictToContractorUI,
+    isMaster,
+    currentSiteRole,
+    roles,
+    hasRole,
+    user,
+    profile?.display_name,
+    projectAccess,
+  ]);
 
   const loadChatUnread = useCallback(async () => {
     if (!user) return;
@@ -488,9 +560,9 @@ export function DesktopRailSidebar() {
 
   const handleSelectItem = (item: RailMenuItem) => {
     setIsRailHovered(false);
-    // 업무 화면으로 전환 시에는 넉넉한 1260px 데스크톱 레이아웃으로 자동 확장
+    // 업무/팀 특화 화면으로 전환 시에는 넉넉한 1260px 데스크톱 레이아웃으로 자동 확장
     // 메신저 화면으로 복귀 시에는 사용자가 설정해 둔 현재 창 크기를 존중하여 강제 축소하지 않음
-    if (item.group === "feature") {
+    if (item.group === "feature" || item.group === "team") {
       resizeDesktopWindow(item.windowWidth, item.windowHeight);
     }
     navigate(item.path);
@@ -509,6 +581,7 @@ export function DesktopRailSidebar() {
 
   const commItems = visibleItems.filter((i) => i.group === "comm");
   const featureItems = visibleItems.filter((i) => i.group === "feature");
+  const teamItems = visibleItems.filter((i) => i.group === "team");
 
   return (
     <>
@@ -661,6 +734,46 @@ export function DesktopRailSidebar() {
                 </button>
               );
             })}
+
+            {/* 3. 팀별 특화 기능 (해당 팀 권한자에게만 표시, 타팀 완전 미노출) */}
+            {teamItems.length > 0 && (
+              <>
+                <div className="w-full h-px bg-white/10 my-1" />
+                {isExpanded && (
+                  <p className="px-2.5 pt-0.5 pb-0.5 text-[10px] font-semibold tracking-wider text-slate-500 uppercase truncate">
+                    팀 특화
+                  </p>
+                )}
+                {teamItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = isItemActive(item);
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleSelectItem(item)}
+                      title={item.label}
+                      aria-label={item.label}
+                      className={cn(
+                        "relative h-8 rounded-lg flex items-center gap-2.5 transition-all",
+                        isExpanded ? "w-full px-2.5 justify-start" : "w-9 justify-center mx-auto",
+                        active
+                          ? "bg-amber-400 text-slate-950 font-bold shadow-xs"
+                          : "text-emerald-300 hover:bg-emerald-500/15 hover:text-emerald-200",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {isExpanded && (
+                        <span className="text-xs whitespace-nowrap truncate flex-1 text-left">
+                          {item.label}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </div>
 
           {/* 하단 고정 액션: 무설치 업데이트 알림 / 웹 사이트 바로가기 / 항상 위 고정 / 환경설정 / 로그아웃 */}

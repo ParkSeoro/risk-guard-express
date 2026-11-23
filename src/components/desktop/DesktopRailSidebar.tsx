@@ -741,7 +741,7 @@ export function DesktopRailSidebar() {
                 <div className="w-full h-px bg-white/10 my-1" />
                 {isExpanded && (
                   <p className="px-2.5 pt-0.5 pb-0.5 text-[10px] font-semibold tracking-wider text-slate-500 uppercase truncate">
-                    팀 특화
+                    팀 스페이스
                   </p>
                 )}
                 {teamItems.map((item) => {

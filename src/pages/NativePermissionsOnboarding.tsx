@@ -138,7 +138,12 @@ export default function NativePermissionsOnboarding() {
     setBusy(true);
     try {
       const cur = await Geolocation.checkPermissions();
-      if (!canMarkNativePermissionsDone({ locationGranted: isForegroundLocationGranted(cur) })) {
+      if (
+        !canMarkNativePermissionsDone({
+          locationGranted: isForegroundLocationGranted(cur),
+          platform: Capacitor.getPlatform(),
+        })
+      ) {
         toast.error("위치 권한이 있어야 출근·금지구역이 동작합니다.");
         setLocationDenied(true);
         setStep("location");
@@ -166,7 +171,7 @@ export default function NativePermissionsOnboarding() {
         toast.error(
           isAndroid
             ? "「정확한 위치」와 「항상 허용」을 눌러야 출근·분포가 됩니다."
-            : "「정확한 위치」와 「앱을 사용하는 동안 허용」을 눌러야 출근할 수 있습니다.",
+            : "위치 권한이 꺼져 있으면 현장 출근 확인 등 위치 기반 기능이 제한됩니다.",
         );
         return;
       }
@@ -179,7 +184,7 @@ export default function NativePermissionsOnboarding() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [isAndroid]);
 
   const requestNotifications = useCallback(async () => {
     setBusy(true);
@@ -253,9 +258,11 @@ export default function NativePermissionsOnboarding() {
           <Shield className="h-6 w-6" />
           <span className="font-bold text-xl">SafeNex</span>
         </div>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight">앱 권한 설정</h1>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight">앱 권한 안내</h1>
         <p className="mt-2 text-base text-muted-foreground leading-relaxed">
-          아래 버튼을 누르면 폰 허용 창이 뜹니다. 허용을 누르세요.
+          {isAndroid
+            ? "아래 버튼을 누르면 폰 허용 창이 뜹니다. 허용을 누르세요."
+            : "현장 출근 확인과 안전 알림을 위해 필요한 권한을 안내합니다. 다음 화면에서 권한 허용 여부를 선택할 수 있습니다."}
         </p>
       </header>
 
@@ -265,7 +272,7 @@ export default function NativePermissionsOnboarding() {
           done={step !== "location"}
           icon={MapPin}
           title="위치"
-          desc={isAndroid ? "출근·분포·금지구역. 「항상 허용」을 누르세요." : "출근·현장 안전 확인. 「앱을 사용하는 동안 허용」을 누르세요."}
+          desc={isAndroid ? "출근·분포·금지구역. 「항상 허용」을 누르세요." : "현장 출근 확인 및 위험구역 안전 알림에 사용됩니다."}
         />
         <StepCard
           active={step === "notifications"}
@@ -297,15 +304,25 @@ export default function NativePermissionsOnboarding() {
               <p className="text-sm text-destructive leading-relaxed">
                 {isAndroid
                   ? "위치를 거부하면 출근할 수 없습니다. 허용 창에서 「항상 허용」을 눌러 주세요."
-                  : "위치를 거부하면 출근할 수 없습니다. 허용 창에서 「앱을 사용하는 동안 허용」을 눌러 주세요."}
+                  : "위치 권한이 꺼져 있으면 현장 출근 확인 등 위치 기반 기능이 제한됩니다. 기기 설정에서 언제든지 변경할 수 있습니다."}
               </p>
             )}
             <Button className="w-full h-14 text-lg" disabled={busy} onClick={() => void requestLocation()}>
-              위치 허용
+              {isAndroid ? "위치 허용" : "계속"}
             </Button>
             {locationDenied && (
               <Button variant="outline" className="w-full h-12 text-base" disabled={busy} onClick={() => void openNativeAppSettings()}>
                 앱 설정 열기
+              </Button>
+            )}
+            {!isAndroid && locationDenied && (
+              <Button
+                variant="ghost"
+                className="w-full h-12 text-base"
+                disabled={busy}
+                onClick={() => setStep("notifications")}
+              >
+                나중에
               </Button>
             )}
           </>
@@ -318,7 +335,7 @@ export default function NativePermissionsOnboarding() {
               </p>
             )}
             <Button className="w-full h-14 text-lg" disabled={busy} onClick={() => void requestNotifications()}>
-              알림 허용
+              {isAndroid ? "알림 허용" : "계속"}
             </Button>
             {pushDenied && (
               <Button

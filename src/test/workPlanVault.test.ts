@@ -8,7 +8,7 @@ import {
   type VaultChecklistRowLike,
 } from '@/lib/workPlanVault';
 
-const REF_DATE = new Date('2026-11-24T00:00:00Z');
+const REF_DATE = '2026-11-24';
 
 function makeDoc(overrides: Partial<CompanyVaultDoc> = {}): CompanyVaultDoc {
   return {
@@ -85,7 +85,8 @@ describe('Phase 2: Confirmation-Based Hybrid Document Vault', () => {
 
     const res = classifyVaultSuggestions(docs, rows, 'comp-a', REF_DATE);
     expect(res.suggestable.map((s) => s.doc.id)).toEqual(['d-valid', 'd-soon', 'd-no-exp']);
-    expect(res.suggestable.find((s) => s.doc.id === 'd-soon')?.expiry.state).toBe('expiring_soon');
+    expect(res.suggestable.find((s) => s.doc.id === 'd-soon')?.expiry).toBe('expiring_soon');
+    expect(res.suggestable.find((s) => s.doc.id === 'd-soon')?.daysRemaining).toBe(16);
     expect(res.expired.map((s) => s.doc.id)).toEqual(['d-expired']);
   });
 

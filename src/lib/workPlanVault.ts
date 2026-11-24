@@ -10,7 +10,7 @@
  *  4) Opt-in save — only persist to vault when the user explicitly opts in.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { evaluateExpiryStatus, type ExpiryStatus } from './workPlanOcrHelpers';
+import { evaluateExpiryStatus, todayKstDateStr, type ExpiryStatus } from './workPlanOcrHelpers';
 import { isCustomAttachmentKey } from './workPlanAttachments';
 
 export interface CompanyVaultDoc {
@@ -41,6 +41,15 @@ export interface VaultSuggestion {
   row: VaultChecklistRowLike;
   doc: CompanyVaultDoc;
   expiry: ExpiryStatus;
+  daysRemaining: number | null;
+}
+
+function calcDaysRemaining(expiryDate: string | null, todayKst: string): number | null {
+  if (!expiryDate || !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) return null;
+  const expMs = Date.parse(`${expiryDate}T00:00:00Z`);
+  const todayMs = Date.parse(`${todayKst}T00:00:00Z`);
+  if (!Number.isFinite(expMs) || !Number.isFinite(todayMs)) return null;
+  return Math.floor((expMs - todayMs) / (24 * 60 * 60 * 1000));
 }
 
 export interface VaultClassification {
@@ -70,7 +79,7 @@ export function classifyVaultSuggestions(
   vaultDocs: CompanyVaultDoc[],
   checklistRows: VaultChecklistRowLike[],
   expectedCompanyId: string | null | undefined,
-  referenceDate: Date = new Date(),
+  todayKst: string = todayKstDateStr(),
 ): VaultClassification {
   if (!expectedCompanyId) {
     return { suggestable: [], expired: [] };
@@ -95,11 +104,12 @@ export function classifyVaultSuggestions(
     const doc = byKey.get(row.attachment_key);
     if (!doc) continue;
 
-    const expiry = evaluateExpiryStatus(doc.expiry_date, referenceDate);
-    if (expiry.state === 'expired') {
-      expired.push({ row, doc, expiry });
+    const expiry = evaluateExpiryStatus(doc.expiry_date, todayKst);
+    const daysRemaining = calcDaysRemaining(doc.expiry_date, todayKst);
+    if (expiry === 'expired') {
+      expired.push({ row, doc, expiry, daysRemaining });
     } else {
-      suggestable.push({ row, doc, expiry });
+      suggestable.push({ row, doc, expiry, daysRemaining });
     }
   }
 
@@ -212,15 +222,15 @@ export async function saveCompanyVaultDoc(opts: {
  */
 export async function applyVaultSuggestions(
   suggestions: VaultSuggestion[],
-  referenceDate: Date = new Date(),
+  todayKst: string = todayKstDateStr(),
 ): Promise<{ applied: number; skippedExpired: number; error?: string }> {
   let applied = 0;
   let skippedExpired = 0;
 
   for (const s of suggestions) {
     if (s.row.locked) continue;
-    const expiry = evaluateExpiryStatus(s.doc.expiry_date, referenceDate);
-    if (expiry.state === 'expired') {
+    const expiry = evaluateExpiryStatus(s.doc.expiry_date, todayKst);
+    if (expiry === 'expired') {
       skippedExpired += 1;
       continue;
     }

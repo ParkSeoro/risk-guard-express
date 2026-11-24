@@ -361,9 +361,9 @@ export default function AttachmentChecklist({
           filePath: uploaded.path,
           fileSize: uploaded.finalBytes,
           mimeType: uploaded.file.type,
-          holderName: opts?.ocrMeta?.company_or_holder ?? null,
-          regOrCertNo: opts?.ocrMeta?.reg_or_cert_no ?? null,
-          expiryDate: opts?.ocrMeta?.expiry_date ?? null,
+          holderName: opts?.ocrMeta?.companyOrHolder ?? null,
+          regOrCertNo: opts?.ocrMeta?.regOrCertNo ?? null,
+          expiryDate: opts?.ocrMeta?.expiryDate ?? null,
           sourceWorkPlanId: workPlanId,
         });
         if (res.ok) {
@@ -604,12 +604,12 @@ export default function AttachmentChecklist({
                       )}
                       {s.doc.expiry_date && (
                         <Badge
-                          variant={s.expiry.state === 'expiring_soon' ? 'secondary' : 'outline'}
+                          variant={s.expiry === 'expiring_soon' ? 'secondary' : 'outline'}
                           className="text-[9px] h-4 px-1"
                         >
                           유효기간 {s.doc.expiry_date}
-                          {s.expiry.state === 'expiring_soon' && s.expiry.daysRemaining != null
-                            ? ` (D-${s.expiry.daysRemaining})`
+                          {s.expiry === 'expiring_soon' && s.daysRemaining != null
+                            ? ` (D-${s.daysRemaining})`
                             : ''}
                         </Badge>
                       )}

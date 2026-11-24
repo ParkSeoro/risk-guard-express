@@ -47,6 +47,12 @@ import {
   mergeEquipmentIntoSection,
   type EquipmentMasterItem,
 } from '@/lib/workPlanEquipmentLink';
+import {
+  buildEquipmentContextSummary,
+  isAiDraftableSection,
+  isBatchAiDraftSection,
+  isSectionEmptyForAiDraft,
+} from '@/lib/workPlanAiDraft';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -117,6 +123,7 @@ const WorkPlanDetail = () => {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
+  const [aiBatchProgress, setAiBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
@@ -469,17 +476,18 @@ const WorkPlanDetail = () => {
     setRigging((prev: any) => ({ ...(prev || { work_plan_id: planId }), ...patch }));
   };
 
-  const handleAiGenerate = async (sectionKey: string) => {
-    const section = sections.find(s => s.key === sectionKey);
+  const handleAiGenerate = async (sectionKey: string, opts?: { quiet?: boolean }): Promise<boolean> => {
+    const section = sectionsRef.current.find(s => s.key === sectionKey) || sections.find(s => s.key === sectionKey);
     const wpType = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
-    if (!section || !wpType) return;
+    if (!section || !wpType) return false;
     setAiLoading(section.key);
     try {
-      const overview = sections.find((s) => s.key === 'overview')?.content || '';
+      const overview = sectionsRef.current.find((s) => s.key === 'overview')?.content || '';
+      const equipmentSummary = buildEquipmentContextSummary(sectionsRef.current, riggingRef.current);
       const library = await fetchGlobalRiskLibraryItems({ processName: wpType.name, limit: 12 }).catch(() => []);
       const { data, error } = await supabase.functions.invoke('generate-risk-ai', {
         body: {
-          process_name: wpType.name, equipment: '', work_description: section.title + ' 작성',
+          process_name: wpType.name, equipment: equipmentSummary, work_description: section.title + ' 작성',
           work_location: '현장', work_environment: [], mode: 'work_plan_section',
           section_key: section.key, section_title: section.title,
           work_type: wpType.id,
@@ -498,10 +506,12 @@ const WorkPlanDetail = () => {
           ? normalizeRiskToLegalSlots(data.structured)
           : data.structured;
         handleSectionChange(section.key, JSON.stringify(structured));
-        toast({ title: 'AI 작성 완료' });
+        if (!opts?.quiet) toast({ title: 'AI 초안 작성 완료', description: '현장 상황에 맞게 자유롭게 수정해 사용하세요.' });
+        return true;
       } else if (data?.content) {
         handleSectionChange(section.key, data.content);
-        toast({ title: 'AI 작성 완료' });
+        if (!opts?.quiet) toast({ title: 'AI 초안 작성 완료', description: '현장 상황에 맞게 자유롭게 수정해 사용하세요.' });
+        return true;
       } else if (data?.items) {
         const risks = (data.items as any[]).map((item: any) => ({
           hazard: item.hazard || '', situation: item.hazard_situation || '',
@@ -513,11 +523,40 @@ const WorkPlanDetail = () => {
             ? normalizeRiskToLegalSlots(risks)
             : risks),
         );
-        toast({ title: 'AI 작성 완료' });
+        if (!opts?.quiet) toast({ title: 'AI 초안 작성 완료', description: '현장 상황에 맞게 자유롭게 수정해 사용하세요.' });
+        return true;
       }
+      return false;
     } catch (err: any) {
-      toast({ title: 'AI 생성 실패', variant: 'destructive' });
+      if (!opts?.quiet) toast({ title: 'AI 생성 실패', variant: 'destructive' });
+      return false;
     } finally { setAiLoading(null); }
+  };
+
+  const handleAiDraftEmptySections = async () => {
+    if (!planEditable || aiBatchProgress) return;
+    const targets = sections.filter(
+      (s) => isBatchAiDraftSection(s) && isSectionEmptyForAiDraft(s),
+    );
+    if (targets.length === 0) {
+      toast({ title: '비어 있는 본문 항목이 없습니다.', description: '개별 항목의 [AI 작성] 버튼으로 다시 생성할 수 있습니다.' });
+      return;
+    }
+    setAiBatchProgress({ done: 0, total: targets.length });
+    let okCount = 0;
+    try {
+      for (let i = 0; i < targets.length; i += 1) {
+        const ok = await handleAiGenerate(targets[i].key, { quiet: true });
+        if (ok) okCount += 1;
+        setAiBatchProgress({ done: i + 1, total: targets.length });
+      }
+      toast({
+        title: `AI 초안 ${okCount}/${targets.length}개 항목 작성 완료`,
+        description: '모든 칸을 현장 여건에 맞게 자유롭게 수정한 뒤 저장하세요.',
+      });
+    } finally {
+      setAiBatchProgress(null);
+    }
   };
 
   const handleValidate = (): boolean => {
@@ -1134,9 +1173,45 @@ const WorkPlanDetail = () => {
 
         {/* Sections Tab */}
         <TabsContent value="sections" className="space-y-4 mt-4">
+          {planEditable && (() => {
+            const emptyDraftCount = sections.filter(
+              (s) => isBatchAiDraftSection(s) && isSectionEmptyForAiDraft(s),
+            ).length;
+            return (
+              <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs space-y-0.5 min-w-0">
+                  <p className="font-medium text-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                    AI 초안 도우미 (전 공종 지원)
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    이미 작성한 칸은 덮어쓰지 않으며, AI가 채운 초안은 모든 칸에서 현장에 맞게 자유롭게 수정할 수 있습니다.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 shrink-0"
+                  disabled={!!aiBatchProgress || !!aiLoading || emptyDraftCount === 0}
+                  onClick={() => void handleAiDraftEmptySections()}
+                >
+                  {aiBatchProgress ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      AI 초안 작성 중 ({aiBatchProgress.done}/{aiBatchProgress.total})…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {emptyDraftCount > 0 ? `AI로 빈 본문 ${emptyDraftCount}개 한 번에 초안 작성` : '빈 본문 없음'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            );
+          })()}
           {sections.filter(s => s.key !== '_checklist' && s.key !== LEGAL_CALC_SECTION_KEY).map((section) => {
             if (section.type === 'rigging') return null;
-            const templateSection = wpType?.templateSections.find(ts => ts.key === section.key);
             const sectionErrors = validationErrors[section.key];
             return (
               <Card key={section.key} className={sectionErrors ? 'border-destructive' : ''}>
@@ -1149,11 +1224,11 @@ const WorkPlanDetail = () => {
                         return hint ? <LegalTermTooltip hint={hint} /> : null;
                       })()}
                     </div>
-                    {(templateSection?.aiPrompt || (usesFixedLegalRisk(plan.work_type) && section.key === 'risk')) && (
-                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
-                        onClick={() => handleAiGenerate(section.key)} disabled={aiLoading === section.key}>
+                    {planEditable && isAiDraftableSection(section) && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1 shrink-0"
+                        onClick={() => void handleAiGenerate(section.key)} disabled={aiLoading === section.key || !!aiBatchProgress}>
                         {aiLoading === section.key ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                        {usesFixedLegalRisk(plan.work_type) && section.key === 'risk' ? 'AI로 5대 대책 채우기' : 'AI 작성'}
+                        {usesFixedLegalRisk(plan.work_type) && section.key === 'risk' ? 'AI로 5대 대책 채우기' : 'AI 초안 작성'}
                       </Button>
                     )}
                   </div>

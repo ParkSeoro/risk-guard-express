@@ -598,15 +598,21 @@ serve(async (req) => {
 
     // ============ Work Plan Section Mode (non-stream JSON) ============
     if (mode === "work_plan_section") {
+      const contextLines = [
+        site_context ? `현장 작업개요: ${String(site_context).slice(0, 1200)}` : "",
+        equipment ? `사용 장비: ${String(equipment).slice(0, 400)}` : "",
+      ].filter(Boolean).join("\n");
+      const contextBlock = contextLines ? `\n${contextLines}\n` : "\n";
+
       const sectionPrompts: Record<string, string> = {
-        overview: `다음 공종에 대한 작업 개요를 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"work_name":"","work_date":"","work_location":"","work_content":"상세 작업내용","supervisor":"","workers_count":""}`,
-        method: `다음 공종의 작업 절차를 단계별로 JSON 배열로 작성해라:\n공종: ${process_name}\n각 단계에 안전조치를 반드시 포함해라.\n출력 형식: [{"order":1,"description":"작업단계","safety_measure":"안전조치"}]\n최소 5단계 이상 작성.`,
+        overview: `다음 공종에 대한 작업 개요를 JSON으로 작성해라:\n공종: ${process_name}${contextBlock}출력 형식: {"work_name":"","work_date":"","work_location":"","work_content":"상세 작업내용","supervisor":"","workers_count":""}`,
+        method: `다음 공종의 작업 절차를 단계별로 JSON 배열로 작성해라:\n공종: ${process_name}${contextBlock}각 단계에 안전조치를 반드시 포함해라.\n출력 형식: [{"order":1,"description":"작업단계","safety_measure":"안전조치"}]\n최소 5단계 이상 작성.`,
         risk: (work_type === "heavy_lifting")
-          ? `다음 중량물 취급 작업의 별표 4 필수 5대 대책을 JSON 배열로 작성해라.\n공종: ${process_name}\n현장 개요: ${site_context || work_description || ""}\n반드시 아래 5개 hazard만, 이 순서로 출력. 칸을 빼거나 이름을 바꾸지 마라.\n출력 형식: [{"key":"fall","hazard":"추락","situation":"이 현장 상황","measure":"실행 가능한 대책","severity":"상/중/하"},{"key":"drop","hazard":"낙하","situation":"","measure":"","severity":"중"},{"key":"tip","hazard":"전도","situation":"","measure":"","severity":"중"},{"key":"pinch","hazard":"협착","situation":"","measure":"","severity":"중"},{"key":"collapse","hazard":"붕괴","situation":"","measure":"","severity":"중"}]\n숫자는 창작하지 말고, 대책은 현장 절차로 구체적으로.`
-          : `다음 공종의 위험요인과 안전대책을 JSON 배열로 작성해라:\n공종: ${process_name}\n위험요인은 "원인 + 사고결과" 구조로 작성. 안전대책은 실행 가능한 구체적 조치.\n출력 형식: [{"hazard":"위험요인","situation":"발생상황","measure":"안전대책","severity":"상/중/하"}]\n최소 8개 이상 작성.`,
-        signal: `다음 공종의 신호체계를 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"signal_person":"신호수 자격요건","signal_method":"무전기","radio_channel":"CH-5","hand_signals":"수신호 약속 상세","emergency_signal":"비상정지 신호"}`,
-        emergency: `다음 공종의 비상시 조치계획을 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"emergency_contact":"119, 현장소장","hospital":"인근병원","evacuation_route":"대피경로","assembly_point":"집결장소","first_aid":"응급처치계획","reporting_procedure":"보고체계"}`,
-        equipment: `다음 공종에 필요한 장비 목록을 JSON 배열로 작성해라:\n공종: ${process_name}\n출력 형식: [{"name":"장비명","model":"모델명","capacity":"정격하중/용량","manufacturer":"","inspection_date":""}]\n최소 3개 이상.`,
+          ? `다음 중량물 취급 작업의 별표 4 필수 5대 대책을 JSON 배열로 작성해라.\n공종: ${process_name}${contextBlock}반드시 아래 5개 hazard만, 이 순서로 출력. 칸을 빼거나 이름을 바꾸지 마라.\n출력 형식: [{"key":"fall","hazard":"추락","situation":"이 현장 상황","measure":"실행 가능한 대책","severity":"상/중/하"},{"key":"drop","hazard":"낙하","situation":"","measure":"","severity":"중"},{"key":"tip","hazard":"전도","situation":"","measure":"","severity":"중"},{"key":"pinch","hazard":"협착","situation":"","measure":"","severity":"중"},{"key":"collapse","hazard":"붕괴","situation":"","measure":"","severity":"중"}]\n숫자는 창작하지 말고, 대책은 현장 절차로 구체적으로.`
+          : `다음 공종의 위험요인과 안전대책을 JSON 배열로 작성해라:\n공종: ${process_name}${contextBlock}위험요인은 "원인 + 사고결과" 구조로 작성. 안전대책은 실행 가능한 구체적 조치.\n출력 형식: [{"hazard":"위험요인","situation":"발생상황","measure":"안전대책","severity":"상/중/하"}]\n최소 8개 이상 작성.`,
+        signal: `다음 공종의 신호체계를 JSON으로 작성해라:\n공종: ${process_name}${contextBlock}출력 형식: {"signal_person":"신호수 자격요건","signal_method":"무전기","radio_channel":"CH-5","hand_signals":"수신호 약속 상세","emergency_signal":"비상정지 신호"}`,
+        emergency: `다음 공종의 비상시 조치계획을 JSON으로 작성해라:\n공종: ${process_name}${contextBlock}출력 형식: {"emergency_contact":"119, 현장소장","hospital":"인근병원","evacuation_route":"대피경로","assembly_point":"집결장소","first_aid":"응급처치계획","reporting_procedure":"보고체계"}`,
+        equipment: `다음 공종에 필요한 장비 목록을 JSON 배열로 작성해라:\n공종: ${process_name}${contextBlock}출력 형식: [{"name":"장비명","model":"모델명","capacity":"정격하중/용량","manufacturer":"","inspection_date":""}]\n최소 3개 이상.`,
       };
 
       const libraryNote = Array.isArray(library_hints) && library_hints.length
@@ -614,10 +620,11 @@ serve(async (req) => {
         : "";
       const prompt =
         (sectionPrompts[section_key || ""] ||
-        `다음 공종의 "${section_title}" 내용을 전문적으로 작성해라:\n공종: ${process_name}\nJSON으로 출력 불가 시 텍스트로 작성.`) + libraryNote;
+        `다음 공종의 "${section_title}" 내용을 산업안전보건기준에 관한 규칙(제38조·별표 4) 및 KOSHA GUIDE 기준 실무 초안으로 작성해라:\n공종: ${process_name}${contextBlock}• 법정 수치나 미확인 장비 제원은 임의로 창작하지 말고 현장에서 확인·수정할 항목은 괄호로 안내하라.\n• 읽기 쉬운 개조식 한국어 텍스트로 작성하라.`) + libraryNote;
 
-      const sysPrompt =
-        `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
+      const sysPrompt = sectionPrompts[section_key || ""]
+        ? `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`
+        : `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 현장 담당자가 바로 검토·수정해 사용할 수 있는 작업계획서 초안을 간결한 한국어로 작성한다.`;
 
       const wpMessages = [
         { role: "system" as const, content: sysPrompt },

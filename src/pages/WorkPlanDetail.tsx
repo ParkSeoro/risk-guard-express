@@ -42,6 +42,11 @@ import ZoomableDocumentPreview from '@/components/docs/ZoomableDocumentPreview';
 import { A4_PORTRAIT_PX } from '@/lib/approvalDocPreview';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
+import {
+  applyEquipmentDocsToWorkPlan,
+  mergeEquipmentIntoSection,
+  type EquipmentMasterItem,
+} from '@/lib/workPlanEquipmentLink';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1183,11 +1188,50 @@ const WorkPlanDetail = () => {
         {/* Equipment Tab */}
         <TabsContent value="equipment" className="space-y-3 mt-4">
           {plan?.project_id && (
-            <EquipmentManager projectId={plan.project_id} companyId={plan.company_id} selectable
-              onSelect={(eq) => {
-                if (!EDITABLE_PLAN_STATUSES.has(plan.status)) return;
-                if (rigging) handleRiggingChange('crane_model', eq.name);
-              }} />
+            <EquipmentManager
+              projectId={plan.project_id}
+              companyId={plan.company_id}
+              selectable={planEditable}
+              onSelect={async (eq: EquipmentMasterItem) => {
+                if (!planEditable) return;
+                const appliedParts: string[] = [];
+
+                // 1) 본문 장비 정보 섹션 자동 반영
+                const hasEquipSection = sections.some((s) => s.key === 'equipment');
+                if (hasEquipSection) {
+                  const cur = sections.find((s) => s.key === 'equipment')?.content || '';
+                  handleSectionChange('equipment', mergeEquipmentIntoSection(cur, eq));
+                  appliedParts.push('본문 장비정보');
+                }
+
+                // 2) 리깅플랜 모델명/정격하중 자동 반영
+                if (wpType?.hasRiggingPlan) {
+                  handleRiggingChange('crane_model', eq.name);
+                  if (eq.rated_capacity && Number(eq.rated_capacity) > 0) {
+                    handleRiggingChange('crane_capacity', Number(eq.rated_capacity));
+                  }
+                  appliedParts.push('리깅플랜');
+                }
+
+                // 3) 장비 등록 서류(등록증·검사증·보험·제원표) 중 미만료 서류 자동 연결
+                const docRes = await applyEquipmentDocsToWorkPlan(plan.id, eq);
+                if (docRes.linkedNames.length > 0) {
+                  appliedParts.push(`첨부 ${docRes.linkedNames.length}건(${docRes.linkedNames.join(', ')})`);
+                  getAttachmentProgress(plan.id).then(setAttProgress).catch(() => {});
+                  markDirty();
+                }
+
+                const expWarn = docRes.expiredSkipped.length > 0
+                  ? ` · 만료 제외: ${docRes.expiredSkipped.map((x) => `${x.docLabel}(${x.expiryDate})`).join(', ')}`
+                  : '';
+                toast({
+                  title: `'${eq.name}' 작업계획서에 적용 완료`,
+                  description: appliedParts.length > 0
+                    ? `${appliedParts.join(' · ')} 반영됨${expWarn}`
+                    : `장비가 선택되었습니다.${expWarn}`,
+                });
+              }}
+            />
           )}
         </TabsContent>
 

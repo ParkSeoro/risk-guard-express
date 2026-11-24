@@ -20,10 +20,14 @@ import {
 } from '@/components/ui/select';
 import {
   Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer,
-  ClipboardPaste, Inbox, Trash2, MousePointerClick, Plus,
+  ClipboardPaste, Inbox, Trash2, MousePointerClick, Plus, Sparkles, AlertTriangle,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
+import {
+  analyzeWorkPlanAttachmentFile,
+} from '@/lib/workPlanOcrClient';
+import type { WorkPlanOcrResult } from '@/lib/workPlanOcrHelpers';
 import {
   createStagedAttachments,
   filesFromClipboardEvent,
@@ -91,6 +95,9 @@ export default function AttachmentChecklist({
   const [customDesc, setCustomDesc] = useState('');
   const [customFile, setCustomFile] = useState<File | null>(null);
   const [addingCustom, setAddingCustom] = useState(false);
+  const [ocrByStageId, setOcrByStageId] = useState<Record<string, WorkPlanOcrResult>>({});
+  const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
+  const [ocrBatchBusy, setOcrBatchBusy] = useState(false);
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
 
@@ -223,13 +230,58 @@ export default function AttachmentChecklist({
       if (target) revokeStagedPreview(target);
       return prev.filter((s) => s.id !== id);
     });
+    setOcrByStageId((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setOcrBusyIds((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     if (armedStageId === id) setArmedStageId(null);
   };
 
   const clearInbox = () => {
     revokeAllStaged(staged);
     setStaged([]);
+    setOcrByStageId({});
+    setOcrBusyIds({});
     setArmedStageId(null);
+  };
+
+  const runOcrForStaged = async (stageItem: StagedAttachment, pageNumber?: number) => {
+    if (readOnly) return;
+    const slots = rows
+      .filter((r) => !r.locked)
+      .map((r) => ({ key: r.attachment_key, name: r.name }));
+    setOcrBusyIds((prev) => ({ ...prev, [stageItem.id]: true }));
+    try {
+      const res = await analyzeWorkPlanAttachmentFile(stageItem.file, slots, { pageNumber });
+      setOcrByStageId((prev) => ({ ...prev, [stageItem.id]: res }));
+    } finally {
+      setOcrBusyIds((prev) => ({ ...prev, [stageItem.id]: false }));
+    }
+  };
+
+  const runOcrForAllStaged = async () => {
+    if (readOnly || staged.length === 0 || ocrBatchBusy) return;
+    setOcrBatchBusy(true);
+    try {
+      for (const item of staged) {
+        if (ocrByStageId[item.id]?.ok) continue;
+        await runOcrForStaged(item);
+      }
+      toast({
+        title: 'AI 서류 판독 완료',
+        description: '각 파일의 추천 항목을 확인한 뒤 버튼으로 넣어 주세요.',
+      });
+    } finally {
+      setOcrBatchBusy(false);
+    }
   };
 
   const handleUpload = async (row: Row, file: File, opts?: { quiet?: boolean }) => {
@@ -439,9 +491,26 @@ export default function AttachmentChecklist({
                   </Button>
                 </label>
                 {staged.length > 0 && (
-                  <Button size="sm" variant="ghost" className="h-7 text-[10px] text-destructive gap-1" onClick={clearInbox}>
-                    <Trash2 className="h-3 w-3" /> 비우기
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      className="h-7 text-[10px] gap-1"
+                      disabled={ocrBatchBusy}
+                      onClick={() => void runOcrForAllStaged()}
+                    >
+                      {ocrBatchBusy ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {ocrBatchBusy ? 'AI 판독 중…' : 'AI 자동 분류'}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-[10px] text-destructive gap-1" onClick={clearInbox}>
+                      <Trash2 className="h-3 w-3" /> 비우기
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -450,10 +519,15 @@ export default function AttachmentChecklist({
               <div className="mt-3 flex flex-wrap gap-2">
                 {staged.map((s) => {
                   const armed = armedStageId === s.id;
+                  const ocr = ocrByStageId[s.id];
+                  const ocrBusy = !!ocrBusyIds[s.id];
+                  const suggestedRow = ocr?.suggestedKey
+                    ? assignableRows.find((r) => r.attachment_key === ocr.suggestedKey) || null
+                    : null;
                   return (
                     <div
                       key={s.id}
-                      className={`w-[140px] rounded border bg-card p-1.5 space-y-1.5 ${armed ? 'border-primary ring-1 ring-primary/40' : ''}`}
+                      className={`w-[205px] rounded border bg-card p-2 space-y-1.5 ${armed ? 'border-primary ring-1 ring-primary/40' : ''}`}
                     >
                       <button
                         type="button"
@@ -468,8 +542,105 @@ export default function AttachmentChecklist({
                             PDF
                           </div>
                         )}
-                        <p className="text-[9px] truncate mt-1" title={s.file.name}>{s.file.name}</p>
+                        <p className="text-[10px] font-medium truncate mt-1" title={s.file.name}>{s.file.name}</p>
                       </button>
+
+                      {/* AI OCR 판독 결과 & 1클릭 확인 제안 */}
+                      {ocrBusy && (
+                        <div className="rounded bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin shrink-0" /> AI 서류 판독 중…
+                        </div>
+                      )}
+                      {!ocrBusy && ocr && !ocr.ok && (
+                        <div className="rounded border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20 px-2 py-1 text-[10px] text-amber-900 dark:text-amber-200 leading-snug">
+                          {ocr.error}
+                        </div>
+                      )}
+                      {!ocrBusy && ocr?.ok && (
+                        <div className="rounded border bg-muted/20 p-1.5 space-y-1 text-[10px]">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-semibold truncate">{ocr.docCategoryLabel}</span>
+                            {ocr.confidence != null && (
+                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">
+                                {Math.round(ocr.confidence * 100)}%
+                              </Badge>
+                            )}
+                          </div>
+                          {ocr.companyOrHolder && (
+                            <p className="text-muted-foreground truncate">대상: {ocr.companyOrHolder}</p>
+                          )}
+                          {ocr.expiryDate && (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-muted-foreground">만료: {ocr.expiryDate}</span>
+                              {ocr.expiryStatus === 'expired' && (
+                                <Badge variant="destructive" className="text-[9px] h-4 px-1 gap-0.5">
+                                  <AlertTriangle className="h-2.5 w-2.5" /> 만료됨
+                                </Badge>
+                              )}
+                              {ocr.expiryStatus === 'expiring_soon' && (
+                                <Badge variant="outline" className="text-[9px] h-4 px-1 border-amber-500 text-amber-700">
+                                  임박
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                          {ocr.ratedCapacityTon != null && (
+                            <p className="text-muted-foreground">정격하중: {ocr.ratedCapacityTon}t</p>
+                          )}
+                          {ocr.needsPageSelect && (
+                            <p className="text-amber-700 dark:text-amber-300 leading-snug">
+                              표지/목차로 보입니다. 아래에서 하중표·본문 페이지를 선택해 다시 판독하세요.
+                            </p>
+                          )}
+                          {ocr.totalPages > 1 && (
+                            <div className="flex items-center gap-1 pt-0.5">
+                              <span className="text-[9px] text-muted-foreground shrink-0">
+                                페이지 ({ocr.pageNumber}/{ocr.totalPages})
+                              </span>
+                              <select
+                                aria-label="판독 페이지 선택"
+                                className="h-5 text-[10px] rounded border bg-background px-1 flex-1 min-w-0"
+                                value={ocr.pageNumber}
+                                onChange={(e) => {
+                                  const nextPage = Number(e.target.value);
+                                  if (nextPage >= 1 && nextPage <= ocr.totalPages) {
+                                    void runOcrForStaged(s, nextPage);
+                                  }
+                                }}
+                              >
+                                {Array.from({ length: Math.min(ocr.totalPages, 30) }, (_, idx) => idx + 1).map((p) => (
+                                  <option key={p} value={p}>{p}p 판독</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {suggestedRow && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={ocr.expiryStatus === 'expired' ? 'destructive' : 'default'}
+                              className="h-6 w-full text-[10px] gap-1"
+                              onClick={() => void assignStagedToRow(s.id, suggestedRow)}
+                            >
+                              <CheckCircle2 className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{suggestedRow.name}에 넣기</span>
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {!ocr && !ocrBusy && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-6 w-full text-[10px] gap-1"
+                          onClick={() => void runOcrForStaged(s)}
+                        >
+                          <Sparkles className="h-3 w-3" /> AI 판독
+                        </Button>
+                      )}
+
                       <Select
                         value=""
                         onValueChange={(rowId) => {
@@ -478,7 +649,7 @@ export default function AttachmentChecklist({
                         }}
                       >
                         <SelectTrigger className="h-7 text-[10px]">
-                          <SelectValue placeholder="항목에 넣기" />
+                          <SelectValue placeholder="수동으로 항목에 넣기" />
                         </SelectTrigger>
                         <SelectContent>
                           {assignableRows.map((r) => (

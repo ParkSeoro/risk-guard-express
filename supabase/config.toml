@@ -43,3 +43,7 @@ verify_jwt = false
 # AI Council Gemini seat. Verifies the caller JWT and is_council_director. Claude and GPT are not called.
 [functions.council-provider]
 verify_jwt = false
+
+# Work-plan attachment Vision OCR. Verifies caller JWT via userClient.auth.getUser() inside handler.
+[functions.analyze-workplan-attachment]
+verify_jwt = false

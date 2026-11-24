@@ -24,12 +24,16 @@ Deno.serve(async (req) => {
 
   const today = new Date();
   const in7 = new Date(today); in7.setDate(in7.getDate() + 7);
+  const in30 = new Date(today); in30.setDate(in30.getDate() + 30);
   const isoToday = today.toISOString().slice(0, 10);
   const iso7 = in7.toISOString().slice(0, 10);
+  const iso30 = in30.toISOString().slice(0, 10);
 
   const summary: Record<string, number> = {
     upcoming_checkups: 0,
     overdue_checkups: 0,
+    renewal_due_workers: 0,
+    renewal_overdue_workers: 0,
     expired_education: 0,
     notifications_sent: 0,
   };
@@ -45,24 +49,52 @@ Deno.serve(async (req) => {
 
     if (dueErr) throw dueErr;
 
+    // 1-b) Active workers whose synced next_checkup_due is within 30 days or already expired
+    const { data: renewalWorkers, error: renErr } = await supabase
+      .from("workers")
+      .select("id, project_id, name, next_checkup_due, health_checkup_status")
+      .eq("is_active", true)
+      .not("next_checkup_due", "is", null)
+      .lte("next_checkup_due", iso30);
+
+    if (renErr) throw renErr;
+
     const byProject = new Map<string, any[]>();
     for (const row of due ?? []) {
       const overdue = row.scheduled_date < isoToday;
       if (overdue) summary.overdue_checkups++; else summary.upcoming_checkups++;
       const arr = byProject.get(row.project_id) || [];
-      arr.push({ ...row, overdue });
+      arr.push({
+        worker_name: row.worker_name,
+        label: `${row.type} 예약`,
+        date: row.scheduled_date,
+        overdue,
+      });
       byProject.set(row.project_id, arr);
+    }
+
+    for (const w of renewalWorkers ?? []) {
+      const overdue = String(w.next_checkup_due) < isoToday;
+      if (overdue) summary.renewal_overdue_workers++; else summary.renewal_due_workers++;
+      const arr = byProject.get(w.project_id) || [];
+      arr.push({
+        worker_name: w.name,
+        label: "차기검진",
+        date: w.next_checkup_due,
+        overdue,
+      });
+      byProject.set(w.project_id, arr);
     }
 
     // 2) For each project, notify managers via role router (not bogus position values)
     for (const [projectId, rows] of byProject.entries()) {
       const overdue = rows.filter((r: any) => r.overdue).length;
       const upcoming = rows.length - overdue;
-      const title = `[건강진단] 예정 ${upcoming}건 · 지연 ${overdue}건`;
+      const title = `[건강진단] 임박 ${upcoming}건 · 기한경과 ${overdue}건`;
       const body = rows
-        .slice(0, 5)
-        .map((r: any) => `• ${r.worker_name} (${r.type}) - ${r.scheduled_date}${r.overdue ? " [지연]" : ""}`)
-        .join("\n") + (rows.length > 5 ? `\n…외 ${rows.length - 5}건` : "");
+        .slice(0, 6)
+        .map((r: any) => `• ${r.worker_name} (${r.label}) - ${r.date}${r.overdue ? " [만료]" : ""}`)
+        .join("\n") + (rows.length > 6 ? `\n…외 ${rows.length - 6}건` : "");
 
       const { data: n, error: rpcErr } = await supabase.rpc("notify_project_roles", {
         _project_id: projectId,

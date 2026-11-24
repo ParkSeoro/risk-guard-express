@@ -13,6 +13,10 @@ export const PERMIT_ROSTER_MANAGER_ROLE_SET = new Set<string>(ADMIN_PROJECT_ROLE
 export type PermitRosterCandidate = PermitWorkerRow & {
   isManager?: boolean;
   managerRole?: string | null;
+  health_checkup_status?: string | null;
+  next_checkup_due?: string | null;
+  health_restrictions?: string | null;
+  health_grade?: string | null;
 };
 
 function roleToJobType(role: string): string {

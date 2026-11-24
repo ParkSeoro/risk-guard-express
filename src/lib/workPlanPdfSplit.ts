@@ -90,17 +90,30 @@ function sanitizeFileSegment(raw: string): string {
     .slice(0, 40) || "doc";
 }
 
+async function readFileBytes(input: File | Uint8Array): Promise<Uint8Array> {
+  if (input instanceof Uint8Array) return input;
+  if (typeof (input as any).arrayBuffer === "function") {
+    return new Uint8Array(await input.arrayBuffer());
+  }
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error || new Error("파일 읽기 실패"));
+    reader.readAsArrayBuffer(input);
+  });
+}
+
 /**
- * Splits a PDF File into separate PDF Files according to grouped 1-based page numbers.
+ * Splits a PDF File (or raw bytes) into separate PDF Files according to grouped 1-based page numbers.
  */
 export async function splitPdfFileByGroups(
-  originalFile: File,
+  originalFile: File | Uint8Array,
   groups: SplitPdfGroup[],
-): Promise<Array<{ file: File; ocr: WorkPlanOcrResult; pages: number[] }>> {
-  const srcBytes = await originalFile.arrayBuffer();
+): Promise<Array<{ file: File; bytes: Uint8Array; ocr: WorkPlanOcrResult; pages: number[] }>> {
+  const srcBytes = await readFileBytes(originalFile);
   const srcPdf = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
   const totalPages = srcPdf.getPageCount();
-  const out: Array<{ file: File; ocr: WorkPlanOcrResult; pages: number[] }> = [];
+  const out: Array<{ file: File; bytes: Uint8Array; ocr: WorkPlanOcrResult; pages: number[] }> = [];
 
   for (const g of groups) {
     const validZeroBased = g.pages
@@ -123,6 +136,7 @@ export async function splitPdfFileByGroups(
 
     out.push({
       file,
+      bytes,
       pages: g.pages,
       ocr: {
         ...g.primaryOcr,
@@ -157,7 +171,7 @@ export async function smartSplitWorkPlanPdf(
 ): Promise<SmartSplitOutcome> {
   let totalPages = 0;
   try {
-    const buf = await file.arrayBuffer();
+    const buf = await readFileBytes(file);
     const pdf = await PDFDocument.load(buf, { ignoreEncryption: true });
     totalPages = pdf.getPageCount();
   } catch (e: any) {

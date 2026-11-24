@@ -79,13 +79,13 @@ describe("Selective Smart PDF Splitter (2..10p)", () => {
       },
     ];
 
-    const children = await splitPdfFileByGroups(originalFile, groups);
+    const children = await splitPdfFileByGroups(bytes, groups);
     expect(children).toHaveLength(2);
     expect(children[0].file.name).toBe("보험가입증명서_p1-2.pdf");
     expect(children[1].file.name).toBe("사업자등록증_p3.pdf");
 
-    const pdf0 = await PDFDocument.load(await children[0].file.arrayBuffer());
-    const pdf1 = await PDFDocument.load(await children[1].file.arrayBuffer());
+    const pdf0 = await PDFDocument.load(children[0].bytes);
+    const pdf1 = await PDFDocument.load(children[1].bytes);
     expect(pdf0.getPageCount()).toBe(2);
     expect(pdf1.getPageCount()).toBe(1);
   });

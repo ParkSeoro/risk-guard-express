@@ -233,7 +233,9 @@ async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promis
   const body = (n.body || n.message || "").toString();
   const url = deepLinkFor(n);
   const tag =
-    n.related_type && n.related_id ? `${n.related_type}-${n.related_id}` : n.id || undefined;
+    n.related_type && n.related_id
+      ? `${n.type || "notif"}-${n.related_type}-${n.related_id}`
+      : n.id || undefined;
 
   const commonData = {
     url,
@@ -295,6 +297,8 @@ async function dispatchOne(supabase: DispatchClient, n: NotificationRow): Promis
     n.type !== "signup_pending" &&
     n.type !== "approval_request" &&
     n.type !== "approval_result" &&
+    n.type !== "approval_approved" &&
+    n.type !== "approval_rejected" &&
     n.type !== "vision_safety_event" &&
     (n.type === "danger_zone_entry" ||
       n.severity === "high" ||

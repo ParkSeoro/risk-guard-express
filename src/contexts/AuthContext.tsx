@@ -246,7 +246,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
+      // Only revoke the current device session so other devices (phone, web, PC messenger) stay signed in.
+      await supabase.auth.signOut({ scope: "local" });
     } catch (e) {
       console.warn("Sign out error:", e);
     }

@@ -66,7 +66,7 @@ export default function WorkPermitWorkersDialog({
 
       let workersQ: any = supabase
         .from("workers")
-        .select("id, name, phone, company_name, company_id")
+        .select("id, name, phone, company_name, company_id, job_type")
         .eq("project_id", projectId)
         .eq("is_active", true)
         .order("name");
@@ -221,6 +221,7 @@ export default function WorkPermitWorkersDialog({
         (w) =>
           !q ||
           w.name?.includes(q) ||
+          w.job_type?.includes(q) ||
           w.phone?.includes(q) ||
           w.company_name?.includes(q),
       ),
@@ -262,7 +263,7 @@ export default function WorkPermitWorkersDialog({
               <Search className="h-4 w-4 absolute left-2 top-2.5 text-muted-foreground" />
               <Input
                 className="pl-8"
-                placeholder="이름·전화 검색"
+                placeholder="이름·공종·전화 검색"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 disabled={!permitCompanyId}
@@ -320,7 +321,8 @@ export default function WorkPermitWorkersDialog({
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">
-                        {w.company_name || companyName || "-"} · {w.phone}
+                        {w.company_name || companyName || "-"}
+                        {w.job_type ? ` · ${w.job_type}` : ""} · {w.phone}
                       </div>
                     </div>
                   </label>

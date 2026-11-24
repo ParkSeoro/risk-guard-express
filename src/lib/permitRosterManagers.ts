@@ -145,6 +145,7 @@ export async function loadPermitCompanyManagerCandidates(opts: {
       phone: worker.phone || digits,
       company_id: companyId,
       company_name: companyName || worker.company_name,
+      job_type: worker.job_type || roleToJobType(role),
       isManager: true,
       managerRole: role,
     });

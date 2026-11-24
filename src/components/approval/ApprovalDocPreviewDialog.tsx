@@ -3,9 +3,15 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { ExternalLink, Loader2, CheckCircle2, AlertTriangle, XCircle, MinusCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  buildWorkPlanReviewSummary,
+  type WorkPlanReviewSummary,
+  type TrafficLight,
+} from "@/lib/workPlanReviewSummary";
 import ZoomableDocumentPreview from "@/components/docs/ZoomableDocumentPreview";
 import AttachmentReviewPanel from "@/components/work-plan/AttachmentReviewPanel";
 import PermitExtendReasonBanner from "@/components/permits/PermitExtendReasonBanner";
@@ -52,6 +58,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
     permitKinds?: unknown;
   }>({});
   const [safetyFiles, setSafetyFiles] = useState<SafetyCostDocFile[]>([]);
+  const [wpReviewSummary, setWpReviewSummary] = useState<WorkPlanReviewSummary | null>(null);
 
   const entityType = target?.entityType || "";
   const entityId = target?.entityId || "";
@@ -81,6 +88,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
       setError(null);
       setHtml(null);
       setSafetyFiles([]);
+      setWpReviewSummary(null);
       try {
         if (entityType === "work_permit") {
           const { data: p, error: pe } = await supabase
@@ -104,9 +112,28 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
         } else if (entityType === "work_plan") {
           setPageWidth(A4_PORTRAIT_PX);
           setLoadHint("본문을 불러오는 중…");
-          const doc = await fetchWorkPlanPrintHtml(entityId);
+          const [doc, wpRes, rigRes, attRes] = await Promise.all([
+            fetchWorkPlanPrintHtml(entityId),
+            supabase.from("work_plans").select("work_type, content").eq("id", entityId).maybeSingle(),
+            supabase.from("rigging_plans").select("*").eq("work_plan_id", entityId).maybeSingle(),
+            supabase
+              .from("work_plan_attachments")
+              .select("attachment_key, name, description, is_mandatory, file_url, category")
+              .eq("work_plan_id", entityId)
+              .eq("is_deleted", false),
+          ]);
           if (cancelled) return;
           setHtml(doc);
+          if (wpRes.data) {
+            setWpReviewSummary(
+              buildWorkPlanReviewSummary({
+                workType: String((wpRes.data as any).work_type || ""),
+                content: (wpRes.data as any).content as Record<string, unknown> | null,
+                rigging: (rigRes.data as Record<string, unknown> | null) ?? null,
+                attachments: (attRes.data ?? []) as any[],
+              }),
+            );
+          }
         } else if (
           entityType === "assessment_run" ||
           entityType === "assessment_run_feedback"
@@ -153,7 +180,9 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[96vw] h-[92vh] flex flex-col gap-3 p-4 sm:p-5 overflow-hidden">
+      <DialogContent
+        className={`${isWorkPlan ? "max-w-7xl" : "max-w-5xl"} w-[96vw] h-[92vh] flex flex-col gap-3 p-4 sm:p-5 overflow-hidden`}
+      >
         <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 pr-8">
           <DialogTitle className="text-base truncate flex-1">{title}</DialogTitle>
           {fullPath && (
@@ -212,20 +241,61 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
 
           {inlineOk && !loading && !error && isWorkPlan && (
             <div className="h-full min-h-[60vh] flex flex-col">
-              <div className="flex-1 min-h-[40vh]">
-                <ZoomableDocumentPreview
-                  html={html}
-                  loading={false}
-                  error={null}
-                  pageWidth={pageWidth}
-                  active={open}
-                  className="h-full min-h-[40vh]"
-                  emptyHint="표시할 문서가 없습니다"
-                  loadingHint="본문을 불러오는 중…"
-                />
-              </div>
-              <div className="p-3 border-t bg-background">
-                <AttachmentReviewPanel workPlanId={entityId} />
+              {wpReviewSummary && (
+                <div className="px-3 py-2 border-b bg-background flex items-center gap-2 flex-wrap">
+                  <Badge
+                    variant={wpReviewSummary.isArticle38 ? "default" : "secondary"}
+                    className="text-[10px] shrink-0"
+                  >
+                    {wpReviewSummary.isArticle38 ? "제38조 법정" : "실무 확장"} · {wpReviewSummary.workTypeName}
+                  </Badge>
+                  <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                    {wpReviewSummary.signals.map((sig) => {
+                      const lightIcon = (light: TrafficLight) => {
+                        if (light === "ok") return <CheckCircle2 className="h-3 w-3 text-success shrink-0" />;
+                        if (light === "warn") return <AlertTriangle className="h-3 w-3 text-warning shrink-0" />;
+                        if (light === "fail") return <XCircle className="h-3 w-3 text-destructive shrink-0" />;
+                        return <MinusCircle className="h-3 w-3 text-muted-foreground shrink-0" />;
+                      };
+                      const cls =
+                        sig.light === "fail"
+                          ? "border-destructive/40 bg-destructive/10 text-destructive"
+                          : sig.light === "warn"
+                            ? "border-warning/40 bg-warning/10 text-warning-foreground"
+                            : sig.light === "ok"
+                              ? "border-success/30 bg-success/5 text-foreground"
+                              : "border-muted bg-muted/30 text-muted-foreground";
+                      return (
+                        <span
+                          key={sig.id}
+                          title={sig.detail || sig.label}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${cls}`}
+                        >
+                          {lightIcon(sig.light)}
+                          <span className="font-medium">{sig.label}</span>
+                          <span>{sig.value}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[1fr_440px]">
+                <div className="flex-1 min-h-[40vh] lg:min-h-0 lg:overflow-hidden">
+                  <ZoomableDocumentPreview
+                    html={html}
+                    loading={false}
+                    error={null}
+                    pageWidth={pageWidth}
+                    active={open}
+                    className="h-full min-h-[40vh]"
+                    emptyHint="표시할 문서가 없습니다"
+                    loadingHint="본문을 불러오는 중…"
+                  />
+                </div>
+                <div className="p-2 border-t lg:border-t-0 lg:border-l bg-background lg:overflow-y-auto">
+                  <AttachmentReviewPanel workPlanId={entityId} reviewerMode compact />
+                </div>
               </div>
             </div>
           )}

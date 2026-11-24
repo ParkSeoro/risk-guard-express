@@ -21,7 +21,7 @@ import {
 import {
   Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer,
   ClipboardPaste, Inbox, Trash2, MousePointerClick, Plus, Sparkles, AlertTriangle,
-  Archive, BookmarkPlus,
+  Archive, BookmarkPlus, Scissors,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
@@ -29,6 +29,11 @@ import {
   analyzeWorkPlanAttachmentFile,
 } from '@/lib/workPlanOcrClient';
 import type { WorkPlanOcrResult } from '@/lib/workPlanOcrHelpers';
+import {
+  isEligibleForSmartSplit,
+  MAX_SMART_SPLIT_PAGES,
+  smartSplitWorkPlanPdf,
+} from '@/lib/workPlanPdfSplit';
 import {
   applyVaultSuggestions,
   classifyVaultSuggestions,
@@ -111,6 +116,7 @@ export default function AttachmentChecklist({
   const [ocrByStageId, setOcrByStageId] = useState<Record<string, WorkPlanOcrResult>>({});
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrBatchBusy, setOcrBatchBusy] = useState(false);
+  const [splitBusyMap, setSplitBusyMap] = useState<Record<string, { done: number; total: number }>>({});
   const [vaultDocs, setVaultDocs] = useState<CompanyVaultDoc[]>([]);
   const [saveToVaultOptIn, setSaveToVaultOptIn] = useState(false);
   const [applyingVault, setApplyingVault] = useState(false);
@@ -294,6 +300,50 @@ export default function AttachmentChecklist({
       setOcrByStageId((prev) => ({ ...prev, [stageItem.id]: res }));
     } finally {
       setOcrBusyIds((prev) => ({ ...prev, [stageItem.id]: false }));
+    }
+  };
+
+  const runSmartSplitForStaged = async (stageItem: StagedAttachment) => {
+    if (readOnly || splitBusyMap[stageItem.id]) return;
+    const slots = rows
+      .filter((r) => !r.locked)
+      .map((r) => ({ key: r.attachment_key, name: r.name }));
+    setSplitBusyMap((prev) => ({ ...prev, [stageItem.id]: { done: 0, total: 1 } }));
+    try {
+      const outcome = await smartSplitWorkPlanPdf(stageItem.file, slots, (done, total) => {
+        setSplitBusyMap((prev) => ({ ...prev, [stageItem.id]: { done, total } }));
+      });
+      if (!outcome.ok) {
+        toast({ title: 'PDF 분리 불가', description: outcome.message, variant: 'destructive' });
+        return;
+      }
+      if (!outcome.split || outcome.items.length === 0) {
+        toast({ title: '분리 불필요', description: outcome.message });
+        return;
+      }
+      const nextStaged = createStagedAttachments(outcome.items.map((it) => it.file));
+      revokeStagedPreview(stageItem);
+      setStaged((prev) => {
+        const idx = prev.findIndex((p) => p.id === stageItem.id);
+        if (idx < 0) return [...prev, ...nextStaged];
+        return [...prev.slice(0, idx), ...nextStaged, ...prev.slice(idx + 1)];
+      });
+      setOcrByStageId((prev) => {
+        const next = { ...prev };
+        delete next[stageItem.id];
+        nextStaged.forEach((st, i) => {
+          if (outcome.items[i]?.ocr) next[st.id] = outcome.items[i].ocr;
+        });
+        return next;
+      });
+      if (armedStageId === stageItem.id) setArmedStageId(null);
+      toast({ title: '합본 PDF 자동 분리 완료', description: outcome.message });
+    } finally {
+      setSplitBusyMap((prev) => {
+        const next = { ...prev };
+        delete next[stageItem.id];
+        return next;
+      });
     }
   };
 
@@ -729,6 +779,9 @@ export default function AttachmentChecklist({
                   const armed = armedStageId === s.id;
                   const ocr = ocrByStageId[s.id];
                   const ocrBusy = !!ocrBusyIds[s.id];
+                  const splitProgress = splitBusyMap[s.id];
+                  const isPdfFile = !s.previewUrl && /\.pdf$/i.test(s.file.name);
+                  const canSmartSplit = isPdfFile && (!ocr || isEligibleForSmartSplit(ocr.totalPages));
                   const suggestedRow = ocr?.suggestedKey
                     ? assignableRows.find((r) => r.attachment_key === ocr.suggestedKey) || null
                     : null;
@@ -837,7 +890,7 @@ export default function AttachmentChecklist({
                         </div>
                       )}
 
-                      {!ocr && !ocrBusy && (
+                      {!ocr && !ocrBusy && !splitProgress && (
                         <Button
                           type="button"
                           size="sm"
@@ -846,6 +899,24 @@ export default function AttachmentChecklist({
                           onClick={() => void runOcrForStaged(s)}
                         >
                           <Sparkles className="h-3 w-3" /> AI 판독
+                        </Button>
+                      )}
+                      {splitProgress && (
+                        <div className="rounded bg-primary/5 border border-primary/20 px-2 py-1 text-[10px] text-primary flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                          페이지 분리 판독 ({splitProgress.done}/{splitProgress.total}p)…
+                        </div>
+                      )}
+                      {canSmartSplit && !ocrBusy && !splitProgress && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-full text-[10px] gap-1 text-muted-foreground hover:text-primary"
+                          title={`서류 여러 장이 묶인 소형 합본 PDF(2~${MAX_SMART_SPLIT_PAGES}p)를 페이지별 AI 판독 후 개별 파일로 자동 분리`}
+                          onClick={() => void runSmartSplitForStaged(s)}
+                        >
+                          <Scissors className="h-3 w-3" /> 합본 PDF 페이지별 AI 분리
                         </Button>
                       )}
 

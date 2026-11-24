@@ -21,6 +21,7 @@ import {
 import {
   Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer,
   ClipboardPaste, Inbox, Trash2, MousePointerClick, Plus, Sparkles, AlertTriangle,
+  Archive, BookmarkPlus,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
@@ -28,6 +29,15 @@ import {
   analyzeWorkPlanAttachmentFile,
 } from '@/lib/workPlanOcrClient';
 import type { WorkPlanOcrResult } from '@/lib/workPlanOcrHelpers';
+import {
+  applyVaultSuggestions,
+  classifyVaultSuggestions,
+  fetchCompanyVaultDocs,
+  isReusableAttachmentKey,
+  saveCompanyVaultDoc,
+  type CompanyVaultDoc,
+  type VaultSuggestion,
+} from '@/lib/workPlanVault';
 import {
   createStagedAttachments,
   filesFromClipboardEvent,
@@ -45,6 +55,9 @@ interface Row {
   category: 'legal' | 'calc_evidence' | 'site_proof';
   is_mandatory: boolean;
   file_url: string | null;
+  file_path?: string | null;
+  file_size?: number | null;
+  mime_type?: string | null;
   source_type: string | null;
   locked: boolean | null;
 }
@@ -98,8 +111,25 @@ export default function AttachmentChecklist({
   const [ocrByStageId, setOcrByStageId] = useState<Record<string, WorkPlanOcrResult>>({});
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrBatchBusy, setOcrBatchBusy] = useState(false);
+  const [vaultDocs, setVaultDocs] = useState<CompanyVaultDoc[]>([]);
+  const [saveToVaultOptIn, setSaveToVaultOptIn] = useState(false);
+  const [applyingVault, setApplyingVault] = useState(false);
+  const [savingVaultRowId, setSavingVaultRowId] = useState<string | null>(null);
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
+
+  const reloadVault = useCallback(async () => {
+    if (readOnly || !companyId) {
+      setVaultDocs([]);
+      return;
+    }
+    const docs = await fetchCompanyVaultDocs(projectId, companyId);
+    setVaultDocs(docs);
+  }, [projectId, companyId, readOnly]);
+
+  useEffect(() => {
+    void reloadVault();
+  }, [reloadVault]);
 
   useEffect(() => {
     setConditions(
@@ -110,7 +140,7 @@ export default function AttachmentChecklist({
   const reload = useCallback(async () => {
     const { data, error } = await supabase
       .from('work_plan_attachments')
-      .select('id, attachment_key, name, description, category, is_mandatory, file_url, source_type, locked')
+      .select('id, attachment_key, name, description, category, is_mandatory, file_url, file_path, file_size, mime_type, source_type, locked')
       .eq('work_plan_id', workPlanId)
       .eq('is_deleted', false)
       .order('is_mandatory', { ascending: false });
@@ -284,7 +314,11 @@ export default function AttachmentChecklist({
     }
   };
 
-  const handleUpload = async (row: Row, file: File, opts?: { quiet?: boolean }) => {
+  const handleUpload = async (
+    row: Row,
+    file: File,
+    opts?: { quiet?: boolean; ocrMeta?: WorkPlanOcrResult | null },
+  ) => {
     if (row.locked) {
       toast({ title: '잠금된 첨부입니다.', variant: 'destructive' });
       return false;
@@ -314,12 +348,41 @@ export default function AttachmentChecklist({
         toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
         return false;
       }
+
+      // Phase 2: Opt-in save to company document vault (explicit user consent only)
+      let vaultSaved = false;
+      if (saveToVaultOptIn && companyId && isReusableAttachmentKey(row.attachment_key)) {
+        const res = await saveCompanyVaultDoc({
+          projectId,
+          companyId,
+          attachmentKey: row.attachment_key,
+          docName: row.name,
+          fileUrl: uploaded.publicUrl,
+          filePath: uploaded.path,
+          fileSize: uploaded.finalBytes,
+          mimeType: uploaded.file.type,
+          holderName: opts?.ocrMeta?.companyOrHolder ?? null,
+          regOrCertNo: opts?.ocrMeta?.regOrCertNo ?? null,
+          expiryDate: opts?.ocrMeta?.expiryDate ?? null,
+          sourceWorkPlanId: workPlanId,
+        });
+        if (res.ok) {
+          vaultSaved = true;
+          void reloadVault();
+        }
+      }
+
       if (!opts?.quiet) {
+        const parts: string[] = [];
+        if (uploaded.compressed) {
+          parts.push(`이미지 압축 ${formatBytes(uploaded.originalBytes)} → ${formatBytes(uploaded.finalBytes)}`);
+        }
+        if (vaultSaved) {
+          parts.push('업체 서류 보관함에도 저장됨');
+        }
         toast({
           title: `${row.name}에 첨부됨`,
-          description: uploaded.compressed
-            ? `이미지 압축 ${formatBytes(uploaded.originalBytes)} → ${formatBytes(uploaded.finalBytes)}`
-            : undefined,
+          description: parts.length ? parts.join(' · ') : undefined,
         });
       }
       onChange?.();
@@ -333,8 +396,60 @@ export default function AttachmentChecklist({
   const assignStagedToRow = async (stageId: string, row: Row) => {
     const item = staged.find((s) => s.id === stageId);
     if (!item) return;
-    const ok = await handleUpload(row, item.file, { quiet: false });
+    const ocrMeta = ocrByStageId[stageId] ?? null;
+    const ok = await handleUpload(row, item.file, { quiet: false, ocrMeta });
     if (ok) removeStaged(stageId);
+  };
+
+  const handleApplyVault = async (suggestions: VaultSuggestion[]) => {
+    if (readOnly || applyingVault || suggestions.length === 0) return;
+    setApplyingVault(true);
+    try {
+      const res = await applyVaultSuggestions(suggestions);
+      if (res.error) {
+        toast({ title: '보관함 불러오기 실패', description: res.error, variant: 'destructive' });
+      } else if (res.applied > 0) {
+        toast({
+          title: `업체 보관함 서류 ${res.applied}건을 반영했습니다.`,
+          description: res.skippedExpired > 0
+            ? `만료된 ${res.skippedExpired}건은 제외되었습니다.`
+            : '첨부 내역을 최종 확인해 주세요.',
+        });
+        onChange?.();
+        await reload();
+      }
+    } finally {
+      setApplyingVault(false);
+    }
+  };
+
+  const handleSaveRowToVault = async (row: Row) => {
+    if (readOnly || !companyId || !row.file_url || !isReusableAttachmentKey(row.attachment_key)) return;
+    setSavingVaultRowId(row.id);
+    try {
+      const res = await saveCompanyVaultDoc({
+        projectId,
+        companyId,
+        attachmentKey: row.attachment_key,
+        docName: row.name,
+        fileUrl: row.file_url,
+        filePath: row.file_path ?? null,
+        fileSize: row.file_size ?? null,
+        mimeType: row.mime_type ?? null,
+        sourceWorkPlanId: workPlanId,
+      });
+      if (!res.ok) {
+        toast({ title: '보관함 저장 실패', description: res.error, variant: 'destructive' });
+      } else {
+        toast({
+          title: `'${row.name}' 보관함 저장 완료`,
+          description: '다음 작업계획서 작성 시 1클릭으로 불러올 수 있습니다.',
+        });
+        await reloadVault();
+      }
+    } finally {
+      setSavingVaultRowId(null);
+    }
   };
 
   const handleRowClick = async (row: Row) => {
@@ -405,6 +520,9 @@ export default function AttachmentChecklist({
   const uploadedCount = rows.filter(r => !!r.file_url).length;
   const mandatoryMissing = rows.filter(r => r.is_mandatory && !r.file_url).length;
   const selectedRow = selectedRowId ? rows.find((r) => r.id === selectedRowId) : null;
+  const vaultClassification = classifyVaultSuggestions(vaultDocs, rows, companyId);
+  const vaultSuggestable = vaultClassification.suggestable;
+  const vaultExpired = vaultClassification.expired;
 
   return (
     <div ref={rootRef}>
@@ -429,8 +547,98 @@ export default function AttachmentChecklist({
           캡처 이미지를 <b>붙여넣기(Ctrl+V)</b>하거나 임시함에 모은 뒤 항목에 할당하세요.
           여러 장 PDF는 업로드 버튼을 사용하세요. 사진은 자동 압축됩니다.
         </p>
+        {!readOnly && companyId && (
+          <div className="flex items-center justify-between gap-2 pt-1.5 border-t mt-2">
+            <label
+              htmlFor={`vault-optin-${workPlanId}`}
+              className="text-[11px] text-muted-foreground flex items-center gap-1.5 cursor-pointer select-none"
+            >
+              <Archive className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span>업로드 시 다음 작업계획서에도 재사용 저장 (우리 업체 전용 보관함)</span>
+            </label>
+            <Switch
+              id={`vault-optin-${workPlanId}`}
+              checked={saveToVaultOptIn}
+              onCheckedChange={setSaveToVaultOptIn}
+            />
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
+        {!readOnly && companyId && (vaultSuggestable.length > 0 || vaultExpired.length > 0) && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Archive className="h-4 w-4 text-primary shrink-0" />
+                <p className="text-xs font-semibold">
+                  업체 보관함 재사용 서류
+                  {vaultSuggestable.length > 0 && (
+                    <span className="ml-1 text-primary">({vaultSuggestable.length}건 불러오기 가능)</span>
+                  )}
+                </p>
+              </div>
+              {vaultSuggestable.length > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 text-[11px] gap-1"
+                  disabled={applyingVault}
+                  onClick={() => void handleApplyVault(vaultSuggestable)}
+                >
+                  {applyingVault ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                  이전 등록 서류 {vaultSuggestable.length}건 한 번에 불러오기
+                </Button>
+              )}
+            </div>
+            {vaultSuggestable.length > 0 && (
+              <div className="space-y-1">
+                {vaultSuggestable.map((s) => (
+                  <div
+                    key={s.doc.id}
+                    className="flex items-center justify-between gap-2 text-[11px] bg-background/80 rounded border px-2 py-1"
+                  >
+                    <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium truncate">{s.row.name}</span>
+                      {s.doc.holder_name && (
+                        <span className="text-[10px] text-muted-foreground truncate">· {s.doc.holder_name}</span>
+                      )}
+                      {s.doc.expiry_date && (
+                        <Badge
+                          variant={s.expiry === 'expiring_soon' ? 'secondary' : 'outline'}
+                          className="text-[9px] h-4 px-1"
+                        >
+                          유효기간 {s.doc.expiry_date}
+                          {s.expiry === 'expiring_soon' && s.daysRemaining != null
+                            ? ` (D-${s.daysRemaining})`
+                            : ''}
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] px-2 shrink-0"
+                      disabled={applyingVault}
+                      onClick={() => void handleApplyVault([s])}
+                    >
+                      불러오기
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {vaultExpired.length > 0 && (
+              <div className="rounded border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-[11px] text-destructive flex items-start gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <div>
+                  <b>유효기간 만료 {vaultExpired.length}건은 자동 추천에서 제외됨</b>:{' '}
+                  {vaultExpired.map((e) => `${e.row.name}(만료 ${e.doc.expiry_date})`).join(', ')} — 최신 서류를 새로 업로드해 주세요.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {!readOnly && (
           <div
             className={`rounded-lg border border-dashed p-3 transition-colors ${
@@ -821,6 +1029,22 @@ export default function AttachmentChecklist({
                               </span>
                             </Button>
                           </label>
+                          {isUploaded && uploadingId !== row.id && companyId && isReusableAttachmentKey(row.attachment_key) && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-[10px] text-muted-foreground hover:text-primary gap-0.5"
+                              title="이 서류를 업체 보관함에 저장해 다음 작업계획서에서 재사용"
+                              disabled={savingVaultRowId === row.id}
+                              onClick={(e) => { e.stopPropagation(); void handleSaveRowToVault(row); }}
+                            >
+                              {savingVaultRowId === row.id
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <BookmarkPlus className="h-3 w-3" />}
+                              보관함
+                            </Button>
+                          )}
                           {isUploaded && uploadingId !== row.id && (
                             <Button
                               size="sm"

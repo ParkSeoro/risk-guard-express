@@ -46,9 +46,9 @@ export function isSectionEmptyForAiDraft(section: DraftSectionLike): boolean {
       if (parsed.length === 0) return true;
       return parsed.every((item) => {
         if (!item || typeof item !== 'object') return !String(item ?? '').trim();
-        // For method/risk/equipment arrays, ignore static labels like order/key/hazard/severity
+        // For method/risk/equipment arrays, ignore static labels/flags like order/key/hazard/severity/locked/label
         const meaningfulValues = Object.entries(item)
-          .filter(([k]) => !['order', 'key', 'hazard', 'severity'].includes(k))
+          .filter(([k]) => !['order', 'key', 'hazard', 'severity', 'locked', 'label'].includes(k))
           .map(([, v]) => String(v ?? '').trim());
         return meaningfulValues.every((v) => v === '');
       });

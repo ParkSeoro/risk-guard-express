@@ -19,6 +19,13 @@ export interface AttachmentBlocker {
   hint: string;
 }
 
+export const CUSTOM_ATTACHMENT_KEY_PREFIX = 'custom_';
+
+/** User-added ad-hoc attachments (stored as site_proof / non-mandatory) must never be pruned by template sync. */
+export function isCustomAttachmentKey(key?: string | null): boolean {
+  return String(key || '').startsWith(CUSTOM_ATTACHMENT_KEY_PREFIX);
+}
+
 /**
  * 작업계획서 생성/공종 변경 시 호출 — 템플릿 + 프로젝트 설정 기반 빈 행을 미리 만들어 둠.
  * file_url 은 비워두고, 사용자가 업로드하면 update.
@@ -77,8 +84,9 @@ export async function syncTemplateRows(opts: {
   }
 
   // 설정에서 비활성(제외)된 항목: 파일 없으면 soft-delete, 있으면 선택으로 강등
+  // 단, 사용자가 임의로 추가한 기타 증빙(custom_*)은 절대 삭제하지 않음.
   for (const row of existingRows) {
-    if (enabledKeys.has(row.attachment_key)) continue;
+    if (enabledKeys.has(row.attachment_key) || isCustomAttachmentKey(row.attachment_key)) continue;
     if (!row.file_url) {
       await supabase
         .from('work_plan_attachments')

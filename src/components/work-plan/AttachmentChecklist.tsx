@@ -1,11 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { generateAttachments, withKind, type AttachmentItem } from '@/lib/attachmentTemplates';
-import { syncTemplateRows, computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
+import {
+  syncTemplateRows,
+  computeAttachmentProgress,
+  CUSTOM_ATTACHMENT_KEY_PREFIX,
+  isCustomAttachmentKey,
+  type AttachmentProgress,
+} from '@/lib/workPlanAttachments';
 import { supabase } from '@/integrations/supabase/client';
 import { resolveArchivedUrl } from '@/lib/archiveUrlResolver';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -13,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import {
   Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer,
-  ClipboardPaste, Inbox, Trash2, MousePointerClick,
+  ClipboardPaste, Inbox, Trash2, MousePointerClick, Plus,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
@@ -44,6 +51,8 @@ interface Props {
   companyId?: string | null;
   workType: string;
   readOnly?: boolean;
+  initialConditions?: Record<string, string> | null;
+  onConditionsChange?: (next: Record<string, string>) => void;
   onChange?: () => void;
   onProgress?: (p: AttachmentProgress) => void;
 }
@@ -55,10 +64,20 @@ const KIND_LABEL: Record<Row['category'], { label: string; cls: string }> = {
 };
 
 export default function AttachmentChecklist({
-  workPlanId, projectId, companyId, workType, readOnly, onChange, onProgress,
+  workPlanId,
+  projectId,
+  companyId,
+  workType,
+  readOnly,
+  initialConditions,
+  onConditionsChange,
+  onChange,
+  onProgress,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [conditions, setConditions] = useState<Record<string, string>>({});
+  const [conditions, setConditions] = useState<Record<string, string>>(() =>
+    initialConditions && typeof initialConditions === 'object' ? { ...initialConditions } : {},
+  );
   const [template, setTemplate] = useState<AttachmentItem[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,8 +86,19 @@ export default function AttachmentChecklist({
   const [staged, setStaged] = useState<StagedAttachment[]>([]);
   const [armedStageId, setArmedStageId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<'inbox' | string | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customDesc, setCustomDesc] = useState('');
+  const [customFile, setCustomFile] = useState<File | null>(null);
+  const [addingCustom, setAddingCustom] = useState(false);
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
+
+  useEffect(() => {
+    setConditions(
+      initialConditions && typeof initialConditions === 'object' ? { ...initialConditions } : {},
+    );
+  }, [workPlanId, JSON.stringify(initialConditions ?? {})]);
 
   const reload = useCallback(async () => {
     const { data, error } = await supabase
@@ -92,21 +122,85 @@ export default function AttachmentChecklist({
       setLoading(true);
       const tpl = generateAttachments(workType, conditions).map(withKind);
       if (!cancelled) setTemplate(tpl);
-      try {
-        await syncTemplateRows({ workPlanId, projectId, companyId, workType, conditions });
-      } catch (e: any) {
-        toast({ title: '템플릿 동기화 실패', description: e?.message, variant: 'destructive' });
+      // Phase 0 invariant: NEVER mutate or re-sync attachment rows on locked/readOnly plans (preserves historical snapshots).
+      if (!readOnly) {
+        try {
+          await syncTemplateRows({ workPlanId, projectId, companyId, workType, conditions });
+        } catch (e: any) {
+          toast({ title: '템플릿 동기화 실패', description: e?.message, variant: 'destructive' });
+        }
       }
       await reload();
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [workPlanId, projectId, companyId, workType, JSON.stringify(conditions), reload]);
+  }, [workPlanId, projectId, companyId, workType, readOnly, JSON.stringify(conditions), reload]);
 
   useEffect(() => () => { revokeAllStaged(stagedRef.current); }, []);
 
   const toggleCondition = (field: string) => {
-    setConditions(prev => ({ ...prev, [field]: prev[field] === 'true' ? 'false' : 'true' }));
+    if (readOnly) return;
+    setConditions((prev) => {
+      const next = { ...prev, [field]: prev[field] === 'true' ? 'false' : 'true' };
+      onConditionsChange?.(next);
+      void supabase
+        .from('work_plans')
+        .update({ work_conditions: next } as any)
+        .eq('id', workPlanId)
+        .then(({ error }) => {
+          if (error) {
+            toast({ title: '작업 조건 저장 실패', description: error.message, variant: 'destructive' });
+          }
+        });
+      return next;
+    });
+  };
+
+  const handleAddCustomAttachment = async () => {
+    if (readOnly) return;
+    const trimmedName = customName.trim();
+    if (!trimmedName) {
+      toast({ title: '증빙 서류 이름을 입력하세요.', variant: 'destructive' });
+      return;
+    }
+    if (!customFile) {
+      toast({ title: '첨부할 파일을 선택하세요.', variant: 'destructive' });
+      return;
+    }
+    setAddingCustom(true);
+    try {
+      const attachmentKey = `${CUSTOM_ATTACHMENT_KEY_PREFIX}${Date.now()}`;
+      const safeName = customFile.name.replace(/[^\w.\-]+/g, '_');
+      const path = `${projectId}/work-plans/${workPlanId}/${attachmentKey}_${safeName}`;
+      const uploaded = await uploadAttachmentFile(path, customFile);
+      const { error } = await supabase.from('work_plan_attachments').insert({
+        work_plan_id: workPlanId,
+        project_id: projectId,
+        company_id: companyId ?? null,
+        category: 'site_proof',
+        attachment_key: attachmentKey,
+        name: trimmedName,
+        description: customDesc.trim() || '사용자 추가 증빙',
+        is_mandatory: false,
+        source_type: 'manual',
+        file_url: uploaded.publicUrl,
+        file_path: uploaded.path,
+        file_size: uploaded.finalBytes,
+        mime_type: uploaded.file.type,
+      });
+      if (error) throw error;
+      toast({ title: `'${trimmedName}' 기타 증빙을 추가했습니다.` });
+      setCustomName('');
+      setCustomDesc('');
+      setCustomFile(null);
+      setCustomOpen(false);
+      onChange?.();
+      await reload();
+    } catch (e: any) {
+      toast({ title: '기타 증빙 추가 실패', description: e?.message || String(e), variant: 'destructive' });
+    } finally {
+      setAddingCustom(false);
+    }
   };
 
   const addToInbox = useCallback((files: File[]) => {
@@ -239,9 +333,12 @@ export default function AttachmentChecklist({
       toast({ title: '잠금된 첨부입니다.', description: '결재 승인된 문서는 수정할 수 없습니다.', variant: 'destructive' });
       return;
     }
+    const patch = isCustomAttachmentKey(row.attachment_key)
+      ? { is_deleted: true, deleted_at: new Date().toISOString() }
+      : { file_url: null, file_path: null, file_size: null, mime_type: null };
     const { error } = await supabase
       .from('work_plan_attachments')
-      .update({ file_url: null, file_path: null, file_size: null, mime_type: null })
+      .update(patch)
       .eq('id', row.id);
     if (error) {
       toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
@@ -490,6 +587,9 @@ export default function AttachmentChecklist({
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium truncate flex items-center gap-1">
                           {row.name}
+                          {isCustomAttachmentKey(row.attachment_key) && (
+                            <Badge variant="secondary" className="text-[9px] h-4 shrink-0">사용자 추가</Badge>
+                          )}
                           {isAuto && <Bot className="h-3 w-3 text-primary" aria-label="자동 첨부" />}
                           {row.locked && <Lock className="h-3 w-3 text-muted-foreground" aria-label="잠금" />}
                           {isSelected && (
@@ -569,6 +669,98 @@ export default function AttachmentChecklist({
             </div>
           );
         })}
+        {!loading && !readOnly && (
+          <div className="pt-2 border-t">
+            {!customOpen ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full h-9 text-xs gap-1.5 border-dashed"
+                onClick={() => setCustomOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" /> 기타 증빙 추가 (현장·발주처 추가 서류 자유 첨부)
+              </Button>
+            ) : (
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold">기타 증빙 추가</p>
+                  <button
+                    type="button"
+                    className="text-[11px] text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setCustomOpen(false);
+                      setCustomName('');
+                      setCustomDesc('');
+                      setCustomFile(null);
+                    }}
+                  >
+                    닫기
+                  </button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">서류명 *</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="예: 지반 보강 사진, 발주처 협의서"
+                      value={customName}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      disabled={addingCustom}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px]">설명 (선택)</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="간단한 참고 메모"
+                      value={customDesc}
+                      onChange={(e) => setCustomDesc(e.target.value)}
+                      disabled={addingCustom}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*,application/pdf,.xlsx,.xls,.pptx,.ppt,.docx,.doc"
+                      disabled={addingCustom}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setCustomFile(f);
+                        if (f && !customName.trim()) {
+                          setCustomName(f.name.replace(/\.[^.]+$/, ''));
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                    <Button asChild type="button" size="sm" variant="outline" className="h-8 text-xs gap-1">
+                      <span>
+                        <Upload className="h-3.5 w-3.5" />
+                        {customFile ? customFile.name : '파일 선택'}
+                      </span>
+                    </Button>
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs gap-1"
+                    disabled={addingCustom || !customName.trim() || !customFile}
+                    onClick={() => void handleAddCustomAttachment()}
+                  >
+                    {addingCustom ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    {addingCustom ? '업로드 중…' : '첨부 추가'}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  결재를 차단하지 않으며, 최종 PDF 합본과 검토자 첨부 뷰어에 자동 포함됩니다.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
         {template.length === 0 && null}
       </CardContent>
     </Card>

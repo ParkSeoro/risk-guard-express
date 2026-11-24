@@ -74,6 +74,7 @@ import { format, parseISO } from 'date-fns';
 import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
 import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
 import { appendTextToMethodSection } from '@/lib/workPlanMethodSection';
+import { computeWorkPlanNextActions } from '@/lib/workPlanNextActions';
 import { WorkDocVoidBanner } from '@/components/work-docs/WorkDocVoidStamp';
 import { WorkDocVoidDialog } from '@/components/work-docs/WorkDocVoidDialog';
 import { canClientVoidWorkDoc, isWorkDocVoided, workDocVoidInfo } from '@/lib/workDocVoid';
@@ -173,6 +174,20 @@ const WorkPlanDetail = () => {
     [plan?.company_id, access.userCompanyId, access.seesAllCompanies],
   );
   const authorCompanyFilterPending = access.scopeStatus !== 'ready' && !plan?.company_id;
+
+  const authorCardRef = useRef<HTMLDivElement>(null);
+  const nextActions = useMemo(() => {
+    if (!plan) return [];
+    return computeWorkPlanNextActions({
+      workType: plan.work_type || '',
+      startDate,
+      endDate,
+      authorUserId: plan.author_user_id,
+      rigging,
+      legalCalcEntries: extractLegalCalcSnapshot(sections),
+      mandatoryMissing: attProgress?.mandatoryMissing ?? 0,
+    });
+  }, [plan, startDate, endDate, rigging, sections, attProgress?.mandatoryMissing]);
 
   const markDirty = () => {
     editEpochRef.current += 1;
@@ -775,6 +790,7 @@ const WorkPlanDetail = () => {
       })()}
 
       {EDITABLE_PLAN_STATUSES.has(plan.status) && (
+        <div ref={authorCardRef}>
         <Card className={hasWorkPlanLegalAuthor(plan.author_user_id) ? '' : 'border-warning/40 bg-warning/10'}>
           <CardContent className="p-3 text-xs space-y-2">
             <p className="font-medium">
@@ -814,6 +830,7 @@ const WorkPlanDetail = () => {
             )}
           </CardContent>
         </Card>
+        </div>
       )}
 
       {/* Action Bar */}
@@ -939,87 +956,80 @@ const WorkPlanDetail = () => {
         </Card>
       )}
 
-      {/* 위험성평가 연계 (권장 · 결재 절대조건 아님) */}
-      <Card className="border-primary/40">
-        <CardContent className="p-3 flex items-center gap-3 flex-wrap">
-          <Shield className="h-4 w-4 text-primary" />
-          <div className="flex-1 min-w-[240px]">
-            <div className="text-sm font-semibold">위험성평가 연계 <span className="text-[10px] font-normal text-muted-foreground">(권장)</span></div>
-            {latestApprovedRun ? (
-              <div className="text-xs text-muted-foreground">
-                최신 승인완료 회차: <b>{latestApprovedRun.period_label}</b>
-                {latestApprovedRun.start_date && (
-                  <> ({latestApprovedRun.start_date} ~ {latestApprovedRun.end_date || '-'})</>
-                )}
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">
-                승인완료 회차가 없어도 결재는 가능합니다. 있으면 상위위험 항목을 불러올 수 있습니다.
-              </div>
-            )}
+      {/* 상단 보조 옵션(위험성평가 연계 · AI 교육자료 · 법적근거) — 1줄 접이식 요약 바로 압축 */}
+      <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+        <summary className="flex items-center justify-between gap-2 cursor-pointer select-none list-none flex-wrap">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            <Shield className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="font-semibold">연계·법적근거·옵션</span>
+            <span className="text-muted-foreground truncate">
+              {latestApprovedRun ? `위험성평가: ${latestApprovedRun.period_label}` : '위험성평가 미연계'}
+              {' · '}
+              AI 교육자료 {(plan?.auto_education_enabled ?? true) ? 'ON' : 'OFF'}
+              {wpType?.legalBasis ? ` · ${wpType.legalBasis}` : ''}
+            </span>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!latestApprovedRun || raSyncing || !planId}
-            onClick={async () => {
-              if (!latestApprovedRun || !planId) return;
-              setRaSyncing(true);
-              try {
-                const { imported, sections: next } = await syncRaToWp({
-                  runId: latestApprovedRun.id,
-                  workPlanId: planId,
-                  existingSections: sections,
-                });
-                setSections(next);
-                toast({ title: `위험도 상 ${imported}건을 불러왔습니다.` });
-              } catch (e: any) {
-                toast({ title: '연계 실패', description: e?.message || '오류', variant: 'destructive' });
-              } finally {
-                setRaSyncing(false);
-              }
-            }}
-          >
-            {raSyncing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
-            위험도 상 항목 불러오기
-          </Button>
-        </CardContent>
-      </Card>
-
-
-      {/* AI Education Material Auto-Generation Toggle */}
-      <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <div>
-            <Label htmlFor="auto-edu-toggle" className="text-sm font-medium cursor-pointer">
-              교육자료 AI 자동 생성
-            </Label>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              disabled={!latestApprovedRun || raSyncing || !planId}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!latestApprovedRun || !planId) return;
+                setRaSyncing(true);
+                try {
+                  const { imported, sections: next } = await syncRaToWp({
+                    runId: latestApprovedRun.id,
+                    workPlanId: planId,
+                    existingSections: sections,
+                  });
+                  setSections(next);
+                  toast({ title: `위험도 상 ${imported}건을 불러왔습니다.` });
+                } catch (err: any) {
+                  toast({ title: '연계 실패', description: err?.message || '오류', variant: 'destructive' });
+                } finally {
+                  setRaSyncing(false);
+                }
+              }}
+            >
+              {raSyncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+              위험도 상 불러오기
+            </Button>
+            <span className="text-[11px] text-muted-foreground underline">상세 펼치기</span>
+          </div>
+        </summary>
+        <div className="mt-3 pt-3 border-t space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <div>
+                <Label htmlFor="auto-edu-toggle" className="text-xs font-medium cursor-pointer">
+                  교육자료 AI 자동 생성
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  결재 승인 시 위험성평가 기반 안전교육 자료를 자동으로 생성합니다.
+                </p>
+              </div>
+            </div>
+            <Switch
+              id="auto-edu-toggle"
+              checked={plan?.auto_education_enabled ?? true}
+              onCheckedChange={(v) => {
+                setPlan((prev: any) => ({ ...prev, auto_education_enabled: v }));
+                markDirty();
+              }}
+            />
+          </div>
+          {wpType && (
             <p className="text-[11px] text-muted-foreground">
-              결재 승인 시 위험성평가 기반 안전교육 자료를 자동으로 생성합니다.
-            </p>
-          </div>
-        </div>
-        <Switch
-          id="auto-edu-toggle"
-          checked={plan?.auto_education_enabled ?? true}
-          onCheckedChange={(v) => {
-            setPlan((prev: any) => ({ ...prev, auto_education_enabled: v }));
-            markDirty();
-          }}
-        />
-      </div>
-
-      {/* Legal Basis */}
-      {wpType && (
-        <Card className="bg-muted/30">
-          <CardContent className="py-3 px-4">
-            <p className="text-xs text-muted-foreground">
               <strong>법적근거:</strong> {wpType.legalBasis}
             </p>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </div>
+      </details>
 
       {validationErrors['_dates'] && (
         <p className="text-xs text-destructive">{validationErrors['_dates'][0]}</p>
@@ -1190,9 +1200,8 @@ const WorkPlanDetail = () => {
         </TabsContent>
 
 
-        {/* Attachments Tab */}
+        {/* Attachments Tab — single checklist card (review viewer lives in Preview / Approval / Mobile) */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
-          {planId && <AttachmentReviewPanel workPlanId={planId} />}
           {plan?.project_id && (
             <AttachmentChecklist
               workPlanId={plan.id}
@@ -1200,6 +1209,10 @@ const WorkPlanDetail = () => {
               companyId={plan.company_id}
               workType={plan.work_type}
               readOnly={!EDITABLE_PLAN_STATUSES.has(plan.status)}
+              initialConditions={(plan.work_conditions as Record<string, string> | null) || null}
+              onConditionsChange={(next) => {
+                setPlan((prev: any) => (prev ? { ...prev, work_conditions: next } : prev));
+              }}
               onChange={() => markDirty()}
               onProgress={setAttProgress}
             />
@@ -1232,6 +1245,51 @@ const WorkPlanDetail = () => {
           {planId && <AttachmentReviewPanel workPlanId={planId} />}
         </TabsContent>
       </Tabs>
+
+      {/* 하단 고정 "다음 할 일" 클릭 점프 바 (작성중/반려 상태에서만 표시) */}
+      {planEditable && (
+        <div className="sticky bottom-2 z-20 rounded-xl border bg-background/95 backdrop-blur px-3 py-2 shadow-md flex items-center justify-between gap-2 flex-wrap print:hidden">
+          {nextActions.length > 0 ? (
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+              <span className="text-xs font-semibold text-destructive shrink-0">
+                남은 필수 {nextActions.length}건:
+              </span>
+              {nextActions.map((act) => (
+                <button
+                  key={act.id}
+                  type="button"
+                  onClick={() => {
+                    if (act.tab === 'author') {
+                      authorCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                      setActiveTab(act.tab);
+                    }
+                  }}
+                  className="text-[11px] px-2 py-0.5 rounded-full border border-destructive/30 bg-destructive/5 text-destructive hover:bg-destructive/15 transition-colors"
+                >
+                  {act.label} →
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>모든 필수 항목이 준비되었습니다. 바로 결재 상신할 수 있습니다.</span>
+            </div>
+          )}
+          <Button
+            size="sm"
+            variant={nextActions.length === 0 ? 'default' : 'outline'}
+            className="h-7 text-xs gap-1 shrink-0"
+            disabled={(attProgress?.mandatoryMissing ?? 0) > 0}
+            onClick={handleSubmitApproval}
+          >
+            <SendHorizontal className="h-3.5 w-3.5" />
+            {plan.status === '반려' ? '재상신' : '결재 상신'}
+          </Button>
+        </div>
+      )}
+
       {plan && (
         <WorkDocVoidDialog
           open={voidOpen}

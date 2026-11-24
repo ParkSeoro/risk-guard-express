@@ -77,7 +77,7 @@ describe("WorkPlan Phase 1 — OCR MVP helpers & contracts", () => {
       "supabase/functions/analyze-workplan-attachment/index.ts",
       "utf8",
     );
-    expect(efSrc).not.toContain("koreanOcr.ts");
+    expect(efSrc).not.toMatch(/from\s+["'][^"']*koreanOcr/);
     expect(efSrc).toContain("needs_page_select");
     expect(efSrc).toContain("rated_capacity_ton");
 

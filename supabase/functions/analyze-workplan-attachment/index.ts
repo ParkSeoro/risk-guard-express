@@ -1,5 +1,5 @@
 // Work-plan attachment dedicated 1-Pass Multimodal Vision OCR & Classifier.
-// Completely decoupled from safety-cost (koreanOcr.ts) prompts.
+// Completely decoupled from safety-cost OCR prompts.
 // Never mutates DB — returns structured suggestion only (user must 1-click confirm).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

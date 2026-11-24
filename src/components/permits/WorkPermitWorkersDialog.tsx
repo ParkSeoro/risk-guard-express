@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Users, Search, UserCheck } from "lucide-react";
+import { Loader2, Users, Search, UserCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { evaluateWorkerHealthWarnings } from "@/lib/permitRosterHealth";
 import {
   buildPersonnelCountPatch,
   filterPermitAssignableWorkers,
@@ -66,7 +67,7 @@ export default function WorkPermitWorkersDialog({
 
       let workersQ: any = supabase
         .from("workers")
-        .select("id, name, phone, company_name, company_id, job_type")
+        .select("id, name, phone, company_name, company_id, job_type, health_checkup_status, next_checkup_due, health_restrictions, health_grade")
         .eq("project_id", projectId)
         .eq("is_active", true)
         .order("name");
@@ -297,7 +298,9 @@ export default function WorkPermitWorkersDialog({
                   이 회사로 등록된 근로자·관리자가 없습니다.
                 </div>
               ) : (
-                filtered.map((w) => (
+                filtered.map((w) => {
+                  const healthWarnings = evaluateWorkerHealthWarnings(w);
+                  return (
                   <label
                     key={w.id}
                     className="flex items-center gap-3 p-2 hover:bg-muted/50 cursor-pointer"
@@ -307,7 +310,7 @@ export default function WorkPermitWorkersDialog({
                       onCheckedChange={() => toggle(w.id)}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium flex items-center gap-1.5">
+                      <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
                         {w.name}
                         {w.isManager && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0">
@@ -319,6 +322,19 @@ export default function WorkPermitWorkersDialog({
                             출근
                           </Badge>
                         )}
+                        {healthWarnings.map((hw) => (
+                          <Badge
+                            key={hw.id}
+                            variant={hw.severity === "danger" ? "destructive" : "outline"}
+                            title={hw.tooltip}
+                            className={`text-[9px] px-1 py-0 gap-0.5 ${
+                              hw.severity === "warn" ? "border-amber-500 text-amber-700 bg-amber-50" : ""
+                            }`}
+                          >
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            {hw.label}
+                          </Badge>
+                        ))}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">
                         {w.company_name || companyName || "-"}
@@ -326,7 +342,8 @@ export default function WorkPermitWorkersDialog({
                       </div>
                     </div>
                   </label>
-                ))
+                  );
+                })
               )}
             </div>
           )}

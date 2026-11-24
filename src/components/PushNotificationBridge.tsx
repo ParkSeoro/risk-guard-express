@@ -147,11 +147,18 @@ export default function PushNotificationBridge() {
             const data = notification?.data || {};
             if (data.type === 'danger_zone_entry' || data.type === 'suspended_site_entry') {
               void import('@/lib/tts').then((m) => m.playDangerAlarm());
+              return;
             }
-            // 현장 공지: system tray already shows; foreground just surface a toast.
+            const title = notification?.title || data.title || '';
+            const body = notification?.body || data.body || '';
+            // 현장 공지: surface a toast on foreground.
             if (data.type === 'announcement') {
-              const title = notification?.title || data.title || '현장 공지';
-              const body = notification?.body || data.body || '';
+              void import('sonner').then(({ toast }) => toast(title || '현장 공지', { description: body }));
+              return;
+            }
+            // Android does not display OS banners while in foreground (unlike iOS presentationOptions).
+            // Surface a quiet in-app toast so approvals, chats, and inspections are not silently dropped.
+            if (platformResolved === 'android' && title) {
               void import('sonner').then(({ toast }) => toast(title, { description: body }));
             }
           },

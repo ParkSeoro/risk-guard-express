@@ -114,7 +114,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           setLoadHint("본문을 불러오는 중…");
           const [doc, wpRes, rigRes, attRes] = await Promise.all([
             fetchWorkPlanPrintHtml(entityId),
-            supabase.from("work_plans").select("work_type, content").eq("id", entityId).maybeSingle(),
+            supabase.from("work_plans").select("work_type, sections").eq("id", entityId).maybeSingle(),
             supabase.from("rigging_plans").select("*").eq("work_plan_id", entityId).maybeSingle(),
             supabase
               .from("work_plan_attachments")
@@ -128,7 +128,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
             setWpReviewSummary(
               buildWorkPlanReviewSummary({
                 workType: String((wpRes.data as any).work_type || ""),
-                content: (wpRes.data as any).content as Record<string, unknown> | null,
+                sections: (wpRes.data as any).sections,
                 rigging: (rigRes.data as Record<string, unknown> | null) ?? null,
                 attachments: (attRes.data ?? []) as any[],
               }),

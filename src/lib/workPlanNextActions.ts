@@ -4,6 +4,7 @@
  */
 import {
   evaluateWorkPlanApprovalGates,
+  type LegalCalcSnapshot,
   type LegalCalcSnapshotEntry,
 } from "@/lib/workPlanLegalCalcGate";
 import { hasWorkPlanLegalAuthor } from "@/lib/workPlanAuthor";
@@ -20,6 +21,7 @@ export function computeWorkPlanNextActions(opts: {
   endDate?: string | null;
   authorUserId?: string | null;
   rigging?: Record<string, unknown> | null;
+  legalCalcSnapshot?: LegalCalcSnapshot | null;
   legalCalcEntries?: LegalCalcSnapshotEntry[];
   mandatoryMissing?: number;
 }): WorkPlanNextAction[] {
@@ -33,10 +35,16 @@ export function computeWorkPlanNextActions(opts: {
     actions.push({ id: "author", label: "관리감독자 지정", tab: "author" });
   }
 
+  const snapshot: LegalCalcSnapshot | null =
+    opts.legalCalcSnapshot ??
+    (opts.legalCalcEntries && opts.legalCalcEntries.length > 0
+      ? { updatedAt: "", entries: opts.legalCalcEntries }
+      : null);
+
   const gates = evaluateWorkPlanApprovalGates({
     workType: opts.workType,
     rigging: opts.rigging ?? null,
-    legalCalcEntries: opts.legalCalcEntries ?? [],
+    snapshot,
   });
   const seenTabs = new Set<string>();
   for (const g of gates) {

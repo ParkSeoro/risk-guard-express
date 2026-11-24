@@ -56,8 +56,11 @@ import { Switch } from '@/components/ui/switch';
 import {
   Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle,
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,
-  CalendarDays, MapPin, User, Shield, ClipboardList, Ban
+  CalendarDays, MapPin, User, Shield, ClipboardList, Ban, HelpCircle
 } from 'lucide-react';
+import WorkPlanTourCoach from '@/components/work-plan/WorkPlanTourCoach';
+import LegalTermTooltip from '@/components/work-plan/LegalTermTooltip';
+import { findSectionLegalHint, hasSeenWorkPlanTour } from '@/lib/workPlanGuides';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import RejectionReasonBanner from '@/components/approval/RejectionReasonBanner';
 import { visibleDocumentRejection } from '@/lib/priorRejectionReason';
@@ -114,6 +117,13 @@ const WorkPlanDetail = () => {
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [approvalRows, setApprovalRows] = useState<any[]>([]);
   const [voidOpen, setVoidOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    if (plan && EDITABLE_PLAN_STATUSES.has(plan.status) && !isWorkDocVoided(plan) && !hasSeenWorkPlanTour()) {
+      setTourOpen(true);
+    }
+  }, [plan?.id, plan?.status]);
   const [authorName, setAuthorName] = useState('');
   // Basic info fields
   const [startDate, setStartDate] = useState('');
@@ -764,9 +774,24 @@ const WorkPlanDetail = () => {
         </div>
         <div className="flex items-center gap-1.5">
           {isDirty && <span className="text-[10px] text-muted-foreground">미저장</span>}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-[11px] gap-1 text-muted-foreground hover:text-primary print:hidden"
+            onClick={() => setTourOpen((v) => !v)}
+          >
+            <HelpCircle className="h-3.5 w-3.5" /> 화면 안내
+          </Button>
           <Badge className={`text-[10px] ${statusColor}`}>{plan.status}</Badge>
         </div>
       </div>
+
+      <WorkPlanTourCoach
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        onSelectTab={setActiveTab}
+      />
 
       <WorkDocVoidBanner info={voidInfo} />
 
@@ -1111,8 +1136,14 @@ const WorkPlanDetail = () => {
             return (
               <Card key={section.key} className={sectionErrors ? 'border-destructive' : ''}>
                 <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm">{section.title}</CardTitle>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <CardTitle className="text-sm">{section.title}</CardTitle>
+                      {(() => {
+                        const hint = findSectionLegalHint(section.key, plan.work_type);
+                        return hint ? <LegalTermTooltip hint={hint} /> : null;
+                      })()}
+                    </div>
                     {(templateSection?.aiPrompt || (usesFixedLegalRisk(plan.work_type) && section.key === 'risk')) && (
                       <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
                         onClick={() => handleAiGenerate(section.key)} disabled={aiLoading === section.key}>

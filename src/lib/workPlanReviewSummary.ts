@@ -10,7 +10,11 @@
 import { getWorkPlanType, workPlanLegalClass } from './workPlanTemplates';
 import { computeAttachmentProgress } from './workPlanAttachments';
 import { validateHeavyLiftLegalRisk, usesFixedLegalRisk } from './workPlanLegalRisk';
-import { isRiggingPlanSafe } from './workPlanLegalCalcGate';
+import {
+  extractLegalCalcSnapshot,
+  isRiggingPlanSafe,
+  REQUIRED_LEGAL_CALC_IDS,
+} from './workPlanLegalCalcGate';
 
 export type TrafficLight = 'ok' | 'warn' | 'fail' | 'na';
 
@@ -29,8 +33,32 @@ export interface WorkPlanReviewSummary {
   signals: ReviewSignal[];
 }
 
+export interface WorkPlanSectionRowLike {
+  key?: string;
+  content?: string;
+}
+
+function normalizeSectionsToMap(
+  sections?: WorkPlanSectionRowLike[] | null,
+  content?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (Array.isArray(sections)) {
+    const map: Record<string, unknown> = {};
+    for (const s of sections) {
+      if (s && typeof s.key === 'string') {
+        map[s.key] = s.content ?? '';
+      }
+    }
+    return map;
+  }
+  return content && typeof content === 'object' ? content : {};
+}
+
 export function buildWorkPlanReviewSummary(opts: {
   workType: string;
+  /** Real DB format: work_plans.sections jsonb array */
+  sections?: WorkPlanSectionRowLike[] | null;
+  /** Optional map format (backward-compatible for unit tests) */
   content?: Record<string, unknown> | null;
   rigging?: Record<string, unknown> | null;
   attachments?: Array<{
@@ -70,7 +98,7 @@ export function buildWorkPlanReviewSummary(opts: {
   const textSections = (tpl?.templateSections ?? []).filter(
     (s) => s.type !== 'rigging' && s.type !== 'table',
   );
-  const contentObj = opts.content && typeof opts.content === 'object' ? opts.content : {};
+  const contentObj = normalizeSectionsToMap(opts.sections, opts.content);
   let filledCount = 0;
   for (const s of textSections) {
     const raw = contentObj[s.key];
@@ -101,8 +129,9 @@ export function buildWorkPlanReviewSummary(opts: {
     detail: annexDetail,
   };
 
-  // 3. Rigging safety (when applicable)
+  // 3. Rigging safety OR non-rigging statutory legal calculation
   let riggingSignal: ReviewSignal;
+  const requiredCalcs = REQUIRED_LEGAL_CALC_IDS[opts.workType] || [];
   if (tpl?.hasRiggingPlan) {
     const r = opts.rigging as any;
     if (!r) {
@@ -131,6 +160,36 @@ export function buildWorkPlanReviewSummary(opts: {
             ? `정격하중 대비 ${utilPct}% 사용`
             : '장비·슬링·샤클 판정 적합'
           : '장비/슬링/샤클 안전율 또는 정격하중 초과 확인 필요',
+      };
+    }
+  } else if (requiredCalcs.length > 0 && Array.isArray(opts.sections)) {
+    const snap = extractLegalCalcSnapshot(opts.sections);
+    const entries = snap?.entries ?? [];
+    const missing = requiredCalcs.filter((id) => !entries.some((e) => e.id === id));
+    const failed = requiredCalcs.filter((id) => entries.some((e) => e.id === id && e.verdict === 'fail'));
+    if (failed.length > 0) {
+      riggingSignal = {
+        id: 'rigging',
+        label: '법정계산',
+        light: 'fail',
+        value: '부적합',
+        detail: '법정계산 판정이 부적합입니다.',
+      };
+    } else if (missing.length > 0) {
+      riggingSignal = {
+        id: 'rigging',
+        label: '법정계산',
+        light: 'fail',
+        value: '미실시',
+        detail: '해당 공종 필수 법정계산이 미실시 상태입니다.',
+      };
+    } else {
+      riggingSignal = {
+        id: 'rigging',
+        label: '법정계산',
+        light: 'ok',
+        value: '적합',
+        detail: '공종 필수 법정계산 적합 판정 완료',
       };
     }
   } else {

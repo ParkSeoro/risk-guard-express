@@ -194,7 +194,7 @@ const WorkPlanDetail = () => {
       endDate,
       authorUserId: plan.author_user_id,
       rigging,
-      legalCalcEntries: extractLegalCalcSnapshot(sections),
+      legalCalcSnapshot: extractLegalCalcSnapshot(sections),
       mandatoryMissing: attProgress?.mandatoryMissing ?? 0,
     });
   }, [plan, startDate, endDate, rigging, sections, attProgress?.mandatoryMissing]);
@@ -1157,7 +1157,7 @@ const WorkPlanDetail = () => {
                 <CardContent>
                   <StructuredSectionForm key={`${planId}-${section.key}`} sectionKey={section.key} workType={plan.work_type}
                     value={section.content || ''} onChange={content => {
-                      if (!EDITABLE_PLAN_STATUSES.has(plan.status)) return;
+                      if (!planEditable) return;
                       handleSectionChange(section.key, content);
                     }} />
                 </CardContent>
@@ -1175,7 +1175,7 @@ const WorkPlanDetail = () => {
               onDerivedPatch={handleRiggingDerivedPatch}
               onSave={handleSaveRigging}
               saving={saving}
-              readOnly={!EDITABLE_PLAN_STATUSES.has(plan.status)}
+              readOnly={!planEditable}
             />
           </TabsContent>
         )}
@@ -1239,7 +1239,7 @@ const WorkPlanDetail = () => {
               projectId={plan.project_id}
               companyId={plan.company_id}
               workType={plan.work_type}
-              readOnly={!EDITABLE_PLAN_STATUSES.has(plan.status)}
+              readOnly={!planEditable}
               initialConditions={(plan.work_conditions as Record<string, string> | null) || null}
               onConditionsChange={(next) => {
                 setPlan((prev: any) => (prev ? { ...prev, work_conditions: next } : prev));

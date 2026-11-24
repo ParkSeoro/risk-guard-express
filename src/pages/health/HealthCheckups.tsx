@@ -12,9 +12,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, Stethoscope, Search, Trash2, Pencil } from "lucide-react";
+import { Plus, Stethoscope, Search, Trash2, Pencil, FileSpreadsheet } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
+import HealthCheckupBulkImportDialog from "@/components/health/HealthCheckupBulkImportDialog";
 
 const TYPES = ["일반", "특수", "배치전", "수시", "임시"];
 const RESULTS = ["정상A", "정상B", "요관찰C", "유소견D1", "유소견D2", "판정불가", "미수검"];
@@ -32,6 +33,7 @@ export default function HealthCheckups() {
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [openNew, setOpenNew] = useState(false);
+  const [openBulk, setOpenBulk] = useState(false);
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [form, setForm] = useState<any>({ type: "일반", result: "미수검" });
   const [tab, setTab] = useState<"all" | "findings" | "untested" | "due">("all");
@@ -168,7 +170,12 @@ export default function HealthCheckups() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Stethoscope className="h-6 w-6" />건강진단 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">일반/특수/배치전/수시/임시 건강진단 기록 (산업안전보건법 제129~131조)</p>
         </div>
-        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />신규 등록</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setOpenBulk(true)} className="gap-1.5">
+            <FileSpreadsheet className="h-4 w-4" />엑셀 일괄등록
+          </Button>
+          <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />신규 등록</Button>
+        </div>
       </div>
 
       <Card>
@@ -280,6 +287,15 @@ export default function HealthCheckups() {
           <DialogFooter><Button variant="outline" onClick={() => setOpenNew(false)}>취소</Button><Button onClick={submit}>{editingRow ? "저장" : "등록"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <HealthCheckupBulkImportDialog
+        open={openBulk}
+        onOpenChange={setOpenBulk}
+        projectId={projectId}
+        workers={workers}
+        existingCheckups={list}
+        onImported={load}
+      />
     </div>
   );
 }

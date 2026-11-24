@@ -12,10 +12,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, Stethoscope, Search, Trash2, Pencil, FileSpreadsheet } from "lucide-react";
+import { Plus, Stethoscope, Search, Trash2, Pencil, FileSpreadsheet, Sparkles, Upload, Loader2, ExternalLink } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import HealthCheckupBulkImportDialog from "@/components/health/HealthCheckupBulkImportDialog";
+import HealthCheckupBatchOcrDialog from "@/components/health/HealthCheckupBatchOcrDialog";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
+import { matchWorkerForCheckup } from "@/lib/healthCheckupExcel";
+import { analyzeHealthCheckupFile } from "@/lib/healthCheckupOcr";
 
 const TYPES = ["일반", "특수", "배치전", "수시", "임시"];
 const RESULTS = ["정상A", "정상B", "요관찰C", "유소견D1", "유소견D2", "판정불가", "미수검"];
@@ -34,6 +39,10 @@ export default function HealthCheckups() {
   const [loading, setLoading] = useState(true);
   const [openNew, setOpenNew] = useState(false);
   const [openBulk, setOpenBulk] = useState(false);
+  const [openBatchOcr, setOpenBatchOcr] = useState(false);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrSummary, setOcrSummary] = useState<string | null>(null);
+  const [enableDailyLog, setEnableDailyLog] = useState(false);
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [form, setForm] = useState<any>({ type: "일반", result: "미수검" });
   const [tab, setTab] = useState<"all" | "findings" | "untested" | "due">("all");
@@ -94,7 +103,9 @@ export default function HealthCheckups() {
 
   const openCreate = () => {
     setEditingRow(null);
-    setForm({ type: "일반", result: "미수검" });
+    setForm({ type: "일반", result: "미수검", hazard_factors: [], report_url: null });
+    setOcrSummary(null);
+    setEnableDailyLog(false);
     setOpenNew(true);
   };
 
@@ -110,8 +121,60 @@ export default function HealthCheckups() {
       institution: row.institution || "",
       restrictions: row.restrictions || "",
       notes: row.notes || "",
+      report_url: row.report_url || null,
+      hazard_factors: Array.isArray(row.hazard_factors) ? row.hazard_factors : [],
     });
+    setOcrSummary(null);
+    setEnableDailyLog(false);
     setOpenNew(true);
+  };
+
+  const handleSingleReportOcr = async (file: File) => {
+    if (!projectId) return;
+    setOcrBusy(true);
+    setOcrSummary(null);
+    try {
+      // 1) Upload original report image/PDF to storage
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+      const path = `${projectId}/health-checkups/${Date.now()}_${safeName}`;
+      const [uploaded, ocr] = await Promise.all([
+        uploadAttachmentFile(path, file).catch(() => null),
+        analyzeHealthCheckupFile(file),
+      ]);
+
+      if (!ocr.ok) {
+        if (uploaded?.publicUrl) {
+          setForm((prev: any) => ({ ...prev, report_url: uploaded.publicUrl }));
+        }
+        toast.error(ocr.error || "결과지 AI 판독에 실패했습니다. 직접 입력해 주세요.");
+        return;
+      }
+
+      const matched = ocr.workerName ? matchWorkerForCheckup(ocr.workerName, "", workers) : {};
+      setForm((prev: any) => ({
+        ...prev,
+        worker_id: matched.worker?.id || prev.worker_id || "",
+        type: ocr.type || prev.type || "일반",
+        result: ocr.result || prev.result || "미수검",
+        conducted_date: ocr.conductedDate || prev.conducted_date || "",
+        next_due_date: ocr.suggestedNextDueDate || prev.next_due_date || "",
+        institution: ocr.institution || prev.institution || "",
+        restrictions: ocr.restrictions || prev.restrictions || "",
+        hazard_factors: ocr.hazardFactors.length > 0 ? ocr.hazardFactors : (prev.hazard_factors || []),
+        report_url: uploaded?.publicUrl || prev.report_url || null,
+      }));
+      if (ocr.recommendDailyHealthLog) {
+        setEnableDailyLog(true);
+      }
+      const dueNote = !ocr.nextDueDate && ocr.suggestedNextDueDate ? " (차기예정일 산안법 주기 자동 제안)" : "";
+      const matchNote = ocr.workerName && !matched.worker ? ` · '${ocr.workerName}' 수동 선택 필요` : "";
+      setOcrSummary(
+        `${ocr.summary || "AI 판독 완료"}${dueNote}${matchNote}`,
+      );
+      toast.success("결과지 AI 판독 완료! 내용을 확인·수정한 뒤 저장하세요.");
+    } finally {
+      setOcrBusy(false);
+    }
   };
 
   const submit = async () => {
@@ -134,18 +197,26 @@ export default function HealthCheckups() {
         restrictions: form.restrictions || null,
         next_due_date: form.next_due_date || null,
         notes: form.notes || null,
+        report_url: form.report_url || null,
+        hazard_factors: Array.isArray(form.hazard_factors) && form.hazard_factors.length > 0 ? form.hazard_factors : null,
       };
       if (editingRow) {
-        const { error } = await supabase.from("health_checkups").update(payload).eq("id", editingRow.id);
+        const { error } = await supabase.from("health_checkups").update(payload as any).eq("id", editingRow.id);
         if (error) throw error;
         toast.success("수정되었습니다");
       } else {
         const { error } = await supabase.from("health_checkups").insert({
           project_id: projectId,
           ...payload,
-        });
+        } as any);
         if (error) throw error;
         toast.success("등록되었습니다");
+      }
+      if (enableDailyLog && form.worker_id) {
+        await supabase
+          .from("workers")
+          .update({ requires_daily_health_log: true } as any)
+          .eq("id", form.worker_id);
       }
       setOpenNew(false);
       setEditingRow(null);
@@ -170,7 +241,10 @@ export default function HealthCheckups() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Stethoscope className="h-6 w-6" />건강진단 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">일반/특수/배치전/수시/임시 건강진단 기록 (산업안전보건법 제129~131조)</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setOpenBatchOcr(true)} className="gap-1.5">
+            <Sparkles className="h-4 w-4 text-primary" />결과지 AI 일괄판독
+          </Button>
           <Button variant="outline" onClick={() => setOpenBulk(true)} className="gap-1.5">
             <FileSpreadsheet className="h-4 w-4" />엑셀 일괄등록
           </Button>
@@ -227,9 +301,29 @@ export default function HealthCheckups() {
                             </span>
                           ) : "-"}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{r.restrictions || r.notes || ""}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-xs">
+                          <div className="truncate">{r.restrictions || r.notes || ""}</div>
+                          {Array.isArray(r.hazard_factors) && r.hazard_factors.length > 0 && (
+                            <div className="flex gap-1 flex-wrap mt-0.5">
+                              {r.hazard_factors.slice(0, 3).map((hf: string) => (
+                                <Badge key={hf} variant="outline" className="text-[9px] h-4 px-1">{hf}</Badge>
+                              ))}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {r.report_url && (
+                              <a
+                                href={r.report_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline inline-flex items-center gap-0.5 px-1.5"
+                                title="건강진단 결과지 원본 보기"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" /> 결과지
+                              </a>
+                            )}
                             <Button size="icon" variant="ghost" onClick={() => openEdit(r)} title="수정"><Pencil className="h-4 w-4" /></Button>
                             <Button size="icon" variant="ghost" onClick={() => onDelete(r)} title="삭제"><Trash2 className="h-4 w-4" /></Button>
                           </div>
@@ -255,6 +349,45 @@ export default function HealthCheckups() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{editingRow ? "건강진단 수정" : "건강진단 등록"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            <div className="rounded-lg border border-primary/25 bg-primary/5 p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs">
+                  <p className="font-medium text-foreground flex items-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> 결과지 올리고 AI 자동 판독
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    배치전·일반·특수 결과지(사진/PDF)를 올리면 등급·실시일·차기일·제한사항을 자동 입력합니다.
+                  </p>
+                </div>
+                <label className="cursor-pointer shrink-0">
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*,application/pdf"
+                    disabled={ocrBusy}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void handleSingleReportOcr(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button asChild type="button" size="sm" variant="default" className="h-7 text-xs gap-1" disabled={ocrBusy}>
+                    <span>
+                      {ocrBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                      {ocrBusy ? "AI 판독 중…" : "결과지 업로드"}
+                    </span>
+                  </Button>
+                </label>
+              </div>
+              {ocrSummary && (
+                <p className="text-[11px] text-primary bg-background/80 rounded border px-2 py-1">{ocrSummary}</p>
+              )}
+              {form.report_url && (
+                <a href={form.report_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-primary underline inline-flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> 업로드된 결과지 원본 보기
+                </a>
+              )}
+            </div>
             <div>
               <Label>근로자 *</Label>
               <Select value={form.worker_id || ""} onValueChange={v => setForm({ ...form, worker_id: v })}>
@@ -281,6 +414,24 @@ export default function HealthCheckups() {
               <div><Label>차회 기한</Label><Input type="date" value={form.next_due_date || ""} onChange={e => setForm({ ...form, next_due_date: e.target.value })} /></div>
               <div className="col-span-2"><Label>검진기관</Label><Input value={form.institution || ""} onChange={e => setForm({ ...form, institution: e.target.value })} /></div>
               <div className="col-span-2"><Label>작업 제한 사항</Label><Input value={form.restrictions || ""} onChange={e => setForm({ ...form, restrictions: e.target.value })} /></div>
+              {Array.isArray(form.hazard_factors) && form.hazard_factors.length > 0 && (
+                <div className="col-span-2 flex items-center gap-1 flex-wrap">
+                  <span className="text-[11px] text-muted-foreground mr-1">추출 유해인자:</span>
+                  {form.hazard_factors.map((hf: string) => (
+                    <Badge key={hf} variant="outline" className="text-[10px]">{hf}</Badge>
+                  ))}
+                </div>
+              )}
+              <div className="col-span-2 flex items-center gap-2 rounded border bg-muted/20 px-2.5 py-2">
+                <Checkbox
+                  id="hc-daily-log"
+                  checked={enableDailyLog}
+                  onCheckedChange={(v) => setEnableDailyLog(!!v)}
+                />
+                <label htmlFor="hc-daily-log" className="text-xs cursor-pointer select-none">
+                  이 근로자를 <b>일일 건강상태 체크 대상자</b>로 함께 지정 (유소견·요관찰·작업제한 권장)
+                </label>
+              </div>
               <div className="col-span-2"><Label>비고</Label><Input value={form.notes || ""} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
             </div>
           </div>
@@ -295,6 +446,14 @@ export default function HealthCheckups() {
         workers={workers}
         existingCheckups={list}
         onImported={load}
+      />
+
+      <HealthCheckupBatchOcrDialog
+        open={openBatchOcr}
+        onOpenChange={setOpenBatchOcr}
+        projectId={projectId}
+        workers={workers}
+        onSaved={load}
       />
     </div>
   );

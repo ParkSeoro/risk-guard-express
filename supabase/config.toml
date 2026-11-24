@@ -47,3 +47,6 @@ verify_jwt = false
 # Work-plan attachment Vision OCR. Verifies caller JWT via userClient.auth.getUser() inside handler.
 [functions.analyze-workplan-attachment]
 verify_jwt = false
+
+[functions.analyze-health-checkup]
+verify_jwt = false

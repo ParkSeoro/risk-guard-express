@@ -27,17 +27,22 @@ describe('Phase 3: Reviewer 1-Minute Summary & Annex 4 Additive Sections', () =>
         emergency: '비상연락망 가동',
       },
       rigging: {
-        load_weight: 12,
+        load_weight: 5,
         working_radius: 10,
+        boom_length: 20,
         crane_model: '50T',
         crane_capacity: 50,
         rated_capacity: 20,
         safety_factor: 5.5,
+        sling_material_type: 'wire_rope',
+        wire_diameter_mm: 24,
+        sling_count: 2,
+        sling_angle_deg: 60,
+        shackle_inch: '1-1/4',
+        shackle_qty: 2,
         equipment_ok: 'O.K',
         sling_ok: 'O.K',
         shackle_ok: 'O.K',
-        sling_count: 2,
-        sling_angle_deg: 60,
       },
       attachments: [
         { attachment_key: 'biz_license', name: '사업자등록증', is_mandatory: true, file_url: 'https://x/1.pdf', category: 'legal' },
@@ -50,7 +55,7 @@ describe('Phase 3: Reviewer 1-Minute Summary & Annex 4 Additive Sections', () =>
     expect(summary.signals.find((s) => s.id === 'attachments')?.light).toBe('ok');
     expect(summary.signals.find((s) => s.id === 'annex4')?.light).toBe('ok');
     expect(summary.signals.find((s) => s.id === 'rigging')?.light).toBe('ok');
-    expect(summary.signals.find((s) => s.id === 'rigging')?.value).toContain('60%');
+    expect(summary.signals.find((s) => s.id === 'rigging')?.value).toContain('25%');
   });
 
   it('flags missing mandatory attachments, incomplete 5대 위험, and NG rigging as fail', () => {

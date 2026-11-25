@@ -48,7 +48,16 @@ export default function MobileIncident() {
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const [photoPreviewUrls, setPhotoPreviewUrls] = useState<string[]>([]);
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    const urls = photos.map((f) => URL.createObjectURL(f));
+    setPhotoPreviewUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [photos]);
   const [submitting, setSubmitting] = useState(false);
   const [recent, setRecent] = useState<any[]>([]);
 
@@ -205,9 +214,11 @@ export default function MobileIncident() {
               {photos.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {photos.map((f, i) => (
-                    <div key={i} className="relative aspect-square">
-                      <img src={URL.createObjectURL(f)} className="w-full h-full object-cover rounded" />
-                      <button onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}
+                    <div key={`${f.name}-${f.size}-${i}`} className="relative aspect-square">
+                      {photoPreviewUrls[i] && (
+                        <img src={photoPreviewUrls[i]} alt="" className="w-full h-full object-cover rounded" />
+                      )}
+                      <button type="button" onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}
                         className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full h-5 w-5 text-xs">×</button>
                     </div>
                   ))}

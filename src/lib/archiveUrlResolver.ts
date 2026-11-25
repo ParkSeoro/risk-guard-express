@@ -11,12 +11,23 @@ import { supabase } from "@/integrations/supabase/client";
 const ATTACHMENTS_PUBLIC_MARKER = "/storage/v1/object/public/attachments/";
 const RESTORED_CACHE_TTL_MS = 240_000; // 4 min (< 5 min Signed URL TTL)
 const ACTIVE_CACHE_TTL_MS = 60_000; // 1 min negative cache for non-purged paths
+const MAX_CACHE_ENTRIES = 300;
 
 type CachedUrl = { url: string; expiresAt: number };
 
 const restoredCache = new Map<string, CachedUrl>();
 const activeCache = new Map<string, number>();
 const inflightRestore = new Map<string, Promise<string>>();
+
+function setBounded<K, V>(map: Map<K, V>, key: K, value: V): void {
+  if (map.has(key)) {
+    map.delete(key);
+  } else if (map.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey !== undefined) map.delete(oldestKey);
+  }
+  map.set(key, value);
+}
 
 let fallbackInstalled = false;
 
@@ -69,7 +80,7 @@ async function checkArchivedPaths(paths: string[]): Promise<Set<string>> {
     }
     for (const p of unique) {
       if (!archived.has(p)) {
-        activeCache.set(p, now + ACTIVE_CACHE_TTL_MS);
+        setBounded(activeCache, p, now + ACTIVE_CACHE_TTL_MS);
       }
     }
     return archived;
@@ -108,7 +119,7 @@ async function requestRestoredSignedUrl(
           typeof data?.expires_in === "number" && data.expires_in > 30
             ? Math.min(RESTORED_CACHE_TTL_MS, (data.expires_in - 30) * 1000)
             : RESTORED_CACHE_TTL_MS;
-        restoredCache.set(cacheKey, { url: restoredUrl, expiresAt: Date.now() + ttlMs });
+        setBounded(restoredCache, cacheKey, { url: restoredUrl, expiresAt: Date.now() + ttlMs });
         return restoredUrl;
       }
       return originalUrl;

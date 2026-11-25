@@ -32,7 +32,12 @@ import {
   type ProjectSiteSpotRow,
 } from "@/lib/tracking/siteTrackBounds";
 
-type SiteMap = AnchorMap & { id: string; name: string; image_url: string | null };
+type SiteMap = AnchorMap & {
+  id: string;
+  name: string;
+  image_url: string | null;
+  site_spot_id?: string | null;
+};
 type Zone = {
   id: string;
   site_map_id: string;
@@ -173,7 +178,7 @@ export default function WorkerDistribution() {
     const { data } = await supabase
       .from("site_maps")
       .select(
-        "id,name,image_url,geo_transform,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng",
+        "id,name,image_url,site_spot_id,geo_transform,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng",
       )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
@@ -496,12 +501,18 @@ export default function WorkerDistribution() {
             >
               <SelectTrigger className="w-[200px]"><SelectValue placeholder="사이트맵 선택" /></SelectTrigger>
               <SelectContent>
-                  {maps.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                      {loadCornersFromMap(m) ? " · GPS보정" : ""}
-                    </SelectItem>
-                  ))}
+                  {maps.map((m) => {
+                    const spotName = m.site_spot_id
+                      ? spots.find((s) => s.id === m.site_spot_id)?.name
+                      : null;
+                    return (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                        {spotName ? ` · ${spotName}` : ""}
+                        {loadCornersFromMap(m) ? " · GPS보정" : ""}
+                      </SelectItem>
+                    );
+                  })}
               </SelectContent>
             </Select>
           )}

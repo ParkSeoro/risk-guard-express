@@ -53,6 +53,7 @@ type SiteMapRow = {
   id: string;
   name: string;
   image_url: string | null;
+  site_spot_id?: string | null;
   geo_anchor_nw_lat: number | null;
   geo_anchor_nw_lng: number | null;
   geo_anchor_se_lat: number | null;
@@ -207,7 +208,7 @@ export default function MobileMapCalibration() {
         supabase
           .from("site_maps")
           .select(
-            "id,name,image_url,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
+            "id,name,image_url,site_spot_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
           )
           .eq("project_id", projectId)
           .eq("is_deleted", false)
@@ -460,6 +461,9 @@ export default function MobileMapCalibration() {
         view: parseSiteMapView(active.geo_transform),
         source: "walk",
       });
+      // In multi-spot projects (maps linked to specific spots), avoid silently clearing
+      // project-wide gps_calibration when walking-calibrating a single spot's map.
+      const hasMultiSpotMaps = maps.some((m) => !!m.site_spot_id);
       const { error } = await supabase.rpc("save_site_map_georef" as any, {
         _site_map_id: active.id,
         _geo_transform: payload.geo_transform,
@@ -467,7 +471,7 @@ export default function MobileMapCalibration() {
         _nw_lng: payload.geo_anchor_nw_lng,
         _se_lat: payload.geo_anchor_se_lat,
         _se_lng: payload.geo_anchor_se_lng,
-        _clear_gps_calibration: true,
+        _clear_gps_calibration: !hasMultiSpotMaps,
       });
       if (error) throw error;
 

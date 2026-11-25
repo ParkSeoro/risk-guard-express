@@ -262,8 +262,8 @@ async function callGeminiVision(
   parts.push({ inline_data: { mime_type: drone.mimeType, data: drone.base64 } });
 
   const models = [
-    (Deno.env.get("GEMINI_VISION_MODEL") || "gemini-2.5-pro").trim(),
-    "gemini-2.5-flash",
+    (Deno.env.get("GEMINI_VISION_MODEL") || "gemini-2.5-flash").trim(),
+    "gemini-3.1-pro-preview",
   ];
   const uniqueModels = Array.from(new Set(models));
 
@@ -283,7 +283,7 @@ async function callGeminiVision(
           contents: [{ role: "user", parts }],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 1024,
+            maxOutputTokens: 4096,
             responseMimeType: "application/json",
           },
         }),

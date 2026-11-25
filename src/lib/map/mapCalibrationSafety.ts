@@ -63,11 +63,13 @@ export function evaluateMapCalibrationHealth(
   const sourceDesc =
     source === "exif"
       ? "드론 EXIF GPS로 자동 배치됨"
-      : source === "two-point"
-        ? "2점 기준점(비율 고정)으로 정렬됨"
-        : source === "pc-satellite"
-          ? "PC 위성 수동 정렬됨"
-          : "임시 초기 배치됨";
+      : source === "ai-draft"
+        ? "AI 위성 비교 초안으로 정렬됨"
+        : source === "two-point"
+          ? "2점 기준점(비율 고정)으로 정렬됨"
+          : source === "pc-satellite"
+            ? "PC 위성 수동 정렬됨"
+            : "임시 초기 배치됨";
 
   return {
     status: "yellow",

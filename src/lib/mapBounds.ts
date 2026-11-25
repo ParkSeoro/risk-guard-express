@@ -35,6 +35,7 @@ export const GEO_TRANSFORM_SOURCES = [
   "photo",
   "exif",
   "two-point",
+  "ai-draft",
 ] as const;
 export type GeoTransformSource = (typeof GEO_TRANSFORM_SOURCES)[number];
 

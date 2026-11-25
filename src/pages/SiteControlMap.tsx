@@ -1375,13 +1375,9 @@ export default function SiteControlMap() {
   const onDeleteMap = async () => {
     if (!activeMap) return;
     setMutatingMap(true);
-    const uid = (await supabase.auth.getUser()).data.user?.id || "";
-    const payload = uid
-      ? softDeletePayload(uid, "통합 현장 관제맵에서 도면 삭제")
-      : { is_deleted: true, deleted_at: new Date().toISOString() };
     const { error } = await supabase
       .from("site_maps")
-      .update(payload as any)
+      .update({ is_deleted: true, is_active: false } as any)
       .eq("id", activeMap.id);
     setMutatingMap(false);
     if (error) {
@@ -1391,6 +1387,7 @@ export default function SiteControlMap() {
     setDeleteDialogOpen(false);
     setTwoPointActive(false);
     setTwoPointPicks({});
+    setAiDraftPreview(null);
     toast.success("이전 도면을 삭제했습니다", {
       description: "근로자 출퇴근 구역과 위험구역은 영향을 받지 않습니다.",
     });

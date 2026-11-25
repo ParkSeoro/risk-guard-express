@@ -319,6 +319,7 @@ describe("SiteControlMap Phase 1 — EXIF seed, 4-DOF 2-point alignment, and att
     expect(src).toContain("onReplaceDroneImage");
     expect(src).toContain("onRenameMap");
     expect(src).toContain("onDeleteMap");
+    expect(src).toContain(".update({ is_deleted: true, is_active: false } as any)");
     expect(src).toContain("onRollbackGeoref");
     expect(src).toContain("simulateSpotAttendanceImpact");
     expect(src).toContain("MobileWalkQrDialog");

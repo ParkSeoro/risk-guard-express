@@ -94,6 +94,11 @@ import {
   MobileWalkQrDialog,
   RenameSiteMapDialog,
 } from "@/components/geofence/SiteMapLifecycleDialogs";
+import {
+  countMapsForSpot,
+  mapSpotBadgeLabel,
+  pickMapForSpot,
+} from "@/lib/map/multiSpotMapSelection";
 import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDangerZones";
 import {
   clampSiteBoundaryBufferM,
@@ -138,6 +143,7 @@ type SiteMap = {
   name: string;
   image_url: string | null;
   project_id: string;
+  site_spot_id?: string | null;
   geo_anchor_nw_lat: number | null;
   geo_anchor_nw_lng: number | null;
   geo_anchor_se_lat: number | null;
@@ -869,7 +875,7 @@ export default function SiteControlMap() {
     const { data } = await supabase
       .from("site_maps")
       .select(
-        "id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
+        "id,name,image_url,project_id,site_spot_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
       )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
@@ -1223,17 +1229,23 @@ export default function SiteControlMap() {
       ? cornersToPersistPayload(seededCorners, 0.85, { source: exif ? "exif" : "seed" })
       : {};
 
+    const initialSpotLink =
+      siteSpots.length >= 2 && selectedSpotId && siteSpots.some((s) => s.id === selectedSpotId)
+        ? selectedSpotId
+        : null;
+
     const { data, error } = await supabase
       .from("site_maps")
       .insert({
         project_id: projectId,
         name,
         image_url: pub.publicUrl,
+        site_spot_id: initialSpotLink,
         created_by: (await supabase.auth.getUser()).data.user?.id,
         ...seedPayload,
       } as any)
       .select(
-        "id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
+        "id,name,image_url,project_id,site_spot_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
       )
       .single();
     setUploading(false);
@@ -1314,6 +1326,46 @@ export default function SiteControlMap() {
     applyLocalMapRow({ ...activeMap, name: nextName });
     setRenameDialogOpen(false);
     toast.success("도면 이름을 변경했습니다");
+  };
+
+  const onLinkMapToSpot = async (nextSpotId: string | null) => {
+    if (!activeMap) return;
+    setMutatingMap(true);
+    const { error } = await supabase
+      .from("site_maps")
+      .update({ site_spot_id: nextSpotId } as any)
+      .eq("id", activeMap.id);
+    setMutatingMap(false);
+    if (error) {
+      toast.error("작업 개소 연결 실패: " + error.message);
+      return;
+    }
+    applyLocalMapRow({ ...activeMap, site_spot_id: nextSpotId });
+    toast.success(
+      nextSpotId
+        ? `도면을 「${mapSpotBadgeLabel(nextSpotId, siteSpots)}」 개소에 연결했습니다`
+        : "도면을 프로젝트 공용(전체)으로 전환했습니다",
+    );
+  };
+
+  const focusSpotAndMap = (spot: SiteBoundary) => {
+    setSelectedSpotId(spot.id);
+    setSiteName(spot.name);
+    setSiteBufferM(spot.buffer_m);
+    const matchedMap = pickMapForSpot(maps, spot.id);
+    if (matchedMap && matchedMap.id !== activeMap?.id && matchedMap.site_spot_id === spot.id) {
+      setActiveMap(matchedMap);
+    }
+    const box = siteOutlineBounds(spot);
+    if (box && mapRef.current) {
+      mapRef.current.fitBounds(
+        [
+          [box.south, box.west],
+          [box.north, box.east],
+        ],
+        { padding: [40, 40], maxZoom: 18 },
+      );
+    }
   };
 
   const onDeleteMap = async () => {
@@ -2064,10 +2116,38 @@ export default function SiteControlMap() {
                     <SelectTrigger><SelectValue placeholder="도면을 선택하세요" /></SelectTrigger>
                     <SelectContent>
                       {maps.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                          {siteSpots.length > 0 ? ` · ${mapSpotBadgeLabel(m.site_spot_id, siteSpots)}` : ""}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {activeMap && siteSpots.length > 0 && (
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">연결된 작업 개소 (다중 개소 관리)</Label>
+                      <Select
+                        value={activeMap.site_spot_id || "__shared__"}
+                        disabled={mutatingMap}
+                        onValueChange={(val) =>
+                          void onLinkMapToSpot(val === "__shared__" ? null : val)
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__shared__">공용 (전체 개소 공유)</SelectItem>
+                          {siteSpots.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name} 전용
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   {activeMap && (
                     <div className="grid grid-cols-3 gap-1">
@@ -2401,13 +2481,15 @@ export default function SiteControlMap() {
                           <button
                             type="button"
                             className="w-full text-left"
-                            onClick={() => {
-                              setSelectedSpotId(s.id);
-                              setSiteName(s.name);
-                              setSiteBufferM(s.buffer_m);
-                            }}
+                            onClick={() => focusSpotAndMap(s)}
                           >
-                            <div className="font-medium truncate">{s.name}</div>
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="font-medium truncate">{s.name}</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0">
+                                도면 {countMapsForSpot(maps, s.id)} · 구역{" "}
+                                {zones.filter((z) => z.site_spot_id === s.id).length}
+                              </span>
+                            </div>
                             <div className="text-[10px] text-muted-foreground">
                               {s.geometry_type === "radius" ? "원" : "다각형"} · 버퍼 {s.buffer_m}m
                             </div>
@@ -2565,6 +2647,10 @@ export default function SiteControlMap() {
                         setSelectedSpotId(s.id);
                         setSiteName(s.name);
                         setSiteBufferM(s.buffer_m);
+                        const matched = pickMapForSpot(maps, s.id);
+                        if (matched && matched.id !== activeMap?.id && matched.site_spot_id === s.id) {
+                          setActiveMap(matched);
+                        }
                       }}
                     >
                       <SelectTrigger><SelectValue placeholder="개소를 고르세요" /></SelectTrigger>

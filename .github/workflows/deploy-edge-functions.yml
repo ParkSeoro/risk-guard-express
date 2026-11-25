@@ -37,6 +37,8 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         if: steps.token_check.outputs.has_token == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           version: latest
 
@@ -55,6 +57,13 @@ jobs:
             "analyze-permit-template"
             "analyze-worker-opinion"
             "ocr-document-draft"
+            "align-site-map-ai"
+            "analyze-health-checkup"
+            "analyze-workplan-attachment"
+            "council-provider"
+            "read-official-letter"
+            "translate-doc-view"
+            "write-weekly-safety-report"
           )
 
           if [ -n "$REQ_FN" ]; then

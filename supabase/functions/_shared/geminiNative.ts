@@ -54,7 +54,7 @@ export async function resolveGeminiApiKey(): Promise<string> {
   const now = Date.now();
   if (cachedKey && now - cachedKey.at < KEY_CACHE_MS) return cachedKey.value;
   const fromVault = await readVaultGeminiKey();
-  const fromEnv = (Deno.env.get("GEMINI_API_KEY") || "").trim();
+  const fromEnv = (Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "").trim();
   const value = fromVault || fromEnv;
   cachedKey = { value, at: now };
   return value;

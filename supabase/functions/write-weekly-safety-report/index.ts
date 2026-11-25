@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGeminiApiKey } from "../_shared/geminiNative.ts";
 import {
   companyNames,
   digestFromSource,
@@ -55,30 +56,6 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-async function geminiKey(): Promise<string> {
-  const url = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
-  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-  const fromEnv = (Deno.env.get("GEMINI_API_KEY") || "").trim();
-  if (!url || !service) return fromEnv;
-  try {
-    const resp = await fetch(`${url}/rest/v1/rpc/get_runtime_secret`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: service,
-        Authorization: `Bearer ${service}`,
-      },
-      body: JSON.stringify({ secret_name: "GEMINI_API_KEY" }),
-    });
-    if (!resp.ok) return fromEnv;
-    const data = await resp.json().catch(() => null);
-    const fromVault = typeof data === "string" ? data.trim() : "";
-    return fromVault || fromEnv;
-  } catch {
-    return fromEnv;
-  }
 }
 
 function seoulToday(): string {
@@ -328,7 +305,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const apiKey = await geminiKey();
+  const apiKey = await resolveGeminiApiKey();
   if (!apiKey) {
     return jsonResponse({
       ok: false,

@@ -3,6 +3,7 @@
 // Never mutates DB — returns structured suggestion only (user must 1-click confirm).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGeminiApiKey } from "../_shared/geminiNative.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,36 +50,6 @@ function normalizeYmd(raw: unknown): string | null {
   const d = Number(m[3]);
   if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
   return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
-async function resolveGeminiApiKey(): Promise<string> {
-  const url = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
-  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-  if (url && service) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    try {
-      const resp = await fetch(`${url}/rest/v1/rpc/get_runtime_secret`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: service,
-          Authorization: `Bearer ${service}`,
-        },
-        body: JSON.stringify({ secret_name: "GEMINI_API_KEY" }),
-        signal: controller.signal,
-      });
-      if (resp.ok) {
-        const data = await resp.json().catch(() => null);
-        if (typeof data === "string" && data.trim()) return data.trim();
-      }
-    } catch {
-      /* fallback to env */
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return (Deno.env.get("GEMINI_API_KEY") || "").trim();
 }
 
 function buildWorkPlanOcrPrompt(opts: {

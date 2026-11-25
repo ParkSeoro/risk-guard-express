@@ -1,34 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-async function resolveVaultGeminiKey(): Promise<string> {
-  const url = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
-  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-  if (url && service) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    try {
-      const resp = await fetch(`${url}/rest/v1/rpc/get_runtime_secret`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: service,
-          Authorization: `Bearer ${service}`,
-        },
-        body: JSON.stringify({ secret_name: "GEMINI_API_KEY" }),
-        signal: controller.signal,
-      });
-      if (resp.ok) {
-        const data = await resp.json().catch(() => null);
-        if (typeof data === "string" && data.trim()) return data.trim();
-      }
-    } catch {
-      /* fall through */
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return (Deno.env.get("GEMINI_API_KEY") || "").trim();
-}
+import { resolveGeminiApiKey } from "../_shared/geminiNative.ts";
 
 async function translateFields(fields: Record<string, string>, locale: string): Promise<Record<string, string>> {
   const langName = locale === "zh" ? "Simplified Chinese" : locale === "ja" ? "Japanese" : "English";
@@ -36,7 +7,7 @@ async function translateFields(fields: Record<string, string>, locale: string): 
   let content = "";
 
   // 1) Gemini primary (Vault key + x-goog-api-key header)
-  const geminiKey = await resolveVaultGeminiKey();
+  const geminiKey = await resolveGeminiApiKey();
   if (geminiKey) {
     try {
       const gResp = await fetch(

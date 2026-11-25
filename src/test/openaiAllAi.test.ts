@@ -6,42 +6,49 @@ function src(path: string) {
   return readFileSync(path, "utf8");
 }
 
-describe("AI 비용 레인", () => {
-  it("작업계획서·위험성평가·브리핑·사고사례는 OpenAI", () => {
-    const openai = AI_COST_LANES.filter((l) => l.provider === "OpenAI").map((l) => l.feature);
-    expect(openai).toEqual(["작업계획서", "위험성평가", "허가서 브리핑", "사고사례"]);
-  });
-
-  it("교육·도우미·보건·안관비·비전은 Gemini", () => {
+describe("AI 비용 레인 (Gemini 통합)", () => {
+  it("전 기능 기본 레인이 Gemini 1순위다", () => {
     const gemini = AI_COST_LANES.filter((l) => l.provider === "Gemini").map((l) => l.feature);
-    expect(gemini).toEqual(["교육자료", "안전 도우미", "보건·근로자 의견", "안관비 분류", "OCR·양식 분석"]);
+    expect(gemini).toEqual([
+      "작업계획서",
+      "위험성평가",
+      "허가서 브리핑",
+      "사고사례",
+      "교육자료",
+      "안전 도우미",
+      "보건·근로자 의견",
+      "안관비 분류",
+      "OCR·양식 분석",
+    ]);
   });
 
-  it("Edge 기본 라우트가 UI 표와 같다", () => {
+  it("Edge 기본 라우트가 UI 표와 같다 (전 레인 gemini)", () => {
     const text = src("supabase/functions/_shared/aiRoute.ts");
-    expect(text).toContain('work_plan: "openai"');
-    expect(text).toContain('risk: "openai"');
-    expect(text).toContain('permit_briefing: "openai"');
-    expect(text).toContain('accident: "openai"');
+    expect(text).toContain('work_plan: "gemini"');
+    expect(text).toContain('risk: "gemini"');
+    expect(text).toContain('permit_briefing: "gemini"');
+    expect(text).toContain('accident: "gemini"');
     expect(text).toContain('education: "gemini"');
     expect(text).toContain('assistant: "gemini"');
     expect(text).toContain('health: "gemini"');
     expect(text).toContain('safety_cost: "gemini"');
     expect(text).toContain('permit_template: "gemini"');
     expect(text).toContain('ocr: "gemini"');
+    expect(text).toContain('default: "gemini"');
     expect(text).toContain('export type AiProvider = "openai" | "gemini"');
     expect(text.toLowerCase()).not.toContain("exaone");
     expect(src("src/lib/aiCostRoute.ts").toLowerCase()).not.toContain("exaone");
   });
 
-  it("작업계획서 work_plan_section은 OpenAI를 먼저 호출한다", () => {
+  it("작업계획서 work_plan_section은 Gemini를 먼저 호출하고 OpenAI로 폴백한다", () => {
     const text = src("supabase/functions/generate-risk-ai/index.ts");
     const section = text.slice(
       text.indexOf('if (mode === "work_plan_section")'),
       text.indexOf("const normalizedEquipment"),
     );
+    expect(section).toContain("geminiChatFetch");
     expect(section).toContain("callOpenAiChat");
-    expect(section.indexOf("callOpenAiChat")).toBeLessThan(section.indexOf("geminiChatFetch"));
+    expect(section.indexOf("geminiChatFetch")).toBeLessThan(section.indexOf("callOpenAiChat"));
     expect(section).toContain('purpose: "work_plan"');
   });
 
@@ -76,6 +83,16 @@ describe("AI 비용 레인", () => {
     expect(ocr).not.toContain("?key=");
     expect(src("supabase/functions/analyze-safety-cost-document/index.ts")).toContain("resolveGeminiApiKey");
     expect(src("supabase/functions/_shared/gemini.ts")).toContain("await hasGeminiApiKey()");
+    for (const fnPath of [
+      "supabase/functions/align-site-map-ai/index.ts",
+      "supabase/functions/analyze-health-checkup/index.ts",
+      "supabase/functions/translate-doc-view/index.ts",
+    ]) {
+      const fnSrc = src(fnPath);
+      expect(fnSrc).toContain("get_runtime_secret");
+      expect(fnSrc).toContain("x-goog-api-key");
+      expect(fnSrc).not.toContain("?key=");
+    }
   });
 
   it("안관비 OCR은 Gemini 다음 OpenAI 비전으로 폴백한다", () => {

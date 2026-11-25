@@ -63,22 +63,55 @@ function buildPrompt(fileName: string, extractedTextHint?: string): string {
 - R(제2차 검진 대상) 또는 판정 보류 -> "판정불가"`;
 }
 
+async function resolveVaultGeminiKey(): Promise<string> {
+  const url = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  if (url && service) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      const resp = await fetch(`${url}/rest/v1/rpc/get_runtime_secret`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: service,
+          Authorization: `Bearer ${service}`,
+        },
+        body: JSON.stringify({ secret_name: "GEMINI_API_KEY" }),
+        signal: controller.signal,
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (typeof data === "string" && data.trim()) return data.trim();
+      }
+    } catch {
+      /* fall through */
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return (Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "").trim();
+}
+
 async function callGeminiVision(
   prompt: string,
   base64: string,
   mimeType: string,
 ): Promise<string | null> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY");
+  const apiKey = await resolveVaultGeminiKey();
   if (!apiKey) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
     const res = await fetch(url, {
       method: "POST",
       signal: controller.signal,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
       body: JSON.stringify({
         contents: [
           {

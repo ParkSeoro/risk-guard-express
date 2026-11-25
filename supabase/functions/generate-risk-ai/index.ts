@@ -631,9 +631,16 @@ serve(async (req) => {
         { role: "user" as const, content: prompt },
       ];
 
-      // 작업 방법·위험요인 등: OpenAI 직행. json:false — method/risk/equipment는 배열.
+      // 작업 방법·위험요인 등: Gemini 1순위 (aiRoute 통해 장애 시 OpenAI 자동 폴백).
       let rawContent = "";
-      if (isOpenAiFallbackEnabled()) {
+      const response = await geminiChatFetch({
+        purpose: "work_plan",
+        messages: wpMessages,
+        temperature: 0.3,
+        max_tokens: 4096,
+      });
+
+      if (!response.ok && isOpenAiFallbackEnabled()) {
         try {
           const oa = await callOpenAiChat({
             messages: wpMessages,
@@ -644,17 +651,11 @@ serve(async (req) => {
           });
           rawContent = oa.content || "";
         } catch (e) {
-          console.warn("[generate-risk-ai] work_plan_section OpenAI:", e);
+          console.warn("[generate-risk-ai] work_plan_section OpenAI fallback:", e);
         }
       }
-      if (!rawContent.trim()) {
-        const response = await geminiChatFetch({
-          purpose: "work_plan",
-          messages: wpMessages,
-          temperature: 0.3,
-          max_tokens: 4096,
-        });
 
+      if (!rawContent.trim()) {
         if (!response.ok) {
           const status = response.status;
           const text = await response.text();

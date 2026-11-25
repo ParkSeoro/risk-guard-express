@@ -89,7 +89,7 @@ describe("AI 비용 레인 (Gemini 통합)", () => {
       "supabase/functions/translate-doc-view/index.ts",
     ]) {
       const fnSrc = src(fnPath);
-      expect(fnSrc).toContain("get_runtime_secret");
+      expect(fnSrc).toContain("resolveGeminiApiKey");
       expect(fnSrc).toContain("x-goog-api-key");
       expect(fnSrc).not.toContain("?key=");
     }

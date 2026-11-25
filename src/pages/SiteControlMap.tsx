@@ -27,6 +27,7 @@ import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler, Maximize2, Users,
+  QrCode, RefreshCw, Undo2, Target, CheckCircle2, AlertTriangle, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -74,6 +75,25 @@ import {
   parseProjectAddressPin,
   type AddressPin,
 } from "@/lib/map/addressPinView";
+import {
+  buildInitialCornersFromSeed,
+  extractDroneExifFromFile,
+} from "@/lib/map/droneExif";
+import {
+  alignCornersFromTwoLandmarks,
+  describeGpsCalibrationGuard,
+  evaluateMapCalibrationHealth,
+  simulateSpotAttendanceImpact,
+  type AttendanceImpactResult,
+  type WorkerGpsSample,
+} from "@/lib/map/mapCalibrationSafety";
+import {
+  AttendanceImpactGuardDialog,
+  ClearGpsCalibrationDialog,
+  DeleteSiteMapDialog,
+  MobileWalkQrDialog,
+  RenameSiteMapDialog,
+} from "@/components/geofence/SiteMapLifecycleDialogs";
 import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDangerZones";
 import {
   clampSiteBoundaryBufferM,
@@ -407,9 +427,58 @@ function VisualCornerMarkers({
   );
 }
 
+type TwoPointPicks = {
+  p1Img?: { lat: number; lng: number };
+  p1Sat?: { lat: number; lng: number };
+  p2Img?: { lat: number; lng: number };
+  p2Sat?: { lat: number; lng: number };
+};
+
+function readImageAspectRatio(file: File): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || typeof Image === "undefined") {
+      resolve(undefined);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const ratio = img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : undefined;
+      URL.revokeObjectURL(url);
+      resolve(ratio);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(undefined);
+    };
+    img.src = url;
+  });
+}
+
+function TwoPointClickCapture({
+  active,
+  onPick,
+}: {
+  active: boolean;
+  onPick: (pt: { lat: number; lng: number }) => void;
+}) {
+  useMapEvents({
+    click(e) {
+      if (!active) return;
+      onPick({ lat: e.latlng.lat, lng: e.latlng.lng });
+    },
+  });
+  return null;
+}
+
+const LANDMARK_P1_IMG_ICON = cornerIcon("1 · 도면", "#2563eb");
+const LANDMARK_P1_SAT_ICON = cornerIcon("1 · 위성", "#059669");
+const LANDMARK_P2_IMG_ICON = cornerIcon("2 · 도면", "#9333ea");
+const LANDMARK_P2_SAT_ICON = cornerIcon("2 · 위성", "#ea580c");
+
 /**
- * 통합 현장 관제맵 — 도면 업로드(기본) → 모바일 워킹 보정.
- * PC 위성 TL/TR/BL은 선택(고급).
+ * 통합 현장 관제맵 — 도면 업로드(EXIF 자동 배치) → 모바일 워킹 보정 / 4자유도 2점 맞춤.
+ * 왜곡되는 PC 위성 TL/TR/BL 3점 자유 변형은 기본 숨김(고급 토글).
  */
 export default function SiteControlMap() {
   const { projectId, setProjectId } = useActiveProject();
@@ -432,7 +501,22 @@ export default function SiteControlMap() {
   const [savingGeometry, setSavingGeometry] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [replacingImage, setReplacingImage] = useState(false);
+  const [mutatingMap, setMutatingMap] = useState(false);
   const [savingBounds, setSavingBounds] = useState(false);
+  const [showLegacyCornerHandles, setShowLegacyCornerHandles] = useState(false);
+  const [twoPointActive, setTwoPointActive] = useState(false);
+  const [twoPointPicks, setTwoPointPicks] = useState<TwoPointPicks>({});
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [clearCalDialogOpen, setClearCalDialogOpen] = useState(false);
+  const [checkedInWorkers, setCheckedInWorkers] = useState<WorkerGpsSample[]>([]);
+  const [pendingImpactAction, setPendingImpactAction] = useState<{
+    impact: AttendanceImpactResult;
+    actionLabel: string;
+    run: () => Promise<void>;
+  } | null>(null);
 
   const [draftCorners, setDraftCorners] = useState<GeoCorners | null>(null);
   const [opacity, setOpacity] = useState(0.85);
@@ -540,6 +624,23 @@ export default function SiteControlMap() {
         .maybeSingle();
       return data?.gps_calibration ?? null;
     }).then(setGpsCal);
+    void supabase
+      .rpc("get_worker_distribution_positions" as any, { _project_id: projectId })
+      .then(({ data, error }) => {
+        if (error || !Array.isArray(data)) {
+          setCheckedInWorkers([]);
+          return;
+        }
+        setCheckedInWorkers(
+          (data as any[])
+            .map((r) => ({
+              lat: Number(r.lat),
+              lng: Number(r.lng),
+              accuracy_m: r.accuracy_m == null ? null : Number(r.accuracy_m),
+            }))
+            .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng)),
+        );
+      });
   }, [projectId]);
 
   // Tab switch: map tools vs zone tools — keep shared map/layer state, toggle tool visibility only
@@ -626,7 +727,12 @@ export default function SiteControlMap() {
       (prevTf?.source === "walk" && cornersChanged
         ? "pc-satellite"
         : prevTf?.source ?? (prevCorners ? "pc-satellite" : "seed"));
-    const payload = cornersToPersistPayload(corners, nextOpacity, { view, source });
+    const prevSnapshot = cornersChanged && prevCorners ? prevCorners : prevTf?.prev ?? null;
+    const payload = cornersToPersistPayload(corners, nextOpacity, {
+      view,
+      source,
+      prev: prevSnapshot,
+    });
     const { error } = await supabase.from("site_maps").update(payload as any).eq("id", mapRow.id);
     if (error) {
       setSavingBounds(false);
@@ -636,14 +742,9 @@ export default function SiteControlMap() {
       }
       return;
     }
-    // Replacing a saved georef invalidates residual phone bias — avoid double-shift.
-    if (cornersChanged && prevCorners && projectId) {
-      const { error: clearErr } = await supabase
-        .from("projects")
-        .update({ gps_calibration: null as any })
-        .eq("id", projectId);
-      if (!clearErr) await notifyGpsCalibrationChanged(projectId);
-    }
+    // Safety guard (Antigravity ↔ Cursor consensus):
+    // NEVER implicitly wipe project-wide `projects.gps_calibration` on map overlay save.
+    // Doing so shifts all workers' evaluated GPS by up to ~250m and can break attendance/sirens.
     setSavingBounds(false);
     overlayDirtyRef.current = false;
     setOverlayDirty(false);
@@ -653,12 +754,12 @@ export default function SiteControlMap() {
       toast.success("도면 정렬이 저장되었습니다", {
         description:
           cornersChanged && zones.length > 0
-            ? `위성·워킹·현장사진과 같은 좌표입니다. 위험구역 ${zones.length}개는 좌표가 어긋날 수 있어 다시 그려 주세요.`
-            : "위성·워킹·현장사진·관제맵이 같은 geo_transform 좌표를 씁니다.",
+            ? `근로자 출퇴근 구역은 안전하게 유지됩니다. 기존 위험구역 ${zones.length}개는 도면 위 위치를 한 번 확인해 주세요.`
+            : "근로자 출퇴근 구역에는 영향을 주지 않으며, 관제맵·분포도가 같은 좌표를 씁니다.",
         duration: 7000,
       });
     }
-  }, [applyLocalMapRow, projectId, zones.length]);
+  }, [applyLocalMapRow, zones.length]);
 
   const onMapViewChange = useCallback((view: SiteMapView) => {
     if (viewSaveTimer.current != null) window.clearTimeout(viewSaveTimer.current);
@@ -823,7 +924,7 @@ export default function SiteControlMap() {
     }
   };
 
-  const persistSiteSpot = async (
+  const executePersistSiteSpot = async (
     shape: DrawnShape,
     bufferM = siteBufferM,
     targetId: string | null = selectedSpotId,
@@ -894,6 +995,56 @@ export default function SiteControlMap() {
     await loadBoundary();
   };
 
+  const persistSiteSpot = async (
+    shape: DrawnShape,
+    bufferM = siteBufferM,
+    targetId: string | null = selectedSpotId,
+  ) => {
+    const buffer = clampSiteBoundaryBufferM(bufferM);
+    const candidateSpot: SiteBoundary =
+      shape.kind === "circle"
+        ? {
+            id: targetId || "__candidate__",
+            project_id: projectId,
+            name: siteName.trim() || "개소",
+            geometry_type: "radius",
+            geo_polygon: null,
+            center_lat: shape.center.lat,
+            center_lng: shape.center.lng,
+            radius_m: shape.radius_m,
+            buffer_m: buffer,
+          }
+        : {
+            id: targetId || "__candidate__",
+            project_id: projectId,
+            name: siteName.trim() || "개소",
+            geometry_type: "polygon",
+            geo_polygon: shape.latlngs,
+            center_lat: ringCentroid(shape.latlngs)?.lat ?? 0,
+            center_lng: ringCentroid(shape.latlngs)?.lng ?? 0,
+            radius_m: 400,
+            buffer_m: buffer,
+          };
+    const nextUnion = targetId
+      ? siteSpots.map((s) => (s.id === targetId ? candidateSpot : s))
+      : [...siteSpots, candidateSpot];
+    const impact = simulateSpotAttendanceImpact({
+      candidateSpots: nextUnion,
+      workers: checkedInWorkers,
+    });
+    if (impact.total > 0 && impact.severity === "danger") {
+      setPendingImpactAction({
+        impact,
+        actionLabel: "저장",
+        run: async () => {
+          await executePersistSiteSpot(shape, bufferM, targetId);
+        },
+      });
+      return;
+    }
+    await executePersistSiteSpot(shape, bufferM, targetId);
+  };
+
   const saveSiteBufferOnly = async (next: number) => {
     const buffer = clampSiteBoundaryBufferM(next);
     setSiteBufferM(buffer);
@@ -909,7 +1060,7 @@ export default function SiteControlMap() {
     setSiteSpots((list) => list.map((s) => (s.id === selectedSpotId ? { ...s, buffer_m: buffer } : s)));
   };
 
-  const deleteSpot = async (id: string) => {
+  const executeDeleteSpot = async (id: string) => {
     setSavingSite(true);
     const { error } = await supabase
       .from("project_site_spots" as any)
@@ -928,6 +1079,25 @@ export default function SiteControlMap() {
     if (editingSpotId === id) setEditingSpotId(null);
     setPendingShape(null);
     await loadBoundary();
+  };
+
+  const deleteSpot = async (id: string) => {
+    const remaining = siteSpots.filter((s) => s.id !== id);
+    const impact = simulateSpotAttendanceImpact({
+      candidateSpots: remaining.length > 0 ? remaining : siteBoundary ? [siteBoundary] : [],
+      workers: checkedInWorkers,
+    });
+    if (impact.total > 0 && impact.severity === "danger") {
+      setPendingImpactAction({
+        impact,
+        actionLabel: "삭제",
+        run: async () => {
+          await executeDeleteSpot(id);
+        },
+      });
+      return;
+    }
+    await executeDeleteSpot(id);
   };
 
   const startEditSpot = (s: SiteBoundary) => {
@@ -1010,6 +1180,10 @@ export default function SiteControlMap() {
       return;
     }
     setUploading(true);
+    const [exif, aspectRatio] = await Promise.all([
+      extractDroneExifFromFile(file),
+      readImageAspectRatio(file),
+    ]);
     const ext = file.name.split(".").pop() || "jpg";
     const path = `${projectId}/drone-maps/${Date.now()}.${ext}`;
     const { error: upErr } = await supabase.storage
@@ -1022,6 +1196,33 @@ export default function SiteControlMap() {
     }
     const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
     const name = file.name.replace(/\.[^.]+$/, "") || "현장 도면";
+
+    // Auto-seed priority: 1) Drone EXIF GPS (+ Yaw/Alt) -> 2) Existing Spot centroid -> 3) Project address pin
+    const fallbackSpot = siteSpots.find((s) => s.id === selectedSpotId) || siteSpots[0] || null;
+    const spotCenter = fallbackSpot
+      ? fallbackSpot.geometry_type === "radius" &&
+        fallbackSpot.center_lat != null &&
+        fallbackSpot.center_lng != null
+        ? { lat: fallbackSpot.center_lat, lng: fallbackSpot.center_lng }
+        : fallbackSpot.geo_polygon?.length
+          ? ringCentroid(fallbackSpot.geo_polygon)
+          : null
+      : null;
+    const seedCenter = exif
+      ? { lat: exif.lat, lng: exif.lng }
+      : spotCenter || (sitePin ? { lat: sitePin.lat, lng: sitePin.lng } : null);
+    const seededCorners = seedCenter
+      ? buildInitialCornersFromSeed({
+          center: seedCenter,
+          aspectRatio,
+          relativeAltitudeM: exif?.relativeAltitudeM,
+          yawDeg: exif?.yawDeg,
+        })
+      : null;
+    const seedPayload = seededCorners
+      ? cornersToPersistPayload(seededCorners, 0.85, { source: exif ? "exif" : "seed" })
+      : {};
+
     const { data, error } = await supabase
       .from("site_maps")
       .insert({
@@ -1029,6 +1230,7 @@ export default function SiteControlMap() {
         name,
         image_url: pub.publicUrl,
         created_by: (await supabase.auth.getUser()).data.user?.id,
+        ...seedPayload,
       } as any)
       .select(
         "id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
@@ -1039,15 +1241,200 @@ export default function SiteControlMap() {
       toast.error("맵 등록 실패: " + error.message);
       return;
     }
-    toast.success("업로드 완료 — 모바일 「맵·GPS 맞추기」워킹 보정으로 좌표를 맞추세요", {
-      description: "PC 위성 TL/TR/BL 수동 정렬은 선택(고급)입니다.",
-      duration: 7000,
-    });
+    if (exif) {
+      toast.success("드론 GPS(EXIF) 정보로 자동 초기 배치했습니다", {
+        description:
+          "정밀도를 높이려면 모바일 워킹 보정(QR) 또는 2점 랜드마크 맞춤을 진행하세요. 출퇴근 구역에는 영향을 주지 않습니다.",
+        duration: 7000,
+      });
+    } else if (seedCenter) {
+      toast.success("현장 기준 좌표로 자동 초기 배치했습니다", {
+        description: "모바일 워킹 보정(QR) 또는 2점 랜드마크 맞춤으로 정확히 맞춰주세요.",
+        duration: 7000,
+      });
+    } else {
+      toast.success("업로드 완료 — 모바일 워킹 보정(QR)으로 좌표를 맞추세요", {
+        duration: 7000,
+      });
+    }
     setLayers((l) => ({ ...l, drone: true }));
     setActiveMap(data as SiteMap);
-    setSeedRequest((n) => n + 1);
+    if (seededCorners) {
+      setDraftCorners(seededCorners);
+      setFitToken(`map-${(data as SiteMap).id}-${Date.now()}`);
+    } else {
+      setSeedRequest((n) => n + 1);
+    }
     void loadMaps();
   };
+
+  const onReplaceDroneImage = async (file: File) => {
+    if (!projectId || !activeMap) return;
+    setReplacingImage(true);
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${projectId}/drone-maps/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("attachments")
+      .upload(path, file, { upsert: false, contentType: file.type });
+    if (upErr) {
+      setReplacingImage(false);
+      toast.error("사진 교체 업로드 실패: " + upErr.message);
+      return;
+    }
+    const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
+    const { error } = await supabase
+      .from("site_maps")
+      .update({ image_url: pub.publicUrl } as any)
+      .eq("id", activeMap.id);
+    setReplacingImage(false);
+    if (error) {
+      toast.error("사진 교체 저장 실패: " + error.message);
+      return;
+    }
+    applyLocalMapRow({ ...activeMap, image_url: pub.publicUrl });
+    setLayers((l) => ({ ...l, drone: true }));
+    toast.success("최신 드론 사진으로 교체했습니다", {
+      description: "기존 GPS 좌표·출퇴근 개소·위험구역은 그대로 유지됩니다.",
+      duration: 6000,
+    });
+  };
+
+  const onRenameMap = async (nextName: string) => {
+    if (!activeMap) return;
+    setMutatingMap(true);
+    const { error } = await supabase
+      .from("site_maps")
+      .update({ name: nextName } as any)
+      .eq("id", activeMap.id);
+    setMutatingMap(false);
+    if (error) {
+      toast.error("이름 변경 실패: " + error.message);
+      return;
+    }
+    applyLocalMapRow({ ...activeMap, name: nextName });
+    setRenameDialogOpen(false);
+    toast.success("도면 이름을 변경했습니다");
+  };
+
+  const onDeleteMap = async () => {
+    if (!activeMap) return;
+    setMutatingMap(true);
+    const uid = (await supabase.auth.getUser()).data.user?.id || "";
+    const payload = uid
+      ? softDeletePayload(uid, "통합 현장 관제맵에서 도면 삭제")
+      : { is_deleted: true, deleted_at: new Date().toISOString() };
+    const { error } = await supabase
+      .from("site_maps")
+      .update(payload as any)
+      .eq("id", activeMap.id);
+    setMutatingMap(false);
+    if (error) {
+      toast.error("도면 삭제 실패: " + error.message);
+      return;
+    }
+    setDeleteDialogOpen(false);
+    setTwoPointActive(false);
+    setTwoPointPicks({});
+    toast.success("이전 도면을 삭제했습니다", {
+      description: "근로자 출퇴근 구역과 위험구역은 영향을 받지 않습니다.",
+    });
+    const remaining = maps.filter((m) => m.id !== activeMap.id);
+    setMaps(remaining);
+    setActiveMap(remaining[0] || null);
+    void loadMaps();
+  };
+
+  const prevCornersBackup = useMemo(
+    () => parseGeoTransform(activeMap?.geo_transform)?.prev ?? null,
+    [activeMap?.geo_transform],
+  );
+
+  const onRollbackGeoref = async () => {
+    if (!activeMap || !prevCornersBackup) return;
+    setDraftCorners(prevCornersBackup);
+    draftCornersRef.current = prevCornersBackup;
+    overlayDirtyRef.current = true;
+    setOverlayDirty(true);
+    await persistGeorefNow({ silent: false });
+    setFitToken(`rollback-${activeMap.id}-${Date.now()}`);
+    toast.success("직전 보정 좌표로 되돌렸습니다");
+  };
+
+  const onExplicitClearGpsCal = async () => {
+    if (!projectId) return;
+    setMutatingMap(true);
+    const { error } = await supabase.rpc("save_project_gps_calibration" as any, {
+      _project_id: projectId,
+      _calibration: null,
+    });
+    setMutatingMap(false);
+    if (error) {
+      toast.error("1점 보정 초기화 실패: " + error.message);
+      return;
+    }
+    await notifyGpsCalibrationChanged(projectId);
+    setGpsCal(null);
+    setClearCalDialogOpen(false);
+    toast.success("1점 GPS 보정을 초기화했습니다");
+  };
+
+  const onTwoPointPick = useCallback(
+    (pt: { lat: number; lng: number }) => {
+      if (!twoPointActive || !draftCorners) return;
+      if (!twoPointPicks.p1Img) {
+        setTwoPointPicks({ p1Img: pt });
+        toast.message("1단계 완료 — 이제 위성 지도에서 같은 지점(1번)을 클릭하세요");
+        return;
+      }
+      if (!twoPointPicks.p1Sat) {
+        setTwoPointPicks((p) => ({ ...p, p1Sat: pt }));
+        toast.message("2단계 완료 — 이제 도면 위 두 번째 기준점(2번)을 클릭하세요");
+        return;
+      }
+      if (!twoPointPicks.p2Img) {
+        setTwoPointPicks((p) => ({ ...p, p2Img: pt }));
+        toast.message("3단계 완료 — 이제 위성 지도에서 같은 지점(2번)을 클릭하세요");
+        return;
+      }
+      const res = alignCornersFromTwoLandmarks(
+        draftCorners,
+        twoPointPicks.p1Img,
+        twoPointPicks.p1Sat,
+        twoPointPicks.p2Img,
+        pt,
+      );
+      if ("error" in res) {
+        toast.error(res.error);
+        setTwoPointPicks({});
+        return;
+      }
+      setDraftCorners(res);
+      draftCornersRef.current = res;
+      overlayDirtyRef.current = true;
+      setOverlayDirty(true);
+      setTwoPointActive(false);
+      setTwoPointPicks({});
+      void persistGeorefNow({ silent: false, source: "two-point" });
+    },
+    [twoPointActive, twoPointPicks, draftCorners, persistGeorefNow],
+  );
+
+  const calibrationHealth = useMemo(
+    () => evaluateMapCalibrationHealth(activeMap, draftCorners),
+    [activeMap, draftCorners],
+  );
+  const gpsCalGuard = useMemo(
+    () => describeGpsCalibrationGuard(gpsCal, siteSpots.length),
+    [gpsCal, siteSpots.length],
+  );
+  const currentAttendanceImpact = useMemo(
+    () =>
+      simulateSpotAttendanceImpact({
+        candidateSpots: siteSpots.length > 0 ? siteSpots : siteBoundary ? [siteBoundary] : [],
+        workers: checkedInWorkers,
+      }),
+    [siteSpots, siteBoundary, checkedInWorkers],
+  );
 
   const saveBounds = async () => {
     await persistGeorefNow({ silent: false });
@@ -1543,16 +1930,23 @@ export default function SiteControlMap() {
             현장 도면·GPS 개소·위험구역을 설정합니다(같은 좌표 <code>geo_transform</code> 사용 · 자동 저장).
             실시간 인원 현황은 <b>실시간 분포</b>에서 확인하세요.
           </p>
-          {gpsCal && (
-            <div className="mt-2">
+          {gpsCal && gpsCalGuard.hasCalibration && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
               <Badge variant="secondary" className="text-[11px]">
-                GPS 보정 연동 중 ≈
-                {Math.round(offsetMagnitudeM(gpsCal.d_lat, gpsCal.d_lng, gpsCal.map_lat || 37))}
-                m ·{" "}
+                1점 GPS 보정 적용 중 ≈{gpsCalGuard.offsetM}m
                 {gpsCal.calibrated_at
-                  ? new Date(gpsCal.calibrated_at).toLocaleString("ko-KR")
+                  ? ` · ${new Date(gpsCal.calibrated_at).toLocaleString("ko-KR")}`
                   : ""}
               </Badge>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px] text-muted-foreground hover:text-destructive"
+                onClick={() => setClearCalDialogOpen(true)}
+              >
+                1점 보정 초기화
+              </Button>
             </div>
           )}
         </div>
@@ -1613,60 +2007,139 @@ export default function SiteControlMap() {
               </TabsList>
 
               <TabsContent value="mapping" className="mt-3 space-y-3 focus-visible:outline-none">
-                <div>
-                  <Label className="text-xs">맵 선택</Label>
+                {/* 1. 보정 상태 신호등 + 출퇴근 안전 안내 */}
+                <div
+                  className={`rounded-md border p-2.5 space-y-1.5 ${
+                    calibrationHealth.status === "green"
+                      ? "border-emerald-500/40 bg-emerald-500/5"
+                      : calibrationHealth.status === "yellow"
+                        ? "border-amber-500/40 bg-amber-500/5"
+                        : "border-rose-500/40 bg-rose-500/5"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold flex items-center gap-1.5">
+                      {calibrationHealth.status === "green" ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      ) : calibrationHealth.status === "yellow" ? (
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                      )}
+                      {calibrationHealth.label}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] font-normal gap-1">
+                      <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                      출퇴근 무영향
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {calibrationHealth.detail}
+                  </p>
+                  {activeMap?.image_url && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full h-8 text-xs border-emerald-500/40 hover:bg-emerald-500/10"
+                      onClick={() => setQrDialogOpen(true)}
+                    >
+                      <QrCode className="h-3.5 w-3.5 mr-1.5 text-emerald-600" />
+                      모바일 워킹 보정 QR 열기 (권장)
+                    </Button>
+                  )}
+                </div>
+
+                {/* 2. 도면 선택 + 최신 사진 교체 / 이름 변경 / 삭제 */}
+                <div className="space-y-2">
+                  <Label className="text-xs">등록된 현장 도면 ({maps.length})</Label>
                   <Select
                     value={activeMap?.id || ""}
-                    onValueChange={(id) => setActiveMap(maps.find((m) => m.id === id) || null)}
+                    onValueChange={(id) => {
+                      setTwoPointActive(false);
+                      setTwoPointPicks({});
+                      setActiveMap(maps.find((m) => m.id === id) || null);
+                    }}
                   >
-                    <SelectTrigger><SelectValue placeholder="맵 선택" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="도면을 선택하세요" /></SelectTrigger>
                     <SelectContent>
                       {maps.map((m) => (
                         <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {activeMap && (
+                    <div className="grid grid-cols-3 gap-1">
+                      <label className="col-span-3 flex items-center justify-center gap-1.5 h-8 rounded-md border border-primary/40 bg-primary/5 hover:bg-primary/10 cursor-pointer text-xs font-medium text-primary">
+                        {replacingImage ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        최신 사진으로 교체 (기존 좌표 유지)
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={replacingImage}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void onReplaceDroneImage(f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2 h-8 text-[11px]"
+                        disabled={mutatingMap}
+                        onClick={() => setRenameDialogOpen(true)}
+                      >
+                        <Pencil className="h-3 w-3 mr-1" /> 이름 변경
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-[11px] text-destructive hover:text-destructive"
+                        disabled={mutatingMap}
+                        onClick={() => setDeleteDialogOpen(true)}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" /> 삭제
+                      </Button>
+                    </div>
+                  )}
+
+                  <label className="flex items-center justify-center gap-2 h-10 border border-dashed rounded-md cursor-pointer text-xs font-medium hover:bg-muted/50">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    새 현장 도면 업로드 (드론 EXIF 자동 배치)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void onUploadDrone(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
                 </div>
 
-                <label className="flex items-center justify-center gap-2 h-11 border border-dashed rounded-md cursor-pointer text-sm hover:bg-muted/50">
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  현장 도면 업로드
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void onUploadDrone(f);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-
-                {activeMap?.image_url && (
-                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5 space-y-1.5">
-                    <p className="text-[11px] font-medium text-emerald-900 dark:text-emerald-100">
-                      권장 다음 단계 · 모바일 워킹 보정
-                    </p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      마스터 앱 → <b>더보기</b> → <b>맵·GPS 맞추기</b> → 워킹 보정(A·B·C).
-                      PC에서 위성에 사진을 입힐 필요는 없습니다.
-                    </p>
-                  </div>
-                )}
-
+                {/* 3. 비율 고정 정렬 (왜곡 0%) — 2점 랜드마크 + 이동/회전/확대 + 되돌리기 */}
                 {draftCorners && activeMap?.image_url && (
-                  <div className="rounded-md border bg-muted/30 p-2.5 space-y-2">
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      축소/확대·회전·지도 줌은 <b>같은 현장 좌표</b>로 자동 저장됩니다.
-                      구역 설정 탭을 다녀와도 유지됩니다.
-                    </p>
+                  <div className="rounded-md border bg-muted/30 p-2.5 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold">비율 고정 정렬 (왜곡 0%)</span>
                       <span className="text-[10px] text-muted-foreground">
                         {savingBounds || persistStatus === "saving"
                           ? "저장 중…"
                           : persistStatus === "error"
-                            ? "저장 실패 — 다시 저장하세요"
+                            ? "저장 실패"
                             : persistStatus === "saved"
                               ? "자동 저장됨"
                               : overlayDirty
@@ -1674,188 +2147,216 @@ export default function SiteControlMap() {
                                 : "저장됨"}
                       </span>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={twoPointActive ? "default" : "outline"}
+                        className="w-full h-9 text-xs"
+                        onClick={() => {
+                          setTwoPointActive((prev) => !prev);
+                          setTwoPointPicks({});
+                          setShowLegacyCornerHandles(false);
+                        }}
+                      >
+                        <Target className="h-3.5 w-3.5 mr-1.5" />
+                        {twoPointActive ? "2점 기준점 맞춤 취소" : "2점 기준점 맞춤 (비율 고정)"}
+                      </Button>
+                      {twoPointActive && (
+                        <div className="rounded-md border border-primary/40 bg-primary/5 p-2 text-[11px] space-y-1">
+                          <div className="font-semibold text-primary">
+                            {!twoPointPicks.p1Img
+                              ? "① 도면 위 첫 번째 기준점(건물 모서리 등)을 클릭하세요"
+                              : !twoPointPicks.p1Sat
+                                ? "② 위성 지도에서 같은 지점(1번)을 클릭하세요"
+                                : !twoPointPicks.p2Img
+                                  ? "③ 도면 위 멀리 떨어진 두 번째 기준점(2번)을 클릭하세요"
+                                  : "④ 위성 지도에서 같은 지점(2번)을 클릭하세요"}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">
+                            투명도를 50% 정도로 낮추면 위성과 도면을 함께 보며 찍기 쉽습니다.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px]">도면 투명도 {Math.round(opacity * 100)}%</Label>
+                      <Slider
+                        value={[opacity]}
+                        min={0.2}
+                        max={1}
+                        step={0.05}
+                        onValueChange={(v) => {
+                          setOpacity(v[0] ?? 0.85);
+                          overlayDirtyRef.current = true;
+                          setOverlayDirty(true);
+                          setPersistStatus("idle");
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[11px] flex items-center gap-1">
+                          <RotateCw className="h-3 w-3" /> 회전 (±{rotateStep}°)
+                        </Label>
+                        <div className="flex gap-1">
+                          <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                            onClick={() => markOverlayDirty(rotateCorners(draftCorners, -rotateStep))}>
+                            <RotateCcw className="h-3 w-3 mr-1" /> 좌
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                            onClick={() => markOverlayDirty(rotateCorners(draftCorners, rotateStep))}>
+                            <RotateCw className="h-3 w-3 mr-1" /> 우
+                          </Button>
+                        </div>
+                      </div>
+                      <Slider value={[rotateStep]} min={0.25} max={15} step={0.25}
+                        onValueChange={(v) => setRotateStep(v[0] ?? 1)} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 items-center">
+                      <div className="grid grid-cols-3 gap-0.5 w-24 mx-auto">
+                        <span />
+                        <Button type="button" size="icon" variant="outline" className="h-7 w-7"
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, nudgeStep, 0))}>
+                          <ArrowUp className="h-3 w-3" />
+                        </Button>
+                        <span />
+                        <Button type="button" size="icon" variant="outline" className="h-7 w-7"
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, 0, -nudgeStep))}>
+                          <ArrowLeft className="h-3 w-3" />
+                        </Button>
+                        <Button type="button" size="icon" variant="outline" className="h-7 w-7"
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, -nudgeStep, 0))}>
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                        <Button type="button" size="icon" variant="outline" className="h-7 w-7"
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, 0, nudgeStep))}>
+                          <ArrowRight className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="space-y-1">
+                        <Button type="button" size="sm" variant="outline" className="w-full h-7 text-[11px]"
+                          onClick={() => markOverlayDirty(scaleCorners(draftCorners, 1.03))}>
+                          <ZoomIn className="h-3 w-3 mr-1" /> 확대 (+3%)
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" className="w-full h-7 text-[11px]"
+                          onClick={() => markOverlayDirty(scaleCorners(draftCorners, 0.97))}>
+                          <ZoomOut className="h-3 w-3 mr-1" /> 축소 (-3%)
+                        </Button>
+                      </div>
+                    </div>
+
                     <div className="flex gap-1">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="flex-1 h-8"
+                        className="flex-1 h-8 text-[11px]"
                         onClick={fitOverlayNow}
                       >
-                        <Maximize2 className="h-3.5 w-3.5 mr-1" /> 전체 보기
+                        <Maximize2 className="h-3 w-3 mr-1" /> 전체 보기
                       </Button>
                       <Button
                         type="button"
                         size="sm"
-                        className="flex-1 h-8"
+                        className="flex-1 h-8 text-[11px]"
                         onClick={() => void saveBounds()}
                         disabled={savingBounds}
                       >
-                        {savingBounds ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                        {savingBounds ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
                         지금 저장
                       </Button>
                     </div>
+
+                    {prevCornersBackup && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="w-full h-7 text-[11px] text-muted-foreground hover:text-foreground"
+                        disabled={savingBounds}
+                        onClick={() => void onRollbackGeoref()}
+                      >
+                        <Undo2 className="h-3 w-3 mr-1" /> 직전 보정으로 되돌리기
+                      </Button>
+                    )}
                   </div>
                 )}
 
                 {draftCorners && activeMap?.image_url ? (
                   <Accordion type="single" collapsible className="rounded-md border bg-muted/40 px-2.5">
                     <AccordionItem value="advanced-sat" className="border-0">
-                      <AccordionTrigger className="py-2.5 text-xs hover:no-underline">
-                        고급 · PC 위성 TL/TR/BL 수동 정렬
+                      <AccordionTrigger className="py-2 text-xs hover:no-underline text-muted-foreground">
+                        고급 · 3점 자유 변형 (TL/TR/BL) 및 GPS 모서리 찍기
                       </AccordionTrigger>
                       <AccordionContent className="space-y-3 pb-3">
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      선택 기능입니다. 모바일 워킹 보정 대신 PC에서 <b>TL·TR·BL</b> 마커를
-                      드래그하거나 <b>현재 위치로 찍기</b>할 때 사용합니다.
-                    </p>
+                        <label className="flex items-center justify-between gap-2 text-xs cursor-pointer rounded-md border bg-background p-2">
+                          <div>
+                            <div className="font-medium">TL/TR/BL 모서리 핸들 표시</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              직접 드래그 시 도면 비율이 찌그러질 수 있습니다.
+                            </div>
+                          </div>
+                          <Switch
+                            checked={showLegacyCornerHandles}
+                            onCheckedChange={(v) => {
+                              setShowLegacyCornerHandles(v);
+                              if (v) setTwoPointActive(false);
+                            }}
+                          />
+                        </label>
 
-                    <div className="space-y-1.5 rounded-md border bg-background/80 p-2">
-                      <Label className="text-xs flex items-center gap-1">
-                        <Crosshair className="h-3 w-3" /> 내 위치로 정렬
-                      </Label>
-                      <div className="flex gap-1">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 h-8"
-                          onClick={locateOnce}
-                        >
-                          <MapPin className="h-3.5 w-3.5 mr-1" /> 내 위치
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={watchingGps ? "default" : "outline"}
-                          className="flex-1 h-8"
-                          onClick={toggleWatchGps}
-                        >
-                          <Crosshair className="h-3.5 w-3.5 mr-1" />
-                          {watchingGps ? "추적 중" : "추적"}
-                        </Button>
-                      </div>
-                      {myGps && (
-                        <p className="text-[10px] text-muted-foreground">
-                          GPS {myGps.lat.toFixed(6)}, {myGps.lng.toFixed(6)} · ±
-                          {Math.round(myGps.accuracy)}m
-                        </p>
-                      )}
-                      <div className="grid grid-cols-3 gap-1">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="h-9 text-[11px] px-1"
-                          onClick={() => snapCornerToGps("tl")}
-                        >
-                          TL 찍기
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="h-9 text-[11px] px-1"
-                          onClick={() => snapCornerToGps("tr")}
-                        >
-                          TR 찍기
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="h-9 text-[11px] px-1"
-                          onClick={() => snapCornerToGps("bl")}
-                        >
-                          BL 찍기
-                        </Button>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        도면의 좌상→우상→좌하 모서리에 순서대로 서서 찍으면 회전·스케일이
-                        맞춰집니다. 모서리에 못 가면 모바일 워킹 보정을 권장합니다.
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs flex items-center gap-1">
-                          <RotateCw className="h-3 w-3" /> 회전
-                        </Label>
-                        <span className="text-[10px] text-muted-foreground">±{rotateStep}°</span>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                          onClick={() => markOverlayDirty(rotateCorners(draftCorners, -rotateStep))}>
-                          <RotateCcw className="h-3.5 w-3.5 mr-1" /> 반시계
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                          onClick={() => markOverlayDirty(rotateCorners(draftCorners, rotateStep))}>
-                          <RotateCw className="h-3.5 w-3.5 mr-1" /> 시계
-                        </Button>
-                      </div>
-                      <Slider value={[rotateStep]} min={0.25} max={15} step={0.25}
-                        onValueChange={(v) => setRotateStep(v[0] ?? 1)} />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-xs flex items-center gap-1">
-                        <Move className="h-3 w-3" /> 미세 이동
-                      </Label>
-                      <div className="grid grid-cols-3 gap-1 w-28 mx-auto">
-                        <span />
-                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => markOverlayDirty(translateCorners(draftCorners, nudgeStep, 0))}>
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <span />
-                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => markOverlayDirty(translateCorners(draftCorners, 0, -nudgeStep))}>
-                          <ArrowLeft className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => markOverlayDirty(translateCorners(draftCorners, -nudgeStep, 0))}>
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => markOverlayDirty(translateCorners(draftCorners, 0, nudgeStep))}>
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-1">
-                      <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                        onClick={() => markOverlayDirty(scaleCorners(draftCorners, 0.97))}>
-                        <ZoomOut className="h-3.5 w-3.5 mr-1" /> 축소
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                        onClick={() => markOverlayDirty(scaleCorners(draftCorners, 1.03))}>
-                        <ZoomIn className="h-3.5 w-3.5 mr-1" /> 확대
-                      </Button>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs">투명도 {Math.round(opacity * 100)}%</Label>
-                      <Slider value={[opacity]} min={0.2} max={1} step={0.05}
-                        onValueChange={(v) => {
-                          setOpacity(v[0] ?? 0.85);
-                          overlayDirtyRef.current = true;
-                          setOverlayDirty(true);
-                          setPersistStatus("idle");
-                        }} />
-                    </div>
-
-                    <Button className="w-full" size="sm" onClick={() => void saveBounds()} disabled={savingBounds}>
-                      {savingBounds ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                      도면 정렬 저장
-                    </Button>
+                        <div className="space-y-1.5 rounded-md border bg-background/80 p-2">
+                          <Label className="text-xs flex items-center gap-1">
+                            <Crosshair className="h-3 w-3" /> 내 위치로 모서리 찍기
+                          </Label>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 h-8"
+                              onClick={locateOnce}
+                            >
+                              <MapPin className="h-3.5 w-3.5 mr-1" /> 내 위치
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={watchingGps ? "default" : "outline"}
+                              className="flex-1 h-8"
+                              onClick={toggleWatchGps}
+                            >
+                              <Crosshair className="h-3.5 w-3.5 mr-1" />
+                              {watchingGps ? "추적 중" : "추적"}
+                            </Button>
+                          </div>
+                          {myGps && (
+                            <p className="text-[10px] text-muted-foreground">
+                              GPS {myGps.lat.toFixed(6)}, {myGps.lng.toFixed(6)} · ±
+                              {Math.round(myGps.accuracy)}m
+                            </p>
+                          )}
+                          <div className="grid grid-cols-3 gap-1">
+                            <Button type="button" size="sm" variant="secondary" className="h-8 text-[11px] px-1"
+                              onClick={() => snapCornerToGps("tl")}>TL 찍기</Button>
+                            <Button type="button" size="sm" variant="secondary" className="h-8 text-[11px] px-1"
+                              onClick={() => snapCornerToGps("tr")}>TR 찍기</Button>
+                            <Button type="button" size="sm" variant="secondary" className="h-8 text-[11px] px-1"
+                              onClick={() => snapCornerToGps("bl")}>BL 찍기</Button>
+                          </div>
+                        </div>
                       </AccordionContent>
                     </AccordionItem>
                   </Accordion>
                 ) : (
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     도면이 없으면 프로젝트 주소로 위성을 엽니다. GPS 개소는 [2] 탭, 위험구역은 [3] 탭에서
-                    위성 위에 그립니다. 도면을 올리면 모바일 워킹 보정으로 맞출 수 있습니다.
+                    위성 위에 그립니다. 드론 사진을 올리면 EXIF 또는 모바일 워킹 보정으로 맞출 수 있습니다.
                   </p>
                 )}
               </TabsContent>
@@ -1865,6 +2366,22 @@ export default function SiteControlMap() {
                   현장이 여러 곳이면 개소를 여러 개 그립니다. 선만 있고 색은 안 채웁니다.
                   출퇴근은 개소 도형들의 합집합(안 또는 바깥 {SITE_BOUNDARY_BUFFER_MIN_M}~{SITE_BOUNDARY_BUFFER_MAX_M}m)입니다.
                 </p>
+                {currentAttendanceImpact.total > 0 && (
+                  <div
+                    className={`rounded-md border p-2 text-[11px] flex items-center justify-between gap-2 ${
+                      currentAttendanceImpact.severity === "safe"
+                        ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-900 dark:text-emerald-200"
+                        : currentAttendanceImpact.severity === "warn"
+                          ? "border-amber-500/40 bg-amber-500/5 text-amber-900 dark:text-amber-200"
+                          : "border-rose-500/40 bg-rose-500/5 text-rose-900 dark:text-rose-200"
+                    }`}
+                  >
+                    <span>
+                      현재 출근자 포함률: <b>{currentAttendanceImpact.included}/{currentAttendanceImpact.total}명 ({currentAttendanceImpact.inclusionPct}%)</b>
+                    </span>
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                  </div>
+                )}
                 {siteSpots.length === 0 && siteBoundary && (
                   <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
                     개소가 없어 예전 프로젝트 테두리를 출퇴근에 씁니다. 개소를 하나라도 그리면 개소가 기준이 됩니다.
@@ -2310,6 +2827,10 @@ export default function SiteControlMap() {
                 <VWorldBasemap satellite={layers.satellite} />
 
                 <MapBridge onMap={onMapReady} seedRequest={seedRequest} onSeedCorners={onSeedCorners} />
+                <TwoPointClickCapture
+                  active={twoPointActive && panelTab === "mapping"}
+                  onPick={onTwoPointPick}
+                />
                 <MapViewSync enabled={panelTab === "mapping" && hasDrawing} onView={onMapViewChange} />
                 {((addressPinMode && panelTab === "zones") || panelTab === "site") && (
                   <InteractiveLeafletDraw
@@ -2337,8 +2858,25 @@ export default function SiteControlMap() {
                   <VisualCornerMarkers
                     corners={draftCorners}
                     onChange={markOverlayDirty}
-                    visible
+                    visible={showLegacyCornerHandles && !twoPointActive}
                   />
+                )}
+
+                {twoPointActive && panelTab === "mapping" && (
+                  <>
+                    {twoPointPicks.p1Img && (
+                      <Marker position={[twoPointPicks.p1Img.lat, twoPointPicks.p1Img.lng]} icon={LANDMARK_P1_IMG_ICON} />
+                    )}
+                    {twoPointPicks.p1Sat && (
+                      <Marker position={[twoPointPicks.p1Sat.lat, twoPointPicks.p1Sat.lng]} icon={LANDMARK_P1_SAT_ICON} />
+                    )}
+                    {twoPointPicks.p2Img && (
+                      <Marker position={[twoPointPicks.p2Img.lat, twoPointPicks.p2Img.lng]} icon={LANDMARK_P2_IMG_ICON} />
+                    )}
+                    {twoPointPicks.p2Sat && (
+                      <Marker position={[twoPointPicks.p2Sat.lat, twoPointPicks.p2Sat.lng]} icon={LANDMARK_P2_SAT_ICON} />
+                    )}
+                  </>
                 )}
 
                 {myGps && (
@@ -2668,6 +3206,51 @@ export default function SiteControlMap() {
           }
         }}
         onSave={saveZoneFromModal}
+      />
+
+      <MobileWalkQrDialog
+        open={qrDialogOpen}
+        onOpenChange={setQrDialogOpen}
+        mapName={activeMap?.name}
+      />
+
+      <RenameSiteMapDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        initialName={activeMap?.name || ""}
+        saving={mutatingMap}
+        onConfirm={(nextName) => void onRenameMap(nextName)}
+      />
+
+      <DeleteSiteMapDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        mapName={activeMap?.name || ""}
+        deleting={mutatingMap}
+        onConfirm={() => void onDeleteMap()}
+      />
+
+      <AttendanceImpactGuardDialog
+        open={!!pendingImpactAction}
+        onOpenChange={(open) => {
+          if (!open) setPendingImpactAction(null);
+        }}
+        impact={pendingImpactAction?.impact ?? null}
+        actionLabel={pendingImpactAction?.actionLabel ?? "저장"}
+        busy={savingSite}
+        onConfirm={() => {
+          const action = pendingImpactAction;
+          setPendingImpactAction(null);
+          if (action) void action.run();
+        }}
+      />
+
+      <ClearGpsCalibrationDialog
+        open={clearCalDialogOpen}
+        onOpenChange={setClearCalDialogOpen}
+        offsetM={gpsCalGuard.offsetM}
+        busy={mutatingMap}
+        onConfirm={() => void onExplicitClearGpsCal()}
       />
     </div>
   );

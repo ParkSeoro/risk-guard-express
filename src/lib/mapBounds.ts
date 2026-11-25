@@ -28,19 +28,29 @@ export type SiteMapView = {
   zoom: number;
 };
 
-export const GEO_TRANSFORM_SOURCES = ["walk", "pc-satellite", "seed", "photo"] as const;
+export const GEO_TRANSFORM_SOURCES = [
+  "walk",
+  "pc-satellite",
+  "seed",
+  "photo",
+  "exif",
+  "two-point",
+] as const;
 export type GeoTransformSource = (typeof GEO_TRANSFORM_SOURCES)[number];
 
 export type GeoTransform = GeoCorners & {
   opacity?: number;
   view?: SiteMapView;
-  /** Who last wrote TL/TR/BL — walk, PC satellite, seed overlay, or site photo. */
+  /** Who last wrote TL/TR/BL — walk, PC satellite, seed overlay, EXIF, 2-point, or site photo. */
   source?: GeoTransformSource;
+  /** Single-slot backup of the previous corners for 1-click rollback. */
+  prev?: GeoCorners;
 };
 
 export type PersistExtras = {
   view?: SiteMapView | null;
   source?: GeoTransformSource | null;
+  prev?: GeoCorners | null;
 };
 
 export type SwNeBounds = {
@@ -125,6 +135,7 @@ export function cornersToPersistPayload(
   };
   if (extras?.view) geo_transform.view = extras.view;
   if (extras?.source) geo_transform.source = extras.source;
+  if (extras?.prev) geo_transform.prev = extras.prev;
   return {
     geo_anchor_nw_lat: box.ne.lat,
     geo_anchor_nw_lng: box.sw.lng,
@@ -180,6 +191,25 @@ export function parseGeoTransform(raw: unknown): GeoTransform | null {
   }
   const view = parseSiteMapView(o);
   const source = parseGeoTransformSource(o.source);
+  let prev: GeoCorners | undefined;
+  const rawPrev = o.prev as Record<string, unknown> | undefined;
+  if (rawPrev && typeof rawPrev === "object") {
+    const ptl = rawPrev.tl as LatLngLiteral | undefined;
+    const ptr = rawPrev.tr as LatLngLiteral | undefined;
+    const pbl = rawPrev.bl as LatLngLiteral | undefined;
+    if (
+      ptl && ptr && pbl &&
+      Number.isFinite(ptl.lat) && Number.isFinite(ptl.lng) &&
+      Number.isFinite(ptr.lat) && Number.isFinite(ptr.lng) &&
+      Number.isFinite(pbl.lat) && Number.isFinite(pbl.lng)
+    ) {
+      prev = {
+        tl: { lat: ptl.lat, lng: ptl.lng },
+        tr: { lat: ptr.lat, lng: ptr.lng },
+        bl: { lat: pbl.lat, lng: pbl.lng },
+      };
+    }
+  }
   return {
     tl: { lat: tl.lat, lng: tl.lng },
     tr: { lat: tr.lat, lng: tr.lng },
@@ -187,6 +217,7 @@ export function parseGeoTransform(raw: unknown): GeoTransform | null {
     opacity: typeof o.opacity === "number" ? o.opacity : 0.85,
     ...(view ? { view } : {}),
     ...(source ? { source } : {}),
+    ...(prev ? { prev } : {}),
   };
 }
 

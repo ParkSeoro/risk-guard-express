@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { geminiChatFetch } from "../_shared/gemini.ts";
+import { callGeminiNativeChat } from "../_shared/geminiNative.ts";
 import {
   streamDeepseekRiskChatText,
   callDeepseekRiskChat,
@@ -779,7 +780,19 @@ serve(async (req) => {
         const maxTok = detailLevel === "comprehensive" ? 1800 : 1200;
         let content = "";
         let usedModel = "";
-        let provider: "nvidia" | "openai" = openaiFirst ? "openai" : "nvidia";
+        let provider: "gemini" | "openai" | "nvidia" = "gemini";
+
+        const runGeminiDraft = async () =>
+          callGeminiNativeChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.15,
+            maxTokens: maxTok,
+            json: true,
+            timeoutMs: 45_000,
+          });
 
         const runOpenAiDraft = async () => {
           const oa = await callOpenAiChat({
@@ -823,33 +836,37 @@ serve(async (req) => {
             usedModel = oa.model;
             provider = "openai";
           } catch (oaErr) {
-            console.warn("scope_draft OpenAI failed, falling back to NVIDIA:", oaErr);
-            const deep = await runNvidiaDraft();
-            content = deep.content;
-            usedModel = deep.model || "";
-            provider = "nvidia";
+            console.warn("scope_draft OpenAI failed, falling back to Gemini:", oaErr);
+            const gm = await runGeminiDraft();
+            content = gm.content;
+            usedModel = gm.model;
+            provider = "gemini";
           }
         } else {
           try {
-            const deep = await runNvidiaDraft();
-            content = deep.content;
-            usedModel = deep.model || "";
-            provider = "nvidia";
-          } catch (nvidiaErr) {
-            console.warn("scope_draft NVIDIA failed:", nvidiaErr);
-            if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
-            console.warn("scope_draft falling back to OpenAI ChatGPT (last resort)");
-            const oa = await runOpenAiDraft();
-            content = oa.content;
-            usedModel = oa.model;
-            provider = "openai";
+            const gm = await runGeminiDraft();
+            content = gm.content;
+            usedModel = gm.model;
+            provider = "gemini";
+          } catch (gmErr) {
+            console.warn("scope_draft Gemini failed, falling back to OpenAI:", gmErr);
+            if (isOpenAiFallbackEnabled()) {
+              const oa = await runOpenAiDraft();
+              content = oa.content;
+              usedModel = oa.model;
+              provider = "openai";
+            } else {
+              const deep = await runNvidiaDraft();
+              content = deep.content;
+              usedModel = deep.model || "";
+              provider = "nvidia";
+            }
           }
         }
 
         let items = parseDraftItems(content);
-        // Empty after sanitize → try the other provider once
-        if (items.length === 0 && provider === "nvidia" && isOpenAiFallbackEnabled()) {
-          console.warn("scope_draft NVIDIA returned 0 usable items → OpenAI fallback");
+        if (items.length === 0 && provider === "gemini" && isOpenAiFallbackEnabled()) {
+          console.warn("scope_draft Gemini returned 0 usable items → OpenAI fallback");
           try {
             const oa = await runOpenAiDraft();
             items = parseDraftItems(oa.content);
@@ -859,14 +876,14 @@ serve(async (req) => {
             console.error("scope_draft OpenAI fallback failed:", oaErr);
           }
         } else if (items.length === 0 && provider === "openai") {
-          console.warn("scope_draft OpenAI returned 0 usable items → NVIDIA fallback");
+          console.warn("scope_draft OpenAI returned 0 usable items → Gemini fallback");
           try {
-            const deep = await runNvidiaDraft();
-            items = parseDraftItems(deep.content);
-            usedModel = deep.model || "";
-            provider = "nvidia";
-          } catch (nvErr) {
-            console.error("scope_draft NVIDIA fallback failed:", nvErr);
+            const gm = await runGeminiDraft();
+            items = parseDraftItems(gm.content);
+            usedModel = gm.model;
+            provider = "gemini";
+          } catch (gmErr) {
+            console.error("scope_draft Gemini fallback failed:", gmErr);
           }
         }
 
@@ -1141,7 +1158,19 @@ serve(async (req) => {
         const openaiFirst = preferOpenAiForFill();
         let content = "";
         let usedModel = "";
-        let provider: "nvidia" | "openai" = openaiFirst ? "openai" : "nvidia";
+        let provider: "gemini" | "openai" | "nvidia" = "gemini";
+
+        const runGeminiFill = async () =>
+          callGeminiNativeChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.2,
+            maxTokens: maxTokens,
+            json: true,
+            timeoutMs: 45_000,
+          });
 
         const runOpenAiFill = async () =>
           callOpenAiChat({
@@ -1180,32 +1209,37 @@ serve(async (req) => {
             usedModel = oa.model;
             provider = "openai";
           } catch (oaErr) {
-            console.warn("risk_fill OpenAI failed, falling back to NVIDIA:", oaErr);
-            const deep = await runNvidiaFill();
-            content = deep.content;
-            usedModel = deep.model || "";
-            provider = "nvidia";
+            console.warn("risk_fill OpenAI failed, falling back to Gemini:", oaErr);
+            const gm = await runGeminiFill();
+            content = gm.content;
+            usedModel = gm.model;
+            provider = "gemini";
           }
         } else {
           try {
-            const deep = await runNvidiaFill();
-            content = deep.content;
-            usedModel = deep.model || "";
-            provider = "nvidia";
-          } catch (nvidiaErr) {
-            console.warn("risk_fill NVIDIA failed:", nvidiaErr);
-            if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
-            console.warn("risk_fill falling back to OpenAI ChatGPT (last resort)");
-            const oa = await runOpenAiFill();
-            content = oa.content;
-            usedModel = oa.model;
-            provider = "openai";
+            const gm = await runGeminiFill();
+            content = gm.content;
+            usedModel = gm.model;
+            provider = "gemini";
+          } catch (gmErr) {
+            console.warn("risk_fill Gemini failed, falling back to OpenAI:", gmErr);
+            if (isOpenAiFallbackEnabled()) {
+              const oa = await runOpenAiFill();
+              content = oa.content;
+              usedModel = oa.model;
+              provider = "openai";
+            } else {
+              const deep = await runNvidiaFill();
+              content = deep.content;
+              usedModel = deep.model || "";
+              provider = "nvidia";
+            }
           }
         }
 
         let items = mapFillItems(content);
-        if (items.length === 0 && provider === "nvidia" && isOpenAiFallbackEnabled()) {
-          console.warn("risk_fill NVIDIA returned 0 items → OpenAI fallback");
+        if (items.length === 0 && provider === "gemini" && isOpenAiFallbackEnabled()) {
+          console.warn("risk_fill Gemini returned 0 items → OpenAI fallback");
           try {
             const oa = await runOpenAiFill();
             items = mapFillItems(oa.content);
@@ -1215,14 +1249,14 @@ serve(async (req) => {
             console.error("risk_fill OpenAI fallback failed:", oaErr);
           }
         } else if (items.length === 0 && provider === "openai") {
-          console.warn("risk_fill OpenAI returned 0 items → NVIDIA fallback");
+          console.warn("risk_fill OpenAI returned 0 items → Gemini fallback");
           try {
-            const deep = await runNvidiaFill();
-            items = mapFillItems(deep.content);
-            usedModel = deep.model || "";
-            provider = "nvidia";
-          } catch (nvErr) {
-            console.error("risk_fill NVIDIA fallback failed:", nvErr);
+            const gm = await runGeminiFill();
+            items = mapFillItems(gm.content);
+            usedModel = gm.model;
+            provider = "gemini";
+          } catch (gmErr) {
+            console.error("risk_fill Gemini fallback failed:", gmErr);
           }
         }
 

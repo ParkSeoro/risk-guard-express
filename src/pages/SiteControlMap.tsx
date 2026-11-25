@@ -27,7 +27,7 @@ import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler, Maximize2, Users,
-  QrCode, RefreshCw, Undo2, Target, CheckCircle2, AlertTriangle, ShieldCheck,
+  QrCode, RefreshCw, Undo2, Target, CheckCircle2, AlertTriangle, ShieldCheck, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -99,6 +99,8 @@ import {
   mapSpotBadgeLabel,
   pickMapForSpot,
 } from "@/lib/map/multiSpotMapSelection";
+import type { AiAlignResponse } from "@/lib/map/aiAlignMath";
+import { getVworldApiKey } from "@/lib/mapTiles";
 import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDangerZones";
 import {
   clampSiteBoundaryBufferM,
@@ -513,6 +515,8 @@ export default function SiteControlMap() {
   const [showLegacyCornerHandles, setShowLegacyCornerHandles] = useState(false);
   const [twoPointActive, setTwoPointActive] = useState(false);
   const [twoPointPicks, setTwoPointPicks] = useState<TwoPointPicks>({});
+  const [aiAligning, setAiAligning] = useState(false);
+  const [aiDraftPreview, setAiDraftPreview] = useState<AiAlignResponse | null>(null);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -1471,6 +1475,88 @@ export default function SiteControlMap() {
     [twoPointActive, twoPointPicks, draftCorners, persistGeorefNow],
   );
 
+  const requestAiDraftAlign = async () => {
+    if (!activeMap?.image_url) {
+      toast.error("먼저 드론·현장 도면을 선택하세요");
+      return;
+    }
+    const seedCenter = draftCorners
+      ? cornersCenter(draftCorners)
+      : sitePin
+        ? { lat: sitePin.lat, lng: sitePin.lng }
+        : mapRef.current
+          ? { lat: mapRef.current.getCenter().lat, lng: mapRef.current.getCenter().lng }
+          : null;
+    if (!seedCenter) {
+      toast.error("기준 위경도 좌표가 없습니다. 프로젝트 주소 또는 개소를 먼저 설정하세요.");
+      return;
+    }
+
+    setAiAligning(true);
+    setTwoPointActive(false);
+    setTwoPointPicks({});
+    try {
+      const aspectRatio = await new Promise<number>((resolve) => {
+        if (typeof Image === "undefined") {
+          resolve(4 / 3);
+          return;
+        }
+        const img = new Image();
+        img.onload = () =>
+          resolve(img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : 4 / 3);
+        img.onerror = () => resolve(4 / 3);
+        img.src = activeMap.image_url!;
+      });
+
+      const { data, error } = await supabase.functions.invoke("align-site-map-ai", {
+        body: {
+          drone_image_url: activeMap.image_url,
+          center_lat: seedCenter.lat,
+          center_lng: seedCenter.lng,
+          half_extent_m: 380,
+          aspect_ratio: aspectRatio,
+          vworld_key: getVworldApiKey() || undefined,
+        },
+      });
+      if (error || !data || data.error || !data.corners) {
+        throw new Error(data?.error || error?.message || "AI 위성 비교 초안 생성 실패");
+      }
+      const preview = data as AiAlignResponse;
+      setAiDraftPreview(preview);
+      setLayers((l) => ({ ...l, satellite: true, drone: true }));
+      if (mapRef.current) {
+        mapRef.current.fitBounds(cornersToLeafletBounds(preview.corners), {
+          padding: [40, 40],
+          maxZoom: 18,
+        });
+      }
+      toast.success("AI 위성 비교 초안을 생성했습니다 (미저장 미리보기)", {
+        description: "위성과 맞는지 눈으로 확인한 뒤 [초안 적용] 또는 [취소]를 선택하세요.",
+        duration: 7000,
+      });
+    } catch (e: any) {
+      toast.error(e?.message || "AI 위성 비교 초안 생성 실패");
+    } finally {
+      setAiAligning(false);
+    }
+  };
+
+  const applyAiDraftPreview = async () => {
+    if (!aiDraftPreview) return;
+    const next = aiDraftPreview.corners;
+    setAiDraftPreview(null);
+    setDraftCorners(next);
+    draftCornersRef.current = next;
+    overlayDirtyRef.current = true;
+    setOverlayDirty(true);
+    await persistGeorefNow({ silent: false, source: "ai-draft" });
+  };
+
+  const discardAiDraftPreview = () => {
+    setAiDraftPreview(null);
+    toast.message("AI 초안 미리보기를 취소했습니다 (기존 좌표 유지)");
+  };
+
   const calibrationHealth = useMemo(
     () => evaluateMapCalibrationHealth(activeMap, draftCorners),
     [activeMap, draftCorners],
@@ -2232,8 +2318,75 @@ export default function SiteControlMap() {
                       <Button
                         type="button"
                         size="sm"
+                        variant="outline"
+                        className="w-full h-9 text-xs border-violet-500/40 bg-violet-500/5 hover:bg-violet-500/10 text-violet-900 dark:text-violet-200"
+                        disabled={aiAligning || savingBounds}
+                        onClick={() => void requestAiDraftAlign()}
+                      >
+                        {aiAligning ? (
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5 mr-1.5 text-violet-600" />
+                        )}
+                        {aiAligning ? "AI가 위성·드론 비교 중…" : "AI 위성 비교 자동 초안 (미저장)"}
+                      </Button>
+
+                      {aiDraftPreview && (
+                        <div className="rounded-md border border-violet-500/50 bg-violet-500/10 p-2.5 space-y-2 text-[11px]">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="font-semibold text-violet-900 dark:text-violet-100">
+                              AI 초안 미리보기 (아직 저장 안 됨)
+                            </span>
+                            <Badge variant="outline" className="text-[10px]">
+                              신뢰도:{" "}
+                              {aiDraftPreview.estimate.confidence === "high"
+                                ? "높음"
+                                : aiDraftPreview.estimate.confidence === "medium"
+                                  ? "보통"
+                                  : "낮음"}
+                            </Badge>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground leading-relaxed">
+                            {aiDraftPreview.estimate.reason}
+                          </p>
+                          {aiDraftPreview.estimate.landmarks_matched.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {aiDraftPreview.estimate.landmarks_matched.map((lm, i) => (
+                                <Badge key={i} variant="secondary" className="text-[10px] font-normal">
+                                  {lm}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 text-[11px] bg-violet-600 hover:bg-violet-700"
+                              disabled={savingBounds}
+                              onClick={() => void applyAiDraftPreview()}
+                            >
+                              이 초안 적용
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-[11px]"
+                              onClick={discardAiDraftPreview}
+                            >
+                              취소 (원래대로)
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      <Button
+                        type="button"
+                        size="sm"
                         variant={twoPointActive ? "default" : "outline"}
                         className="w-full h-9 text-xs"
+                        disabled={!!aiDraftPreview}
                         onClick={() => {
                           setTwoPointActive((prev) => !prev);
                           setTwoPointPicks({});
@@ -2932,11 +3085,24 @@ export default function SiteControlMap() {
                   />
                 )}
 
-                {layers.drone && activeMap?.image_url && draftCorners && (
+                {layers.drone && activeMap?.image_url && (aiDraftPreview?.corners || draftCorners) && (
                   <RotatedImageOverlay
                     url={activeMap.image_url}
-                    corners={draftCorners}
-                    opacity={opacity}
+                    corners={(aiDraftPreview?.corners || draftCorners)!}
+                    opacity={aiDraftPreview ? Math.min(opacity, 0.72) : opacity}
+                  />
+                )}
+
+                {aiDraftPreview && panelTab === "mapping" && (
+                  <Polyline
+                    positions={[
+                      [aiDraftPreview.corners.tl.lat, aiDraftPreview.corners.tl.lng],
+                      [aiDraftPreview.corners.tr.lat, aiDraftPreview.corners.tr.lng],
+                      [bottomRight(aiDraftPreview.corners).lat, bottomRight(aiDraftPreview.corners).lng],
+                      [aiDraftPreview.corners.bl.lat, aiDraftPreview.corners.bl.lng],
+                      [aiDraftPreview.corners.tl.lat, aiDraftPreview.corners.tl.lng],
+                    ]}
+                    pathOptions={{ color: "#7c3aed", weight: 2.5, dashArray: "6 4", opacity: 0.95 }}
                   />
                 )}
 

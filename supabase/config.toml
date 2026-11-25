@@ -50,3 +50,7 @@ verify_jwt = false
 
 [functions.analyze-health-checkup]
 verify_jwt = false
+
+
+[functions.align-site-map-ai]
+verify_jwt = false

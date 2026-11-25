@@ -196,6 +196,59 @@ function buildPrompt(bboxWidthM: number, aspectRatio: number): string {
 - 확실한 주변 도로/건물 매칭이 어려우면 억지로 크게 틀지 말고 confidence를 "low"로 표시하세요.`;
 }
 
+async function callOpenAiDualVision(
+  prompt: string,
+  sat: { base64: string; mimeType: string },
+  drone: { base64: string; mimeType: string },
+): Promise<string | null> {
+  const apiKey = (Deno.env.get("OPENAI_API_KEY") || "").trim();
+  if (!apiKey) return null;
+  const baseUrl = (Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
+  const model = (Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini").trim();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "text", text: "[Image 1: Satellite Reference (North-up)]" },
+              { type: "image_url", image_url: { url: `data:${sat.mimeType};base64,${sat.base64}`, detail: "high" } },
+              { type: "text", text: "[Image 2: Drone Site Photo]" },
+              { type: "image_url", image_url: { url: `data:${drone.mimeType};base64,${drone.base64}`, detail: "high" } },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      console.warn("[align-site-map-ai] OpenAI error:", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || null;
+  } catch (err) {
+    console.warn("[align-site-map-ai] OpenAI exception:", err);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function callGeminiDualVision(
   prompt: string,
   sat: { base64: string; mimeType: string },
@@ -311,7 +364,10 @@ Deno.serve(async (req: Request) => {
 
   const cosLat = Math.max(Math.cos((centerLat * Math.PI) / 180), 0.1);
   const bboxWidthM = (bbox.east - bbox.west) * 111_320 * cosLat;
-  const rawText = await callGeminiDualVision(buildPrompt(bboxWidthM, aspectRatio), sat, drone);
+  const prompt = buildPrompt(bboxWidthM, aspectRatio);
+  const rawText =
+    (await callOpenAiDualVision(prompt, sat, drone)) ??
+    (await callGeminiDualVision(prompt, sat, drone));
   if (!rawText) {
     return jsonResp({ error: "AI 영상 비교 분석에 실패했습니다. 2점 기준점 맞춤이나 모바일 워킹 보정을 이용해 주세요." }, 502);
   }

@@ -557,7 +557,7 @@ export function MessengerChatPane({
       }
       typingUserTimersRef.current.forEach((timer) => clearTimeout(timer));
       typingUserTimersRef.current.clear();
-      setTypingUsers([]);
+      setTypingUsers((prev) => (prev.length === 0 ? prev : []));
       supabase.removeChannel(messageChannel);
       supabase.removeChannel(typingChannel);
     };

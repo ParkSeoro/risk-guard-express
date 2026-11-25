@@ -59,14 +59,14 @@ jobs:
 
           if [ -n "$REQ_FN" ]; then
             echo "Deploying requested function: $REQ_FN"
-            supabase functions deploy "$REQ_FN" --project-ref "$SUPABASE_PROJECT_REF"
+            supabase functions deploy "$REQ_FN" --project-ref "$SUPABASE_PROJECT_REF" --yes
             exit 0
           fi
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             for fn in "${AI_SHARED_FNS[@]}"; do
               echo "Deploying AI function: $fn"
-              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --yes
             done
             exit 0
           fi
@@ -75,7 +75,7 @@ jobs:
           if echo "$CHANGED" | grep -q "^supabase/functions/_shared/"; then
             echo "Shared helper changed — deploying all shared AI functions"
             for fn in "${AI_SHARED_FNS[@]}"; do
-              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --yes
             done
           fi
 
@@ -83,6 +83,6 @@ jobs:
           for fn in $FUNCS; do
             if [ -d "supabase/functions/$fn" ]; then
               echo "Deploying changed function: $fn"
-              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --yes
             fi
           done

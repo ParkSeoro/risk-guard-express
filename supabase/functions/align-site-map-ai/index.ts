@@ -1,7 +1,9 @@
-// Phase 3: Server-side AI Satellite ↔ Drone 4-DOF Draft Alignment.
-// Fetches centered satellite imagery server-side (no browser CORS), compares with
-// the uploaded drone photo via Gemini Vision, and returns an UNSAVED 4-DOF preview
-// (zero skew/distortion). Never modifies DB, attendance spots, or gps_calibration.
+// Phase 3 (v3): Server-side AI RoadMap+Satellite ↔ Drone 4-DOF Draft Alignment.
+// Fetches BOTH crisp Road/Railway/Bridge Map (unblurred even in Korean industrial
+// security zones!) AND Satellite imagery for the exact same WGS-84 bbox, then uses
+// Gemini 2.5 Pro/Flash (primary when GEMINI_API_KEY is valid) with GPT-4o fallback
+// to compute an UNSAVED 4-DOF preview (zero skew/distortion).
+// Never modifies DB, attendance spots, or gps_calibration.
 // JWT is validated internally via userClient.auth.getUser() (verify_jwt = false).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
@@ -11,7 +13,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const MODEL_TIMEOUT_MS = 28_000;
+const MODEL_TIMEOUT_MS = 35_000;
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_IMAGE_BYTES = 4_500_000;
 
@@ -39,7 +41,6 @@ function isAllowedDroneUrl(urlStr: string): boolean {
   try {
     const u = new URL(urlStr);
     if (u.protocol !== "https:") return false;
-    // Allow Supabase Storage URLs (our project or custom storage domain)
     if (u.pathname.includes("/storage/v1/object/")) return true;
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     if (supabaseUrl) {
@@ -52,7 +53,9 @@ function isAllowedDroneUrl(urlStr: string): boolean {
   }
 }
 
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
+type ImgData = { base64: string; mimeType: string };
+
+async function fetchImageAsBase64(url: string): Promise<ImgData | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -139,72 +142,162 @@ function estimateToCorners(
   };
 }
 
-async function fetchCenteredSatellite(
+async function fetchReferenceMaps(
   bbox: SatelliteBbox,
   centerLat: number,
   centerLng: number,
   vworldKey?: string,
-): Promise<{ base64: string; mimeType: string; source: "vworld" | "esri" } | null> {
-  // 1) Try Esri World Imagery Export first for exact WGS-84 bbox alignment (guaranteed exact bounds!)
-  const esriUrl =
+): Promise<{ road: ImgData | null; sat: ImgData | null; source: "vworld" | "esri" }> {
+  const bboxParam = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+  const esriRoadUrl =
+    `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/export` +
+    `?bbox=${bboxParam}&bboxSR=4326&imageSR=4326&size=768,768&format=jpg&f=image`;
+  const esriSatUrl =
     `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export` +
-    `?bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}` +
-    `&bboxSR=4326&imageSR=4326&size=768,768&format=jpg&f=image`;
-  const esriImg = await fetchImageAsBase64(esriUrl);
-  if (esriImg) {
-    return { ...esriImg, source: "esri" };
+    `?bbox=${bboxParam}&bboxSR=4326&imageSR=4326&size=768,768&format=jpg&f=image`;
+
+  const [esriRoad, esriSat] = await Promise.all([
+    fetchImageAsBase64(esriRoadUrl),
+    fetchImageAsBase64(esriSatUrl),
+  ]);
+
+  if (esriRoad || esriSat) {
+    return { road: esriRoad, sat: esriSat, source: "esri" };
   }
 
-  // 2) Fallback: VWorld Static Aerial Map API if key is available
   const key = (vworldKey || Deno.env.get("VWORLD_API_KEY") || "").trim();
   if (key) {
-    const vwUrl =
+    const vwRoadUrl =
       `https://api.vworld.kr/req/image?service=image&request=getmap&version=2.0` +
-      `&crs=epsg:4326&bbox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}` +
-      `&center=${centerLng},${centerLat}&size=768,768&format=jpeg&basemap=PHOTO&key=${encodeURIComponent(key)}`;
-    const vwImg = await fetchImageAsBase64(vwUrl);
-    if (vwImg) {
-      return { ...vwImg, source: "vworld" };
+      `&crs=epsg:4326&bbox=${bboxParam}&center=${centerLng},${centerLat}&size=768,768&format=png&basemap=GRAPHIC&key=${encodeURIComponent(key)}`;
+    const vwSatUrl =
+      `https://api.vworld.kr/req/image?service=image&request=getmap&version=2.0` +
+      `&crs=epsg:4326&bbox=${bboxParam}&center=${centerLng},${centerLat}&size=768,768&format=jpeg&basemap=PHOTO&key=${encodeURIComponent(key)}`;
+    const [vwRoad, vwSat] = await Promise.all([
+      fetchImageAsBase64(vwRoadUrl),
+      fetchImageAsBase64(vwSatUrl),
+    ]);
+    return { road: vwRoad, sat: vwSat, source: "vworld" };
+  }
+  return { road: null, sat: null, source: "esri" };
+}
+
+function buildPrompt(bboxWidthM: number, aspectRatio: number, hasRoad: boolean): string {
+  return `당신은 건설현장 드론 정사사진을 기준 지도(진북 North-up) 위에 4자유도(중심 위치·크기·회전, 왜곡 없음)로 정밀 정렬하는 공간영상 측량 전문가 AI입니다.
+
+[입력 이미지]
+${hasRoad ? "- Image 1 (핵심 기준 — 도로·철도·교량·수로 지도): 진북(North-up), 전체 가로폭 약 " + Math.round(bboxWidthM) + "m. 국내 산단 지역은 위성사진에 보안 블러가 있으므로 반드시 이 도로지도의 도로 방향·교차로·교량·철도·하천 선형을 1순위 기준으로 삼으세요.\n" : ""}- Image ${hasRoad ? "2" : "1"} (위성 지도): Image 1과 완전히 동일한 영역(진북 North-up, 전체 가로폭 약 ${Math.round(bboxWidthM)}m).
+- Image ${hasRoad ? "3" : "2"} (드론 현장사진): 정렬 대상 사진 (가로/세로 비율 ${aspectRatio.toFixed(2)}:1). 드론 기체 방향에 따라 북쪽이 위가 아니라 크게 회전(-180°~+180°)되어 있을 수 있습니다!
+
+[필수 추론 절차 — 반드시 순서대로 계산]
+1. 먼저 드론 사진 안에서 가장 길고 뚜렷한 직선 구조물(인접 도로, 철도, 하천/수로, 교량, 부지 외곽 담장)의 방향(예: 가로 0°, 대각선 등)을 파악하세요.
+2. 기준 도로지도(Image 1)에서 같은 도로/철도/하천이 진북 기준으로 몇 도 기울어져 있는지 측정하세요.
+   - 예: 기준 지도에서 주 도로가 남서→북동(약 40°~50° 기울기)인데, 드론 사진에서는 그 도로가 수평(0°)에 가깝게 보인다면, 드론 사진을 **반시계방향(-40°~-50°)**으로 회전해야 일치합니다!
+   - 반대로 시계방향으로 돌려야 일치하면 양수(+각도), 반시계방향으로 돌려야 일치하면 음수(-각도)를 출력하세요.
+3. 절대 기본값(rotation_deg=0, center=0.5/0.5)을 습관적으로 출력하지 말고, 실제 도로·교량·수로의 기하학적 각도와 길이를 재서 답하세요.
+4. 드론 사진의 실제 가로 폭(미터)이 기준 지도 전체 폭(${Math.round(bboxWidthM)}m) 중 차지하는 비율(width_frac)을 도로 간격/교량 길이로 추정하세요.
+
+반드시 아래 JSON 객체 하나만 출력하세요 (코드블록·설명 금지):
+{
+  "center_x_norm": 0.48,
+  "center_y_norm": 0.52,
+  "width_frac": 0.55,
+  "rotation_deg": -42,
+  "confidence": "high" | "medium" | "low",
+  "landmarks_matched": ["매칭한 도로/교량/철도/수로 특징 2~3개 (한국어)"],
+  "reason": "도로 각도와 기준점 매칭 근거 1줄 요약 (한국어)"
+}`;
+}
+
+async function callGeminiVision(
+  prompt: string,
+  road: ImgData | null,
+  sat: ImgData | null,
+  drone: ImgData,
+): Promise<{ text: string; model: string } | null> {
+  const apiKey = (Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "").trim();
+  if (!apiKey) return null;
+
+  const parts: Record<string, unknown>[] = [{ text: prompt }];
+  let idx = 1;
+  if (road) {
+    parts.push({ text: `[Image ${idx++}: Road/Railway/Bridge Reference Map (North-up)]` });
+    parts.push({ inline_data: { mime_type: road.mimeType, data: road.base64 } });
+  }
+  if (sat) {
+    parts.push({ text: `[Image ${idx++}: Satellite Reference (North-up)]` });
+    parts.push({ inline_data: { mime_type: sat.mimeType, data: sat.base64 } });
+  }
+  parts.push({ text: `[Image ${idx}: Drone Site Photo to Align]` });
+  parts.push({ inline_data: { mime_type: drone.mimeType, data: drone.base64 } });
+
+  const models = [
+    (Deno.env.get("GEMINI_VISION_MODEL") || "gemini-2.5-pro").trim(),
+    "gemini-2.5-flash",
+  ];
+  const uniqueModels = Array.from(new Set(models));
+
+  for (const model of uniqueModels) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 1024,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        console.warn(`[align-site-map-ai] Gemini(${model}) error:`, res.status, errText.slice(0, 200));
+        // If API key itself is invalid, break immediately to fallback fast
+        if (res.status === 400 && errText.includes("API_KEY_INVALID")) break;
+        continue;
+      }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return { text, model };
+    } catch (err) {
+      console.warn(`[align-site-map-ai] Gemini(${model}) exception:`, err);
+    } finally {
+      clearTimeout(timer);
     }
   }
   return null;
 }
 
-function buildPrompt(bboxWidthM: number, aspectRatio: number): string {
-  return `당신은 건설현장 드론 정사사진(Image 2)을 위성 기준지도(Image 1, 진북 North-up) 위에 4자유도(위치·크기·회전, 왜곡 없음)로 자동 초안 정렬하는 공간영상 분석 AI입니다.
-
-[입력 이미지 설명]
-- Image 1: 진북(North-up) 방향의 위성 기준 지도 (전체 가로폭 약 ${Math.round(bboxWidthM)}m, X=0 좌측/서쪽 ~ X=1 우측/동쪽, Y=0 상단/북쪽 ~ Y=1 하단/남쪽)
-- Image 2: 건설현장 드론 촬영 사진 (가로/세로 비율 약 ${aspectRatio.toFixed(2)}:1). 공사가 진행되어 지형이나 건물이 위성사진보다 새로 지어졌을 수 있으므로, 주변 도로·교차로·하천·인접 공장 지붕·부지 경계선을 기준으로 매칭하세요.
-
-반드시 아래 JSON 객체 하나만 출력하세요 (코드블록·설명 금지):
-{
-  "center_x_norm": 0.5,
-  "center_y_norm": 0.5,
-  "width_frac": 0.45,
-  "rotation_deg": 0,
-  "confidence": "high" | "medium" | "low",
-  "landmarks_matched": ["매칭에 사용한 주변 지형/도로/건물 특징 1~3개 (한국어)"],
-  "reason": "정렬 판단 근거 1줄 요약 (한국어)"
-}
-
-[필드 규칙]
-- center_x_norm (0.08~0.92): Image 2의 중심점이 Image 1에서 차지하는 가로 정규화 좌표
-- center_y_norm (0.08~0.92): Image 2의 중심점이 Image 1에서 차지하는 세로 정규화 좌표
-- width_frac (0.08~0.95): Image 2의 실제 가로 폭이 Image 1 전체 가로 폭 대비 차지하는 비율
-- rotation_deg (-180~180): Image 2를 진북(Image 1)에 맞추기 위해 시계방향으로 회전해야 하는 각도(도)
-- 확실한 주변 도로/건물 매칭이 어려우면 억지로 크게 틀지 말고 confidence를 "low"로 표시하세요.`;
-}
-
-async function callOpenAiDualVision(
+async function callOpenAiVision(
   prompt: string,
-  sat: { base64: string; mimeType: string },
-  drone: { base64: string; mimeType: string },
-): Promise<string | null> {
+  road: ImgData | null,
+  sat: ImgData | null,
+  drone: ImgData,
+): Promise<{ text: string; model: string } | null> {
   const apiKey = (Deno.env.get("OPENAI_API_KEY") || "").trim();
   if (!apiKey) return null;
   const baseUrl = (Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/$/, "");
-  const model = (Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini").trim();
+  // Use full gpt-4o for spatial rotation/scale accuracy (gpt-4o-mini defaults to 0 deg)
+  const model = "gpt-4o";
+
+  const content: Record<string, unknown>[] = [{ type: "text", text: prompt }];
+  let idx = 1;
+  if (road) {
+    content.push({ type: "text", text: `[Image ${idx++}: Road/Railway/Bridge Reference Map (North-up)]` });
+    content.push({ type: "image_url", image_url: { url: `data:${road.mimeType};base64,${road.base64}`, detail: "high" } });
+  }
+  if (sat) {
+    content.push({ type: "text", text: `[Image ${idx++}: Satellite Reference (North-up)]` });
+    content.push({ type: "image_url", image_url: { url: `data:${sat.mimeType};base64,${sat.base64}`, detail: "high" } });
+  }
+  content.push({ type: "text", text: `[Image ${idx}: Drone Site Photo to Align]` });
+  content.push({ type: "image_url", image_url: { url: `data:${drone.mimeType};base64,${drone.base64}`, detail: "high" } });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
@@ -221,78 +314,18 @@ async function callOpenAiDualVision(
         temperature: 0.1,
         max_tokens: 1024,
         response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              { type: "text", text: "[Image 1: Satellite Reference (North-up)]" },
-              { type: "image_url", image_url: { url: `data:${sat.mimeType};base64,${sat.base64}`, detail: "high" } },
-              { type: "text", text: "[Image 2: Drone Site Photo]" },
-              { type: "image_url", image_url: { url: `data:${drone.mimeType};base64,${drone.base64}`, detail: "high" } },
-            ],
-          },
-        ],
+        messages: [{ role: "user", content }],
       }),
     });
     if (!res.ok) {
-      console.warn("[align-site-map-ai] OpenAI error:", res.status, await res.text().catch(() => ""));
+      console.warn("[align-site-map-ai] OpenAI(gpt-4o) error:", res.status, await res.text().catch(() => ""));
       return null;
     }
     const data = await res.json();
-    return data?.choices?.[0]?.message?.content || null;
+    const text = data?.choices?.[0]?.message?.content;
+    return text ? { text, model } : null;
   } catch (err) {
     console.warn("[align-site-map-ai] OpenAI exception:", err);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function callGeminiDualVision(
-  prompt: string,
-  sat: { base64: string; mimeType: string },
-  drone: { base64: string; mimeType: string },
-): Promise<string | null> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY");
-  if (!apiKey) return null;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              { text: "[Image 1: Satellite Reference (North-up)]" },
-              { inline_data: { mime_type: sat.mimeType, data: sat.base64 } },
-              { text: "[Image 2: Drone Site Photo]" },
-              { inline_data: { mime_type: drone.mimeType, data: drone.base64 } },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 1024,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-    if (!res.ok) {
-      console.warn("[align-site-map-ai] Gemini error:", res.status, await res.text().catch(() => ""));
-      return null;
-    }
-    const data = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  } catch (err) {
-    console.warn("[align-site-map-ai] Gemini exception:", err);
     return null;
   } finally {
     clearTimeout(timer);
@@ -350,13 +383,13 @@ Deno.serve(async (req: Request) => {
   }
 
   const bbox = buildSearchBbox(centerLat, centerLng, halfExtentM);
-  const [sat, drone] = await Promise.all([
-    fetchCenteredSatellite(bbox, centerLat, centerLng, body.vworld_key),
+  const [refs, drone] = await Promise.all([
+    fetchReferenceMaps(bbox, centerLat, centerLng, body.vworld_key),
     fetchImageAsBase64(droneUrl),
   ]);
 
-  if (!sat) {
-    return jsonResp({ error: "위성 기준 영상을 불러오지 못했습니다. 잠시 후 다시 시도하세요." }, 502);
+  if (!refs.road && !refs.sat) {
+    return jsonResp({ error: "기준 지도를 불러오지 못했습니다. 잠시 후 다시 시도하세요." }, 502);
   }
   if (!drone) {
     return jsonResp({ error: "드론 도면 이미지를 불러오지 못했습니다 (4.5MB 이하 이미지만 지원)." }, 400);
@@ -364,17 +397,20 @@ Deno.serve(async (req: Request) => {
 
   const cosLat = Math.max(Math.cos((centerLat * Math.PI) / 180), 0.1);
   const bboxWidthM = (bbox.east - bbox.west) * 111_320 * cosLat;
-  const prompt = buildPrompt(bboxWidthM, aspectRatio);
-  const rawText =
-    (await callOpenAiDualVision(prompt, sat, drone)) ??
-    (await callGeminiDualVision(prompt, sat, drone));
-  if (!rawText) {
+  const prompt = buildPrompt(bboxWidthM, aspectRatio, Boolean(refs.road));
+
+  // Gemini 2.5 Pro/Flash primary -> GPT-4o high-accuracy fallback
+  const aiRes =
+    (await callGeminiVision(prompt, refs.road, refs.sat, drone)) ??
+    (await callOpenAiVision(prompt, refs.road, refs.sat, drone));
+
+  if (!aiRes) {
     return jsonResp({ error: "AI 영상 비교 분석에 실패했습니다. 2점 기준점 맞춤이나 모바일 워킹 보정을 이용해 주세요." }, 502);
   }
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(stripMarkdownFences(rawText));
+    parsed = JSON.parse(stripMarkdownFences(aiRes.text));
   } catch {
     return jsonResp({ error: "AI 응답 형식을 해석하지 못했습니다" }, 502);
   }
@@ -395,15 +431,16 @@ Deno.serve(async (req: Request) => {
       ? parsed.landmarks_matched.map((s) => String(s)).filter(Boolean).slice(0, 5)
       : [],
     reason: typeof parsed.reason === "string" && parsed.reason.trim()
-      ? parsed.reason.trim()
-      : "주변 도로·지형을 기준으로 4자유도 초안을 추정했습니다.",
+      ? `${parsed.reason.trim()} (${aiRes.model})`
+      : `도로·지형 기준으로 4자유도 초안을 추정했습니다 (${aiRes.model}).`,
   };
 
   const corners = estimateToCorners(bbox, estimate, aspectRatio);
   return jsonResp({
     corners,
     bbox,
-    satellite_source: sat.source,
+    satellite_source: refs.source,
+    model: aiRes.model,
     estimate,
   });
 });

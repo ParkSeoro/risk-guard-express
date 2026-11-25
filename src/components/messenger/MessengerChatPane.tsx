@@ -155,6 +155,8 @@ export function MessengerChatPane({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingUserTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const hasMoreRef = useRef(false);
   const loadingOlderRef = useRef(false);
   const oldestRef = useRef<{ createdAt: string; id: string } | null>(null);
@@ -533,16 +535,29 @@ export function MessengerChatPane({
       .channel(`typing:${room.id}`)
       .on("broadcast", { event: "typing" }, (payload) => {
         const { userName, userId } = payload.payload;
-        if (userId === user.id) return;
+        if (userId === user.id || !userName) return;
 
         setTypingUsers((prev) => Array.from(new Set([...prev, userName])));
-        setTimeout(() => {
+        const prevTimer = typingUserTimersRef.current.get(userName);
+        if (prevTimer) clearTimeout(prevTimer);
+        const nextTimer = setTimeout(() => {
+          typingUserTimersRef.current.delete(userName);
           setTypingUsers((prev) => prev.filter((name) => name !== userName));
         }, 3000);
+        typingUserTimersRef.current.set(userName, nextTimer);
       })
       .subscribe();
+    typingChannelRef.current = typingChannel;
 
     return () => {
+      typingChannelRef.current = null;
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      typingUserTimersRef.current.forEach((timer) => clearTimeout(timer));
+      typingUserTimersRef.current.clear();
+      setTypingUsers((prev) => (prev.length === 0 ? prev : []));
       supabase.removeChannel(messageChannel);
       supabase.removeChannel(typingChannel);
     };
@@ -554,7 +569,10 @@ export function MessengerChatPane({
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     typingTimeoutRef.current = setTimeout(() => {
-      supabase.channel(`typing:${room.id}`).send({
+      typingTimeoutRef.current = null;
+      const ch = typingChannelRef.current;
+      if (!ch) return;
+      void ch.send({
         type: "broadcast",
         event: "typing",
         payload: {

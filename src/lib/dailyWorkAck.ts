@@ -138,6 +138,7 @@ export function buildWorkSummary(permits: DailyPermitBrief[]): string {
 
 const riskSummaryCache = new Map<string, { summary: string; timestamp: number }>();
 const RISK_SUMMARY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const RISK_SUMMARY_CACHE_MAX = 200;
 
 /** Pull top hazards from linked assessment runs, then the company's period RA. */
 export async function buildRiskSummary(
@@ -186,6 +187,12 @@ export async function buildRiskSummary(
     })
     .join("\n");
 
+  if (riskSummaryCache.has(cacheKey)) {
+    riskSummaryCache.delete(cacheKey);
+  } else if (riskSummaryCache.size >= RISK_SUMMARY_CACHE_MAX) {
+    const oldestKey = riskSummaryCache.keys().next().value;
+    if (oldestKey !== undefined) riskSummaryCache.delete(oldestKey);
+  }
   riskSummaryCache.set(cacheKey, { summary, timestamp: Date.now() });
   return summary;
 }

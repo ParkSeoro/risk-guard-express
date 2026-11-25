@@ -1,0 +1,88 @@
+name: Deploy Supabase Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - "supabase/config.toml"
+  workflow_dispatch:
+    inputs:
+      function_name:
+        description: "Specific Edge Function slug to deploy (leave empty to deploy all AI functions)"
+        required: false
+        default: ""
+
+jobs:
+  deploy:
+    name: Deploy Edge Functions
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: qhntxmggacorqjjmjqgo
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Check SUPABASE_ACCESS_TOKEN
+        id: token_check
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SUPABASE_ACCESS_TOKEN secret is not set yet. Add it in GitHub Repo Settings -> Secrets -> Actions to enable automatic Edge Function deploys."
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.token_check.outputs.has_token == 'true'
+        with:
+          version: latest
+
+      - name: Deploy changed or requested Edge Functions
+        if: steps.token_check.outputs.has_token == 'true'
+        run: |
+          set -euo pipefail
+          REQ_FN="${{ github.event.inputs.function_name }}"
+          AI_SHARED_FNS=(
+            "generate-risk-ai"
+            "generate-permit-briefing"
+            "generate-accident-ai"
+            "generate-education-material"
+            "safety-assistant"
+            "analyze-safety-cost-document"
+            "analyze-permit-template"
+            "analyze-worker-opinion"
+            "ocr-document-draft"
+          )
+
+          if [ -n "$REQ_FN" ]; then
+            echo "Deploying requested function: $REQ_FN"
+            supabase functions deploy "$REQ_FN" --project-ref "$SUPABASE_PROJECT_REF"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            for fn in "${AI_SHARED_FNS[@]}"; do
+              echo "Deploying AI function: $fn"
+              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+            done
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- supabase/functions/ || true)
+          if echo "$CHANGED" | grep -q "^supabase/functions/_shared/"; then
+            echo "Shared helper changed — deploying all shared AI functions"
+            for fn in "${AI_SHARED_FNS[@]}"; do
+              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+            done
+          fi
+
+          FUNCS=$(echo "$CHANGED" | awk -F'/' '$3 != "_shared" && $3 != "" {print $3}' | sort -u)
+          for fn in $FUNCS; do
+            if [ -d "supabase/functions/$fn" ]; then
+              echo "Deploying changed function: $fn"
+              supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF"
+            fi
+          done

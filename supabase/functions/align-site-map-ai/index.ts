@@ -285,6 +285,7 @@ async function callGeminiVision(
             temperature: 0.1,
             maxOutputTokens: 4096,
             responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 512 },
           },
         }),
       });
@@ -444,7 +445,29 @@ Deno.serve(async (req: Request) => {
   try {
     parsed = JSON.parse(stripMarkdownFences(aiRes.text));
   } catch {
-    return jsonResp({ error: "AI 응답 형식을 해석하지 못했습니다" }, 502);
+    const num = (key: string): number | null => {
+      const m = aiRes.text.match(new RegExp(`"${key}"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`));
+      return m ? Number(m[1]) : null;
+    };
+    const cx = num("center_x_norm");
+    const cy = num("center_y_norm");
+    const wf = num("width_frac");
+    const rot = num("rotation_deg");
+    if (cx != null && cy != null && wf != null && rot != null) {
+      const confM = aiRes.text.match(/"confidence"\s*:\s*"(high|medium|low)"/);
+      parsed = {
+        center_x_norm: cx,
+        center_y_norm: cy,
+        width_frac: wf,
+        rotation_deg: rot,
+        confidence: confM ? confM[1] : "medium",
+        landmarks_matched: [],
+        reason: "도로·지형 기준 4자유도 초안을 추출했습니다.",
+      };
+    } else {
+      console.warn("[align-site-map-ai] JSON parse failed:", aiRes.model, aiRes.text.slice(0, 200));
+      return jsonResp({ error: "AI 응답 형식을 해석하지 못했습니다" }, 502);
+    }
   }
 
   const confidence =

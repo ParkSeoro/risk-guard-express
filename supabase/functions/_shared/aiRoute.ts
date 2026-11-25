@@ -25,17 +25,17 @@ export type AiPurpose =
 export type AiProvider = "openai" | "gemini";
 
 export const DEFAULT_AI_ROUTE: Record<AiPurpose, AiProvider> = {
-  work_plan: "openai",
-  risk: "openai",
-  permit_briefing: "openai",
-  accident: "openai",
+  work_plan: "gemini",
+  risk: "gemini",
+  permit_briefing: "gemini",
+  accident: "gemini",
   education: "gemini",
   assistant: "gemini",
   health: "gemini",
   safety_cost: "gemini",
   permit_template: "gemini",
   ocr: "gemini",
-  default: "openai",
+  default: "gemini",
 };
 
 export function resolveAiProvider(purpose: AiPurpose | string | undefined): AiProvider {

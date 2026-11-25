@@ -1,37 +1,103 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-async function translateFields(fields: Record<string, string>, locale: string): Promise<Record<string, string>> {
-  const apiKey = (Deno.env.get("OPENAI_API_KEY") || "").trim();
-  if (!apiKey) throw new Error("OPENAI_API_KEY missing");
-  const model = (Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini").trim();
-  const langName = locale === "zh" ? "Simplified Chinese" : locale === "ja" ? "Japanese" : "English";
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.1,
-      max_tokens: 2500,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `Translate construction-safety field values from Korean into ${langName}. Return JSON {"fields":{"<key>":"<translated>"}}. Keep numbers, PPE codes, and proper names. Do not add advice.`,
+async function resolveVaultGeminiKey(): Promise<string> {
+  const url = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  if (url && service) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      const resp = await fetch(`${url}/rest/v1/rpc/get_runtime_secret`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: service,
+          Authorization: `Bearer ${service}`,
         },
-        { role: "user", content: JSON.stringify({ fields }) },
-      ],
-    }),
-  });
-  const text = await resp.text();
-  if (!resp.ok) throw new Error(text.slice(0, 200));
-  const data = JSON.parse(text);
-  const content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+        body: JSON.stringify({ secret_name: "GEMINI_API_KEY" }),
+        signal: controller.signal,
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (typeof data === "string" && data.trim()) return data.trim();
+      }
+    } catch {
+      /* fall through */
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return (Deno.env.get("GEMINI_API_KEY") || "").trim();
+}
+
+async function translateFields(fields: Record<string, string>, locale: string): Promise<Record<string, string>> {
+  const langName = locale === "zh" ? "Simplified Chinese" : locale === "ja" ? "Japanese" : "English";
+  const sysPrompt = `Translate construction-safety field values from Korean into ${langName}. Return JSON {"fields":{"<key>":"<translated>"}}. Keep numbers, PPE codes, and proper names. Do not add advice.`;
+  let content = "";
+
+  // 1) Gemini primary (Vault key + x-goog-api-key header)
+  const geminiKey = await resolveVaultGeminiKey();
+  if (geminiKey) {
+    try {
+      const gResp = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiKey,
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: sysPrompt }] },
+            contents: [{ role: "user", parts: [{ text: JSON.stringify({ fields }) }] }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 2500,
+              responseMimeType: "application/json",
+            },
+          }),
+        },
+      );
+      if (gResp.ok) {
+        const gData = await gResp.json();
+        content = String(gData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "").trim();
+      }
+    } catch {
+      /* fall through to OpenAI */
+    }
+  }
+
+  // 2) OpenAI emergency fallback
+  if (!content) {
+    const apiKey = (Deno.env.get("OPENAI_API_KEY") || "").trim();
+    if (!apiKey) throw new Error("GEMINI_API_KEY / OPENAI_API_KEY missing");
+    const model = (Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini").trim();
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_tokens: 2500,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: JSON.stringify({ fields }) },
+        ],
+      }),
+    });
+    const text = await resp.text();
+    if (!resp.ok) throw new Error(text.slice(0, 200));
+    const data = JSON.parse(text);
+    content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+  }
+
   let parsed: any = {};
   try {
-    parsed = JSON.parse(content || "{}");
+    parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim() || "{}");
   } catch {
     parsed = {};
   }

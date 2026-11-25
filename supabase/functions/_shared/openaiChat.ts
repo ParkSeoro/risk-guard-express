@@ -55,11 +55,11 @@ export function isOpenAiFallbackEnabled(): boolean {
   return envFlag("RISK_AI_OPENAI_FALLBACK", true);
 }
 
-/** OpenAI first unless RISK_AI_DRAFT_PROVIDER is explicitly nvidia. */
+/** Gemini first unless RISK_AI_DRAFT_PROVIDER is explicitly openai. */
 export function preferOpenAiForDraft(): boolean {
   if (!isOpenAiFallbackEnabled()) return false;
-  const raw = (Deno.env.get("RISK_AI_DRAFT_PROVIDER") || "openai").trim().toLowerCase();
-  return raw !== "nvidia" && raw !== "nim";
+  const raw = (Deno.env.get("RISK_AI_DRAFT_PROVIDER") || "gemini").trim().toLowerCase();
+  return raw === "openai";
 }
 
 export const preferOpenAiForFill = preferOpenAiForDraft;

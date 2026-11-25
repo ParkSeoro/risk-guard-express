@@ -209,13 +209,43 @@ ${hasRoad ? "- Image 1 (핵심 기준 — 도로·철도·교량·수로 지도)
 }`;
 }
 
+async function resolveVaultGeminiKey(): Promise<string> {
+  const url = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+  const service = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  if (url && service) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      const resp = await fetch(`${url}/rest/v1/rpc/get_runtime_secret`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: service,
+          Authorization: `Bearer ${service}`,
+        },
+        body: JSON.stringify({ secret_name: "GEMINI_API_KEY" }),
+        signal: controller.signal,
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (typeof data === "string" && data.trim()) return data.trim();
+      }
+    } catch {
+      /* fall through to env */
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return (Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "").trim();
+}
+
 async function callGeminiVision(
   prompt: string,
   road: ImgData | null,
   sat: ImgData | null,
   drone: ImgData,
 ): Promise<{ text: string; model: string } | null> {
-  const apiKey = (Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "").trim();
+  const apiKey = await resolveVaultGeminiKey();
   if (!apiKey) return null;
 
   const parts: Record<string, unknown>[] = [{ text: prompt }];
@@ -241,11 +271,14 @@ async function callGeminiVision(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
       const res = await fetch(url, {
         method: "POST",
         signal: controller.signal,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
         body: JSON.stringify({
           contents: [{ role: "user", parts }],
           generationConfig: {
@@ -258,7 +291,6 @@ async function callGeminiVision(
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
         console.warn(`[align-site-map-ai] Gemini(${model}) error:`, res.status, errText.slice(0, 200));
-        // If API key itself is invalid, break immediately to fallback fast
         if (res.status === 400 && errText.includes("API_KEY_INVALID")) break;
         continue;
       }

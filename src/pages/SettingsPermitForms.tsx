@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileSignature, Trash2, Save, Eye, Copy } from 'lucide-react';
+import { FileSignature, Trash2, Save, Eye, Copy, Info } from 'lucide-react';
 import DigPermitForm, {
   type PermitFormData,
   type PermitSignatures,
@@ -40,14 +40,23 @@ import {
   normalizeDisplayTemplate,
   parseLayoutJson,
   PERMIT_KIND_CLONE_META,
+  pickPermitDisplayTemplateWithSource,
+  resolvePermitFormGcCompanyId,
   sectionsForKind,
   type PermitDisplaySectionId,
   type PermitDisplayTemplate,
   type PermitLayoutJson,
+  type PermitTemplateSourceScope,
+  type ProjectCompanyLink,
 } from '@/lib/permitDisplayTemplate';
 
 type CompanyOpt = { id: string; name: string; type: string | null };
-type ProjectOpt = { id: string; name: string };
+type ProjectOpt = {
+  id: string;
+  name: string;
+  gc_company_id?: string | null;
+  gc_company_ids?: string[] | null;
+};
 const GLOBAL_PROJECT_KEY = '__global_project__';
 const PROJECT_ALL_COMPANIES_KEY = '__project_all_companies__';
 
@@ -63,6 +72,20 @@ type Tpl = {
   is_active: boolean;
   permit_type: PermitType;
   updated_at: string;
+};
+
+type EffectiveTplItem = {
+  permitType: PermitType;
+  template: Tpl;
+  sourceScope: PermitTemplateSourceScope;
+  sourceLabel: string;
+  isDirect: boolean;
+};
+
+type SelectedSourceInfo = {
+  sourceScope: PermitTemplateSourceScope;
+  sourceLabel: string;
+  isDirect: boolean;
 };
 
 /** 설정 화면용 — 키 옆에 한글 설명 (찾기 쉽게) */
@@ -124,8 +147,10 @@ export default function SettingsPermitForms() {
   const [globalStandards, setGlobalStandards] = useState<Tpl[]>([]);
   const [cloneSourceId, setCloneSourceId] = useState<string>('__default__');
   const [rows, setRows] = useState<Tpl[]>([]);
+  const [effectiveRows, setEffectiveRows] = useState<EffectiveTplItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Tpl | null>(null);
+  const [selectedSource, setSelectedSource] = useState<SelectedSourceInfo | null>(null);
   const [style, setStyle] = useState<Partial<StandardStyle>>(DEFAULT_STANDARD_STYLE);
   const [stdLabels, setStdLabels] = useState<Partial<StandardLabels>>(DEFAULT_STANDARD_LABELS);
   const [display, setDisplay] = useState<PermitDisplayTemplate>(emptyDisplayTemplate());
@@ -138,10 +163,15 @@ export default function SettingsPermitForms() {
   const isGlobalScope = isGlobalProject && companyId === GLOBAL_STANDARD_COMPANY_KEY;
   const isProjectAllScope = !isGlobalProject && companyId === PROJECT_ALL_COMPANIES_KEY;
   const dbCompanyId = isGlobalScope || isProjectAllScope ? null : companyId;
+  const isReadOnlyInherited = Boolean(selected && selectedSource && !selectedSource.isDirect);
 
   const loadProjectsAndGlobalStandards = async () => {
     const [{ data: projRows }, { data: stdRows }] = await Promise.all([
-      supabase.from('projects').select('id, name').eq('is_deleted', false).order('created_at', { ascending: false }),
+      supabase
+        .from('projects')
+        .select('id, name, gc_company_id, gc_company_ids')
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false }),
       supabase
         .from('permit_form_templates')
         .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
@@ -202,18 +232,46 @@ export default function SettingsPermitForms() {
     setCompanies(preferred.length > 0 ? preferred : all);
   };
 
+  const openEdit = (
+    t: Tpl,
+    source: SelectedSourceInfo | null = null,
+    initialTab: 'labels' | 'preview' = 'labels',
+  ) => {
+    const layout = parseLayoutJson(t.layout_json);
+    setSelected(t);
+    setSelectedSource(source);
+    setStyle(layout.standard_style || DEFAULT_STANDARD_STYLE);
+    setStdLabels(layout.standard_labels || DEFAULT_STANDARD_LABELS);
+    setDisplay(normalizeDisplayTemplate(layout.display_template || emptyDisplayTemplate()));
+    setTab(initialTab);
+  };
+
   const loadTemplates = async (projKey: string, cid: string) => {
     if (!cid) {
       setRows([]);
+      setEffectiveRows([]);
+      setSelected(null);
+      setSelectedSource(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
     const globalProj = projKey === GLOBAL_PROJECT_KEY;
     const globalStd = globalProj && cid === GLOBAL_STANDARD_COMPANY_KEY;
     const projAll = !globalProj && cid === PROJECT_ALL_COMPANIES_KEY;
 
-    let q = supabase
+    // Guard against mismatched sentinel keys during project switching
+    if (globalProj && cid === PROJECT_ALL_COMPANIES_KEY) {
+      setLoading(false);
+      return;
+    }
+    if (!globalProj && cid === GLOBAL_STANDARD_COMPANY_KEY) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    let directQuery = supabase
       .from('permit_form_templates')
       .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
@@ -221,38 +279,149 @@ export default function SettingsPermitForms() {
       .order('updated_at', { ascending: false });
 
     if (globalStd) {
-      q = q.is('company_id', null).is('project_id', null);
+      directQuery = directQuery.is('company_id', null).is('project_id', null);
     } else if (globalProj) {
-      if (cid === PROJECT_ALL_COMPANIES_KEY) {
-        setLoading(false);
-        return;
-      }
-      q = q.is('project_id', null).eq('company_id', cid);
+      directQuery = directQuery.is('project_id', null).eq('company_id', cid);
     } else if (projAll) {
-      q = q.eq('project_id', projKey).is('company_id', null);
+      directQuery = directQuery.eq('project_id', projKey).is('company_id', null);
     } else {
-      if (cid === GLOBAL_STANDARD_COMPANY_KEY) {
-        setLoading(false);
-        return;
-      }
-      q = q.eq('project_id', projKey).eq('company_id', cid);
+      directQuery = directQuery.eq('project_id', projKey).eq('company_id', cid);
     }
 
-    const { data, error } = await q;
-    if (error) {
-      toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
+    const candidateQuery = globalStd
+      ? Promise.resolve({ data: [] as any[], error: null })
+      : (() => {
+          let cq = supabase
+            .from('permit_form_templates')
+            .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
+            .eq('is_deleted', false)
+            .eq('is_active', true);
+          if (globalProj) {
+            cq = cq.is('project_id', null);
+          } else {
+            cq = cq.or(`project_id.eq.${projKey},project_id.is.null`);
+          }
+          return cq;
+        })();
+
+    const linksQuery = !globalProj
+      ? (supabase as any)
+          .from('project_companies')
+          .select('company_id, parent_company_id, role_in_project')
+          .eq('project_id', projKey)
+          .eq('is_deleted', false)
+      : Promise.resolve({ data: [] as any[], error: null });
+
+    const [directRes, candidateRes, linksRes] = await Promise.all([
+      directQuery,
+      candidateQuery,
+      linksQuery,
+    ]);
+
+    if (directRes.error) {
+      toast({ title: '불러오기 실패', description: directRes.error.message, variant: 'destructive' });
       setRows([]);
-    } else {
-      setRows(
-        (data || []).map((r: any) => ({
-          ...r,
-          project_id: r.project_id || null,
-          company_id: r.company_id || null,
-          permit_type: (r.permit_type || 'general') as PermitType,
-          layout_json: parseLayoutJson(r.layout_json),
-        })),
-      );
+      setEffectiveRows([]);
+      setSelected(null);
+      setSelectedSource(null);
+      setLoading(false);
+      return;
     }
+
+    const toTpl = (r: any): Tpl => ({
+      ...r,
+      project_id: r.project_id || null,
+      company_id: r.company_id || null,
+      permit_type: (r.permit_type || 'general') as PermitType,
+      layout_json: parseLayoutJson(r.layout_json),
+    });
+
+    const nextRows: Tpl[] = (directRes.data || []).map(toTpl);
+    setRows(nextRows);
+
+    const directIds = new Set(nextRows.map((r) => r.id));
+    let nextEffective: EffectiveTplItem[] = [];
+
+    if (!globalStd && !candidateRes.error) {
+      const candidates: Tpl[] = (candidateRes.data || []).map(toTpl);
+      const targetProjectId = globalProj ? null : projKey;
+      const targetCompanyId = projAll ? null : cid;
+      const projObj = targetProjectId ? projects.find((p) => p.id === targetProjectId) || null : null;
+      const links: ProjectCompanyLink[] = (linksRes.data || []) as ProjectCompanyLink[];
+      const gcId = targetCompanyId
+        ? resolvePermitFormGcCompanyId({
+            permitCompanyId: targetCompanyId,
+            projectCompanyLinks: links,
+            project: projObj,
+          })
+        : null;
+
+      for (const meta of PERMIT_KIND_CLONE_META) {
+        const match = pickPermitDisplayTemplateWithSource({
+          templates: candidates,
+          projectId: targetProjectId,
+          permitCompanyId: targetCompanyId,
+          gcCompanyId: gcId,
+          permitType: meta.permit_type,
+        });
+        if (match) {
+          const tpl = candidates.find((c) => c.id === match.template.id) || toTpl(match.template);
+          nextEffective.push({
+            permitType: meta.permit_type,
+            template: tpl,
+            sourceScope: match.sourceScope,
+            sourceLabel: match.sourceLabel,
+            isDirect: directIds.has(tpl.id),
+          });
+        }
+      }
+    }
+
+    setEffectiveRows(nextEffective);
+
+    // Auto-select first direct template (edit mode), or first effective inherited template (read-only preview)
+    if (nextRows.length > 0) {
+      const first = nextRows[0];
+      const matchedEff = nextEffective.find((e) => e.template.id === first.id);
+      openEdit(
+        first,
+        matchedEff
+          ? { sourceScope: matchedEff.sourceScope, sourceLabel: matchedEff.sourceLabel, isDirect: true }
+          : {
+              sourceScope: globalStd
+                ? 'global_standard'
+                : projAll
+                  ? 'project_all'
+                  : globalProj
+                    ? 'global_company'
+                    : 'project_company',
+              sourceLabel: globalStd
+                ? '전체 기본 표준'
+                : projAll
+                  ? '이 프로젝트 전체 기본'
+                  : globalProj
+                    ? '전역 회사 양식'
+                    : '이 프로젝트 · 이 업체 전용',
+              isDirect: true,
+            },
+        'labels',
+      );
+    } else if (nextEffective.length > 0) {
+      const firstEff = nextEffective[0];
+      openEdit(
+        firstEff.template,
+        {
+          sourceScope: firstEff.sourceScope,
+          sourceLabel: firstEff.sourceLabel,
+          isDirect: false,
+        },
+        'preview',
+      );
+    } else {
+      setSelected(null);
+      setSelectedSource(null);
+    }
+
     setLoading(false);
   };
 
@@ -283,15 +452,6 @@ export default function SettingsPermitForms() {
 
   if (!isMaster) return <Navigate to="/settings" replace />;
 
-  const openEdit = (t: Tpl) => {
-    const layout = parseLayoutJson(t.layout_json);
-    setSelected(t);
-    setStyle(layout.standard_style || DEFAULT_STANDARD_STYLE);
-    setStdLabels(layout.standard_labels || DEFAULT_STANDARD_LABELS);
-    setDisplay(normalizeDisplayTemplate(layout.display_template || emptyDisplayTemplate()));
-    setTab('labels');
-  };
-
   const buildLayoutPayload = (): PermitLayoutJson => ({
     standard_style: style,
     standard_labels: {
@@ -303,7 +463,7 @@ export default function SettingsPermitForms() {
   });
 
   const save = async () => {
-    if (!selected) return;
+    if (!selected || isReadOnlyInherited) return;
     setSaving(true);
     const layout = buildLayoutPayload();
     const { error } = await supabase
@@ -624,7 +784,7 @@ export default function SettingsPermitForms() {
         </CardContent>
       </Card>
 
-      <div className="grid md:grid-cols-[280px_1fr] gap-4">
+      <div className="grid md:grid-cols-[300px_1fr] gap-4">
         <Card>
           <CardHeader className="py-3 px-4">
             <CardTitle className="text-sm">
@@ -637,34 +797,119 @@ export default function SettingsPermitForms() {
                     : '전역 회사 양식'}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-2 space-y-1">
+          <CardContent className="p-2 space-y-2">
             {loading && <p className="text-xs text-muted-foreground p-2">불러오는 중…</p>}
-            {!loading && rows.length === 0 && (
+
+            {!loading && rows.length > 0 && (
+              <div className="space-y-1">
+                {!isGlobalScope && (
+                  <p className="text-[11px] font-medium text-muted-foreground px-2 pt-0.5">
+                    직접 지정된 양식 (편집 가능)
+                  </p>
+                )}
+                {rows.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() =>
+                      openEdit(
+                        t,
+                        {
+                          sourceScope: isGlobalScope
+                            ? 'global_standard'
+                            : isProjectAllScope
+                              ? 'project_all'
+                              : dbProjectId
+                                ? 'project_company'
+                                : 'global_company',
+                          sourceLabel: isGlobalScope
+                            ? '전체 기본 표준'
+                            : isProjectAllScope
+                              ? '이 프로젝트 전체 기본'
+                              : dbProjectId
+                                ? '이 프로젝트 · 이 업체 전용'
+                                : '전역 회사 양식',
+                          isDirect: true,
+                        },
+                        'labels',
+                      )
+                    }
+                    className={`w-full text-left rounded-md px-2 py-2 text-sm border ${
+                      selected?.id === t.id && !isReadOnlyInherited
+                        ? 'border-primary bg-primary/5'
+                        : 'border-transparent hover:bg-muted/50'
+                    }`}
+                  >
+                    <div className="font-medium truncate">{t.name}</div>
+                    <div className="text-[11px] text-muted-foreground flex gap-1 flex-wrap mt-0.5">
+                      <Badge variant="outline" className="text-[10px] h-4">
+                        {PERMIT_TYPE_LABEL[t.permit_type] || t.permit_type}
+                      </Badge>
+                      {t.is_default && <Badge variant="secondary" className="text-[10px] h-4">기본</Badge>}
+                      {!t.is_active && <Badge variant="destructive" className="text-[10px] h-4">비활성</Badge>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!loading && !isGlobalScope && effectiveRows.some((e) => !e.isDirect) && (
+              <div className="space-y-1 pt-1 border-t first:border-t-0 first:pt-0">
+                <p className="text-[11px] font-medium text-blue-700 dark:text-blue-300 px-2 pt-0.5">
+                  {rows.length === 0
+                    ? '현재 적용 중인 양식 (상속 · 기본)'
+                    : '나머지 종류 적용 양식 (상속 · 기본)'}
+                </p>
+                {effectiveRows
+                  .filter((e) => !e.isDirect)
+                  .map((item) => {
+                    const isPicked =
+                      selected?.id === item.template.id &&
+                      isReadOnlyInherited &&
+                      selected?.permit_type === item.permitType;
+                    return (
+                      <button
+                        key={`${item.permitType}-${item.template.id}`}
+                        type="button"
+                        onClick={() =>
+                          openEdit(
+                            { ...item.template, permit_type: item.permitType },
+                            {
+                              sourceScope: item.sourceScope,
+                              sourceLabel: item.sourceLabel,
+                              isDirect: false,
+                            },
+                            'preview',
+                          )
+                        }
+                        className={`w-full text-left rounded-md px-2 py-2 text-sm border ${
+                          isPicked
+                            ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40'
+                            : 'border-transparent hover:bg-muted/50'
+                        }`}
+                      >
+                        <div className="font-medium truncate">{item.template.name}</div>
+                        <div className="text-[11px] text-muted-foreground flex gap-1 flex-wrap mt-0.5">
+                          <Badge variant="outline" className="text-[10px] h-4">
+                            {PERMIT_TYPE_LABEL[item.permitType] || item.permitType}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px] h-4 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            {item.sourceLabel}
+                          </Badge>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+
+            {!loading && rows.length === 0 && effectiveRows.length === 0 && (
               <p className="text-xs text-muted-foreground p-2">
                 {isGlobalScope
                   ? '아직 없습니다. 「기본 표준 양식 만들기」를 누른 뒤 로고·라벨을 수정하세요.'
-                  : '아직 없습니다. 「표준 허가서에서 복제」를 누르세요. 없으면 기본 표준이 그대로 쓰입니다.'}
+                  : '등록된 양식이 없어 내장 기본 양식이 그대로 쓰입니다. 위에서 「선택 양식으로 복제 · 지정」을 눌러 지정할 수 있습니다.'}
               </p>
             )}
-            {rows.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => openEdit(t)}
-                className={`w-full text-left rounded-md px-2 py-2 text-sm border ${
-                  selected?.id === t.id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-muted/50'
-                }`}
-              >
-                <div className="font-medium truncate">{t.name}</div>
-                <div className="text-[11px] text-muted-foreground flex gap-1 flex-wrap mt-0.5">
-                  <Badge variant="outline" className="text-[10px] h-4">
-                    {PERMIT_TYPE_LABEL[t.permit_type] || t.permit_type}
-                  </Badge>
-                  {t.is_default && <Badge variant="secondary" className="text-[10px] h-4">기본</Badge>}
-                  {!t.is_active && <Badge variant="destructive" className="text-[10px] h-4">비활성</Badge>}
-                </div>
-              </button>
-            ))}
           </CardContent>
         </Card>
 
@@ -676,12 +921,26 @@ export default function SettingsPermitForms() {
           ) : (
             <>
               <CardHeader className="py-3 px-4 space-y-3">
+                {isReadOnlyInherited && selectedSource && (
+                  <div className="rounded-md border border-blue-200 bg-blue-50/80 dark:border-blue-900 dark:bg-blue-950/40 px-3 py-2 text-xs text-blue-900 dark:text-blue-100 flex items-start gap-2">
+                    <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
+                    <div className="space-y-0.5">
+                      <div className="font-medium">
+                        현재 「{selectedSource.sourceLabel}」 양식이 이 대상에 적용 중입니다 (읽기 전용)
+                      </div>
+                      <div className="text-blue-800/90 dark:text-blue-200/80">
+                        기존 다른 프로젝트·업체에 영향 없이 이 대상만 따로 지정·수정하려면, 위에서 <strong>3. 복제할 기준 양식</strong>을 고른 뒤 <strong>「선택 양식으로 복제 · 지정」</strong>을 눌러주세요.
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 items-end justify-between">
                   <div className="grid grid-cols-2 gap-2 flex-1 min-w-[240px]">
                     <div className="space-y-1">
                       <Label className="text-xs">이름</Label>
                       <Input
                         value={selected.name}
+                        disabled={isReadOnlyInherited}
                         onChange={(e) => setSelected({ ...selected, name: e.target.value })}
                         className="h-8"
                       />
@@ -690,6 +949,7 @@ export default function SettingsPermitForms() {
                       <Label className="text-xs">코드</Label>
                       <Input
                         value={selected.code}
+                        disabled={isReadOnlyInherited}
                         onChange={(e) => setSelected({ ...selected, code: e.target.value })}
                         className="h-8"
                       />
@@ -698,6 +958,7 @@ export default function SettingsPermitForms() {
                       <Label className="text-xs">버전</Label>
                       <Input
                         value={selected.version}
+                        disabled={isReadOnlyInherited}
                         onChange={(e) => setSelected({ ...selected, version: e.target.value })}
                         className="h-8"
                       />
@@ -706,6 +967,7 @@ export default function SettingsPermitForms() {
                       <label className="flex items-center gap-1.5 text-xs">
                         <Switch
                           checked={selected.is_default}
+                          disabled={isReadOnlyInherited}
                           onCheckedChange={(v) => setSelected({ ...selected, is_default: v })}
                         />
                         기본
@@ -713,20 +975,23 @@ export default function SettingsPermitForms() {
                       <label className="flex items-center gap-1.5 text-xs">
                         <Switch
                           checked={selected.is_active}
+                          disabled={isReadOnlyInherited}
                           onCheckedChange={(v) => setSelected({ ...selected, is_active: v })}
                         />
                         사용
                       </label>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => softDelete(selected)}>
-                      <Trash2 className="h-3.5 w-3.5 mr-1" /> 삭제
-                    </Button>
-                    <Button size="sm" onClick={save} disabled={saving}>
-                      <Save className="h-3.5 w-3.5 mr-1" /> {saving ? '저장 중…' : '저장'}
-                    </Button>
-                  </div>
+                  {!isReadOnlyInherited && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => softDelete(selected)}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> 삭제
+                      </Button>
+                      <Button size="sm" onClick={save} disabled={saving}>
+                        <Save className="h-3.5 w-3.5 mr-1" /> {saving ? '저장 중…' : '저장'}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4">
@@ -753,6 +1018,7 @@ export default function SettingsPermitForms() {
                           </div>
                           <Input
                             value={val}
+                            disabled={isReadOnlyInherited}
                             className="h-8"
                             onChange={(e) =>
                               setDisplay((prev) => ({
@@ -783,7 +1049,7 @@ export default function SettingsPermitForms() {
                           >
                             <Checkbox
                               checked={checked}
-                              disabled={s.locked}
+                              disabled={s.locked || isReadOnlyInherited}
                               onCheckedChange={(v) => toggleHidden(s.id, !!v)}
                               className="mt-0.5"
                             />

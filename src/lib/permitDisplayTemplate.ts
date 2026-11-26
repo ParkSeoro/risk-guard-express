@@ -369,8 +369,31 @@ export function resolvePermitFormGcCompanyId(opts: {
   return null;
 }
 
+export type PermitTemplateSourceScope =
+  | 'project_company'
+  | 'project_gc'
+  | 'project_all'
+  | 'global_company'
+  | 'global_gc'
+  | 'global_standard';
+
+export const PERMIT_TEMPLATE_SOURCE_LABEL: Record<PermitTemplateSourceScope, string> = {
+  project_company: '이 프로젝트 · 이 업체 전용',
+  project_gc: '이 프로젝트 · 상위 시공사 상속',
+  project_all: '이 프로젝트 전체 기본',
+  global_company: '전역 회사 양식',
+  global_gc: '전역 상위 시공사 상속',
+  global_standard: '전체 기본 표준',
+};
+
+export interface PermitTemplateCascadeMatch {
+  template: PermitTemplateRow;
+  sourceScope: PermitTemplateSourceScope;
+  sourceLabel: string;
+}
+
 /**
- * 표시 양식 선택 순서 (프로젝트 간 완전 격리):
+ * 표시 양식 선택 순서 + 실제 출처(sourceScope) 반환 (프로젝트 간 완전 격리):
  * 1) 이 프로젝트 + 작성 회사 전용 (project_id === P, company_id === permitCompanyId)
  * 2) 이 프로젝트 + 소속 시공사 상속 (project_id === P, company_id === gcCompanyId)
  * 3) 이 프로젝트 전체 기본 (project_id === P, company_id == null)
@@ -379,16 +402,24 @@ export function resolvePermitFormGcCompanyId(opts: {
  *
  * form_data / signatures 키는 변경하지 않음 — 라벨·숨김만.
  */
-export function pickPermitDisplayTemplateCascade(opts: {
+export function pickPermitDisplayTemplateWithSource(opts: {
   templates: PermitTemplateRow[];
   projectId?: string | null;
   permitCompanyId: string | null | undefined;
   gcCompanyId: string | null | undefined;
   permitType: PermitType;
-}): PermitTemplateRow | null {
+}): PermitTemplateCascadeMatch | null {
   const pid = opts.projectId || null;
   const permitId = opts.permitCompanyId || null;
   const gcId = opts.gcCompanyId || null;
+
+  const makeMatch = (
+    template: PermitTemplateRow | null,
+    sourceScope: PermitTemplateSourceScope,
+  ): PermitTemplateCascadeMatch | null =>
+    template
+      ? { template, sourceScope, sourceLabel: PERMIT_TEMPLATE_SOURCE_LABEL[sourceScope] }
+      : null;
 
   // 1~3) Project-scoped templates (strictly isolated to this project)
   if (pid) {
@@ -397,17 +428,17 @@ export function pickPermitDisplayTemplateCascade(opts: {
     );
     if (permitId) {
       const ownProj = pickCompanyDisplayTemplate(inProject, permitId, opts.permitType);
-      if (ownProj) return ownProj;
+      if (ownProj) return makeMatch(ownProj, 'project_company');
     }
     if (gcId && gcId !== permitId) {
       const gcProj = pickCompanyDisplayTemplate(inProject, gcId, opts.permitType);
-      if (gcProj) return gcProj;
+      if (gcProj) return makeMatch(gcProj, 'project_gc');
     }
     const projectDefault = pickFromScopedList(
       inProject.filter((t) => t.company_id == null),
       opts.permitType,
     );
-    if (projectDefault) return projectDefault;
+    if (projectDefault) return makeMatch(projectDefault, 'project_all');
   }
 
   // 4) Legacy global company-scoped templates (project_id == null)
@@ -415,15 +446,28 @@ export function pickPermitDisplayTemplateCascade(opts: {
     (t) => t.project_id == null && t.is_active !== false,
   );
   const own = pickCompanyDisplayTemplate(globalCompanyScope, permitId, opts.permitType);
-  if (own) return own;
+  if (own) return makeMatch(own, 'global_company');
 
   if (gcId && gcId !== permitId) {
     const gcTpl = pickCompanyDisplayTemplate(globalCompanyScope, gcId, opts.permitType);
-    if (gcTpl) return gcTpl;
+    if (gcTpl) return makeMatch(gcTpl, 'global_gc');
   }
 
   // 5) Global built-in standard (project_id == null && company_id == null)
-  return pickGlobalStandardTemplate(opts.templates, opts.permitType);
+  return makeMatch(
+    pickGlobalStandardTemplate(opts.templates, opts.permitType),
+    'global_standard',
+  );
+}
+
+export function pickPermitDisplayTemplateCascade(opts: {
+  templates: PermitTemplateRow[];
+  projectId?: string | null;
+  permitCompanyId: string | null | undefined;
+  gcCompanyId: string | null | undefined;
+  permitType: PermitType;
+}): PermitTemplateRow | null {
+  return pickPermitDisplayTemplateWithSource(opts)?.template ?? null;
 }
 
 export const PERMIT_KIND_CLONE_META: Array<{

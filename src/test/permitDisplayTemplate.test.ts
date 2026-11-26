@@ -5,6 +5,7 @@ import {
   pickCompanyDisplayTemplate,
   pickGlobalStandardTemplate,
   pickPermitDisplayTemplateCascade,
+  pickPermitDisplayTemplateWithSource,
   resolveFormOwnerCompanyId,
   resolvePermitFormGcCompanyId,
   resolveProjectGcCompanyId,
@@ -253,5 +254,39 @@ describe('permitDisplayTemplate', () => {
         permitType: 'general',
       })?.id,
     ).toBe('global-std');
+  });
+
+  it('pickPermitDisplayTemplateWithSource reports exact cascade source for all 6 levels', () => {
+    const base = {
+      code: 'C',
+      name: 'N',
+      version: '1',
+      layout_json: {},
+      is_default: true,
+      is_active: true,
+      permit_type: 'general',
+    };
+    const globalStd = { ...base, id: 'g-std', project_id: null, company_id: null };
+    const globalGc = { ...base, id: 'g-gc', project_id: null, company_id: 'gc1' };
+    const globalSub = { ...base, id: 'g-sub', project_id: null, company_id: 'sub1' };
+    const projAll = { ...base, id: 'p-all', project_id: 'projA', company_id: null };
+    const projGc = { ...base, id: 'p-gc', project_id: 'projA', company_id: 'gc1' };
+    const projSub = { ...base, id: 'p-sub', project_id: 'projA', company_id: 'sub1' };
+
+    const check = (templates: any[]) =>
+      pickPermitDisplayTemplateWithSource({
+        templates,
+        projectId: 'projA',
+        permitCompanyId: 'sub1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      });
+
+    expect(check([globalStd, globalGc, globalSub, projAll, projGc, projSub])?.sourceScope).toBe('project_company');
+    expect(check([globalStd, globalGc, globalSub, projAll, projGc])?.sourceScope).toBe('project_gc');
+    expect(check([globalStd, globalGc, globalSub, projAll])?.sourceScope).toBe('project_all');
+    expect(check([globalStd, globalGc, globalSub])?.sourceScope).toBe('global_company');
+    expect(check([globalStd, globalGc])?.sourceScope).toBe('global_gc');
+    expect(check([globalStd])?.sourceScope).toBe('global_standard');
   });
 });

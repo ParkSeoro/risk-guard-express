@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
 import { geocodeKoreanAddress } from "@/lib/koreanLocationService";
 import { syncProjectCompanyColumns } from "@/lib/projectCompanies";
+import ProjectCreationWizardDialog from "@/components/project/ProjectCreationWizardDialog";
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
@@ -447,12 +448,14 @@ const Projects = () => {
         </div>
       )}
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader><DialogTitle>프로젝트 생성</DialogTitle></DialogHeader>
-          {projectFormFields(handleCreate, "생성")}
-        </DialogContent>
-      </Dialog>
+      <ProjectCreationWizardDialog
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        userId={user?.id}
+        onCreated={fetchProjects}
+        onLog={(action, entity, entityId) => log(action, entity, entityId)}
+        onToast={(opts) => toast(opts)}
+      />
 
       <Dialog open={!!editProject} onOpenChange={() => setEditProject(null)}>
         <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>

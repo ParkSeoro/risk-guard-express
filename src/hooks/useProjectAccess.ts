@@ -3,12 +3,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   applyOwnCompanyFilter,
+  fetchProjectCompanyLinkMeta,
   pickProjectMemberRow,
   readPreferredCompanyId,
-  fetchClientSafetyService,
   resolveAccessibleCompanyIds,
   seesProjectWideCompanies,
 } from '@/lib/companyDocScope';
+import { resolveProjectCompanyType } from '@/lib/companyTypes';
 import {
   ACTIVE_PROJECT_CHANGED_EVENT,
   isActiveProjectStorageKey,
@@ -302,16 +303,25 @@ export function useProjectAccess(): ProjectAccess {
       if (cancelled) return;
 
       const picked = pickProjectMemberRow((data || []) as any[], readPreferredCompanyId());
+      const pickedCompanyId = (picked as any)?.company_id || null;
+      const linkMeta = await fetchProjectCompanyLinkMeta(selectedProject, pickedCompanyId);
+      if (cancelled) return;
+
+      const resolvedCompanyType = (resolveProjectCompanyType(
+        linkMeta.roleInProject,
+        (picked as any)?.companies?.type,
+      ) || null) as CompanyType;
+
       const nextMember: MemberInfo | null = picked
         ? {
             role: normalizeRole((picked as any).role_new),
             position: ((picked as any).position_new || null) as ProjectPosition,
-            company_id: (picked as any).company_id || null,
-            company_type: ((picked as any).companies?.type as CompanyType) || null,
+            company_id: pickedCompanyId,
+            company_type: resolvedCompanyType,
           }
         : null;
 
-      const safetyService = await fetchClientSafetyService(selectedProject, nextMember?.company_id);
+      const safetyService = linkMeta.clientSafetyService;
       const ids = await resolveAccessibleCompanyIds({
         projectId: selectedProject,
         companyId: nextMember?.company_id,

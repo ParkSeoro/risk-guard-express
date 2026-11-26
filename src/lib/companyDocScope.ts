@@ -211,19 +211,32 @@ export function mustScopeToOwnCompany(opts: {
  * - own → [companyId]
  * - tree → [companyId, ...descendants via project_companies.parent_company_id]
  */
-export async function fetchClientSafetyService(
+export async function fetchProjectCompanyLinkMeta(
   projectId: string,
   companyId?: string | null,
-): Promise<boolean> {
-  if (!projectId || !companyId) return false;
-  const { data } = await supabase
+): Promise<{ roleInProject: string | null; clientSafetyService: boolean }> {
+  if (!projectId || !companyId) {
+    return { roleInProject: null, clientSafetyService: false };
+  }
+  const { data } = await (supabase as any)
     .from('project_companies')
-    .select('client_safety_service')
+    .select('role_in_project, client_safety_service')
     .eq('project_id', projectId)
     .eq('company_id', companyId)
     .eq('is_deleted', false)
     .maybeSingle();
-  return data?.client_safety_service === true;
+  return {
+    roleInProject: (data?.role_in_project as string | null) || null,
+    clientSafetyService: data?.client_safety_service === true,
+  };
+}
+
+export async function fetchClientSafetyService(
+  projectId: string,
+  companyId?: string | null,
+): Promise<boolean> {
+  const meta = await fetchProjectCompanyLinkMeta(projectId, companyId);
+  return meta.clientSafetyService;
 }
 
 export async function resolveAccessibleCompanyIds(opts: {
@@ -247,15 +260,8 @@ export async function resolveAccessibleCompanyIds(opts: {
     .eq('is_deleted', false);
 
   if (error || !data?.length) {
-    // Fallback: companies.parent_company_id
-    const { data: cos } = await supabase
-      .from('companies')
-      .select('id, parent_company_id')
-      .eq('is_deleted', false);
-    return collectDescendants(
-      (cos || []).map((c: any) => ({ id: c.id, parent_id: c.parent_company_id })),
-      opts.companyId,
-    );
+    // Strictly project-scoped: NEVER traverse global companies.parent_company_id across projects.
+    return [opts.companyId];
   }
 
   return collectDescendants(

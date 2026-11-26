@@ -3,13 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   applyOwnCompanyFilter,
-  fetchClientSafetyService,
+  fetchProjectCompanyLinkMeta,
   pickProjectMemberRow,
   readPreferredCompanyId,
   resolveAccessibleCompanyIds,
   seesProjectWideCompanies,
 } from "@/lib/companyDocScope";
-import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
+import { resolveProjectCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
 import { usePreview } from "@/contexts/PreviewContext";
 import { resolveGlobalMobileRole } from "@/lib/mobileShell";
 import {
@@ -189,11 +189,13 @@ export function useMobileAccess() {
       const raw = (d?.role_new as MobileRole) || 'viewer';
       const nextRole = raw === 'contractor' ? 'worker' : raw;
       const nextCid = d?.company_id || null;
-      const nextType = normalizeCompanyType(d?.companies?.type) || null;
+      const linkMeta = await fetchProjectCompanyLinkMeta(projectId, nextCid);
+      if (cancelled) return;
+      const nextType = resolveProjectCompanyType(linkMeta.roleInProject, d?.companies?.type) || null;
+      const safetyService = linkMeta.clientSafetyService;
       setRole(nextRole);
       setCompanyId(nextCid);
       setCompanyType(nextType);
-      const safetyService = await fetchClientSafetyService(projectId, nextCid);
       setClientSafetyService(safetyService);
       const ids = await resolveAccessibleCompanyIds({
         projectId,

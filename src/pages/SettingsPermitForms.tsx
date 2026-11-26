@@ -6,7 +6,7 @@
  * 절대 하지 않음: 결재 규칙/RPC, form_data 키, DigPermitForm 구조 변경.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -138,12 +138,18 @@ const PREVIEW_SIGS: PermitSignatures = {
 export default function SettingsPermitForms() {
   const { hasRole, user } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const initialProjectParam = searchParams.get('projectId');
   const isMaster = hasRole('master');
 
   const [projects, setProjects] = useState<ProjectOpt[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(GLOBAL_PROJECT_KEY);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(
+    initialProjectParam || GLOBAL_PROJECT_KEY,
+  );
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
-  const [companyId, setCompanyId] = useState<string>(GLOBAL_STANDARD_COMPANY_KEY);
+  const [companyId, setCompanyId] = useState<string>(
+    initialProjectParam ? PROJECT_ALL_COMPANIES_KEY : GLOBAL_STANDARD_COMPANY_KEY,
+  );
   const [globalStandards, setGlobalStandards] = useState<Tpl[]>([]);
   const [cloneSourceId, setCloneSourceId] = useState<string>('__default__');
   const [rows, setRows] = useState<Tpl[]>([]);

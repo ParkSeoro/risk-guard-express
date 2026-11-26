@@ -14,10 +14,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search
+  Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Settings2, Search, Link2, ArrowRight,
 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
-import { useSoftDelete } from '@/hooks/useSoftDelete';
 import {
   COMPANY_TYPE_LABELS,
   COMPANY_TYPE_OPTIONS,
@@ -34,7 +33,20 @@ import { submitCompanyRegistration } from '@/lib/companyRegistration';
 import { formatKRW } from '@/lib/safetyCost';
 import { ConstructionInfoMissingBanner } from '@/components/ConstructionInfoMissingBanner';
 import ProjectMemberMultiPickerDialog from '@/components/project/ProjectMemberMultiPickerDialog';
+import TradeTagSelector from '@/components/project/TradeTagSelector';
+import ProjectOverviewChecklist from '@/components/project/ProjectOverviewChecklist';
+import ProjectIntegrationsTab from '@/components/project/ProjectIntegrationsTab';
 import { syncProjectCompanyColumns } from '@/lib/projectCompanies';
+import {
+  collectSuggestedTagsFromCompanies,
+  mapLegacyProjectTab,
+  normalizeTradeTags,
+  type ProjectDetailTabId,
+} from '@/lib/projectTradeTags';
+import {
+  pickPermitDisplayTemplateWithSource,
+  type PermitTemplateRow,
+} from '@/lib/permitDisplayTemplate';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -44,26 +56,19 @@ const roleLabels: Record<string, string> = {
 };
 
 const positionLabels: Record<string, string> = { ...POSITION_LABELS };
-
-
 const companyTypes: Record<string, string> = { ...COMPANY_TYPE_LABELS };
-
-const companyTypeOrder: Record<string, number> = {
-  client: 0, gc: 1, contractor: 2, vendor: 3,
-};
-
-const PROJECT_DETAIL_TABS = ["basic-info", "members", "companies", "approval-routes", "tags", "invites"];
+const companyTypeOrder: Record<string, number> = { client: 0, gc: 1, contractor: 2, vendor: 3 };
 
 const ProjectDetail = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [searchParams] = useSearchParams();
-  const requestedTab = searchParams.get("tab");
-  const [tab, setTab] = useState(
-    requestedTab && PROJECT_DETAIL_TABS.includes(requestedTab) ? requestedTab : "members",
-  );
+  const requestedTab = searchParams.get('tab');
+  const [tab, setTab] = useState<ProjectDetailTabId>(() => mapLegacyProjectTab(requestedTab, 'basic-info'));
+
   useEffect(() => {
-    if (requestedTab && PROJECT_DETAIL_TABS.includes(requestedTab)) setTab(requestedTab);
+    if (requestedTab) setTab(mapLegacyProjectTab(requestedTab, 'basic-info'));
   }, [requestedTab]);
+
   const { user, hasRole } = useAuth();
   const { toast } = useToast();
   const isMaster = hasRole('master');
@@ -73,49 +78,43 @@ const ProjectDetail = () => {
   const [projectRole, setProjectRole] = useState<string | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
+  const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; phone?: string | null; position: string }[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
+  const [permitTemplates, setPermitTemplates] = useState<PermitTemplateRow[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
-  const [showCreateInvite, setShowCreateInvite] = useState(false);
+
+  // Dialogs & Filters
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteForm, setInviteForm] = useState({ role: 'worker' as string, company_id: '' as string, max_uses: 50, expires_days: 7 });
   const [showAddMember, setShowAddMember] = useState(false);
-  const [memberUserId, setMemberUserId] = useState('');
-  const [memberRole, setMemberRole] = useState('viewer');
-  const [memberCompanyId, setMemberCompanyId] = useState('');
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberCompanyFilter, setMemberCompanyFilter] = useState('__all__');
+  const [memberRoleFilter, setMemberRoleFilter] = useState('__all__');
+
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', parent_company_id: '', source_company_id: '', client_safety_service: false, requester_name: '', memo: '', ...emptyConstructionForm() });
+  const [companyForm, setCompanyForm] = useState({
+    name: '', type: 'gc', business_no: '', contact: '', parent_company_id: '', source_company_id: '',
+    client_safety_service: false, requester_name: '', memo: '', ...emptyConstructionForm(),
+  });
   const [globalCompanies, setGlobalCompanies] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState('');
   const [savingProject, setSavingProject] = useState(false);
   const [projectForm, setProjectForm] = useState({
     name: '', site_name: '', site_address: '', period_start: '', period_end: '',
-    client: '', gc_company_id: '', tags: '', status: '진행중',
+    tags: [] as string[], status: '진행중',
   });
 
-  // Approval route templates
-  const [approvalTemplates, setApprovalTemplates] = useState<any[]>([]);
-  const [showAddTemplate, setShowAddTemplate] = useState(false);
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
-  const [templateForm, setTemplateForm] = useState<{
-    name: string; assessment_type: string; is_default: boolean;
-    steps: { step_order: number; step_label: string; position: string; user_id: string; user_name: string; company_name: string }[];
-  }>({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
-  const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; phone?: string | null; position: string }[]>([]);
-
-  // Environment/Equipment Tags
-  const [envTags, setEnvTags] = useState<{ id: string; name: string; category: string }[]>([]);
-  const [newTag, setNewTag] = useState('');
-  const [tagTab, setTagTab] = useState('environment');
-
-  // Must be declared before effects that reference it (TDZ / "Cannot access before initialization")
   const [editingCompany, setEditingCompany] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', type: 'gc', parent_company_id: '', client_safety_service: false, ...emptyConstructionForm() });
+  const [editForm, setEditForm] = useState({
+    name: '', type: 'gc', parent_company_id: '', client_safety_service: false, ...emptyConstructionForm(),
+  });
 
   const canManage = isMaster || projectRole === 'project_admin';
 
   useEffect(() => {
     if (!projectId || !user) return;
-    fetchAll();
+    void fetchAll();
   }, [projectId, user]);
 
   useEffect(() => {
@@ -126,9 +125,7 @@ const ProjectDetail = () => {
       site_address: project.site_address || '',
       period_start: project.period_start || '',
       period_end: project.period_end || '',
-      client: project.client || '',
-      gc_company_id: project.gc_company_id || '',
-      tags: Array.isArray(project.tags) ? project.tags.join(', ') : '',
+      tags: normalizeTradeTags(project.tags),
       status: project.status || '진행중',
     });
   }, [project]);
@@ -136,7 +133,7 @@ const ProjectDetail = () => {
   const fetchAll = async () => {
     if (!projectId || !user) return;
 
-    const [projRes, membersRes, profilesRes, projCompaniesRes, invitesRes, requestsRes, templatesRes, tagsRes] = await Promise.all([
+    const [projRes, membersRes, profilesRes, projCompaniesRes, invitesRes, requestsRes, tplRes] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
@@ -145,28 +142,28 @@ const ProjectDetail = () => {
         .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
-      supabase.from('approval_route_templates' as any)
-        .select('*')
-        .eq('project_id', projectId)
-        .is('owner_user_id', null)
+      supabase.from('permit_form_templates')
+        .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type')
         .eq('is_deleted', false)
-        .order('created_at'),
-      supabase.from('environment_tags' as any).select('*').or(`project_id.eq.${projectId},project_id.is.null`).eq('is_deleted', false).order('created_at'),
+        .eq('is_active', true)
+        .or(`project_id.eq.${projectId},project_id.is.null`),
     ]);
 
     setProject(projRes.data);
     setMembers(membersRes.data || []);
     setProfiles(profilesRes.data || []);
     setAllProfiles((profilesRes.data || []) as any);
+    setPermitTemplates(((tplRes.data || []) as unknown) as PermitTemplateRow[]);
+
     const projCompanies = (projCompaniesRes.data || [])
       .map((l: any) => l.companies ? {
         ...l.companies,
         type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
-        // Project-scoped parent overrides global companies.parent_company_id
         parent_company_id: l.parent_company_id ?? null,
         client_safety_service: l.client_safety_service === true,
       } : null)
       .filter((c: any) => c && c.is_deleted === false);
+
     const companyIds = projCompanies.map((c: any) => c.id);
     const constructionByCompany = new Map<string, any>();
     if (companyIds.length > 0) {
@@ -185,14 +182,11 @@ const ProjectDetail = () => {
 
     setInvites(invitesRes.data || []);
     setJoinRequests(requestsRes.data || []);
-    setApprovalTemplates((templatesRes.data || []) as any);
-    setEnvTags((tagsRes.data || []) as any);
 
-    // Get user's role in this project
     if (isMaster) {
       setProjectRole('master');
     } else {
-      const myMembership = (membersRes.data || []).find((m: any) => m.user_id === user!.id);
+      const myMembership = (membersRes.data || []).find((m: any) => m.user_id === user.id);
       setProjectRole(myMembership?.role_new || null);
     }
   };
@@ -217,7 +211,6 @@ const ProjectDetail = () => {
     })();
   }, [showAddCompany, editingCompany]);
 
-  /** Allowed parent types for a child company type in this project */
   const parentTypesFor = (childType: string): string[] => {
     const t = normalizeCompanyType(childType) || childType;
     if (t === 'gc') return ['client'];
@@ -226,10 +219,6 @@ const ProjectDetail = () => {
     return [];
   };
 
-  /**
-   * Parent candidates = already-linked project companies + Settings(global) masters.
-   * Global-only rows are marked so we can auto-link them on save.
-   */
   const getParentCandidates = (childType: string, excludeId?: string) => {
     const allowed = new Set(parentTypesFor(childType));
     if (allowed.size === 0) return [] as { id: string; name: string; type: string; inProject: boolean }[];
@@ -248,11 +237,9 @@ const ProjectDetail = () => {
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   };
 
-  /** If parent is only in Settings, also link it into this project so hierarchy stays consistent */
   const ensureParentLinkedToProject = async (parentId: string | null | undefined, childType: string) => {
     if (!projectId || !parentId) return null as string | null;
-    const already = companies.some((c) => c.id === parentId);
-    if (already) return null;
+    if (companies.some((c) => c.id === parentId)) return null;
     const g = globalCompanies.find((c) => c.id === parentId);
     const role = normalizeCompanyType(g?.type) || parentTypesFor(childType)[0] || 'client';
     const { error } = await (supabase as any).from('project_companies').upsert({
@@ -264,6 +251,22 @@ const ProjectDetail = () => {
     }, { onConflict: 'project_id,company_id' });
     if (error) return error.message as string;
     return null;
+  };
+
+  /** Sync legacy projects.client column from project_companies client link */
+  const syncProjectClientName = async () => {
+    if (!projectId) return;
+    const { data: links } = await (supabase as any)
+      .from('project_companies')
+      .select('role_in_project, companies:company_id(name)')
+      .eq('project_id', projectId)
+      .eq('is_deleted', false);
+    const clientLink = ((links || []) as any[]).find(
+      (l) => normalizeCompanyType(l.role_in_project) === 'client' && l.companies?.name,
+    );
+    if (clientLink?.companies?.name) {
+      await supabase.from('projects').update({ client: clientLink.companies.name }).eq('id', projectId);
+    }
   };
 
   const filteredGlobalCompanies = useMemo(() => {
@@ -293,8 +296,13 @@ const ProjectDetail = () => {
   };
 
   const getProfileName = (userId: string) => {
-    const p = profiles.find(pr => pr.user_id === userId);
+    const p = profiles.find((pr) => pr.user_id === userId);
     return p?.display_name || userId.slice(0, 8);
+  };
+
+  const getProfilePhone = (userId: string) => {
+    const p = profiles.find((pr) => pr.user_id === userId);
+    return p?.phone || '';
   };
 
   const handleUpdateProjectInfo = async () => {
@@ -314,9 +322,7 @@ const ProjectDetail = () => {
         site_address: projectForm.site_address.trim() || null,
         period_start: projectForm.period_start || null,
         period_end: projectForm.period_end || null,
-        client: projectForm.client.trim() || null,
-        gc_company_id: projectForm.gc_company_id || null,
-        tags: projectForm.tags.split(',').map(s => s.trim()).filter(Boolean),
+        tags: normalizeTradeTags(projectForm.tags),
         status: projectForm.status,
       };
 
@@ -340,25 +346,11 @@ const ProjectDetail = () => {
       const { error } = await supabase.from('projects').update(updateData).eq('id', projectId);
       if (error) throw error;
 
-      // Keep project_companies SSOT & projects.gc_company_ids in sync when primary GC is chosen
-      if (projectForm.gc_company_id) {
-        await (supabase as any).from('project_companies').upsert(
-          {
-            project_id: projectId,
-            company_id: projectForm.gc_company_id,
-            role_in_project: 'gc',
-            is_deleted: false,
-          },
-          { onConflict: 'project_id,company_id' },
-        );
-      }
-      await syncProjectCompanyColumns(projectId, projectForm.gc_company_id || null);
-
       toast({
         title: '프로젝트 기본정보가 저장되었습니다.',
         description: geocodeFailed ? '주소는 저장되었으나 좌표 변환에 실패했습니다. 도시명 또는 도로명을 확인해주세요.' : undefined,
       });
-      fetchAll();
+      await fetchAll();
     } catch (error: any) {
       toast({ title: '저장 실패', description: error.message || String(error), variant: 'destructive' });
     } finally {
@@ -366,33 +358,9 @@ const ProjectDetail = () => {
     }
   };
 
-  const handleAddMember = async () => {
-    if (!projectId || !memberUserId) {
-      toast({ title: '사용자를 선택해주세요.', variant: 'destructive' });
-      return;
-    }
-    if (['site_manager', 'supervisor', 'site_supervisor', 'worker', 'contractor'].includes(memberRole) && !memberCompanyId) {
-      toast({ title: '소속 업체를 선택해주세요.', description: '현장/감독/작업자/협력사 역할은 소속 업체가 필요합니다.', variant: 'destructive' });
-      return;
-    }
-    const { error } = await supabase.from('project_members').insert([{
-      project_id: projectId, user_id: memberUserId, role_new: memberRole as any,
-      company_id: memberCompanyId || null,
-    }]);
-    if (error) {
-      toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: '멤버가 추가되었습니다.' });
-      setShowAddMember(false);
-      setMemberUserId('');
-      setMemberCompanyId('');
-      fetchAll();
-    }
-  };
-
   const handleRemoveMember = async (memberId: string) => {
-    const admins = members.filter(m => m.role_new === 'project_admin');
-    const target = members.find(m => m.id === memberId);
+    const admins = members.filter((m) => m.role_new === 'project_admin');
+    const target = members.find((m) => m.id === memberId);
     if (target?.role_new === 'project_admin' && admins.length <= 1) {
       toast({ title: '프로젝트 관리자가 최소 1명 필요합니다.', variant: 'destructive' });
       return;
@@ -402,13 +370,13 @@ const ProjectDetail = () => {
     await supabase.from('project_members').delete().eq('id', memberId);
     await log('멤버 제거', 'project_member', memberId, projectId || undefined, { reason, removed_user_id: target?.user_id, role: target?.role_new });
     toast({ title: '멤버가 제거되었습니다.' });
-    fetchAll();
+    await fetchAll();
   };
 
   const handleChangeRole = async (memberId: string, newRole: string) => {
-    const target = members.find(m => m.id === memberId);
+    const target = members.find((m) => m.id === memberId);
     if (target?.role_new === 'project_admin' && newRole !== 'project_admin') {
-      const admins = members.filter(m => m.role_new === 'project_admin');
+      const admins = members.filter((m) => m.role_new === 'project_admin');
       if (admins.length <= 1) {
         toast({ title: '프로젝트 관리자가 최소 1명 필요합니다.', variant: 'destructive' });
         return;
@@ -422,7 +390,7 @@ const ProjectDetail = () => {
       currentPosition: target?.position_new || null,
     });
     await supabase.from('project_members').update(updateData as any).eq('id', memberId);
-    fetchAll();
+    await fetchAll();
   };
 
   const handleChangePosition = async (memberId: string, newPosition: string | null) => {
@@ -440,9 +408,25 @@ const ProjectDetail = () => {
     }
     toast({ title: '직책이 저장되었습니다.' });
     await log('직책변경', 'project_member', memberId, projectId || undefined, { position: newPosition, updateData });
-    fetchAll();
+    await fetchAll();
   };
 
+  const handleChangeMemberCompany = async (memberId: string, nextCompanyId: string | null) => {
+    const co = nextCompanyId ? companies.find((c) => c.id === nextCompanyId) : null;
+    const { error } = await supabase
+      .from('project_members')
+      .update({
+        company_id: nextCompanyId,
+        company: co?.name || null,
+      } as any)
+      .eq('id', memberId);
+    if (error) {
+      toast({ title: '소속 업체 변경 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '소속 업체가 변경되었습니다.' });
+    await fetchAll();
+  };
 
   const handleCreateInvite = async () => {
     if (!projectId || !user) return;
@@ -455,45 +439,39 @@ const ProjectDetail = () => {
       expires_at: new Date(Date.now() + inviteForm.expires_days * 24 * 60 * 60 * 1000).toISOString(),
       max_uses: inviteForm.max_uses,
     };
-    if (inviteForm.company_id) {
-      insertData.company_id = inviteForm.company_id;
-    }
+    if (inviteForm.company_id) insertData.company_id = inviteForm.company_id;
     const { error } = await supabase.from('project_invites').insert([insertData]);
-    if (error) toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
-    else {
-      const link = `${window.location.origin}/auth?invite=${code}`;
+    if (error) {
+      toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
+    } else {
       toast({ title: '초대코드가 생성되었습니다.', description: `코드: ${code}` });
-      setShowCreateInvite(false);
-      fetchAll();
+      await fetchAll();
     }
   };
 
   const handleDeleteInvite = async (id: string) => {
     await supabase.from('project_invites').delete().eq('id', id);
     await log('초대코드 삭제', 'project_invite', id, projectId || undefined);
-    fetchAll();
+    await fetchAll();
   };
 
   const handleApproveRequest = async (reqId: string, userId: string, role: string) => {
-    // Add as member
     await supabase.from('project_members').insert([{
       project_id: projectId!, user_id: userId, role_new: role as any,
     }]);
-    // Update request
     await supabase.from('project_join_requests').update({
       status: 'approved', reviewed_by: user!.id, reviewed_at: new Date().toISOString(),
     }).eq('id', reqId);
     toast({ title: '가입 요청을 승인했습니다.' });
-    fetchAll();
+    await fetchAll();
   };
-
 
   const handleRejectRequest = async (reqId: string) => {
     await supabase.from('project_join_requests').update({
       status: 'rejected', reviewed_by: user!.id, reviewed_at: new Date().toISOString(),
     }).eq('id', reqId);
     toast({ title: '가입 요청을 거절했습니다.' });
-    fetchAll();
+    await fetchAll();
   };
 
   const blankCompanyForm = () => ({
@@ -512,54 +490,80 @@ const ProjectDetail = () => {
   const handleAddCompany = async () => {
     if (!projectId) return;
     if (companyForm.type === 'contractor' && !companyForm.parent_company_id) {
-      const gcParents = getParentCandidates('contractor').filter((c) => companyForm.source_company_id || c.inProject);
-      if (gcParents.length > 0 || !companyForm.source_company_id) {
+      const gcParents = getParentCandidates('contractor').filter((c) => companyForm.source_company_id || isMaster || c.inProject);
+      if (gcParents.length > 0 || (!companyForm.source_company_id && !isMaster)) {
         toast({ title: '협력사는 이 현장에 연결된 시공사를 상위 업체로 고르세요.', variant: 'destructive' });
         return;
       }
     }
-    if (!companyForm.source_company_id) {
+
+    let targetCompanyId = companyForm.source_company_id;
+
+    if (!targetCompanyId) {
       if (!companyForm.name.trim()) {
         toast({ title: '업체명을 입력하거나 목록에서 고르세요.', variant: 'destructive' });
         return;
       }
-      const requester = companyForm.requester_name.trim() || getProfileName(user?.id || '') || user?.email || '';
-      const res = await submitCompanyRegistration({
-        name: companyForm.name.trim(),
-        businessNo: companyForm.business_no,
-        type: companyForm.type,
-        contact: companyForm.contact,
-        projectId,
-        parentCompanyId: companyForm.parent_company_id || null,
-        requesterName: requester,
-        requesterEmail: user?.email || '',
-        memo: companyForm.memo,
-      });
-      if (res.result === 'already_linked') {
-        toast({ title: '이미 이 현장에 연결된 업체입니다. 목록에서 고르세요.' });
+
+      if (isMaster) {
+        // Master creates global company record directly and links immediately
+        const { data: createdCo, error: createErr } = await supabase
+          .from('companies')
+          .insert([{
+            name: companyForm.name.trim(),
+            type: companyForm.type,
+            business_no: companyForm.business_no.trim() || null,
+            contact: companyForm.contact.trim() || null,
+            project_id: projectId,
+          } as any])
+          .select('id')
+          .single();
+        if (createErr || !createdCo?.id) {
+          toast({ title: '신규 업체 생성 실패', description: createErr?.message || '', variant: 'destructive' });
+          return;
+        }
+        targetCompanyId = createdCo.id;
+      } else {
+        const requester = companyForm.requester_name.trim() || getProfileName(user?.id || '') || user?.email || '';
+        const res = await submitCompanyRegistration({
+          name: companyForm.name.trim(),
+          businessNo: companyForm.business_no,
+          type: companyForm.type,
+          contact: companyForm.contact,
+          projectId,
+          parentCompanyId: companyForm.parent_company_id || null,
+          requesterName: requester,
+          requesterEmail: user?.email || '',
+          memo: companyForm.memo,
+        });
+        if (res.result === 'already_linked') {
+          toast({ title: '이미 이 현장에 연결된 업체입니다. 목록에서 고르세요.' });
+          return;
+        }
+        if (res.result === 'already_pending') {
+          toast({ title: '같은 업체 요청이 이미 접수되어 있습니다.' });
+          return;
+        }
+        if (res.result !== 'submitted') {
+          toast({ title: '등록 요청 실패', description: res.message || res.result, variant: 'destructive' });
+          return;
+        }
+        toast({ title: res.request_kind === 'link' ? '현장 연결 요청을 보냈습니다.' : '업체 등록 요청을 보냈습니다. 마스터 승인 후 연결됩니다.' });
+        setShowAddCompany(false);
+        setCompanyForm(blankCompanyForm());
         return;
       }
-      if (res.result === 'already_pending') {
-        toast({ title: '같은 업체 요청이 이미 접수되어 있습니다.' });
-        return;
-      }
-      if (res.result !== 'submitted') {
-        toast({ title: '등록 요청 실패', description: res.message || res.result, variant: 'destructive' });
-        return;
-      }
-      toast({ title: res.request_kind === 'link' ? '현장 연결 요청을 보냈습니다.' : '업체 등록 요청을 보냈습니다. 마스터 승인 후 연결됩니다.' });
-      setShowAddCompany(false);
-      setCompanyForm(blankCompanyForm());
-      return;
     }
+
     const parentLinkErr = await ensureParentLinkedToProject(companyForm.parent_company_id, companyForm.type);
     if (parentLinkErr) {
       toast({ title: '상위 업체 연결 실패', description: parentLinkErr, variant: 'destructive' });
       return;
     }
+
     const linkPayload: any = {
       project_id: projectId,
-      company_id: companyForm.source_company_id,
+      company_id: targetCompanyId,
       role_in_project: companyForm.type,
       parent_company_id: companyForm.parent_company_id || null,
       client_safety_service: companyForm.client_safety_service === true,
@@ -567,38 +571,45 @@ const ProjectDetail = () => {
     };
     const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
       linkPayload,
-      { onConflict: 'project_id,company_id' }
+      { onConflict: 'project_id,company_id' },
     );
-    if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
-    const constructionErr = await upsertProjectConstruction(companyForm.source_company_id, projectId, constructionOf(companyForm));
-    if (constructionErr) { toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' }); return; }
+    if (linkErr) {
+      toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' });
+      return;
+    }
+    const constructionErr = await upsertProjectConstruction(targetCompanyId, projectId, constructionOf(companyForm));
+    if (constructionErr) {
+      toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' });
+      return;
+    }
     await syncProjectCompanyColumns(projectId);
-    toast({ title: '업체가 프로젝트에 연결되었습니다.' });
+    if (companyForm.type === 'client') await syncProjectClientName();
+
+    toast({ title: companyForm.source_company_id ? '업체가 프로젝트에 연결되었습니다.' : '신규 업체를 생성하고 프로젝트에 연결했습니다.' });
     setShowAddCompany(false);
     setCompanyForm(blankCompanyForm());
-    fetchAll();
+    await fetchAll();
   };
 
-  const { softDelete } = useSoftDelete();
-  // Remove company from this project ONLY. Does NOT touch the global companies master.
   const handleUnlinkCompany = async (id: string) => {
     if (!projectId) return;
-    const target = companies.find(c => c.id === id);
+    const target = companies.find((c) => c.id === id);
     if (!confirm(`"${target?.name || ''}" 업체를 이 프로젝트에서 제외하시겠습니까?\n\n※ 설정 > 업체 관리의 전역 마스터 목록에서는 삭제되지 않습니다.`)) return;
-    // Clear children pointing to this company within this project
     await (supabase as any).from('project_companies')
       .update({ parent_company_id: null })
       .eq('project_id', projectId).eq('parent_company_id', id);
     const { error } = await (supabase as any).from('project_companies')
       .delete().eq('project_id', projectId).eq('company_id', id);
-    if (error) { toast({ title: '제외 실패', description: error.message, variant: 'destructive' }); return; }
+    if (error) {
+      toast({ title: '제외 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
     await syncProjectCompanyColumns(projectId);
     toast({ title: '프로젝트에서 제외되었습니다.' });
     await log('업체 프로젝트 제외', 'project_company', id, projectId);
-    fetchAll();
+    await fetchAll();
   };
 
-  // Edit dialog helpers (state declared above to avoid TDZ with useEffect deps)
   const openEditCompany = async (c: any) => {
     setEditingCompany(c);
     setEditForm({
@@ -617,6 +628,7 @@ const ProjectDetail = () => {
       .maybeSingle();
     setEditForm((prev) => ({ ...prev, ...constructionFormFromRow(data) }));
   };
+
   const handleUpdateCompany = async () => {
     if (!editingCompany || !projectId) return;
     const parentLinkErr = await ensureParentLinkedToProject(editForm.parent_company_id, editForm.type);
@@ -632,182 +644,140 @@ const ProjectDetail = () => {
       })
       .eq('project_id', projectId)
       .eq('company_id', editingCompany.id);
-    if (linkErr) { toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' }); return; }
+    if (linkErr) {
+      toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' });
+      return;
+    }
     const constructionErr = await upsertProjectConstruction(editingCompany.id, projectId, constructionOf(editForm));
-    if (constructionErr) { toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' }); return; }
+    if (constructionErr) {
+      toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' });
+      return;
+    }
     await syncProjectCompanyColumns(projectId);
+    if (editForm.type === 'client') await syncProjectClientName();
     toast({ title: '이 현장의 업체 정보를 저장했습니다.' });
     await log('업체 수정', 'project_company', editingCompany.id, projectId);
     setEditingCompany(null);
-    fetchAll();
+    await fetchAll();
   };
 
-
-  const STEP_LABEL_OPTIONS = [
-    { label: '작성', position: 'site_supervisor' },
-    { label: '안전관리자 검토', position: 'safety_manager' },
-    { label: '현장대리인 확인', position: 'site_manager' },
-    { label: '최종승인', position: 'project_admin' },
-  ];
-
-  const POSITION_LABELS: Record<string, string> = {
-    site_supervisor: '관리감독자', supervisor: '감리', safety_manager: '안전관리자',
-    site_manager: '현장대리인', project_admin: '프로젝트 관리자',
-  };
-
-  const openNewTemplate = () => {
-    setEditingTemplateId(null);
-    const myProfile = allProfiles.find(p => p.user_id === user?.id);
-    const myMember = members.find(m => m.user_id === user?.id);
-    const authorStep = {
-      step_order: 0,
-      step_label: '작성',
-      position: 'site_supervisor',
-      user_id: user?.id || '',
-      user_name: myProfile?.display_name || '',
-      company_name: myMember?.company || myProfile?.company || '',
-    };
-    setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [authorStep] });
-    setShowAddTemplate(true);
-  };
-
-  const openEditTemplate = (t: any) => {
-    setEditingTemplateId(t.id);
-    const steps = (Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => ({
-      step_order: i, step_label: s.step_label || s.role || '', position: s.position || '',
-      user_id: s.user_id || '', user_name: s.user_name || s.name || '', company_name: s.company_name || '',
-    }));
-    setTemplateForm({ name: t.name, assessment_type: t.assessment_type, is_default: t.is_default, steps });
-    setShowAddTemplate(true);
-  };
-
-  const addTemplateStep = () => {
-    setTemplateForm(prev => ({
-      ...prev,
-      steps: [...prev.steps, { step_order: prev.steps.length, step_label: '', position: '', user_id: '', user_name: '', company_name: '' }],
-    }));
-  };
-
-  const removeTemplateStep = (idx: number) => {
-    setTemplateForm(prev => ({ ...prev, steps: prev.steps.filter((_, i) => i !== idx) }));
-  };
-
-  const updateTemplateStep = (idx: number, field: string, value: string) => {
-    setTemplateForm(prev => {
-      const steps = [...prev.steps];
-      steps[idx] = { ...steps[idx], [field]: value };
-      if (field === 'step_label') {
-        const opt = STEP_LABEL_OPTIONS.find(o => o.label === value);
-        if (opt) steps[idx].position = opt.position;
-      }
-      if (field === 'user_id' && value) {
-        const member = members.find(m => m.user_id === value);
-        const profile = allProfiles.find(p => p.user_id === value);
-        steps[idx].user_name = profile?.display_name || '';
-        steps[idx].company_name = member?.company || profile?.company || '';
-      }
-      return { ...prev, steps };
-    });
-  };
-
-  const handleSaveTemplate = async () => {
-    if (!projectId || !user) return;
-    if (!templateForm.name.trim()) {
-      toast({ title: '결재라인 이름을 입력해주세요.', variant: 'destructive' });
-      return;
+  // Derived summaries
+  const clientCompanies = useMemo(() => companies.filter((c) => c.type === 'client'), [companies]);
+  const gcCompanies = useMemo(() => companies.filter((c) => c.type === 'gc'), [companies]);
+  const missingConstructionCount = useMemo(
+    () =>
+      companies.filter(
+        (c) =>
+          c.type !== 'client' &&
+          !(c.construction_period_start || c.construction_period_end || Number(c.construction_amount) > 0),
+      ).length,
+    [companies],
+  );
+  const memberCountByCompany = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of members) {
+      if (m.company_id) map.set(m.company_id, (map.get(m.company_id) || 0) + 1);
     }
-    const payload = {
-      project_id: projectId,
-      name: templateForm.name,
-      assessment_type: templateForm.assessment_type,
-      is_default: templateForm.is_default,
-      steps: templateForm.steps.map((s, i) => ({ ...s, step_order: i })),
-      created_by: user.id,
-      // Project 결재라인 tab = shared project templates only (never personal)
-      owner_user_id: null,
-      company_id: null,
-    };
+    return map;
+  }, [members]);
 
-    if (editingTemplateId) {
-      const { error } = await supabase.from('approval_route_templates').update(payload as any).eq('id', editingTemplateId);
-      if (error) { toast({ title: '수정 실패', description: error.message, variant: 'destructive' }); return; }
-      toast({ title: '결재라인이 수정되었습니다.' });
-    } else {
-      const { error } = await supabase.from('approval_route_templates').insert([payload] as any);
-      if (error) { toast({ title: '추가 실패', description: error.message, variant: 'destructive' }); return; }
-      toast({ title: '결재라인이 추가되었습니다.' });
-    }
-    setShowAddTemplate(false);
-    setEditingTemplateId(null);
-    fetchAll();
-  };
+  const suggestedTags = useMemo(
+    () => collectSuggestedTagsFromCompanies(companies, projectForm.tags),
+    [companies, projectForm.tags],
+  );
 
-  const handleDeleteTemplate = async (id: string) => {
-    const r = await softDelete('approval_route_templates', id, {
-      label: '결재선 템플릿',
-      projectId: projectId || undefined,
+  const projectPermitMatch = useMemo(
+    () =>
+      projectId
+        ? pickPermitDisplayTemplateWithSource({
+            templates: permitTemplates,
+            projectId,
+            permitCompanyId: gcCompanies[0]?.id || null,
+            gcCompanyId: gcCompanies[0]?.id || null,
+            permitType: 'general',
+          })
+        : null,
+    [permitTemplates, projectId, gcCompanies],
+  );
+
+  const filteredMembers = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    return members.filter((m) => {
+      if (memberCompanyFilter !== '__all__') {
+        if (memberCompanyFilter === '__none__' && m.company_id) return false;
+        if (memberCompanyFilter !== '__none__' && m.company_id !== memberCompanyFilter) return false;
+      }
+      if (memberRoleFilter !== '__all__' && m.role_new !== memberRoleFilter) return false;
+      if (!q) return true;
+      const name = getProfileName(m.user_id).toLowerCase();
+      const phone = getProfilePhone(m.user_id).toLowerCase();
+      const coName = (companies.find((c) => c.id === m.company_id)?.name || m.company || '').toLowerCase();
+      return name.includes(q) || phone.includes(q) || coName.includes(q);
     });
-    if (r.ok) fetchAll();
-  };
-
-  // Tag Management
-  const handleAddTag = async () => {
-    if (!newTag.trim() || !projectId) return;
-    await supabase.from('environment_tags' as any).insert({
-      project_id: projectId, name: newTag.trim(), category: tagTab,
-    });
-    setNewTag('');
-    fetchAll();
-    toast({ title: '태그가 추가되었습니다.' });
-  };
-
-  const handleDeleteTag = async (id: string) => {
-    await supabase.from('environment_tags' as any).update({
-      is_deleted: true,
-      deleted_at: new Date().toISOString(),
-      deleted_by: user?.id || null,
-    }).eq('id', id);
-    await log('태그 삭제', 'environment_tag', id, projectId || undefined);
-    fetchAll();
-    toast({ title: '태그가 삭제되었습니다.' });
-  };
-
-  const copyToClipboard = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(''), 2000);
-  };
+  }, [members, memberSearch, memberCompanyFilter, memberRoleFilter, profiles, companies]);
 
   if (!project) return <div className="p-8 text-center text-muted-foreground">로딩 중...</div>;
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold">{project.name}</h1>
-          <p className="text-xs text-muted-foreground">{project.site_name}</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold">{project.name}</h1>
+            <Badge
+              variant={project.status === '진행중' ? 'default' : 'secondary'}
+              className="text-[10px]"
+            >
+              {project.status}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {project.site_name || '현장명 미지정'}
+            {project.period_start || project.period_end
+              ? ` · ${project.period_start || '미정'} ~ ${project.period_end || '미정'}`
+              : ''}
+          </p>
         </div>
       </div>
 
+      {/* Onboarding & Live Setup Checklist */}
+      <ProjectOverviewChecklist
+        hasLocationCoords={typeof project.site_lat === 'number' && typeof project.site_lng === 'number'}
+        companyCount={companies.length}
+        gcCount={gcCompanies.length}
+        missingConstructionCount={missingConstructionCount}
+        memberCount={members.length}
+        permitFormLabel={projectPermitMatch?.template.name || '기본 표준'}
+        onJumpTab={setTab}
+      />
+
       <ConstructionInfoMissingBanner projectId={projectId} contextLabel="현장 업체별 공사금액·기간" />
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="basic-info" className="gap-1.5"><Settings2 className="h-3.5 w-3.5" /> 기본정보</TabsTrigger>
-          <TabsTrigger value="members" className="gap-1.5"><Users className="h-3.5 w-3.5" /> 멤버/권한</TabsTrigger>
-          <TabsTrigger value="companies" className="gap-1.5"><Building2 className="h-3.5 w-3.5" /> 업체 관리</TabsTrigger>
-          <TabsTrigger value="approval-routes" className="gap-1.5"><FileCheck className="h-3.5 w-3.5" /> 결재라인</TabsTrigger>
-          <TabsTrigger value="tags" className="gap-1.5"><Tag className="h-3.5 w-3.5" /> 태그 마스터</TabsTrigger>
-          <TabsTrigger value="invites" className="gap-1.5"><KeyRound className="h-3.5 w-3.5" /> 초대</TabsTrigger>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as ProjectDetailTabId)}>
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="basic-info" className="gap-1.5">
+            <Settings2 className="h-3.5 w-3.5" /> 개요 · 기본정보
+          </TabsTrigger>
+          <TabsTrigger value="companies" className="gap-1.5">
+            <Building2 className="h-3.5 w-3.5" /> 참여 업체 ({companies.length})
+          </TabsTrigger>
+          <TabsTrigger value="members" className="gap-1.5">
+            <Users className="h-3.5 w-3.5" /> 멤버 · 권한 ({members.length})
+          </TabsTrigger>
+          <TabsTrigger value="integrations" className="gap-1.5">
+            <Link2 className="h-3.5 w-3.5" /> 연동 설정 현황
+          </TabsTrigger>
         </TabsList>
 
-        {/* Basic Info Tab */}
+        {/* 1. Overview & Basic Info Tab */}
         <TabsContent value="basic-info" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <div>
                 <CardTitle className="text-sm">프로젝트 기본정보</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">프로젝트 생성 항목과 동일한 정보를 여기서 수정할 수 있습니다.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  현장 기본정보와 공종을 관리합니다. 발주처·시공사는 「참여 업체」 탭에서 자동 연동됩니다.
+                </p>
               </div>
               {canManage && (
                 <Button size="sm" className="text-xs" onClick={handleUpdateProjectInfo} disabled={savingProject || !projectForm.name.trim()}>
@@ -816,65 +786,88 @@ const ProjectDetail = () => {
               )}
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-lg border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">현장주소를 저장하면 프로젝트 기준 날씨가 자동으로 연동됩니다.</p>
-                {typeof project.site_lat === 'number' && typeof project.site_lng === 'number' && (
-                  <p className="text-xs text-muted-foreground mt-1">저장된 좌표: {project.site_lat.toFixed(6)}, {project.site_lng.toFixed(6)}</p>
-                )}
+              {/* Auto-synced Client & GC Summary (Read-only from project_companies SSOT) */}
+              <div className="rounded-lg border bg-muted/20 p-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-muted-foreground font-medium">발주처:</span>
+                    {clientCompanies.length > 0 ? (
+                      clientCompanies.map((c) => (
+                        <Badge key={c.id} variant="outline" className="text-[11px] border-primary/40 text-primary">
+                          {c.name}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground">{project.client || '미지정'}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-muted-foreground font-medium">시공사:</span>
+                    {gcCompanies.length > 0 ? (
+                      gcCompanies.map((c) => (
+                        <Badge key={c.id} variant="secondary" className="text-[11px]">
+                          {c.name}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-300">미지정 — 참여 업체 탭에서 시공사를 연결하세요</span>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => setTab('companies')}
+                >
+                  참여 업체 관리 <ArrowRight className="h-3 w-3" />
+                </Button>
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>프로젝트명 *</Label>
-                  <Input value={projectForm.name} onChange={e => setProjectForm(prev => ({ ...prev, name: e.target.value }))} disabled={!canManage} />
+                  <Input value={projectForm.name} onChange={(e) => setProjectForm((prev) => ({ ...prev, name: e.target.value }))} disabled={!canManage} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>현장명</Label>
-                  <Input value={projectForm.site_name} onChange={e => setProjectForm(prev => ({ ...prev, site_name: e.target.value }))} disabled={!canManage} />
+                  <Input value={projectForm.site_name} onChange={(e) => setProjectForm((prev) => ({ ...prev, site_name: e.target.value }))} disabled={!canManage} />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <Label>현장주소 (날씨 자동 연동)</Label>
+                  <Label>현장주소 (저장 시 좌표·날씨 자동 연동)</Label>
                   <Input
                     value={projectForm.site_address}
-                    onChange={e => setProjectForm(prev => ({ ...prev, site_address: e.target.value }))}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, site_address: e.target.value }))}
                     placeholder="예: 전라남도 여수시 화학단지로 123"
                     disabled={!canManage}
                   />
+                  {typeof project.site_lat === 'number' && typeof project.site_lng === 'number' && (
+                    <p className="text-[11px] text-muted-foreground">
+                      연동된 좌표: {project.site_lat.toFixed(6)}, {project.site_lng.toFixed(6)}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label>시작일</Label>
-                  <Input type="date" value={projectForm.period_start} onChange={e => setProjectForm(prev => ({ ...prev, period_start: e.target.value }))} disabled={!canManage} />
+                  <Label>공사 시작일</Label>
+                  <Input type="date" value={projectForm.period_start} onChange={(e) => setProjectForm((prev) => ({ ...prev, period_start: e.target.value }))} disabled={!canManage} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>종료일</Label>
-                  <Input type="date" value={projectForm.period_end} onChange={e => setProjectForm(prev => ({ ...prev, period_end: e.target.value }))} disabled={!canManage} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>발주사</Label>
-                  <Input value={projectForm.client} onChange={e => setProjectForm(prev => ({ ...prev, client: e.target.value }))} disabled={!canManage} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>시공사 (등록 업체 선택)</Label>
-                  <Select value={projectForm.gc_company_id || '__none__'} onValueChange={v => setProjectForm(prev => ({ ...prev, gc_company_id: v === '__none__' ? '' : v }))} disabled={!canManage}>
-                    <SelectTrigger><SelectValue placeholder="시공사 선택" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">미지정</SelectItem>
-                      {companies.filter(c => c.type === 'gc').map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>공사 종료일</Label>
+                  <Input type="date" value={projectForm.period_end} onChange={(e) => setProjectForm((prev) => ({ ...prev, period_end: e.target.value }))} disabled={!canManage} />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>공종 태그 (쉼표 구분)</Label>
-                <Input value={projectForm.tags} onChange={e => setProjectForm(prev => ({ ...prev, tags: e.target.value }))} placeholder="6000t Tank, Cooling Tower, 배관" disabled={!canManage} />
-              </div>
+              <TradeTagSelector
+                value={projectForm.tags}
+                onChange={(next) => setProjectForm((prev) => ({ ...prev, tags: next }))}
+                suggestedFromCompanies={suggestedTags}
+                disabled={!canManage}
+              />
 
-              <div className="space-y-1.5">
-                <Label>상태</Label>
-                <Select value={projectForm.status} onValueChange={v => setProjectForm(prev => ({ ...prev, status: v }))} disabled={!canManage}>
+              <div className="space-y-1.5 max-w-xs">
+                <Label>진행 상태</Label>
+                <Select value={projectForm.status} onValueChange={(v) => setProjectForm((prev) => ({ ...prev, status: v }))} disabled={!canManage}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="진행중">진행중</SelectItem>
@@ -895,9 +888,121 @@ const ProjectDetail = () => {
           />
         </TabsContent>
 
-        {/* Members Tab */}
+        {/* 2. Participating Companies & Contract Info Tab */}
+        <TabsContent value="companies" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div className="space-y-0.5">
+                <CardTitle className="text-sm">참여 업체 · 공사정보 (발주처 → 시공사 → 협력사)</CardTitle>
+                <p className="text-[11px] text-muted-foreground">
+                  이 프로젝트에만 독립 적용됩니다. 동일 업체가 다른 프로젝트에서 다른 역할(시공사/협력사)로 참여해도 서로 영향을 주지 않습니다.
+                </p>
+              </div>
+              {canManage && (
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs shrink-0" onClick={() => setShowAddCompany(true)}>
+                  <Plus className="h-3.5 w-3.5" /> 업체 연결 · 등록
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {companies.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">등록된 업체가 없습니다.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {(() => {
+                    const idSet = new Set(companies.map((c) => c.id));
+                    const topLevel = companies
+                      .filter((c) => !c.parent_company_id || !idSet.has(c.parent_company_id))
+                      .sort((a, b) => (companyTypeOrder[a.type] ?? 99) - (companyTypeOrder[b.type] ?? 99));
+                    const getChildren = (parentId: string) =>
+                      companies
+                        .filter((c) => c.parent_company_id === parentId)
+                        .sort((a, b) => (companyTypeOrder[a.type] ?? 99) - (companyTypeOrder[b.type] ?? 99));
+
+                    const renderCompany = (c: any, depth: number) => {
+                      const mCount = memberCountByCompany.get(c.id) || 0;
+                      const hasConstruction =
+                        Boolean(c.construction_type) ||
+                        Boolean(c.construction_period_start) ||
+                        Boolean(c.construction_period_end) ||
+                        Number(c.construction_amount) > 0;
+                      const gcPermitMatch =
+                        c.type === 'gc' && projectId
+                          ? pickPermitDisplayTemplateWithSource({
+                              templates: permitTemplates,
+                              projectId,
+                              permitCompanyId: c.id,
+                              gcCompanyId: c.id,
+                              permitType: 'general',
+                            })
+                          : null;
+
+                      return (
+                        <div key={c.id}>
+                          <div
+                            className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border ${
+                              depth === 0 ? '' : depth === 1 ? 'ml-6 border-l-2 border-l-primary/30' : 'ml-12 border-l-2 border-l-accent/30'
+                            }`}
+                          >
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {depth > 0 && <span className="text-muted-foreground text-xs">└</span>}
+                                <span className="text-sm font-medium">{c.name}</span>
+                                <Badge variant="outline" className={`text-[10px] ${c.type === 'client' ? 'border-primary/50 text-primary' : c.type === 'gc' ? 'border-accent/50 text-accent' : ''}`}>
+                                  {companyTypes[c.type] || c.type}
+                                </Badge>
+                                <Badge variant="secondary" className="text-[10px]">
+                                  멤버 {mCount}명
+                                </Badge>
+                                {gcPermitMatch && (
+                                  <Badge variant="outline" className="text-[10px] border-blue-500/40 text-blue-700 dark:text-blue-300">
+                                    허가서: {gcPermitMatch.template.name}
+                                  </Badge>
+                                )}
+                                {c.client_safety_service && (
+                                  <Badge variant="secondary" className="text-[10px]">발주처 안전용역</Badge>
+                                )}
+                              </div>
+                              {c.type !== 'client' && (
+                                <p className={`text-xs ${hasConstruction ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-300'}`}>
+                                  {hasConstruction
+                                    ? [
+                                        c.construction_type,
+                                        (c.construction_period_start || c.construction_period_end)
+                                          ? `${c.construction_period_start || '미정'} ~ ${c.construction_period_end || '미정'}`
+                                          : '',
+                                        Number(c.construction_amount) > 0 ? formatKRW(c.construction_amount) : '',
+                                      ].filter(Boolean).join(' · ')
+                                    : '공사금액·기간 미등록 (우측 ⚙ 버튼에서 입력)'}
+                                </p>
+                              )}
+                            </div>
+                            {canManage && (
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCompany(c)} title="역할·공사정보 수정">
+                                  <Settings2 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleUnlinkCompany(c.id)} title="프로젝트에서 제외">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                          {getChildren(c.id).map((child) => renderCompany(child, depth + 1))}
+                        </div>
+                      );
+                    };
+
+                    return topLevel.map((c) => renderCompany(c, 0));
+                  })()}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 3. Members & Permissions Tab (with Invites integrated) */}
         <TabsContent value="members" className="space-y-4">
-          {/* Join Requests */}
           {canManage && joinRequests.length > 0 && (
             <Card className="border-warning/50">
               <CardHeader className="pb-2">
@@ -925,299 +1030,139 @@ const ProjectDetail = () => {
             </Card>
           )}
 
-          {/* Current Members */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">프로젝트 멤버 ({members.length}명)</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 flex-wrap">
+              <CardTitle className="text-sm">
+                프로젝트 멤버 ({filteredMembers.length}/{members.length}명)
+              </CardTitle>
               {canManage && (
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddMember(true)}>
-                  <UserPlus className="h-3.5 w-3.5" /> 멤버 추가
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowInviteModal(true)}>
+                    <KeyRound className="h-3.5 w-3.5" /> 초대코드 ({invites.length})
+                  </Button>
+                  <Button size="sm" className="gap-1.5 text-xs" onClick={() => setShowAddMember(true)}>
+                    <UserPlus className="h-3.5 w-3.5" /> 멤버 추가
+                  </Button>
+                </div>
               )}
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {/* Search & Filter Bar */}
+              <div className="flex flex-wrap gap-2">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    placeholder="이름 · 업체 · 연락처 검색..."
+                    className="h-8 pl-8 text-xs"
+                  />
+                </div>
+                <Select value={memberCompanyFilter} onValueChange={setMemberCompanyFilter}>
+                  <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="소속 업체" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">전체 업체</SelectItem>
+                    <SelectItem value="__none__">업체 미지정</SelectItem>
+                    {companies.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={memberRoleFilter} onValueChange={setMemberRoleFilter}>
+                  <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="전체 권한" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">전체 권한</SelectItem>
+                    {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
-                {members.map(m => (
-                  <div key={m.id} className="flex items-center justify-between p-2.5 rounded-lg border">
-                    <div className="text-sm">
-                      <span className="font-medium">{getProfileName(m.user_id)}</span>
-                      {m.company && <span className="text-muted-foreground ml-2">({m.company})</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {canManage ? (
-                        <>
-                          <span className="text-xs text-muted-foreground">권한</span>
-                          <Select value={m.role_new || 'viewer'} onValueChange={v => handleChangeRole(m.id, v)}>
-                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="역할" /></SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
-                                <SelectItem key={k} value={k}>{v}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <span className="text-xs text-muted-foreground">직책</span>
-                          <Select
-                            value={m.position_new || '_none'}
-                            onValueChange={v => handleChangePosition(m.id, v === '_none' ? null : v)}
-                          >
-                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="직책" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">직책 미지정</SelectItem>
-                              {(() => {
-                                const co = companies.find((c) => c.id === m.company_id);
-                                const allowed = positionsForCompanyType(co?.type);
-                                const keys = [...allowed];
-                                if (m.position_new && !keys.includes(m.position_new)) keys.unshift(m.position_new);
-                                return keys.map((k) => (
-                                  <SelectItem key={k} value={k}>{positionLabels[k] || k}</SelectItem>
-                                ));
-                              })()}
-                            </SelectContent>
-                          </Select>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveMember(m.id)}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Badge variant="secondary" className="text-[10px]">{roleLabels[m.role_new] || '열람자'}</Badge>
-                          {m.position_new && (
-                            <Badge variant="outline" className="text-[10px]">{positionLabels[m.position_new] || m.position_new}</Badge>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                  </div>
-                ))}
-                {members.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">멤버가 없습니다.</p>}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Companies Tab - Tree Structure */}
-        <TabsContent value="companies" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div className="space-y-0.5">
-                <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
-                <p className="text-[10px] text-muted-foreground">
-                  이 프로젝트에 <b>참여</b>하는 업체입니다. 신규 등록 시 <b>설정 &gt; 업체 관리</b>의 전역 마스터에서 검색해 선택하세요.
-                </p>
-              </div>
-              {canManage && (
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddCompany(true)}>
-                  <Plus className="h-3.5 w-3.5" /> 업체 등록
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {companies.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">등록된 업체가 없습니다.</p>
-              ) : (
-                <div className="space-y-1">
-                  {/* Render tree: top-level (no parent) sorted by type */}
-                  {(() => {
-                    const idSet = new Set(companies.map(c => c.id));
-                    // Top-level = no parent OR parent not linked to this project
-                    const topLevel = companies
-                      .filter(c => !c.parent_company_id || !idSet.has(c.parent_company_id))
-                      .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
-                    const getChildren = (parentId: string) =>
-                      companies.filter(c => c.parent_company_id === parentId)
-                        .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
-
-                    const renderCompany = (c: any, depth: number) => (
-                      <div key={c.id}>
-                        <div className={`flex items-center justify-between p-2.5 rounded-lg border ${depth === 0 ? '' : depth === 1 ? 'ml-6 border-l-2 border-l-primary/30' : 'ml-12 border-l-2 border-l-accent/30'}`}>
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              {depth > 0 && <span className="text-muted-foreground text-xs">└</span>}
-                              <span className="text-sm font-medium">{c.name}</span>
-                              <Badge variant="outline" className={`text-[10px] ${c.type === 'client' ? 'border-primary/50 text-primary' : c.type === 'gc' ? 'border-accent/50 text-accent' : ''}`}>
-                                {companyTypes[c.type] || c.type}
-                              </Badge>
-                              {c.client_safety_service && (
-                                <Badge variant="secondary" className="text-[10px]">발주처 안전용역</Badge>
-                              )}
-                            </div>
-                            {c.type !== 'client' && (
-                              <p className="text-xs text-muted-foreground">
-                                {c.construction_type || c.construction_period_start || c.construction_period_end || Number(c.construction_amount) > 0
-                                  ? [
-                                      c.construction_type,
-                                      (c.construction_period_start || c.construction_period_end)
-                                        ? `${c.construction_period_start || '미정'} ~ ${c.construction_period_end || '미정'}`
-                                        : '',
-                                      Number(c.construction_amount) > 0 ? formatKRW(c.construction_amount) : '',
-                                    ].filter(Boolean).join(' · ')
-                                  : '공사정보 없음'}
-                              </p>
-                            )}
-                          </div>
-                          {canManage && (
-                            <div className="flex items-center gap-0.5">
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCompany(c)} title="수정">
-                                <Settings2 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleUnlinkCompany(c.id)} title="프로젝트에서 제외">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                        {getChildren(c.id).map(child => renderCompany(child, depth + 1))}
-                      </div>
-                    );
-
-                    return topLevel.map(c => renderCompany(c, 0));
-                  })()}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tags Tab */}
-        <TabsContent value="tags" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">환경/장비 태그 마스터</CardTitle>
-                <div className="flex gap-2">
-                  <Button variant={tagTab === 'environment' ? 'default' : 'outline'} size="sm" onClick={() => setTagTab('environment')}>환경 태그</Button>
-                  <Button variant={tagTab === 'equipment' ? 'default' : 'outline'} size="sm" onClick={() => setTagTab('equipment')}>장비 태그</Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex gap-2">
-                  <Input value={newTag} onChange={e => setNewTag(e.target.value)} placeholder="태그 이름 입력..." />
-                  <Button onClick={handleAddTag} disabled={!newTag.trim()}>추가</Button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {envTags.filter(t => t.category === tagTab).map(t => (
-                    <Badge key={t.id} variant="secondary" className="px-2 py-1 gap-1">
-                      {t.name}
-                      {!(t as any).project_id ? (
-                        <span className="text-[9px] opacity-50 ml-1">(시스템)</span>
-                      ) : (
-                        <X className="h-3 w-3 cursor-pointer hover:text-destructive" onClick={() => handleDeleteTag(t.id)} />
-                      )}
-                    </Badge>
-                  ))}
-                  {envTags.filter(t => t.category === tagTab).length === 0 && (
-                    <p className="text-sm text-muted-foreground">등록된 태그가 없습니다.</p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Approval Routes Tab */}
-        <TabsContent value="approval-routes" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div>
-                <CardTitle className="text-sm">결재라인 템플릿</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">프로젝트 공용 결재선만 표시됩니다. 개인용 「내 결재선」은 설정 &gt; 결재선 관리에서만 본인에게 보입니다.</p>
-              </div>
-              {canManage && (
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={openNewTemplate}>
-                  <Plus className="h-3.5 w-3.5" /> 결재라인 추가
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {approvalTemplates.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">등록된 결재라인이 없습니다. 결재라인을 추가하면 회차 생성 시 자동으로 결재자가 채워집니다.</p>
-              ) : (
-                <div className="space-y-2">
-                  {approvalTemplates.map((t: any) => {
-                    const steps = Array.isArray(t.steps) ? t.steps : [];
-                    return (
-                      <div key={t.id} className="p-3 rounded-lg border space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-sm">{t.name} <Badge variant="outline" className="text-[10px] ml-1">{t.assessment_type}</Badge></span>
-                          <div className="flex items-center gap-1">
-                            {t.is_default && <Badge className="text-[10px]">기본값</Badge>}
-                            {canManage && (
-                              <>
-                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEditTemplate(t)}>
-                                  <Shield className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteTemplate(t.id)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {steps.length === 0 ? '(단계 없음)' : steps.map((s: any, i: number) => (
-                            <span key={i}>{i > 0 && ' → '}{s.step_label || s.role}{s.user_name || s.name ? ` (${s.user_name || s.name})` : ''}</span>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Invites Tab */}
-        <TabsContent value="invites" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">초대코드 관리</CardTitle>
-              {canManage && (
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowCreateInvite(true)}>
-                  <Plus className="h-3.5 w-3.5" /> 초대코드 생성
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {invites.map((inv: any) => {
-                  const linkedCompany = companies.find(c => c.id === (inv as any).company_id);
-                  const inviteLink = `${window.location.origin}/auth?invite=${inv.code}`;
+                {filteredMembers.map((m) => {
+                  const co = companies.find((c) => c.id === m.company_id);
                   return (
-                    <div key={inv.id} className="p-3 rounded-lg border space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-base">{inv.code}</span>
-                          <Badge variant="outline" className="text-[10px]">{roleLabels[inv.default_role]}</Badge>
-                          {linkedCompany && <Badge variant="secondary" className="text-[10px]">{linkedCompany.name}</Badge>}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
-                            navigator.clipboard.writeText(inviteLink);
-                            setCopiedCode(inv.code);
-                            setTimeout(() => setCopiedCode(''), 2000);
-                            toast({ title: '초대 링크가 복사되었습니다.' });
-                          }}>
-                            {copiedCode === inv.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                          </Button>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteInvite(inv.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                    <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border">
+                      <div className="text-sm min-w-[140px]">
+                        <span className="font-medium">{getProfileName(m.user_id)}</span>
+                        {(co?.name || m.company) && (
+                          <span className="text-xs text-muted-foreground ml-1.5">({co?.name || m.company})</span>
+                        )}
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        사용 {inv.use_count}/{inv.max_uses} · 만료: {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString('ko-KR') : '없음'}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {canManage ? (
+                          <>
+                            <Select
+                              value={m.company_id || '__none__'}
+                              onValueChange={(v) => handleChangeMemberCompany(m.id, v === '__none__' ? null : v)}
+                            >
+                              <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="소속 업체" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">업체 미지정</SelectItem>
+                                {companies.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select value={m.role_new || 'viewer'} onValueChange={(v) => handleChangeRole(m.id, v)}>
+                              <SelectTrigger className="h-7 w-32 text-xs"><SelectValue placeholder="역할" /></SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={m.position_new || '_none'}
+                              onValueChange={(v) => handleChangePosition(m.id, v === '_none' ? null : v)}
+                            >
+                              <SelectTrigger className="h-7 w-32 text-xs"><SelectValue placeholder="직책" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="_none">직책 미지정</SelectItem>
+                                {(() => {
+                                  const allowed = positionsForCompanyType(co?.type);
+                                  const keys = [...allowed];
+                                  if (m.position_new && !keys.includes(m.position_new)) keys.unshift(m.position_new);
+                                  return keys.map((k) => (
+                                    <SelectItem key={k} value={k}>{positionLabels[k] || k}</SelectItem>
+                                  ));
+                                })()}
+                              </SelectContent>
+                            </Select>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveMember(m.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Badge variant="secondary" className="text-[10px]">{roleLabels[m.role_new] || '열람자'}</Badge>
+                            {m.position_new && (
+                              <Badge variant="outline" className="text-[10px]">{positionLabels[m.position_new] || m.position_new}</Badge>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   );
                 })}
-                {invites.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">생성된 초대코드가 없습니다.</p>}
+                {filteredMembers.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">조건에 맞는 멤버가 없습니다.</p>
+                )}
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* 4. Integrations Hub Tab */}
+        <TabsContent value="integrations">
+          {projectId && (
+            <ProjectIntegrationsTab
+              projectId={projectId}
+              companies={companies}
+              isMaster={isMaster}
+            />
+          )}
         </TabsContent>
       </Tabs>
 
@@ -1233,12 +1178,11 @@ const ProjectDetail = () => {
         onToast={(opts) => toast(opts)}
       />
 
-      {/* Add Company Dialog — inline search (no Popover) to avoid Dialog outside-click close */}
+      {/* Add Company Dialog */}
       <Dialog open={showAddCompany} onOpenChange={setShowAddCompany}>
         <DialogContent
           className="max-h-[90vh] overflow-y-auto"
           onPointerDownOutside={(e) => {
-            // Keep dialog open when interacting with portaled Select menus
             const t = e.target as HTMLElement | null;
             if (t?.closest('[data-radix-select-content]')) e.preventDefault();
           }}
@@ -1247,11 +1191,10 @@ const ProjectDetail = () => {
             if (t?.closest('[data-radix-select-content]')) e.preventDefault();
           }}
         >
-          <DialogHeader><DialogTitle>업체 등록</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>업체 연결 · 등록</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            {/* Search-first: pick from global directory to avoid duplicates */}
             <div className="space-y-1.5">
-              <Label className="text-xs">업체명 <span className="text-muted-foreground font-normal">(전체 업체에서 검색)</span></Label>
+              <Label className="text-xs">업체명 <span className="text-muted-foreground font-normal">(전체 업체에서 검색 또는 신규 입력)</span></Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                 <Input
@@ -1270,7 +1213,9 @@ const ProjectDetail = () => {
                 {filteredGlobalCompanies.length === 0 ? (
                   <div className="p-3 text-xs text-muted-foreground">
                     {companyForm.name.trim()
-                      ? <>일치하는 업체가 없습니다. 아래 정보로 <b>등록 요청</b>을 보내세요.</>
+                      ? isMaster
+                        ? <>일치하는 업체가 없습니다. 아래 정보로 <b>즉시 신규 생성 후 연결</b>됩니다.</>
+                        : <>일치하는 업체가 없습니다. 아래 정보로 <b>등록 요청</b>을 보내세요.</>
                       : '설정에 등록된 업체가 여기에 표시됩니다.'}
                   </div>
                 ) : (
@@ -1298,72 +1243,70 @@ const ProjectDetail = () => {
               {companyForm.source_company_id ? (
                 <p className="text-[10px] text-primary">시스템 업체에서 선택됨. 이 현장 역할과 공사정보를 저장합니다.</p>
               ) : companyForm.name.trim() ? (
-                <p className="text-[10px] text-muted-foreground">목록에 없으면 등록 요청만 보냅니다. 마스터가 승인한 뒤 이 현장에 연결됩니다.</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {isMaster
+                    ? '마스터 권한으로 신규 업체를 바로 생성하고 이 현장에 연결합니다.'
+                    : '목록에 없으면 등록 요청만 보냅니다. 마스터가 승인한 뒤 이 현장에 연결됩니다.'}
+                </p>
               ) : null}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">업체 구분</Label>
-              <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>
+              <Label className="text-xs">업체 구분 (이 프로젝트 기준)</Label>
+              <Select value={companyForm.type} onValueChange={(v) => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {COMPANY_TYPE_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            {/* Parent company selection - required for contractor */}
-            {(companyForm.type === 'contractor') && (
+            {companyForm.type === 'contractor' && (
               <div className="space-y-1.5">
-                <Label className="text-xs">상위 시공사 {companyForm.type === 'contractor' && <span className="text-destructive">*필수</span>}</Label>
-                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={v => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
+                <Label className="text-xs">상위 시공사 <span className="text-destructive">*필수</span></Label>
+                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={(v) => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
                   <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">(선택 안 함)</SelectItem>
-                    {(companyForm.source_company_id
+                    {(companyForm.source_company_id || isMaster
                       ? getParentCandidates('contractor')
                       : getParentCandidates('contractor').filter((c) => c.inProject)
-                    ).map(c => (
+                    ).map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name} (시공사){!c.inProject ? ' · 설정에서 연결' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {(companyForm.source_company_id
-                  ? getParentCandidates('contractor')
-                  : getParentCandidates('contractor').filter((c) => c.inProject)
-                ).length === 0 && (
-                  <p className="text-[10px] text-warning">이 현장에 연결된 시공사가 없습니다. 시공사를 먼저 연결하세요.</p>
-                )}
               </div>
             )}
             {companyForm.type === 'gc' && (
               <div className="space-y-1.5">
                 <Label className="text-xs">상위 발주처 (선택)</Label>
-                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={v => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
+                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={(v) => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
                   <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">(선택 안 함)</SelectItem>
-                    {getParentCandidates('gc').map(c => (
+                    {getParentCandidates('gc').map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name} (발주처){!c.inProject ? ' · 설정에서 연결' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {getParentCandidates('gc').length === 0 && (
-                  <p className="text-[10px] text-muted-foreground">설정 &gt; 업체 관리에 발주처를 등록하면 여기서 선택할 수 있습니다.</p>
-                )}
               </div>
             )}
             {!companyForm.source_company_id && (
               <>
-                <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
-                <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
-                <Input placeholder="신청자 이름" value={companyForm.requester_name} onChange={e => setCompanyForm({ ...companyForm, requester_name: e.target.value })} />
-                <Textarea placeholder="메모 (선택)" value={companyForm.memo} onChange={e => setCompanyForm({ ...companyForm, memo: e.target.value })} />
+                <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={(e) => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
+                <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={(e) => setCompanyForm({ ...companyForm, contact: e.target.value })} />
+                {!isMaster && (
+                  <>
+                    <Input placeholder="신청자 이름" value={companyForm.requester_name} onChange={(e) => setCompanyForm({ ...companyForm, requester_name: e.target.value })} />
+                    <Textarea placeholder="메모 (선택)" value={companyForm.memo} onChange={(e) => setCompanyForm({ ...companyForm, memo: e.target.value })} />
+                  </>
+                )}
               </>
             )}
-            {companyForm.source_company_id && (
+            {(companyForm.source_company_id || isMaster) && (
               <>
                 <ConstructionFields
                   value={constructionOf(companyForm)}
@@ -1382,7 +1325,11 @@ const ProjectDetail = () => {
               </>
             )}
             <Button onClick={handleAddCompany} className="w-full">
-              {companyForm.source_company_id ? '이 현장에 연결' : '등록 요청'}
+              {companyForm.source_company_id
+                ? '이 현장에 연결'
+                : isMaster
+                  ? '신규 업체 생성 및 연결'
+                  : '등록 요청'}
             </Button>
           </div>
         </DialogContent>
@@ -1400,7 +1347,7 @@ const ProjectDetail = () => {
             </div>
             <div>
               <Label className="text-xs">유형 (이 프로젝트 기준)</Label>
-              <Select value={editForm.type} onValueChange={v => setEditForm({ ...editForm, type: v, parent_company_id: '' })}>
+              <Select value={editForm.type} onValueChange={(v) => setEditForm({ ...editForm, type: v, parent_company_id: '' })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {COMPANY_TYPE_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
@@ -1410,22 +1357,17 @@ const ProjectDetail = () => {
             {(editForm.type === 'gc' || editForm.type === 'contractor' || editForm.type === 'vendor') && (
               <div>
                 <Label className="text-xs">상위 업체 (선택)</Label>
-                <Select value={editForm.parent_company_id || '__none__'} onValueChange={v => setEditForm({ ...editForm, parent_company_id: v === '__none__' ? '' : v })}>
+                <Select value={editForm.parent_company_id || '__none__'} onValueChange={(v) => setEditForm({ ...editForm, parent_company_id: v === '__none__' ? '' : v })}>
                   <SelectTrigger><SelectValue placeholder="없음" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">없음 (최상위)</SelectItem>
-                    {getParentCandidates(editForm.type, editingCompany?.id).map(c => (
+                    {getParentCandidates(editForm.type, editingCompany?.id).map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name} ({companyTypes[c.type] || c.type}){!c.inProject ? ' · 설정에서 연결' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {getParentCandidates(editForm.type, editingCompany?.id).length === 0 && (
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    설정 &gt; 업체 관리에 상위 유형(발주처/시공사)을 등록하면 여기서 선택할 수 있습니다. 선택 시 이 프로젝트에도 자동 연결됩니다.
-                  </p>
-                )}
               </div>
             )}
             <ConstructionFields
@@ -1447,140 +1389,90 @@ const ProjectDetail = () => {
         </DialogContent>
       </Dialog>
 
-
-      {/* Create Invite Dialog */}
-      <Dialog open={showCreateInvite} onOpenChange={setShowCreateInvite}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>초대코드 생성</DialogTitle></DialogHeader>
+      {/* Invites Modal (integrated from former standalone tab) */}
+      <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>초대코드 관리</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>권한</Label>
-              <Select value={inviteForm.role} onValueChange={v => setInviteForm({ ...inviteForm, role: v, company_id: '' })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>연결 업체 <span className="text-muted-foreground font-normal text-xs">(선택)</span></Label>
-              <Select value={inviteForm.company_id || '__none__'} onValueChange={v => setInviteForm({ ...inviteForm, company_id: v === '__none__' ? '' : v })}>
-                <SelectTrigger><SelectValue placeholder="업체 선택" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
-                  {companies
-                    .filter(c => {
-                      if (inviteForm.role === 'worker' || inviteForm.role === 'site_manager' || inviteForm.role === 'supervisor' || inviteForm.role === 'site_supervisor') {
-                        return c.type === 'contractor' || c.type === 'gc' || c.type === 'vendor';
-                      }
-                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc' || c.type === 'client';
-                      return true;
-                    })
-                    .map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-muted-foreground">가입 시 자동으로 해당 업체 소속으로 설정됩니다.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>최대 사용 횟수</Label>
-                <Input type="number" min={1} value={inviteForm.max_uses} onChange={e => setInviteForm({ ...inviteForm, max_uses: parseInt(e.target.value) || 1 })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>유효기간 (일)</Label>
-                <Input type="number" min={1} value={inviteForm.expires_days} onChange={e => setInviteForm({ ...inviteForm, expires_days: parseInt(e.target.value) || 7 })} />
-              </div>
-            </div>
-            <Button onClick={handleCreateInvite} className="w-full">초대코드 생성</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add/Edit Approval Template Dialog */}
-      <Dialog open={showAddTemplate} onOpenChange={(open) => { setShowAddTemplate(open); if (!open) setEditingTemplateId(null); }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editingTemplateId ? '결재라인 수정' : '결재라인 추가'}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>결재라인 이름</Label>
-              <Input value={templateForm.name} onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))} placeholder="예: 기본 결재라인" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>평가 유형</Label>
-                <Select value={templateForm.assessment_type} onValueChange={v => setTemplateForm(prev => ({ ...prev, assessment_type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="최초">최초평가</SelectItem>
-                    <SelectItem value="정기">정기평가</SelectItem>
-                    <SelectItem value="수시">수시평가</SelectItem>
-                    <SelectItem value="상시">상시평가</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-end gap-2 pb-0.5">
-                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                  <input type="checkbox" checked={templateForm.is_default} onChange={e => setTemplateForm(prev => ({ ...prev, is_default: e.target.checked }))} className="rounded" />
-                  기본값으로 설정
-                </label>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>결재 단계</Label>
-                <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={addTemplateStep}>
-                  <Plus className="h-3 w-3" /> 단계 추가
-                </Button>
-              </div>
-              {templateForm.steps.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4">단계를 추가해주세요.</p>
-              )}
-              {templateForm.steps.map((step, idx) => (
-                <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
-                  <span className="text-xs font-medium w-6 text-center">{idx + 1}</span>
-                  <Select value={step.step_label} onValueChange={v => updateTemplateStep(idx, 'step_label', v)}>
-                    <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder="구분 선택" /></SelectTrigger>
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+              <p className="text-xs font-semibold">새 초대코드 생성</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">권한</Label>
+                  <Select value={inviteForm.role} onValueChange={(v) => setInviteForm({ ...inviteForm, role: v, company_id: '' })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {STEP_LABEL_OPTIONS.map(o => (
-                        <SelectItem key={o.label} value={o.label}>{o.label}</SelectItem>
+                      {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select value={step.user_id || '__none__'} onValueChange={v => updateTemplateStep(idx, 'user_id', v === '__none__' ? '' : v)}>
-                    <SelectTrigger className="h-7 text-xs flex-1">
-                      <SelectValue placeholder="결재자 선택">{step.user_name || '(미지정)'}</SelectValue>
-                    </SelectTrigger>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">연결 업체</Label>
+                  <Select value={inviteForm.company_id || '__none__'} onValueChange={(v) => setInviteForm({ ...inviteForm, company_id: v === '__none__' ? '' : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="업체 선택" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">(미지정)</SelectItem>
-                      {members.map(m => {
-                        const profile = allProfiles.find(p => p.user_id === m.user_id);
-                        const name = profile?.display_name || m.user_id.slice(0, 8);
-                        return (
-                          <SelectItem key={m.user_id} value={m.user_id}>
-                            {name} {m.company ? `(${m.company})` : ''}
-                          </SelectItem>
-                        );
-                      })}
+                      <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
+                      {companies.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <Badge variant="outline" className="text-[10px] whitespace-nowrap">
-                    {POSITION_LABELS[step.position] || step.position || '미지정'}
-                  </Badge>
-                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive shrink-0" onClick={() => removeTemplateStep(idx)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
                 </div>
-              ))}
+                <div className="space-y-1">
+                  <Label className="text-xs">최대 사용 횟수</Label>
+                  <Input className="h-8 text-xs" type="number" min={1} value={inviteForm.max_uses} onChange={(e) => setInviteForm({ ...inviteForm, max_uses: parseInt(e.target.value) || 1 })} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">유효기간 (일)</Label>
+                  <Input className="h-8 text-xs" type="number" min={1} value={inviteForm.expires_days} onChange={(e) => setInviteForm({ ...inviteForm, expires_days: parseInt(e.target.value) || 7 })} />
+                </div>
+              </div>
+              <Button size="sm" onClick={handleCreateInvite} className="w-full h-8 text-xs">초대코드 생성</Button>
             </div>
 
-            <Button onClick={handleSaveTemplate} className="w-full">
-              {editingTemplateId ? '수정' : '추가'}
-            </Button>
+            <div className="space-y-2">
+              {invites.map((inv: any) => {
+                const linkedCompany = companies.find((c) => c.id === inv.company_id);
+                const inviteLink = `${window.location.origin}/auth?invite=${inv.code}`;
+                return (
+                  <div key={inv.id} className="p-2.5 rounded-lg border space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono font-bold text-sm">{inv.code}</span>
+                        <Badge variant="outline" className="text-[10px]">{roleLabels[inv.default_role]}</Badge>
+                        {linkedCompany && <Badge variant="secondary" className="text-[10px]">{linkedCompany.name}</Badge>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(inviteLink);
+                            setCopiedCode(inv.code);
+                            setTimeout(() => setCopiedCode(''), 2000);
+                            toast({ title: '초대 링크가 복사되었습니다.' });
+                          }}
+                        >
+                          {copiedCode === inv.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteInvite(inv.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      사용 {inv.use_count}/{inv.max_uses} · 만료: {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString('ko-KR') : '없음'}
+                    </div>
+                  </div>
+                );
+              })}
+              {invites.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">생성된 초대코드가 없습니다.</p>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

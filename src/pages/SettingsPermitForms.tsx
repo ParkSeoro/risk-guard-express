@@ -404,7 +404,28 @@ export default function SettingsPermitForms() {
       return;
     }
     setCloning(true);
-    const existingTypes = new Set(rows.map((r) => r.permit_type));
+
+    // If non-global scope already has templates, allow 1-click replacement with the newly picked standard
+    const isReplacing = !isGlobalScope && rows.length > 0;
+    if (isReplacing) {
+      if (!confirm('기존에 지정된 이 대상의 허가서 양식을 선택한 기준 양식으로 교체할까요?')) {
+        setCloning(false);
+        return;
+      }
+      const existingIds = rows.map((r) => r.id);
+      const { error: delErr } = await supabase
+        .from('permit_form_templates')
+        .update({ is_deleted: true, is_active: false })
+        .in('id', existingIds);
+      if (delErr) {
+        setCloning(false);
+        toast({ title: '기존 양식 교체 실패', description: delErr.message, variant: 'destructive' });
+        return;
+      }
+      setSelected(null);
+    }
+
+    const existingTypes = isReplacing ? new Set<PermitType>() : new Set(rows.map((r) => r.permit_type));
     const toCreate = PERMIT_KIND_CLONE_META.filter((m) => !existingTypes.has(m.permit_type));
     if (toCreate.length === 0) {
       setCloning(false);
@@ -415,13 +436,16 @@ export default function SettingsPermitForms() {
       return;
     }
 
+    // Unique short suffix prevents unique-key (project_id, code, version) collisions with soft-deleted rows
+    const uniqSuffix = Date.now().toString(36).slice(-4).toUpperCase();
+
     let inserts: any[];
     if (isGlobalScope) {
       const layout = buildCloneLayoutJson();
       inserts = toCreate.map((m) => ({
         project_id: null,
         company_id: null,
-        code: `STANDARD-${m.codeSuffix}`,
+        code: `STANDARD-${m.codeSuffix}-${uniqSuffix}`,
         name: `기본 표준 · ${m.name}`,
         version: '1',
         permit_type: m.permit_type,
@@ -438,14 +462,14 @@ export default function SettingsPermitForms() {
       const layouts = await resolveCloneLayoutByType();
       const projName = projects.find((p) => p.id === dbProjectId)?.name || '';
       const companyName = companies.find((c) => c.id === dbCompanyId)?.name || '';
-      const prefix = (companyName || projName || 'PRJ').slice(0, 12).replace(/\s+/g, '');
+      const prefix = (companyName || projName || 'PRJ').slice(0, 10).replace(/\s+/g, '');
       const pickedSource = cloneSourceId !== '__default__'
         ? globalStandards.find((s) => s.id === cloneSourceId)
         : null;
       inserts = toCreate.map((m) => ({
         project_id: dbProjectId,
         company_id: dbCompanyId,
-        code: `${prefix}-${m.codeSuffix}`.slice(0, 40),
+        code: `${prefix}-${m.codeSuffix}-${uniqSuffix}`.slice(0, 40),
         name: pickedSource ? `${pickedSource.name} (${m.permit_type === 'general' ? '일반' : PERMIT_TYPE_LABEL[m.permit_type]})` : m.name,
         version: '1',
         permit_type: m.permit_type,
@@ -469,7 +493,9 @@ export default function SettingsPermitForms() {
     toast({
       title: isGlobalScope
         ? `기본 표준 허가서 ${inserts.length}종을 만들었습니다.`
-        : `허가서 양식 ${inserts.length}종을 복제·지정했습니다.`,
+        : isReplacing
+          ? `허가서 양식 ${inserts.length}종을 선택한 기준 양식으로 교체했습니다.`
+          : `허가서 양식 ${inserts.length}종을 복제·지정했습니다.`,
       description: isGlobalScope
         ? '복제하지 않은 모든 현장·회사 허가서에 적용됩니다.'
         : dbProjectId
@@ -588,8 +614,12 @@ export default function SettingsPermitForms() {
           <Button onClick={cloneFromStandard} disabled={!companyId || cloning} className="gap-1.5">
             <Copy className="h-4 w-4" />
             {cloning
-              ? (isGlobalScope ? '생성 중…' : '복제 중…')
-              : (isGlobalScope ? '기본 표준 양식 만들기' : '선택 양식으로 복제 · 지정')}
+              ? (isGlobalScope ? '생성 중…' : '적용 중…')
+              : isGlobalScope
+                ? '기본 표준 양식 만들기'
+                : rows.length > 0
+                  ? '선택 양식으로 교체'
+                  : '선택 양식으로 복제 · 지정'}
           </Button>
         </CardContent>
       </Card>

@@ -79,8 +79,26 @@ export function pickCheckInGpsFix(
   return (b.at ?? 0) >= (a.at ?? 0) ? b : a;
 }
 
-export function readFreshCheckInFix(
-  timeoutMs = 12_000,
+function toCheckInFix(
+  rawLat: number,
+  rawLng: number,
+  accuracy: number,
+  cal?: GpsCalibration | null,
+): CheckInGpsFix {
+  const aligned = applyGpsCalibration(rawLat, rawLng, cal);
+  return {
+    lat: aligned.lat,
+    lng: aligned.lng,
+    raw_lat: rawLat,
+    raw_lng: rawLng,
+    accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+    at: Date.now(),
+    calibrated: aligned.calibrated,
+  };
+}
+
+function getBrowserFix(
+  opts: PositionOptions,
   cal?: GpsCalibration | null,
 ): Promise<CheckInGpsFix | null> {
   return new Promise((resolve) => {
@@ -89,22 +107,27 @@ export function readFreshCheckInFix(
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const rawLat = pos.coords.latitude;
-        const rawLng = pos.coords.longitude;
-        const aligned = applyGpsCalibration(rawLat, rawLng, cal);
-        resolve({
-          lat: aligned.lat,
-          lng: aligned.lng,
-          raw_lat: rawLat,
-          raw_lng: rawLng,
-          accuracy: pos.coords.accuracy,
-          at: Date.now(),
-          calibrated: aligned.calibrated,
-        });
-      },
+      (pos) => resolve(toCheckInFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, cal)),
       () => resolve(null),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs },
+      opts,
     );
   });
+}
+
+export async function readFreshCheckInFix(
+  timeoutMs = 12_000,
+  cal?: GpsCalibration | null,
+): Promise<CheckInGpsFix | null> {
+  // 1) High-accuracy fresh fix (GPS satellite)
+  const precise = await getBrowserFix(
+    { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs },
+    cal,
+  );
+  if (precise) return precise;
+
+  // 2) Fallback: network/Wi-Fi assisted fix (indoor / steel plant / older Android phones)
+  return getBrowserFix(
+    { enableHighAccuracy: false, maximumAge: 30_000, timeout: Math.min(6_000, timeoutMs) },
+    cal,
+  );
 }

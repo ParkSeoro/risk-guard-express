@@ -111,6 +111,7 @@ export default function WorkerDailyHome({
   const [gpsCal, setGpsCal] = useState<GpsCalibration | null>(null);
   /** One-shot / polled fix for check-in distance UI before full tracking starts. */
   const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number; raw_lat?: number; raw_lng?: number } | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
   const [probeNonce, setProbeNonce] = useState(0);
   const [checkInFences, setCheckInFences] = useState<SiteTrackingFence[]>([]);
   const [siteOutlines, setSiteOutlines] = useState<SiteBoundary[]>([]);
@@ -458,50 +459,114 @@ export default function WorkerDailyHome({
     }
   }, [isCheckedIn, ackDone, diagnosticsOnly, ackHydrated]);
 
-  // Fresh high-accuracy probe for check-in. Stale coarse GPS (60s cache) was
-  // showing workers as outside while they stood on the pad. Watch briefly then stop.
+  // Fresh high-accuracy probe for check-in with network/native fallback & explicit error reporting.
   useEffect(() => {
     if (!projectId || gpsTracking) return;
     if (!diagnosticsOnly && isCheckedIn) return;
-    if (!("geolocation" in navigator)) return;
     let cancelled = false;
+    let gotAnyFix = false;
     let watchId: number | null = null;
-    const apply = (pos: GeolocationPosition) => {
+    setProbeError(null);
+
+    const applyCoords = (rawLat: number, rawLng: number, accuracy: number) => {
       if (cancelled) return;
-      const rawLat = pos.coords.latitude;
-      const rawLng = pos.coords.longitude;
+      gotAnyFix = true;
+      setProbeError(null);
       const aligned = applyGpsCalibration(rawLat, rawLng, gpsCal);
       const next = {
         lat: aligned.lat,
         lng: aligned.lng,
         raw_lat: rawLat,
         raw_lng: rawLng,
-        accuracy: pos.coords.accuracy,
+        accuracy,
       };
       setProbeFix((prev) => {
         if (!prev || next.accuracy <= prev.accuracy) return next;
         return prev;
       });
     };
-    navigator.geolocation.getCurrentPosition(apply, () => undefined, {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 15_000,
-    });
-    watchId = navigator.geolocation.watchPosition(apply, () => undefined, {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 15_000,
-    });
+
+    const apply = (pos: GeolocationPosition) => {
+      applyCoords(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    };
+
+    const describeGeoError = (code?: number): string => {
+      if (code === 1) {
+        return "위치 권한이 차단되어 있습니다. 휴대폰 설정에서 위치 권한을 허용해 주세요.";
+      }
+      if (code === 2) {
+        return "휴대폰 GPS(위치 서비스)가 꺼져 있거나 신호를 받을 수 없습니다.";
+      }
+      return "GPS 신호가 약합니다. 실외로 이동 후 「위치 다시 잡기」를 눌러 주세요.";
+    };
+
+    const runCoarseFallback = (origCode?: number) => {
+      if (cancelled || gotAnyFix) return;
+      if (origCode === 1) {
+        setProbeError(describeGeoError(1));
+        return;
+      }
+      if (!("geolocation" in navigator)) {
+        setProbeError(describeGeoError(origCode));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        apply,
+        (err2) => {
+          if (!cancelled && !gotAnyFix) {
+            setProbeError(describeGeoError(err2?.code ?? origCode));
+          }
+        },
+        { enableHighAccuracy: false, maximumAge: 30_000, timeout: 8_000 },
+      );
+    };
+
+    if (isNativeApp()) {
+      void (async () => {
+        try {
+          const { Geolocation } = await import("@capacitor/geolocation");
+          const pos = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 10_000,
+          });
+          applyCoords(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        } catch {
+          // WebView geolocation below also runs and handles fallback/error display
+        }
+      })();
+    }
+
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        apply,
+        (err) => runCoarseFallback(err?.code),
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10_000 },
+      );
+      watchId = navigator.geolocation.watchPosition(
+        apply,
+        (err) => {
+          if (err?.code === 1 && !cancelled && !gotAnyFix) {
+            setProbeError(describeGeoError(1));
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
+      );
+    } else if (!isNativeApp()) {
+      setProbeError("이 기기/브라우저는 GPS 위치를 지원하지 않습니다.");
+    }
+
     const stop = window.setTimeout(() => {
-      if (watchId != null) {
+      if (watchId != null && "geolocation" in navigator) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
+      }
+      if (!cancelled && !gotAnyFix) {
+        runCoarseFallback(3);
       }
     }, 12_000);
     return () => {
       cancelled = true;
-      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      if (watchId != null && "geolocation" in navigator) navigator.geolocation.clearWatch(watchId);
       window.clearTimeout(stop);
     };
   }, [projectId, isCheckedIn, gpsTracking, probeNonce, diagnosticsOnly, gpsCal]);
@@ -957,7 +1022,7 @@ export default function WorkerDailyHome({
             <>
               <div
                 className={`text-xl font-extrabold tracking-tight ${
-                  !hasFence || (!effectiveFix && gpsError)
+                  !hasFence || (!effectiveFix && (gpsError || probeError))
                     ? "text-destructive"
                     : !effectiveFix
                       ? "text-slate-800"
@@ -966,7 +1031,7 @@ export default function WorkerDailyHome({
                         : "text-amber-700"
                 }`}
               >
-                {!hasFence || (!effectiveFix && gpsError)
+                {!hasFence || (!effectiveFix && (gpsError || probeError))
                   ? "위치 확인 실패"
                   : !effectiveFix
                     ? "위치 확인 중"
@@ -974,12 +1039,18 @@ export default function WorkerDailyHome({
                       ? "현장 안"
                       : "현장 밖"}
               </div>
+              {!effectiveFix && (probeError || gpsError) && (
+                <p className="text-xs text-destructive leading-relaxed">
+                  {probeError || gpsError}
+                </p>
+              )}
               <Button
                 size="sm"
                 variant="outline"
                 className="w-full h-11 text-sm font-semibold border-slate-300 text-slate-900"
                 onClick={() => {
                   setProbeFix(null);
+                  setProbeError(null);
                   setProbeNonce((n) => n + 1);
                 }}
               >

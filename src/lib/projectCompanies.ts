@@ -52,7 +52,8 @@ export async function fetchProjectCompanies(
       return {
         ...c,
         type: l.role_in_project || c.type || null,
-        parent_company_id: l.parent_company_id ?? c.parent_company_id ?? null,
+        // Strictly project-scoped parent: NEVER leak global companies.parent_company_id from another project.
+        parent_company_id: l.parent_company_id ?? null,
       } as ProjectCompany;
     })
     .filter((c: ProjectCompany | null): c is ProjectCompany => !!c && (opts?.includeDeleted || c.is_deleted !== true))

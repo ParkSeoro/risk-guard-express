@@ -153,6 +153,16 @@ async function callGeminiVision(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VISION_TIMEOUT_MS);
   try {
+    const generationConfig: Record<string, unknown> = {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+      maxOutputTokens: 2048,
+    };
+    // Disable thinking tokens on Gemini 2.5 models so JSON output is never truncated
+    if (/gemini-2\.5/i.test(model)) {
+      generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -161,11 +171,7 @@ async function callGeminiVision(
       },
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          maxOutputTokens: 1024,
-        },
+        generationConfig,
       }),
       signal: controller.signal,
     });
@@ -337,10 +343,16 @@ Deno.serve(async (req) => {
   const rawSuggested = typeof p.suggested_key === "string" ? p.suggested_key.trim() : "";
   const suggestedKey = rawSuggested && allowedKeys.has(rawSuggested) ? rawSuggested : null;
 
+  const cleanStr = (v: unknown, maxLen = 140): string | null => {
+    if (typeof v !== "string") return null;
+    const s = v.trim();
+    if (!s || s.toLowerCase() === "null" || s.toLowerCase() === "none") return null;
+    return s.slice(0, maxLen);
+  };
+
+  const rawCategory = cleanStr(p.doc_category_label, 40);
   const docCategoryLabel =
-    typeof p.doc_category_label === "string" && p.doc_category_label.trim()
-      ? p.doc_category_label.trim()
-      : "기타";
+    rawCategory && !rawCategory.includes("가장 가까운") ? rawCategory : "기타";
 
   const issueDate = normalizeYmd(p.issue_date);
   let expiryDate = normalizeYmd(p.expiry_date);
@@ -352,8 +364,7 @@ Deno.serve(async (req) => {
       ? Math.trunc(eqYearRaw)
       : null;
 
-  let notes =
-    typeof p.notes === "string" && p.notes.trim() ? p.notes.trim().slice(0, 140) : null;
+  let notes = cleanStr(p.notes, 140);
 
   // Non-Destructive Testing (비파괴검사) rule:
   // - Never treat inspection date (issue_date) itself as expiry_date

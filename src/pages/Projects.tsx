@@ -18,6 +18,7 @@ import { Calendar, Building2, Users, Tag, Plus, Pencil, Trash2, Shield, ChevronD
 import { useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
 import { geocodeKoreanAddress } from "@/lib/koreanLocationService";
+import { syncProjectCompanyColumns } from "@/lib/projectCompanies";
 
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
@@ -137,6 +138,7 @@ const Projects = () => {
             onConflict: 'project_id,company_id',
           });
         }
+        await syncProjectCompanyColumns(data.id, form.gc_company_ids[0] || null);
         // Add creator as project_admin without forcing client-only OWNER_SM position
         const { error: memberError } = await supabase.from('project_members').insert([{
           project_id: data.id,
@@ -223,6 +225,7 @@ const Projects = () => {
           onConflict: 'project_id,company_id',
         });
       }
+      await syncProjectCompanyColumns(editProject.id, form.gc_company_ids[0] || null);
       toast({ title: '프로젝트가 수정되었습니다.' });
       log('수정', 'project', editProject.id);
       setEditProject(null);

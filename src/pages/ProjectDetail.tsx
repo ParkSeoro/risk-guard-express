@@ -33,6 +33,8 @@ import { constructionFormFromRow, emptyConstructionForm, upsertProjectConstructi
 import { submitCompanyRegistration } from '@/lib/companyRegistration';
 import { formatKRW } from '@/lib/safetyCost';
 import { ConstructionInfoMissingBanner } from '@/components/ConstructionInfoMissingBanner';
+import ProjectMemberMultiPickerDialog from '@/components/project/ProjectMemberMultiPickerDialog';
+import { syncProjectCompanyColumns } from '@/lib/projectCompanies';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -98,7 +100,7 @@ const ProjectDetail = () => {
     name: string; assessment_type: string; is_default: boolean;
     steps: { step_order: number; step_label: string; position: string; user_id: string; user_name: string; company_name: string }[];
   }>({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
-  const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; position: string }[]>([]);
+  const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; phone?: string | null; position: string }[]>([]);
 
   // Environment/Equipment Tags
   const [envTags, setEnvTags] = useState<{ id: string; name: string; category: string }[]>([]);
@@ -338,6 +340,20 @@ const ProjectDetail = () => {
       const { error } = await supabase.from('projects').update(updateData).eq('id', projectId);
       if (error) throw error;
 
+      // Keep project_companies SSOT & projects.gc_company_ids in sync when primary GC is chosen
+      if (projectForm.gc_company_id) {
+        await (supabase as any).from('project_companies').upsert(
+          {
+            project_id: projectId,
+            company_id: projectForm.gc_company_id,
+            role_in_project: 'gc',
+            is_deleted: false,
+          },
+          { onConflict: 'project_id,company_id' },
+        );
+      }
+      await syncProjectCompanyColumns(projectId, projectForm.gc_company_id || null);
+
       toast({
         title: '프로젝트 기본정보가 저장되었습니다.',
         description: geocodeFailed ? '주소는 저장되었으나 좌표 변환에 실패했습니다. 도시명 또는 도로명을 확인해주세요.' : undefined,
@@ -556,6 +572,7 @@ const ProjectDetail = () => {
     if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
     const constructionErr = await upsertProjectConstruction(companyForm.source_company_id, projectId, constructionOf(companyForm));
     if (constructionErr) { toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' }); return; }
+    await syncProjectCompanyColumns(projectId);
     toast({ title: '업체가 프로젝트에 연결되었습니다.' });
     setShowAddCompany(false);
     setCompanyForm(blankCompanyForm());
@@ -575,6 +592,7 @@ const ProjectDetail = () => {
     const { error } = await (supabase as any).from('project_companies')
       .delete().eq('project_id', projectId).eq('company_id', id);
     if (error) { toast({ title: '제외 실패', description: error.message, variant: 'destructive' }); return; }
+    await syncProjectCompanyColumns(projectId);
     toast({ title: '프로젝트에서 제외되었습니다.' });
     await log('업체 프로젝트 제외', 'project_company', id, projectId);
     fetchAll();
@@ -617,6 +635,7 @@ const ProjectDetail = () => {
     if (linkErr) { toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' }); return; }
     const constructionErr = await upsertProjectConstruction(editingCompany.id, projectId, constructionOf(editForm));
     if (constructionErr) { toast({ title: '공사정보 저장 실패', description: constructionErr, variant: 'destructive' }); return; }
+    await syncProjectCompanyColumns(projectId);
     toast({ title: '이 현장의 업체 정보를 저장했습니다.' });
     await log('업체 수정', 'project_company', editingCompany.id, projectId);
     setEditingCompany(null);
@@ -1202,62 +1221,17 @@ const ProjectDetail = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Add Member Dialog */}
-      <Dialog open={showAddMember} onOpenChange={setShowAddMember}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>멤버 추가</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>사용자 선택</Label>
-              <Select onValueChange={(v) => {
-                setMemberUserId(v);
-                // Auto-fill company from user's profile company name → match to project companies
-                const p = allProfiles.find(x => x.user_id === v);
-                if (p?.company) {
-                  const match = companies.find(c => (c.name || '').trim() === (p.company || '').trim());
-                  if (match) setMemberCompanyId(match.id);
-                }
-              }}>
-                <SelectTrigger><SelectValue placeholder="사용자 선택" /></SelectTrigger>
-                <SelectContent>
-                  {allProfiles.filter(p => !members.some(m => m.user_id === p.user_id)).map(p => (
-                    <SelectItem key={p.user_id} value={p.user_id}>{p.display_name} ({p.company})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>권한</Label>
-              <Select value={memberRole} onValueChange={setMemberRole}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>
-                소속 업체
-                {['site_manager', 'supervisor', 'site_supervisor', 'worker', 'contractor'].includes(memberRole) && (
-                  <span className="text-destructive ml-1">*</span>
-                )}
-              </Label>
-              <Select value={memberCompanyId} onValueChange={setMemberCompanyId}>
-                <SelectTrigger><SelectValue placeholder="업체 선택 (선택 사항)" /></SelectTrigger>
-                <SelectContent>
-                  {companies.length === 0 && (
-                    <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다. 먼저 "업체 관리" 탭에서 등록하세요.</div>
-                  )}
-                  {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={handleAddMember} className="w-full">추가</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Add Member Dialog — Searchable Multi-Select Picker */}
+      <ProjectMemberMultiPickerDialog
+        open={showAddMember}
+        onOpenChange={setShowAddMember}
+        projectId={projectId || ''}
+        allProfiles={allProfiles}
+        existingMemberUserIds={members.map((m) => m.user_id)}
+        companies={companies}
+        onAdded={fetchAll}
+        onToast={(opts) => toast(opts)}
+      />
 
       {/* Add Company Dialog — inline search (no Popover) to avoid Dialog outside-click close */}
       <Dialog open={showAddCompany} onOpenChange={setShowAddCompany}>

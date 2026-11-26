@@ -29,7 +29,8 @@ export default function MobileProjectSwitcher({
     return projects.filter((p) => (p.name || "").toLowerCase().includes(needle));
   }, [projects, q]);
 
-  if (projects.length === 0) return null;
+  // 소속 현장이 1곳뿐이면 전환할 현장이 없으므로 스위처와 '기본으로 지정' 버튼을 숨긴다.
+  if (projects.length <= 1) return null;
 
   const saveDefault = async () => {
     if (!user?.id || !projectId || preview.isPreview) return;

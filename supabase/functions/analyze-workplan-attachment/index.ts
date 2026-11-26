@@ -52,6 +52,14 @@ function normalizeYmd(raw: unknown): string | null {
   return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+function addMonthsYmd(ymd: string, months: number): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, d));
+  if (!Number.isFinite(dt.getTime())) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
 function buildWorkPlanOcrPrompt(opts: {
   fileName: string;
   availableSlots: AvailableSlot[];
@@ -80,6 +88,7 @@ function buildWorkPlanOcrPrompt(opts: {
 1. 이미지에 보이지 않는 날짜·숫자·정격하중·상호를 절대 지어내거나 추정·보간하지 마세요. 확인되지 않으면 null로 반환하세요.
 2. suggested_key는 아래 허용 목록에 있는 key 중 하나만 고르거나, 확실치 않으면 null을 반환하세요.
 3. 크레인/장비 제원표·하중표(Load Chart)인데 현재 페이지에 표지/목차만 있고 정격하중표가 안 보이면 needs_page_select를 true로 설정하세요.
+4. 비파괴검사성적서(NDT: MT/UT/PT/RT 등)처럼 유효기간(만료일)이 별도로 적혀 있지 않고 "검사일/발행일"만 있는 문서는 절대 검사일을 expiry_date에 넣지 마세요. 검사일은 issue_date에, expiry_date는 null로 반환하세요.
 
 [허용 첨부 슬롯 목록]
 ${slotList || '(목록 없음 — suggested_key는 null)'}
@@ -91,11 +100,12 @@ ${slotList || '(목록 없음 — suggested_key는 null)'}
 반드시 아래 JSON 객체만 반환하세요:
 {
   "suggested_key": "허용 목록의 key 또는 null",
-  "doc_category_label": "사업자등록증 | 보험가입증명서 | 안전검사증 | 운전면허증/자격증 | 차량등록증 | 장비제원표 | 작업반경도 | 지반검토서 | 리깅플랜 | 기타 중 가장 가까운 한글명",
+  "doc_category_label": "사업자등록증 | 보험가입증명서 | 안전검사증 | 비파괴검사성적서 | 운전면허증/자격증 | 차량등록증 | 장비제원표 | 작업반경도 | 지반검토서 | 리깅플랜 | 기타 중 가장 가까운 한글명",
   "confidence": 0.0~1.0,
   "company_or_holder": "상호 또는 성명(면허/자격증) 또는 null",
-  "issue_date": "YYYY-MM-DD 또는 null",
-  "expiry_date": "YYYY-MM-DD (보험종료일/검사유효기간/면허적성검사 만료일) 또는 null",
+  "issue_date": "YYYY-MM-DD (발급일/검사일) 또는 null",
+  "expiry_date": "YYYY-MM-DD (명시된 보험종료일/검사유효기간/면허적성검사 만료일 — 검사일 자체는 넣지 말 것) 또는 null",
+  "equipment_year": 4자리 숫자(문서에 장비 제조년도/연식이 명시된 경우만, 예: 2018) 또는 null,
   "reg_or_cert_no": "사업자번호/등록번호/검사번호/면허번호 또는 null",
   "rated_capacity_ton": 숫자(톤 단위 정격하중이 명시된 경우만) 또는 null,
   "summary": "문서 핵심 내용 1줄 한국어 요약 (30자 내외)",
@@ -327,9 +337,53 @@ Deno.serve(async (req) => {
   const rawSuggested = typeof p.suggested_key === "string" ? p.suggested_key.trim() : "";
   const suggestedKey = rawSuggested && allowedKeys.has(rawSuggested) ? rawSuggested : null;
 
+  const docCategoryLabel =
+    typeof p.doc_category_label === "string" && p.doc_category_label.trim()
+      ? p.doc_category_label.trim()
+      : "기타";
+
   const issueDate = normalizeYmd(p.issue_date);
-  const expiryDate = normalizeYmd(p.expiry_date);
+  let expiryDate = normalizeYmd(p.expiry_date);
   const today = todayKstYmd();
+  const currentYear = Number(today.slice(0, 4));
+  const eqYearRaw = p.equipment_year != null ? Number(p.equipment_year) : null;
+  const equipmentYear =
+    eqYearRaw != null && Number.isFinite(eqYearRaw) && eqYearRaw >= 1970 && eqYearRaw <= currentYear + 1
+      ? Math.trunc(eqYearRaw)
+      : null;
+
+  let notes =
+    typeof p.notes === "string" && p.notes.trim() ? p.notes.trim().slice(0, 140) : null;
+
+  // Non-Destructive Testing (비파괴검사) rule:
+  // - Never treat inspection date (issue_date) itself as expiry_date
+  // - Equipment age >= 10 years: valid 1 month from inspection (반입 1개월 이내)
+  // - Equipment age < 10 years (or unspecified): valid 1 year from inspection (1년 이내)
+  const slotNames = availableSlots.map((s) => s.name).join(" ");
+  const isNdt = /비파괴|ndt|자분탐상|초음파탐상|침투탐상/i.test(
+    `${docCategoryLabel} ${fileName} ${slotNames}`,
+  );
+  if (isNdt) {
+    // If model mistakenly copied inspection date into expiry_date, clear it before applying rule
+    if (expiryDate && issueDate && expiryDate === issueDate) {
+      expiryDate = null;
+    }
+    if (!expiryDate && issueDate) {
+      if (equipmentYear != null && currentYear - equipmentYear >= 10) {
+        expiryDate = addMonthsYmd(issueDate, 1);
+        const ndtNote = `10년 이상 장비(${equipmentYear}년식) 기준 적용: 검사일(${issueDate})로부터 1개월 이내 반입 필요`;
+        notes = notes ? `${ndtNote} · ${notes}`.slice(0, 140) : ndtNote;
+      } else {
+        expiryDate = addMonthsYmd(issueDate, 12);
+        const ndtNote =
+          equipmentYear != null
+            ? `10년 미만 장비(${equipmentYear}년식) 비파괴검사 1년 유효 기준 적용`
+            : "비파괴검사 1년 유효 기준 적용 (※ 10년 이상 장비는 반입 1개월 이내 검사 필요)";
+        notes = notes ? `${ndtNote} · ${notes}`.slice(0, 140) : ndtNote;
+      }
+    }
+  }
+
   const isExpired = expiryDate ? expiryDate < today : null;
   const confRaw = Number(p.confidence);
   const confidence = Number.isFinite(confRaw)
@@ -345,10 +399,7 @@ Deno.serve(async (req) => {
     page_number: pageNumber,
     total_pages: totalPages,
     suggested_key: suggestedKey,
-    doc_category_label:
-      typeof p.doc_category_label === "string" && p.doc_category_label.trim()
-        ? p.doc_category_label.trim()
-        : "기타",
+    doc_category_label: docCategoryLabel,
     confidence,
     company_or_holder:
       typeof p.company_or_holder === "string" && p.company_or_holder.trim()
@@ -356,6 +407,7 @@ Deno.serve(async (req) => {
         : null,
     issue_date: issueDate,
     expiry_date: expiryDate,
+    equipment_year: equipmentYear,
     is_expired: isExpired,
     reg_or_cert_no:
       typeof p.reg_or_cert_no === "string" && p.reg_or_cert_no.trim()
@@ -365,6 +417,6 @@ Deno.serve(async (req) => {
     summary:
       typeof p.summary === "string" && p.summary.trim() ? p.summary.trim().slice(0, 120) : null,
     needs_page_select: Boolean(p.needs_page_select),
-    notes: typeof p.notes === "string" && p.notes.trim() ? p.notes.trim().slice(0, 140) : null,
+    notes,
   });
 });

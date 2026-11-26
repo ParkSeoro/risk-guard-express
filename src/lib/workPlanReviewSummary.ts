@@ -15,11 +15,12 @@ import {
   isRiggingPlanSafe,
   REQUIRED_LEGAL_CALC_IDS,
 } from './workPlanLegalCalcGate';
+import { evaluateExpiryStatus, todayKstDateStr } from './workPlanOcrHelpers';
 
 export type TrafficLight = 'ok' | 'warn' | 'fail' | 'na';
 
 export interface ReviewSignal {
-  id: 'attachments' | 'annex4' | 'rigging' | 'proofs';
+  id: 'attachments' | 'annex4' | 'rigging' | 'proofs' | 'expiry';
   label: string;
   light: TrafficLight;
   value: string;
@@ -68,7 +69,9 @@ export function buildWorkPlanReviewSummary(opts: {
     is_mandatory?: boolean | null;
     file_url?: string | null;
     category?: string | null;
+    doc_expiry_date?: string | null;
   }>;
+  todayKst?: string;
 }): WorkPlanReviewSummary {
   const tpl = getWorkPlanType(opts.workType);
   const isArticle38 = workPlanLegalClass(opts.workType) === 'article38';
@@ -209,7 +212,53 @@ export function buildWorkPlanReviewSummary(opts: {
     value: `${attProgress.uploaded}/${attProgress.total}건`,
   };
 
-  const signals = [attSignal, annexSignal, riggingSignal, proofSignal];
+  // 5. Document expiry verification (inspection / insurance / license dates from AI OCR)
+  const today = opts.todayKst || todayKstDateStr();
+  const datedAttachments = (opts.attachments ?? []).filter(
+    (a) => Boolean(a.file_url) && Boolean(a.doc_expiry_date),
+  );
+  const expiredDocs = datedAttachments.filter(
+    (a) => evaluateExpiryStatus(a.doc_expiry_date, today) === 'expired',
+  );
+  const expiringSoonDocs = datedAttachments.filter(
+    (a) => evaluateExpiryStatus(a.doc_expiry_date, today) === 'expiring_soon',
+  );
+
+  const signals: ReviewSignal[] = [attSignal, annexSignal, riggingSignal, proofSignal];
+  if (datedAttachments.length > 0) {
+    if (expiredDocs.length > 0) {
+      signals.push({
+        id: 'expiry',
+        label: '기간 검증',
+        light: 'fail',
+        value: `만료 ${expiredDocs.length}건`,
+        detail: `유효기간 만료: ${expiredDocs
+          .slice(0, 3)
+          .map((d) => `${d.name || '증빙'}(${d.doc_expiry_date})`)
+          .join(', ')}${expiredDocs.length > 3 ? ' 외' : ''}`,
+      });
+    } else if (expiringSoonDocs.length > 0) {
+      signals.push({
+        id: 'expiry',
+        label: '기간 검증',
+        light: 'warn',
+        value: `임박 ${expiringSoonDocs.length}건`,
+        detail: `30일 이내 만료 예정: ${expiringSoonDocs
+          .slice(0, 3)
+          .map((d) => `${d.name || '증빙'}(${d.doc_expiry_date})`)
+          .join(', ')}${expiringSoonDocs.length > 3 ? ' 외' : ''}`,
+      });
+    } else {
+      signals.push({
+        id: 'expiry',
+        label: '기간 검증',
+        light: 'ok',
+        value: `정상 ${datedAttachments.length}건`,
+        detail: '판독된 검사·보험·면허 유효기간 모두 정상',
+      });
+    }
+  }
+
   const overall: TrafficLight = signals.some((s) => s.light === 'fail')
     ? 'fail'
     : signals.some((s) => s.light === 'warn')

@@ -59,6 +59,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
   }>({});
   const [safetyFiles, setSafetyFiles] = useState<SafetyCostDocFile[]>([]);
   const [wpReviewSummary, setWpReviewSummary] = useState<WorkPlanReviewSummary | null>(null);
+  const [wpSummaryRefreshKey, setWpSummaryRefreshKey] = useState(0);
 
   const entityType = target?.entityType || "";
   const entityId = target?.entityId || "";
@@ -118,7 +119,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
             supabase.from("rigging_plans").select("*").eq("work_plan_id", entityId).maybeSingle(),
             supabase
               .from("work_plan_attachments")
-              .select("attachment_key, name, description, is_mandatory, file_url, category")
+              .select("attachment_key, name, description, is_mandatory, file_url, category, doc_expiry_date")
               .eq("work_plan_id", entityId)
               .eq("is_deleted", false),
           ]);
@@ -170,7 +171,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
     return () => {
       cancelled = true;
     };
-  }, [open, target?.entityId, entityType, inlineOk, entityId]);
+  }, [open, target?.entityId, entityType, inlineOk, entityId, wpSummaryRefreshKey]);
 
   const openFull = () => {
     if (!fullPath) return;
@@ -294,7 +295,12 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
                   />
                 </div>
                 <div className="p-2 border-t lg:border-t-0 lg:border-l bg-background lg:overflow-y-auto">
-                  <AttachmentReviewPanel workPlanId={entityId} reviewerMode compact />
+                  <AttachmentReviewPanel
+                    workPlanId={entityId}
+                    reviewerMode
+                    compact
+                    onOcrUpdated={() => setWpSummaryRefreshKey((k) => k + 1)}
+                  />
                 </div>
               </div>
             </div>

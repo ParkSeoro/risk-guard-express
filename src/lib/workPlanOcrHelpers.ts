@@ -7,6 +7,24 @@ export type OcrFileSupportKind = "image" | "pdf" | "haansoft_pdf" | "unsupported
 
 export type ExpiryStatus = "expired" | "expiring_soon" | "valid" | "unknown";
 
+export interface WorkPlanAttachmentOcrMeta {
+  docCategoryLabel?: string | null;
+  companyOrHolder?: string | null;
+  regOrCertNo?: string | null;
+  ratedCapacityTon?: number | null;
+  summary?: string | null;
+  confidence?: number | null;
+  notes?: string | null;
+  engine?: string | null;
+}
+
+export interface WorkPlanAttachmentOcrDbPatch {
+  ocr_meta: WorkPlanAttachmentOcrMeta;
+  doc_issue_date: string | null;
+  doc_expiry_date: string | null;
+  ocr_checked_at: string;
+}
+
 export interface WorkPlanOcrResult {
   ok: boolean;
   engine?: string;
@@ -98,6 +116,41 @@ export function evaluateExpiryStatus(
   if (diffDays < 0) return "expired";
   if (diffDays <= 30) return "expiring_soon";
   return "valid";
+}
+
+export function calcExpiryDaysRemaining(
+  expiryDate?: string | null,
+  todayKst = todayKstDateStr(),
+): number | null {
+  if (!expiryDate || !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) return null;
+  const expMs = Date.parse(`${expiryDate}T00:00:00Z`);
+  const todayMs = Date.parse(`${todayKst}T00:00:00Z`);
+  if (!Number.isFinite(expMs) || !Number.isFinite(todayMs)) return null;
+  return Math.floor((expMs - todayMs) / (24 * 60 * 60 * 1000));
+}
+
+export function buildAttachmentOcrDbPatch(
+  ocr: WorkPlanOcrResult | null | undefined,
+  nowIso = new Date().toISOString(),
+): WorkPlanAttachmentOcrDbPatch | null {
+  if (!ocr || !ocr.ok) return null;
+  const isYmd = (v: string | null | undefined): string | null =>
+    v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  return {
+    ocr_meta: {
+      docCategoryLabel: ocr.docCategoryLabel || null,
+      companyOrHolder: ocr.companyOrHolder ?? null,
+      regOrCertNo: ocr.regOrCertNo ?? null,
+      ratedCapacityTon: ocr.ratedCapacityTon ?? null,
+      summary: ocr.summary ?? null,
+      confidence: ocr.confidence ?? null,
+      notes: ocr.notes ?? null,
+      engine: ocr.engine ?? null,
+    },
+    doc_issue_date: isYmd(ocr.issueDate),
+    doc_expiry_date: isYmd(ocr.expiryDate),
+    ocr_checked_at: nowIso,
+  };
 }
 
 export function normalizeOcrResponse(

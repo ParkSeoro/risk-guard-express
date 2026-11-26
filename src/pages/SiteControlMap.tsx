@@ -5,6 +5,7 @@ import {
   Polygon,
   Circle,
   Marker,
+  Polyline,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -116,6 +117,7 @@ import {
 import { zoneBufferM } from "@/lib/tracking/zoneProximity";
 import { softDeletePayload } from "@/lib/dataAccess";
 import {
+  bottomRight,
   cornersCenter,
   cornersToLeafletBounds,
   cornersEqual,

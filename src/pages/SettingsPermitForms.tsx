@@ -47,6 +47,9 @@ import {
 } from '@/lib/permitDisplayTemplate';
 
 type CompanyOpt = { id: string; name: string; type: string | null };
+type ProjectOpt = { id: string; name: string };
+const GLOBAL_PROJECT_KEY = '__global_project__';
+const PROJECT_ALL_COMPANIES_KEY = '__project_all_companies__';
 
 type Tpl = {
   id: string;
@@ -114,8 +117,12 @@ export default function SettingsPermitForms() {
   const { toast } = useToast();
   const isMaster = hasRole('master');
 
+  const [projects, setProjects] = useState<ProjectOpt[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(GLOBAL_PROJECT_KEY);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [companyId, setCompanyId] = useState<string>(GLOBAL_STANDARD_COMPANY_KEY);
+  const [globalStandards, setGlobalStandards] = useState<Tpl[]>([]);
+  const [cloneSourceId, setCloneSourceId] = useState<string>('__default__');
   const [rows, setRows] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Tpl | null>(null);
@@ -126,10 +133,61 @@ export default function SettingsPermitForms() {
   const [saving, setSaving] = useState(false);
   const [cloning, setCloning] = useState(false);
 
-  const isGlobalScope = companyId === GLOBAL_STANDARD_COMPANY_KEY;
-  const dbCompanyId = isGlobalScope ? null : companyId;
+  const isGlobalProject = selectedProjectId === GLOBAL_PROJECT_KEY;
+  const dbProjectId = isGlobalProject ? null : selectedProjectId;
+  const isGlobalScope = isGlobalProject && companyId === GLOBAL_STANDARD_COMPANY_KEY;
+  const isProjectAllScope = !isGlobalProject && companyId === PROJECT_ALL_COMPANIES_KEY;
+  const dbCompanyId = isGlobalScope || isProjectAllScope ? null : companyId;
 
-  const loadCompanies = async () => {
+  const loadProjectsAndGlobalStandards = async () => {
+    const [{ data: projRows }, { data: stdRows }] = await Promise.all([
+      supabase.from('projects').select('id, name').eq('is_deleted', false).order('created_at', { ascending: false }),
+      supabase
+        .from('permit_form_templates')
+        .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
+        .eq('is_deleted', false)
+        .eq('is_active', true)
+        .is('company_id', null)
+        .is('project_id', null)
+        .order('is_default', { ascending: false })
+        .order('name'),
+    ]);
+    setProjects((projRows || []) as ProjectOpt[]);
+    setGlobalStandards(
+      (stdRows || []).map((r: any) => ({
+        ...r,
+        project_id: null,
+        company_id: null,
+        permit_type: (r.permit_type || 'general') as PermitType,
+        layout_json: parseLayoutJson(r.layout_json),
+      })),
+    );
+  };
+
+  const loadCompanies = async (projKey: string) => {
+    if (projKey !== GLOBAL_PROJECT_KEY) {
+      const { data, error } = await (supabase as any)
+        .from('project_companies')
+        .select('company_id, role_in_project, companies:company_id(id, name, type, is_deleted)')
+        .eq('project_id', projKey)
+        .eq('is_deleted', false);
+      if (error) {
+        toast({ title: '현장 업체 목록 실패', description: error.message, variant: 'destructive' });
+        setCompanies([]);
+        return;
+      }
+      const list: CompanyOpt[] = ((data || []) as any[])
+        .filter((l) => l.companies && l.companies.is_deleted !== true)
+        .map((l) => ({
+          id: l.companies.id,
+          name: l.companies.name,
+          type: l.role_in_project || l.companies.type || null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+      setCompanies(list);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('companies')
       .select('id, name, type')
@@ -139,31 +197,39 @@ export default function SettingsPermitForms() {
       toast({ title: '회사 목록 실패', description: error.message, variant: 'destructive' });
       return;
     }
-    // 발주/원청 우선, 없으면 전체
     const all = (data || []) as CompanyOpt[];
     const preferred = all.filter((c) => c.type === 'client' || c.type === 'gc');
-    const list = preferred.length > 0 ? preferred : all;
-    setCompanies(list);
-    if (!companyId) setCompanyId(GLOBAL_STANDARD_COMPANY_KEY);
+    setCompanies(preferred.length > 0 ? preferred : all);
   };
 
-  const loadTemplates = async (cid: string) => {
+  const loadTemplates = async (projKey: string, cid: string) => {
     if (!cid) {
       setRows([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const global = cid === GLOBAL_STANDARD_COMPANY_KEY;
+    const globalProj = projKey === GLOBAL_PROJECT_KEY;
+    const globalStd = globalProj && cid === GLOBAL_STANDARD_COMPANY_KEY;
+    const projAll = !globalProj && cid === PROJECT_ALL_COMPANIES_KEY;
+
     let q = supabase
       .from('permit_form_templates')
       .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
       .order('permit_type')
       .order('updated_at', { ascending: false });
-    q = global
-      ? q.is('company_id', null).is('project_id', null)
-      : q.eq('company_id', cid);
+
+    if (globalStd) {
+      q = q.is('company_id', null).is('project_id', null);
+    } else if (globalProj) {
+      q = q.is('project_id', null).eq('company_id', cid);
+    } else if (projAll) {
+      q = q.eq('project_id', projKey).is('company_id', null);
+    } else {
+      q = q.eq('project_id', projKey).eq('company_id', cid);
+    }
+
     const { data, error } = await q;
     if (error) {
       toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
@@ -172,6 +238,7 @@ export default function SettingsPermitForms() {
       setRows(
         (data || []).map((r: any) => ({
           ...r,
+          project_id: r.project_id || null,
           company_id: r.company_id || null,
           permit_type: (r.permit_type || 'general') as PermitType,
           layout_json: parseLayoutJson(r.layout_json),
@@ -182,15 +249,21 @@ export default function SettingsPermitForms() {
   };
 
   useEffect(() => {
-    if (isMaster) loadCompanies();
+    if (isMaster) void loadProjectsAndGlobalStandards();
   }, [isMaster]);
+
+  useEffect(() => {
+    if (!isMaster) return;
+    void loadCompanies(selectedProjectId);
+    setCompanyId(selectedProjectId === GLOBAL_PROJECT_KEY ? GLOBAL_STANDARD_COMPANY_KEY : PROJECT_ALL_COMPANIES_KEY);
+  }, [isMaster, selectedProjectId]);
 
   useEffect(() => {
     if (isMaster && companyId) {
       setSelected(null);
-      loadTemplates(companyId);
+      void loadTemplates(selectedProjectId, companyId);
     }
-  }, [isMaster, companyId]);
+  }, [isMaster, selectedProjectId, companyId]);
 
   if (!isMaster) return <Navigate to="/settings" replace />;
 
@@ -226,7 +299,7 @@ export default function SettingsPermitForms() {
         is_default: selected.is_default,
         is_active: selected.is_active,
         permit_type: selected.permit_type,
-        project_id: null,
+        project_id: dbProjectId,
         company_id: dbCompanyId,
         layout_json: layout as any,
         // 레거시 오버레이/AI 필드 정리 (기능 삭제)
@@ -244,7 +317,8 @@ export default function SettingsPermitForms() {
       return;
     }
     toast({ title: '저장되었습니다.', description: '결재 규칙·허가서 데이터 구조는 변경되지 않습니다.' });
-    await loadTemplates(companyId);
+    await loadTemplates(selectedProjectId, companyId);
+    if (isGlobalScope) void loadProjectsAndGlobalStandards();
     setSelected((prev) =>
       prev
         ? {
@@ -272,25 +346,36 @@ export default function SettingsPermitForms() {
     }
     if (selected?.id === t.id) setSelected(null);
     toast({ title: '삭제되었습니다.' });
-    await loadTemplates(companyId);
+    await loadTemplates(selectedProjectId, companyId);
+    if (isGlobalScope) void loadProjectsAndGlobalStandards();
   };
 
-  /** Layout source for company clone: DB global standard if present, else code defaults. */
+  /** Layout source for clone: picked global standard if chosen, else DB default standard, else code defaults. */
   const resolveCloneLayoutByType = async (): Promise<Record<string, PermitLayoutJson>> => {
-    const { data } = await supabase
-      .from('permit_form_templates')
-      .select('permit_type, layout_json')
-      .eq('is_deleted', false)
-      .eq('is_active', true)
-      .is('company_id', null)
-      .is('project_id', null);
     const map: Record<string, PermitLayoutJson> = {};
     const fallback = buildCloneLayoutJson();
     for (const m of PERMIT_KIND_CLONE_META) {
       map[m.permit_type] = fallback;
     }
+    const picked = cloneSourceId !== '__default__'
+      ? globalStandards.find((s) => s.id === cloneSourceId)
+      : null;
+    if (picked?.layout_json) {
+      for (const m of PERMIT_KIND_CLONE_META) {
+        map[m.permit_type] = parseLayoutJson(picked.layout_json);
+      }
+      return map;
+    }
+    const { data } = await supabase
+      .from('permit_form_templates')
+      .select('permit_type, layout_json, is_default')
+      .eq('is_deleted', false)
+      .eq('is_active', true)
+      .is('company_id', null)
+      .is('project_id', null)
+      .order('is_default', { ascending: false });
     for (const row of (data || []) as any[]) {
-      if (row.permit_type && row.layout_json) {
+      if (row.permit_type && row.layout_json && map[row.permit_type] === fallback) {
         map[row.permit_type] = parseLayoutJson(row.layout_json);
       }
     }
@@ -335,12 +420,17 @@ export default function SettingsPermitForms() {
       }));
     } else {
       const layouts = await resolveCloneLayoutByType();
-      const companyName = companies.find((c) => c.id === companyId)?.name || 'CO';
+      const projName = projects.find((p) => p.id === dbProjectId)?.name || '';
+      const companyName = companies.find((c) => c.id === dbCompanyId)?.name || '';
+      const prefix = (companyName || projName || 'PRJ').slice(0, 12).replace(/\s+/g, '');
+      const pickedSource = cloneSourceId !== '__default__'
+        ? globalStandards.find((s) => s.id === cloneSourceId)
+        : null;
       inserts = toCreate.map((m) => ({
-        project_id: null,
-        company_id: companyId,
-        code: `${companyName.slice(0, 12).replace(/\s+/g, '')}-${m.codeSuffix}`.slice(0, 40),
-        name: m.name,
+        project_id: dbProjectId,
+        company_id: dbCompanyId,
+        code: `${prefix}-${m.codeSuffix}`.slice(0, 40),
+        name: pickedSource ? `${pickedSource.name} (${m.permit_type === 'general' ? '일반' : PERMIT_TYPE_LABEL[m.permit_type]})` : m.name,
         version: '1',
         permit_type: m.permit_type,
         is_default: true,
@@ -363,12 +453,15 @@ export default function SettingsPermitForms() {
     toast({
       title: isGlobalScope
         ? `기본 표준 허가서 ${inserts.length}종을 만들었습니다.`
-        : `표준 허가서에서 ${inserts.length}종 복제했습니다.`,
+        : `허가서 양식 ${inserts.length}종을 복제·지정했습니다.`,
       description: isGlobalScope
-        ? '복제하지 않은 모든 회사 허가서에 적용됩니다. 로고·라벨을 여기서 수정하세요.'
-        : '이 회사가 작성한 허가서에만 표시(라벨/숨김)이 적용됩니다. 결재 규칙은 그대로입니다.',
+        ? '복제하지 않은 모든 현장·회사 허가서에 적용됩니다.'
+        : dbProjectId
+          ? '이 프로젝트에만 적용되며 다른 프로젝트의 동일 업체에는 영향을 주지 않습니다.'
+          : '전역 회사 양식으로 저장되었습니다. 프로젝트별로 다르게 쓰려면 위에서 프로젝트를 먼저 선택하세요.',
     });
-    await loadTemplates(companyId);
+    await loadTemplates(selectedProjectId, companyId);
+    if (isGlobalScope) void loadProjectsAndGlobalStandards();
   };
 
   const kindSections = useMemo(
@@ -413,16 +506,41 @@ export default function SettingsPermitForms() {
 
       <Card>
         <CardContent className="p-4 flex flex-wrap items-end gap-3">
-          <div className="space-y-1 min-w-[280px]">
-            <Label>대상</Label>
+          <div className="space-y-1 min-w-[240px]">
+            <Label>1. 프로젝트 (현장별 독립 격리)</Label>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="프로젝트 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={GLOBAL_PROJECT_KEY}>
+                  전체 공통 (기본 표준 / 전역 회사)
+                </SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1 min-w-[240px]">
+            <Label>2. 적용 대상</Label>
             <Select value={companyId} onValueChange={setCompanyId}>
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="대상 선택" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={GLOBAL_STANDARD_COMPANY_KEY}>
-                  기본 표준 허가서 (전체 기본)
-                </SelectItem>
+                {isGlobalProject ? (
+                  <SelectItem value={GLOBAL_STANDARD_COMPANY_KEY}>
+                    기본 표준 허가서 (전체 기본)
+                  </SelectItem>
+                ) : (
+                  <SelectItem value={PROJECT_ALL_COMPANIES_KEY}>
+                    이 프로젝트 전체 기본 (모든 참여 업체)
+                  </SelectItem>
+                )}
                 {companies.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}{c.type ? ` · ${c.type}` : ''}
@@ -431,11 +549,31 @@ export default function SettingsPermitForms() {
               </SelectContent>
             </Select>
           </div>
+
+          {!isGlobalScope && globalStandards.length > 0 && (
+            <div className="space-y-1 min-w-[220px]">
+              <Label>3. 복제할 기준 양식</Label>
+              <Select value={cloneSourceId} onValueChange={setCloneSourceId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="기준 양식 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">기본 표준 자동 선택</SelectItem>
+                  {globalStandards.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <Button onClick={cloneFromStandard} disabled={!companyId || cloning} className="gap-1.5">
             <Copy className="h-4 w-4" />
             {cloning
               ? (isGlobalScope ? '생성 중…' : '복제 중…')
-              : (isGlobalScope ? '기본 표준 양식 만들기' : '표준 허가서에서 복제')}
+              : (isGlobalScope ? '기본 표준 양식 만들기' : '선택 양식으로 복제 · 지정')}
           </Button>
         </CardContent>
       </Card>
@@ -443,7 +581,15 @@ export default function SettingsPermitForms() {
       <div className="grid md:grid-cols-[280px_1fr] gap-4">
         <Card>
           <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">{isGlobalScope ? '기본 표준 양식' : '이 회사 양식'}</CardTitle>
+            <CardTitle className="text-sm">
+              {isGlobalScope
+                ? '기본 표준 양식'
+                : isProjectAllScope
+                  ? '이 프로젝트 전체 양식'
+                  : dbProjectId
+                    ? '이 프로젝트 · 선택 업체 양식'
+                    : '전역 회사 양식'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-2 space-y-1">
             {loading && <p className="text-xs text-muted-foreground p-2">불러오는 중…</p>}

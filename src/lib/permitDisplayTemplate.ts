@@ -370,33 +370,59 @@ export function resolvePermitFormGcCompanyId(opts: {
 }
 
 /**
- * 표시 양식 선택 순서:
- * 1) 작성 회사 전용 템플릿
- * 2) 없으면 소속 시공사(GC) 템플릿 (협력사 → 시공사 양식 상속)
- * 3) 공통 글로벌 표준
+ * 표시 양식 선택 순서 (프로젝트 간 완전 격리):
+ * 1) 이 프로젝트 + 작성 회사 전용 (project_id === P, company_id === permitCompanyId)
+ * 2) 이 프로젝트 + 소속 시공사 상속 (project_id === P, company_id === gcCompanyId)
+ * 3) 이 프로젝트 전체 기본 (project_id === P, company_id == null)
+ * 4) 전역 회사 전용 (project_id == null, company_id === permitCompanyId → gcCompanyId)
+ * 5) 전체 공통 기본 표준 (project_id == null, company_id == null)
  *
  * form_data / signatures 키는 변경하지 않음 — 라벨·숨김만.
  */
 export function pickPermitDisplayTemplateCascade(opts: {
   templates: PermitTemplateRow[];
+  projectId?: string | null;
   permitCompanyId: string | null | undefined;
   gcCompanyId: string | null | undefined;
   permitType: PermitType;
 }): PermitTemplateRow | null {
-  const own = pickCompanyDisplayTemplate(
-    opts.templates,
-    opts.permitCompanyId,
-    opts.permitType,
+  const pid = opts.projectId || null;
+  const permitId = opts.permitCompanyId || null;
+  const gcId = opts.gcCompanyId || null;
+
+  // 1~3) Project-scoped templates (strictly isolated to this project)
+  if (pid) {
+    const inProject = opts.templates.filter(
+      (t) => t.project_id === pid && t.is_active !== false,
+    );
+    if (permitId) {
+      const ownProj = pickCompanyDisplayTemplate(inProject, permitId, opts.permitType);
+      if (ownProj) return ownProj;
+    }
+    if (gcId && gcId !== permitId) {
+      const gcProj = pickCompanyDisplayTemplate(inProject, gcId, opts.permitType);
+      if (gcProj) return gcProj;
+    }
+    const projectDefault = pickFromScopedList(
+      inProject.filter((t) => t.company_id == null),
+      opts.permitType,
+    );
+    if (projectDefault) return projectDefault;
+  }
+
+  // 4) Legacy global company-scoped templates (project_id == null)
+  const globalCompanyScope = opts.templates.filter(
+    (t) => t.project_id == null && t.is_active !== false,
   );
+  const own = pickCompanyDisplayTemplate(globalCompanyScope, permitId, opts.permitType);
   if (own) return own;
 
-  const gcId = opts.gcCompanyId || null;
-  const permitId = opts.permitCompanyId || null;
   if (gcId && gcId !== permitId) {
-    const gcTpl = pickCompanyDisplayTemplate(opts.templates, gcId, opts.permitType);
+    const gcTpl = pickCompanyDisplayTemplate(globalCompanyScope, gcId, opts.permitType);
     if (gcTpl) return gcTpl;
   }
 
+  // 5) Global built-in standard (project_id == null && company_id == null)
   return pickGlobalStandardTemplate(opts.templates, opts.permitType);
 }
 

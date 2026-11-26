@@ -213,4 +213,45 @@ describe('permitDisplayTemplate', () => {
       })?.id,
     ).toBe('gc-tpl');
   });
+
+  it('isolates the same company across projects (Project A gets GSC form, Project B gets LGC form)', () => {
+    const list = [
+      { id: 'global-std', project_id: null, company_id: null, code: 'STD', name: '표준', version: '1', layout_json: {}, is_default: true, is_active: true, permit_type: 'general' },
+      { id: 'projA-all', project_id: 'projA', company_id: null, code: 'GSC', name: 'GSC 양식', version: '1', layout_json: {}, is_default: true, is_active: true, permit_type: 'general' },
+      { id: 'projB-gc1', project_id: 'projB', company_id: 'gc1', code: 'LGC', name: 'LGC 양식', version: '1', layout_json: {}, is_default: true, is_active: true, permit_type: 'general' },
+    ] as any[];
+
+    // Same company gc1 in Project A -> gets Project A's GSC form
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list,
+        projectId: 'projA',
+        permitCompanyId: 'gc1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('projA-all');
+
+    // Same company gc1 in Project B -> gets Project B's LGC form (zero cross-project leak!)
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list,
+        projectId: 'projB',
+        permitCompanyId: 'gc1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('projB-gc1');
+
+    // Same company gc1 in Project C (no project override) -> falls back to global standard
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list,
+        projectId: 'projC',
+        permitCompanyId: 'gc1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('global-std');
+  });
 });

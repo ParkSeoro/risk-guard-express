@@ -472,6 +472,19 @@ export default function WorkPermitDetail() {
         });
         const companyIds = [...new Set([permitCompanyId, gcCompanyId].filter(Boolean))] as string[];
 
+        let projectRows: any[] = [];
+        {
+          const { data: pTpls } = await supabase
+            .from('permit_form_templates')
+            .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
+            .eq('is_deleted', false)
+            .eq('is_active', true)
+            .eq('project_id', projectId)
+            .order('is_default', { ascending: false })
+            .order('updated_at', { ascending: false });
+          projectRows = (pTpls || []) as any[];
+        }
+
         let companyRows: any[] = [];
         if (companyIds.length > 0) {
           const { data: tpls } = await supabase
@@ -479,6 +492,7 @@ export default function WorkPermitDetail() {
             .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
             .eq('is_deleted', false)
             .eq('is_active', true)
+            .is('project_id', null)
             .in('company_id', companyIds)
             .order('is_default', { ascending: false })
             .order('updated_at', { ascending: false });
@@ -495,9 +509,10 @@ export default function WorkPermitDetail() {
           .order('is_default', { ascending: false })
           .order('updated_at', { ascending: false });
 
-        // 작성사 템플릿 → 없으면 시공사(GC) 양식 상속 → 글로벌 표준
+        // 이 프로젝트(작성사→시공사→프로젝트 전체) → 전역 회사(작성사→시공사) → 글로벌 표준
         const holder = pickPermitDisplayTemplateCascade({
-          templates: [...companyRows, ...((globals || []) as any[])],
+          templates: [...projectRows, ...companyRows, ...((globals || []) as any[])],
+          projectId,
           permitCompanyId,
           gcCompanyId,
           permitType: activeKind as PermitType,

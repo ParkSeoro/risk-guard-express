@@ -242,7 +242,16 @@ export async function applyVaultSuggestions(
         file_size: s.doc.file_size,
         mime_type: s.doc.mime_type,
         source_type: 'auto_other',
-      })
+        doc_expiry_date: s.doc.expiry_date && /^\d{4}-\d{2}-\d{2}$/.test(s.doc.expiry_date) ? s.doc.expiry_date : null,
+        ocr_meta: (s.doc.holder_name || s.doc.reg_or_cert_no || s.doc.expiry_date)
+          ? {
+              docCategoryLabel: s.doc.doc_name || null,
+              companyOrHolder: s.doc.holder_name ?? null,
+              regOrCertNo: s.doc.reg_or_cert_no ?? null,
+            }
+          : null,
+        ocr_checked_at: s.doc.expiry_date ? new Date().toISOString() : null,
+      } as any)
       .eq('id', s.row.id);
     if (error) {
       return { applied, skippedExpired, error: error.message };

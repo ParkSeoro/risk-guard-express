@@ -3,6 +3,7 @@
  * Separate from print-only `pdfPageRasterizer.ts` (8p PNG) — optimized for Vision API speed & size.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { resolveArchivedUrl } from "@/lib/archiveUrlResolver";
 import {
   classifyOcrFileSupport,
   normalizeOcrResponse,
@@ -198,6 +199,42 @@ export async function analyzeWorkPlanAttachmentFile(
     return normalizeOcrResponse(
       { ok: false, error: err?.message || "AI 판독 중 오류가 발생했습니다." },
       { allowedKeys, pageNumber, totalPages },
+    );
+  }
+}
+
+/**
+ * Fetches an already-uploaded attachment URL (resolving Drive archives if needed)
+ * and runs the exact same Work-Plan Vision OCR pipeline for reviewer / retroactive checks.
+ */
+export async function analyzeWorkPlanAttachmentUrl(opts: {
+  fileUrl: string;
+  fileName: string;
+  mimeType?: string | null;
+  availableSlots: OcrAvailableSlot[];
+}): Promise<WorkPlanOcrResult> {
+  const allowedKeys = new Set(opts.availableSlots.map((s) => s.key));
+  try {
+    const resolvedUrl = await resolveArchivedUrl(opts.fileUrl);
+    const res = await fetch(resolvedUrl);
+    if (!res.ok) {
+      return normalizeOcrResponse(
+        { ok: false, error: `첨부 파일을 불러오지 못했습니다 (HTTP ${res.status}).` },
+        { allowedKeys, pageNumber: 1, totalPages: 1 },
+      );
+    }
+    const blob = await res.blob();
+    const mime = opts.mimeType || blob.type || "";
+    const hasExt = /\.[a-z0-9]{2,5}$/i.test(opts.fileName);
+    const fallbackExt = mime.includes("pdf") ? ".pdf" : mime.startsWith("image/") ? ".jpg" : "";
+    const file = new File([blob], hasExt ? opts.fileName : `${opts.fileName}${fallbackExt}`, {
+      type: mime,
+    });
+    return await analyzeWorkPlanAttachmentFile(file, opts.availableSlots);
+  } catch (err: any) {
+    return normalizeOcrResponse(
+      { ok: false, error: err?.message || "첨부 파일 다운로드에 실패했습니다." },
+      { allowedKeys, pageNumber: 1, totalPages: 1 },
     );
   }
 }

@@ -140,4 +140,73 @@ describe('Phase 3: Reviewer 1-Minute Summary & Annex 4 Additive Sections', () =>
     expect(src).toContain('lg:grid-cols-[1fr_440px]');
     expect(src).toContain('reviewerMode');
   });
+
+  it('flags expired and expiring-soon attachment dates in reviewer 1-minute summary', () => {
+    const expiredSummary = buildWorkPlanReviewSummary({
+      workType: 'excavation',
+      todayKst: '2026-11-26',
+      content: {
+        overview: '터파기',
+        geology: '사질토',
+        method: '단계 굴착',
+        shoring: 'H-pile',
+        spoil: '덤프 반출',
+        contact: '무전기',
+        commander: '김지휘',
+        risk: '붕괴 방지',
+        emergency: '대피로 확보',
+      },
+      attachments: [
+        {
+          attachment_key: 'safety_inspection',
+          name: '안전검사증',
+          is_mandatory: true,
+          file_url: 'https://x/1.pdf',
+          category: 'legal',
+          doc_expiry_date: '2026-10-01',
+        },
+        {
+          attachment_key: 'insurance_cert',
+          name: '보험가입증명서',
+          is_mandatory: true,
+          file_url: 'https://x/2.pdf',
+          category: 'legal',
+          doc_expiry_date: '2027-05-01',
+        },
+      ],
+    });
+    expect(expiredSummary.overall).toBe('fail');
+    const expSig = expiredSummary.signals.find((s) => s.id === 'expiry');
+    expect(expSig?.light).toBe('fail');
+    expect(expSig?.value).toBe('만료 1건');
+    expect(expSig?.detail).toContain('안전검사증(2026-10-01)');
+
+    const soonSummary = buildWorkPlanReviewSummary({
+      workType: 'excavation',
+      todayKst: '2026-11-26',
+      content: {
+        overview: '터파기',
+        geology: '사질토',
+        method: '단계 굴착',
+        shoring: 'H-pile',
+        spoil: '덤프 반출',
+        contact: '무전기',
+        commander: '김지휘',
+        risk: '붕괴 방지',
+        emergency: '대피로 확보',
+      },
+      attachments: [
+        {
+          attachment_key: 'insurance_cert',
+          name: '보험가입증명서',
+          is_mandatory: true,
+          file_url: 'https://x/2.pdf',
+          category: 'legal',
+          doc_expiry_date: '2026-12-10',
+        },
+      ],
+    });
+    expect(soonSummary.overall).toBe('warn');
+    expect(soonSummary.signals.find((s) => s.id === 'expiry')?.light).toBe('warn');
+  });
 });

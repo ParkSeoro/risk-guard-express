@@ -28,7 +28,14 @@ import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
 import {
   analyzeWorkPlanAttachmentFile,
 } from '@/lib/workPlanOcrClient';
-import type { WorkPlanOcrResult } from '@/lib/workPlanOcrHelpers';
+import {
+  buildAttachmentOcrDbPatch,
+  calcExpiryDaysRemaining,
+  classifyOcrFileSupport,
+  evaluateExpiryStatus,
+  type WorkPlanAttachmentOcrMeta,
+  type WorkPlanOcrResult,
+} from '@/lib/workPlanOcrHelpers';
 import {
   isEligibleForSmartSplit,
   MAX_SMART_SPLIT_PAGES,
@@ -65,6 +72,10 @@ interface Row {
   mime_type?: string | null;
   source_type: string | null;
   locked: boolean | null;
+  ocr_meta?: WorkPlanAttachmentOcrMeta | null;
+  doc_issue_date?: string | null;
+  doc_expiry_date?: string | null;
+  ocr_checked_at?: string | null;
 }
 
 interface Props {
@@ -115,6 +126,7 @@ export default function AttachmentChecklist({
   const [addingCustom, setAddingCustom] = useState(false);
   const [ocrByStageId, setOcrByStageId] = useState<Record<string, WorkPlanOcrResult>>({});
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
+  const [rowOcrBusyIds, setRowOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrBatchBusy, setOcrBatchBusy] = useState(false);
   const [splitBusyMap, setSplitBusyMap] = useState<Record<string, { done: number; total: number }>>({});
   const [vaultDocs, setVaultDocs] = useState<CompanyVaultDoc[]>([]);
@@ -146,7 +158,7 @@ export default function AttachmentChecklist({
   const reload = useCallback(async () => {
     const { data, error } = await supabase
       .from('work_plan_attachments')
-      .select('id, attachment_key, name, description, category, is_mandatory, file_url, file_path, file_size, mime_type, source_type, locked')
+      .select('id, attachment_key, name, description, category, is_mandatory, file_url, file_path, file_size, mime_type, source_type, locked, ocr_meta, doc_issue_date, doc_expiry_date, ocr_checked_at')
       .eq('work_plan_id', workPlanId)
       .eq('is_deleted', false)
       .order('is_mandatory', { ascending: false });
@@ -154,7 +166,7 @@ export default function AttachmentChecklist({
       toast({ title: '첨부 불러오기 실패', description: error.message, variant: 'destructive' });
       return;
     }
-    const next = (data ?? []) as Row[];
+    const next = (data ?? []) as unknown as Row[];
     setRows(next);
     onProgress?.(computeAttachmentProgress(next));
   }, [workPlanId, onProgress]);
@@ -364,6 +376,70 @@ export default function AttachmentChecklist({
     }
   };
 
+  const runBackgroundRowOcr = async (
+    row: Row,
+    file: File,
+    uploaded: { publicUrl: string; path: string; finalBytes: number; file: File },
+    shouldAlsoUpdateVault: boolean,
+  ) => {
+    const support = classifyOcrFileSupport({ name: file.name, type: file.type });
+    if (support !== 'image' && support !== 'pdf') return;
+    setRowOcrBusyIds((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      const slots = [{ key: row.attachment_key, name: row.name }];
+      const ocr = await analyzeWorkPlanAttachmentFile(file, slots);
+      const patch = buildAttachmentOcrDbPatch(ocr);
+      if (!patch) return;
+
+      await supabase
+        .from('work_plan_attachments')
+        .update(patch as any)
+        .eq('id', row.id);
+
+      if (shouldAlsoUpdateVault && companyId && isReusableAttachmentKey(row.attachment_key)) {
+        await saveCompanyVaultDoc({
+          projectId,
+          companyId,
+          attachmentKey: row.attachment_key,
+          docName: row.name,
+          fileUrl: uploaded.publicUrl,
+          filePath: uploaded.path,
+          fileSize: uploaded.finalBytes,
+          mimeType: uploaded.file.type,
+          holderName: ocr.companyOrHolder ?? null,
+          regOrCertNo: ocr.regOrCertNo ?? null,
+          expiryDate: ocr.expiryDate ?? null,
+          sourceWorkPlanId: workPlanId,
+        });
+        void reloadVault();
+      }
+
+      if (ocr.expiryStatus === 'expired' && ocr.expiryDate) {
+        toast({
+          title: `⚠️ '${row.name}' 유효기간 만료 감지`,
+          description: `만료일 ${ocr.expiryDate} — 결재 전 최신 서류로 교체해 주세요.`,
+          variant: 'destructive',
+        });
+      } else if (ocr.expiryStatus === 'expiring_soon' && ocr.expiryDate) {
+        toast({
+          title: `'${row.name}' 유효기간 임박 (${ocr.expiryDate})`,
+          description: '30일 이내 만료 예정입니다. 작업 일정을 확인해 주세요.',
+        });
+      }
+
+      onChange?.();
+      await reload();
+    } catch {
+      // Background OCR is best-effort and must never block or fail an upload.
+    } finally {
+      setRowOcrBusyIds((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    }
+  };
+
   const handleUpload = async (
     row: Row,
     file: File,
@@ -384,6 +460,7 @@ export default function AttachmentChecklist({
         toast({ title: '업로드 실패', description: e?.message || String(e), variant: 'destructive' });
         return false;
       }
+      const existingOcrPatch = buildAttachmentOcrDbPatch(opts?.ocrMeta);
       const { error } = await supabase
         .from('work_plan_attachments')
         .update({
@@ -392,7 +469,13 @@ export default function AttachmentChecklist({
           file_size: uploaded.finalBytes,
           mime_type: uploaded.file.type,
           source_type: 'manual',
-        })
+          ...(existingOcrPatch ?? {
+            ocr_meta: null,
+            doc_issue_date: null,
+            doc_expiry_date: null,
+            ocr_checked_at: null,
+          }),
+        } as any)
         .eq('id', row.id);
       if (error) {
         toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -437,6 +520,11 @@ export default function AttachmentChecklist({
       }
       onChange?.();
       await reload();
+
+      // Auto-verify inspection/insurance expiry in background when not already OCR'd
+      if (!existingOcrPatch) {
+        void runBackgroundRowOcr(row, file, uploaded, saveToVaultOptIn);
+      }
       return true;
     } finally {
       setUploadingId(null);
@@ -552,7 +640,16 @@ export default function AttachmentChecklist({
     }
     const patch = isCustomAttachmentKey(row.attachment_key)
       ? { is_deleted: true, deleted_at: new Date().toISOString() }
-      : { file_url: null, file_path: null, file_size: null, mime_type: null };
+      : {
+          file_url: null,
+          file_path: null,
+          file_size: null,
+          mime_type: null,
+          ocr_meta: null,
+          doc_issue_date: null,
+          doc_expiry_date: null,
+          ocr_checked_at: null,
+        };
     const { error } = await supabase
       .from('work_plan_attachments')
       .update(patch)
@@ -1035,8 +1132,8 @@ export default function AttachmentChecklist({
                         ? <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                         : <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${row.is_mandatory ? 'border-destructive/60' : 'border-muted-foreground/30'}`} />}
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate flex items-center gap-1">
-                          {row.name}
+                        <p className="text-xs font-medium truncate flex items-center gap-1 flex-wrap">
+                          <span className="truncate">{row.name}</span>
                           {isCustomAttachmentKey(row.attachment_key) && (
                             <Badge variant="secondary" className="text-[9px] h-4 shrink-0">사용자 추가</Badge>
                           )}
@@ -1045,6 +1142,34 @@ export default function AttachmentChecklist({
                           {isSelected && (
                             <Badge variant="outline" className="text-[9px] h-4 border-primary text-primary">붙여넣기</Badge>
                           )}
+                          {rowOcrBusyIds[row.id] && (
+                            <Badge variant="outline" className="text-[9px] h-4 gap-0.5 text-primary border-primary/40 shrink-0">
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" /> AI 기간 확인 중…
+                            </Badge>
+                          )}
+                          {!rowOcrBusyIds[row.id] && isUploaded && row.doc_expiry_date && (() => {
+                            const status = evaluateExpiryStatus(row.doc_expiry_date);
+                            const days = calcExpiryDaysRemaining(row.doc_expiry_date);
+                            if (status === 'expired') {
+                              return (
+                                <Badge variant="destructive" className="text-[9px] h-4 gap-0.5 shrink-0">
+                                  <AlertTriangle className="h-2.5 w-2.5" /> 만료됨 ({row.doc_expiry_date})
+                                </Badge>
+                              );
+                            }
+                            if (status === 'expiring_soon') {
+                              return (
+                                <Badge variant="outline" className="text-[9px] h-4 border-amber-500 text-amber-700 dark:text-amber-300 shrink-0">
+                                  임박 {days != null ? `D-${days}` : ''} ({row.doc_expiry_date})
+                                </Badge>
+                              );
+                            }
+                            return (
+                              <Badge variant="outline" className="text-[9px] h-4 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shrink-0">
+                                유효 ~{row.doc_expiry_date}
+                              </Badge>
+                            );
+                          })()}
                         </p>
                         {row.description && <p className="text-[10px] text-muted-foreground truncate">{row.description}</p>}
                       </div>

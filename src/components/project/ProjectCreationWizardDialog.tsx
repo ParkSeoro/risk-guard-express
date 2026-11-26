@@ -26,6 +26,8 @@ import {
   type MemberCandidateProfile,
   type MemberDraftAssignment,
 } from '@/components/project/ProjectMemberMultiPickerDialog';
+import TradeTagSelector from '@/components/project/TradeTagSelector';
+import { normalizeTradeTags } from '@/lib/projectTradeTags';
 
 type GlobalCompany = {
   id: string;
@@ -95,7 +97,7 @@ export default function ProjectCreationWizardDialog({
   const [geoError, setGeoError] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
-  const [tags, setTags] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [status, setStatus] = useState('진행중');
 
   // Step 2: Client → GC → Subcontractor Tree
@@ -127,7 +129,7 @@ export default function ProjectCreationWizardDialog({
       setGeoError(null);
       setPeriodStart('');
       setPeriodEnd('');
-      setTags('');
+      setTags([]);
       setStatus('진행중');
       setClientCompanyId('');
       setClientText('');
@@ -358,7 +360,7 @@ export default function ProjectCreationWizardDialog({
         gc_company_id: resolvedPrimaryGc,
         gc_company_ids: gcIds,
         sub_company_ids: subIds,
-        tags: tags.split(',').map((s) => s.trim()).filter(Boolean),
+        tags: normalizeTradeTags(tags),
         status,
         created_by: userId,
       };
@@ -612,14 +614,11 @@ export default function ProjectCreationWizardDialog({
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <Label>주요 공종 태그 (쉼표 구분)</Label>
-                <Input
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  placeholder="배관, 용접, 고소작업, 굴착"
-                />
-              </div>
+              <TradeTagSelector
+                value={tags}
+                onChange={setTags}
+                label="주요 공종 태그 (AI 위험성평가·작업계획서 연동)"
+              />
             </div>
           )}
 

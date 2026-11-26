@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   ExternalLink,
   FileSignature,
@@ -11,11 +13,21 @@ import {
   ClipboardCheck,
   Loader2,
   Building2,
+  CloudSun,
+  RotateCcw,
+  Save,
+  ShieldCheck,
 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import {
   pickPermitDisplayTemplateWithSource,
   type PermitTemplateRow,
 } from '@/lib/permitDisplayTemplate';
+import {
+  DEFAULT_WEATHER_STOP_RULES,
+  normalizeWeatherStopRules,
+  type WeatherStopRules,
+} from '@/lib/weatherStopRules';
 
 interface CompanyLike {
   id: string;
@@ -28,6 +40,10 @@ interface Props {
   projectId: string;
   companies: CompanyLike[];
   isMaster: boolean;
+  canManage: boolean;
+  canEditSafetyRules: boolean;
+  initialWeatherStopRules?: unknown;
+  onWeatherRulesSaved?: () => void;
 }
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -42,11 +58,23 @@ export default function ProjectIntegrationsTab({
   projectId,
   companies,
   isMaster,
+  canManage,
+  canEditSafetyRules,
+  initialWeatherStopRules,
+  onWeatherRulesSaved,
 }: Props) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<PermitTemplateRow[]>([]);
   const [routeCounts, setRouteCounts] = useState<Record<string, { shared: number; total: number }>>({});
+  const [weatherRules, setWeatherRules] = useState<WeatherStopRules>(() =>
+    normalizeWeatherStopRules(initialWeatherStopRules),
+  );
+  const [savingWeather, setSavingWeather] = useState(false);
+
+  useEffect(() => {
+    setWeatherRules(normalizeWeatherStopRules(initialWeatherStopRules));
+  }, [initialWeatherStopRules]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +111,27 @@ export default function ProjectIntegrationsTab({
       cancelled = true;
     };
   }, [projectId]);
+
+  const handleSaveWeatherRules = async () => {
+    if (!canEditSafetyRules) return;
+    setSavingWeather(true);
+    const normalized = normalizeWeatherStopRules(weatherRules);
+    const { error } = await supabase
+      .from('projects')
+      .update({ weather_stop_rules: normalized } as any)
+      .eq('id', projectId);
+    setSavingWeather(false);
+    if (error) {
+      toast({ title: '기상 기준 저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setWeatherRules(normalized);
+    toast({
+      title: '기상 · 작업중지 기준이 저장되었습니다.',
+      description: '현장 모바일 날씨 카드에서 실시간 기준 초과 경고가 자동 연동됩니다.',
+    });
+    onWeatherRulesSaved?.();
+  };
 
   const projectDefaultPermit = pickPermitDisplayTemplateWithSource({
     templates,
@@ -177,7 +226,131 @@ export default function ProjectIntegrationsTab({
         </CardContent>
       </Card>
 
-      {/* 2. Approval Routes Summary (SSOT: Settings > 결재선 관리) */}
+      {/* 2. Project Weather Stop-Work Rules (Live linked to MobileWeatherCard) */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 flex-wrap">
+          <div>
+            <CardTitle className="text-sm flex items-center gap-1.5">
+              <CloudSun className="h-4 w-4 text-primary" />
+              프로젝트 기상 · 작업중지 기준
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              이 현장의 실시간 날씨(모바일 현장 날씨 카드)가 아래 기준을 초과하면 자동으로 작업중지 경고가 표시됩니다.
+            </p>
+          </div>
+          {canEditSafetyRules && (
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs gap-1"
+                onClick={() => setWeatherRules({ ...DEFAULT_WEATHER_STOP_RULES })}
+              >
+                <RotateCcw className="h-3 w-3" /> 법정 기본값
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                disabled={savingWeather}
+                onClick={() => void handleSaveWeatherRules()}
+              >
+                <Save className="h-3 w-3" /> {savingWeather ? '저장 중…' : '저장'}
+              </Button>
+            </div>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">양중·크레인 중지 (m/s)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                min={1}
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.craneWindMs}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, craneWindMs: Number(e.target.value) || 10 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">고소·비계 중지 (m/s)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                min={1}
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.highWorkWindMs}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, highWorkWindMs: Number(e.target.value) || 10 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">강우 중지 (mm/h)</Label>
+              <Input
+                type="number"
+                step="1"
+                min={1}
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.rainMmPerHour}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, rainMmPerHour: Number(e.target.value) || 10 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">폭염 주의 (℃)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.heatCautionC}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, heatCautionC: Number(e.target.value) || 33 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">폭염 작업중지 (℃)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.heatStopC}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, heatStopC: Number(e.target.value) || 35 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">한파 주의 (℃)</Label>
+              <Input
+                type="number"
+                step="1"
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.coldCautionC}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, coldCautionC: Number(e.target.value) }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">한파 작업중지 (℃)</Label>
+              <Input
+                type="number"
+                step="1"
+                disabled={!canEditSafetyRules}
+                className="h-8 text-xs"
+                value={weatherRules.coldStopC}
+                onChange={(e) => setWeatherRules((p) => ({ ...p, coldStopC: Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2.5">
+            ※ 법정 기본값: 양중·고소 풍속 10m/s (산안법 규칙 제383조), 강우 10mm/h, 폭염 주의 33℃ / 중지 35℃ (제566조), 한파 주의 -12℃ / 중지 -15℃
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* 3. Approval Routes Summary (SSOT: Settings > 결재선 관리) */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
           <div>
@@ -215,24 +388,16 @@ export default function ProjectIntegrationsTab({
         </CardContent>
       </Card>
 
-      {/* 3. Other Related Settings Shortcuts */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-1.5">
-            <ClipboardCheck className="h-4 w-4 text-primary" />
-            기타 연동 설정 바로가기
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-xs gap-1.5"
-            onClick={() => navigate('/settings/companies')}
-          >
-            전역 업체 마스터 관리 <ExternalLink className="h-3 w-3" />
-          </Button>
-          {isMaster && (
+      {/* 4. Project Safety & Attachment Rules (Managers & Safety Managers) */}
+      {canEditSafetyRules && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-1.5">
+              <ClipboardCheck className="h-4 w-4 text-primary" />
+              현장 규칙 설정
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -241,17 +406,52 @@ export default function ProjectIntegrationsTab({
             >
               작업계획서 필수 첨부 규칙 <ExternalLink className="h-3 w-3" />
             </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-xs gap-1.5"
-            onClick={() => navigate('/settings/weather')}
-          >
-            기상·작업중지 기준 <ExternalLink className="h-3 w-3" />
-          </Button>
-        </CardContent>
-      </Card>
+            {canManage && !isMaster && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs gap-1.5"
+                onClick={() => navigate('/settings/companies')}
+              >
+                업체 마스터 조회 <ExternalLink className="h-3 w-3" />
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 5. Master-Only System Administration */}
+      {isMaster && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              시스템 마스터 전용 설정
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              마스터 계정에게만 표시되는 전역 시스템 설정입니다.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs gap-1.5 bg-background"
+              onClick={() => navigate('/settings/companies')}
+            >
+              전역 업체 마스터 관리 <ExternalLink className="h-3 w-3" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs gap-1.5 bg-background"
+              onClick={() => navigate('/settings/weather')}
+            >
+              기상 API 키 설정 (KMA/OpenWeather) <ExternalLink className="h-3 w-3" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -4,12 +4,14 @@ import { CloudSun, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { geocodeKoreanAddress, fetchLiveWeatherData } from "@/lib/koreanLocationService";
+import { evaluateWeatherAgainstRules } from "@/lib/weatherStopRules";
 
 type Props = { projectId: string };
 
 export default function MobileWeatherCard({ projectId }: Props) {
   const [loading, setLoading] = useState(true);
   const [weather, setWeather] = useState<any>(null);
+  const [stopRules, setStopRules] = useState<unknown>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,9 +28,10 @@ export default function MobileWeatherCard({ projectId }: Props) {
       try {
         const { data: project } = await supabase
           .from("projects")
-          .select("site_lat, site_lng, site_address, site_name")
+          .select("site_lat, site_lng, site_address, site_name, weather_stop_rules")
           .eq("id", projectId)
           .maybeSingle();
+        if (!cancelled) setStopRules((project as any)?.weather_stop_rules ?? null);
         let lat = (project as any)?.site_lat;
         let lng = (project as any)?.site_lng;
         const address = (project as any)?.site_address || "";
@@ -76,12 +79,23 @@ export default function MobileWeatherCard({ projectId }: Props) {
 
   const current = weather?.current || weather?.now || weather;
   const temp = current?.temp ?? current?.temperature ?? current?.temp_c;
+  const feelsLike = current?.feels_like ?? current?.apparent_temperature ?? null;
   const wind = current?.wind_speed ?? current?.wind ?? current?.wsd;
+  const rain = current?.rain_1h ?? current?.precipitation ?? current?.rn1 ?? null;
   const desc =
     current?.description || current?.sky || weather?.description || weather?.summary || "";
-  const alert =
-    weather?.alerts?.[0]?.title ||
-    (typeof wind === "number" && wind >= 10 ? "강풍 주의" : null);
+
+  const ruleEval = evaluateWeatherAgainstRules(
+    {
+      tempC: temp != null ? Number(temp) : null,
+      feelsLikeC: feelsLike != null ? Number(feelsLike) : null,
+      windMs: wind != null ? Number(wind) : null,
+      rainMmPerHour: rain != null ? Number(rain) : null,
+    },
+    stopRules,
+  );
+  const alertText = ruleEval.alerts[0]?.message || weather?.alerts?.[0]?.title || null;
+  const isStopLevel = ruleEval.level === "stop";
 
   const ageMin = fetchedAt
     ? Math.round((Date.now() - new Date(fetchedAt).getTime()) / 60000)
@@ -111,9 +125,15 @@ export default function MobileWeatherCard({ projectId }: Props) {
                   {desc ? ` · ${desc}` : ""}
                   {wind != null ? ` · 풍속 ${Number(wind).toFixed(1)}m/s` : ""}
                 </div>
-                {alert && (
-                  <div className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 mt-1 whitespace-normal">
-                    <AlertTriangle className="h-3 w-3 shrink-0" /> {alert}
+                {alertText && (
+                  <div
+                    className={`flex items-center gap-1 text-xs mt-1 whitespace-normal font-medium ${
+                      isStopLevel
+                        ? "text-destructive"
+                        : "text-amber-700 dark:text-amber-400"
+                    }`}
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {alertText}
                   </div>
                 )}
                 {stale && (

@@ -256,6 +256,12 @@ export function AppSidebar() {
     setOpenGroups(s => ({ ...s, [k]: !s[k] }));
   };
   const [menuQuery, setMenuQuery] = useState("");
+  const [searchUnlocked, setSearchUnlocked] = useState(false);
+
+  // Clear sidebar menu filter whenever route changes (prevents stale filter on Back navigation)
+  useEffect(() => {
+    setMenuQuery("");
+  }, [location.pathname]);
   const normalizedQuery = menuQuery.trim().toLowerCase();
   const matchesQuery = (title: string, groupLabel?: string) =>
     !normalizedQuery ||
@@ -356,7 +362,16 @@ export function AppSidebar() {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-sidebar-muted" />
             <input
-              type="text"
+              type="search"
+              name="safenex-sidebar-menu-filter"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              readOnly={!searchUnlocked}
+              onFocus={() => setSearchUnlocked(true)}
               value={menuQuery}
               onChange={(e) => setMenuQuery(e.target.value)}
               placeholder="메뉴 빠른 검색..."

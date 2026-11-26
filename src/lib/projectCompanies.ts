@@ -58,3 +58,96 @@ export async function fetchProjectCompanies(
     .filter((c: ProjectCompany | null): c is ProjectCompany => !!c && (opts?.includeDeleted || c.is_deleted !== true))
     .sort((a: ProjectCompany, b: ProjectCompany) => (a.name || '').localeCompare(b.name || '', 'ko'));
 }
+
+export type ProjectCompanyLinkLike = {
+  company_id: string;
+  role_in_project?: string | null;
+  company_type?: string | null;
+  is_deleted?: boolean | null;
+};
+
+/**
+ * Pure SSOT resolver: derives legacy `projects.gc_company_id`, `gc_company_ids`,
+ * and `sub_company_ids` from active `project_companies` rows.
+ */
+export function resolveProjectCompanyColumns(
+  links: ProjectCompanyLinkLike[],
+  opts?: { preferredPrimaryGcId?: string | null; currentPrimaryGcId?: string | null },
+): {
+  gc_company_id: string | null;
+  gc_company_ids: string[];
+  sub_company_ids: string[];
+} {
+  const gcSet = new Set<string>();
+  const subSet = new Set<string>();
+
+  for (const row of links) {
+    if (!row?.company_id || row.is_deleted === true) continue;
+    const role = String(row.role_in_project || row.company_type || '').toLowerCase();
+    if (role === 'gc') {
+      gcSet.add(row.company_id);
+    } else if (role === 'contractor' || role === 'subcontractor') {
+      subSet.add(row.company_id);
+    }
+  }
+
+  const gc_company_ids = Array.from(gcSet);
+  const sub_company_ids = Array.from(subSet).filter((id) => !gcSet.has(id));
+
+  let gc_company_id: string | null = null;
+  if (opts?.preferredPrimaryGcId && gcSet.has(opts.preferredPrimaryGcId)) {
+    gc_company_id = opts.preferredPrimaryGcId;
+  } else if (opts?.currentPrimaryGcId && gcSet.has(opts.currentPrimaryGcId)) {
+    gc_company_id = opts.currentPrimaryGcId;
+  } else {
+    gc_company_id = gc_company_ids[0] || null;
+  }
+
+  return { gc_company_id, gc_company_ids, sub_company_ids };
+}
+
+/**
+ * Synchronizes `projects.gc_company_id`, `gc_company_ids`, and `sub_company_ids`
+ * from `project_companies` (the single source of truth).
+ */
+export async function syncProjectCompanyColumns(
+  projectId: string,
+  preferredPrimaryGcId?: string | null,
+): Promise<{ gc_company_id: string | null; gc_company_ids: string[]; sub_company_ids: string[] } | null> {
+  if (!projectId) return null;
+  const [{ data: links }, { data: proj }] = await Promise.all([
+    (supabase as any)
+      .from('project_companies')
+      .select('company_id, role_in_project, is_deleted, companies:company_id(type)')
+      .eq('project_id', projectId)
+      .eq('is_deleted', false),
+    supabase
+      .from('projects')
+      .select('gc_company_id')
+      .eq('id', projectId)
+      .maybeSingle(),
+  ]);
+
+  const normalized: ProjectCompanyLinkLike[] = ((links || []) as any[]).map((l) => ({
+    company_id: l.company_id,
+    role_in_project: l.role_in_project,
+    company_type: l.companies?.type || null,
+    is_deleted: l.is_deleted,
+  }));
+
+  const resolved = resolveProjectCompanyColumns(normalized, {
+    preferredPrimaryGcId,
+    currentPrimaryGcId: (proj as any)?.gc_company_id || null,
+  });
+
+  await supabase
+    .from('projects')
+    .update({
+      gc_company_id: resolved.gc_company_id,
+      gc_company_ids: resolved.gc_company_ids,
+      sub_company_ids: resolved.sub_company_ids,
+    } as any)
+    .eq('id', projectId);
+
+  return resolved;
+}

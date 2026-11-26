@@ -153,6 +153,72 @@ export function buildAttachmentOcrDbPatch(
   };
 }
 
+export function addMonthsYmd(ymd: string, months: number): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, d));
+  if (!Number.isFinite(dt.getTime())) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+export function isNdtDocument(opts: {
+  docCategoryLabel?: string | null;
+  fileName?: string | null;
+  slotName?: string | null;
+}): boolean {
+  const hay = `${opts.docCategoryLabel || ""} ${opts.fileName || ""} ${opts.slotName || ""}`;
+  return /비파괴|ndt|자분탐상|초음파탐상|침투탐상/i.test(hay);
+}
+
+/**
+ * Resolves effective expiry date for Non-Destructive Testing (비파괴검사) reports:
+ * - Never treat inspection/issue date itself as expiry date.
+ * - Equipment age >= 10 years: valid for 1 month from inspection (반입 1개월 이내).
+ * - Equipment age < 10 years (or unknown): valid for 1 year from inspection (1년 이내),
+ *   with an explicit note reminding reviewers of the 10yr+ 1-month rule.
+ */
+export function resolveNdtEffectiveExpiry(opts: {
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  equipmentYear?: number | null;
+  todayKst?: string;
+}): { expiryDate: string | null; note: string | null; ruleApplied: "ndt_10yr_1m" | "ndt_1yr" | "explicit" | "none" } {
+  const issue = opts.issueDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.issueDate) ? opts.issueDate : null;
+  const rawExp = opts.expiryDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.expiryDate) ? opts.expiryDate : null;
+  // Guard: AI sometimes puts the inspection date itself into expiry_date
+  const explicitExp = rawExp && rawExp !== issue ? rawExp : null;
+  if (explicitExp) {
+    return { expiryDate: explicitExp, note: null, ruleApplied: "explicit" };
+  }
+  if (!issue) {
+    return { expiryDate: null, note: null, ruleApplied: "none" };
+  }
+
+  const today = opts.todayKst || todayKstDateStr();
+  const currentYear = Number(today.slice(0, 4));
+  const eqYear =
+    typeof opts.equipmentYear === "number" && opts.equipmentYear >= 1970 && opts.equipmentYear <= currentYear + 1
+      ? opts.equipmentYear
+      : null;
+
+  if (eqYear != null && currentYear - eqYear >= 10) {
+    return {
+      expiryDate: addMonthsYmd(issue, 1),
+      note: `10년 이상 장비(${eqYear}년식) 기준 적용: 검사일(${issue})로부터 1개월 이내 반입 필요`,
+      ruleApplied: "ndt_10yr_1m",
+    };
+  }
+
+  return {
+    expiryDate: addMonthsYmd(issue, 12),
+    note:
+      eqYear != null
+        ? `10년 미만 장비(${eqYear}년식) 비파괴검사 1년 유효 기준 적용`
+        : "비파괴검사 1년 유효 기준 적용 (※ 10년 이상 장비는 반입 1개월 이내 검사 필요)",
+    ruleApplied: "ndt_1yr",
+  };
+}
+
 export function normalizeOcrResponse(
   raw: Record<string, unknown> | null | undefined,
   opts: {

@@ -499,6 +499,9 @@ export default function AttachmentReviewPanel({
                       {selected.ocr_meta?.summary && (
                         <p className="text-muted-foreground">{selected.ocr_meta.summary}</p>
                       )}
+                      {selected.ocr_meta?.notes && (
+                        <p className="text-amber-700 dark:text-amber-300">{selected.ocr_meta.notes}</p>
+                      )}
                     </div>
                   )}
                   <FileViewer row={selected} />

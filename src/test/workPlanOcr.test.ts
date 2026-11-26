@@ -5,6 +5,7 @@ import {
   evaluateExpiryStatus,
   normalizeOcrResponse,
   pickBestKeywordPage,
+  resolveNdtEffectiveExpiry,
 } from "@/lib/workPlanOcrHelpers";
 
 describe("WorkPlan Phase 1 — OCR MVP helpers & contracts", () => {
@@ -88,5 +89,41 @@ describe("WorkPlan Phase 1 — OCR MVP helpers & contracts", () => {
     expect(uiSrc).toContain("AI 자동 분류");
     expect(uiSrc).toContain("판독 페이지 선택");
     expect(uiSrc).toContain("수동으로 항목에 넣기");
+  });
+
+  it("applies NDT (비파괴검사) validity rules: 1yr for <10yr equipment, 1mo for >=10yr equipment, never treating issue date as expiry", () => {
+    // AI mistakenly puts inspection date into expiry_date -> cleared & calculated as +1 year
+    const under10 = resolveNdtEffectiveExpiry({
+      issueDate: "2026-04-15",
+      expiryDate: "2026-04-15",
+      equipmentYear: 2020,
+      todayKst: "2026-11-26",
+    });
+    expect(under10.ruleApplied).toBe("ndt_1yr");
+    expect(under10.expiryDate).toBe("2027-04-15");
+    expect(evaluateExpiryStatus(under10.expiryDate, "2026-11-26")).toBe("valid");
+
+    // 10+ year old equipment -> valid only 1 month from inspection date
+    const over10 = resolveNdtEffectiveExpiry({
+      issueDate: "2026-09-01",
+      expiryDate: null,
+      equipmentYear: 2015,
+      todayKst: "2026-11-26",
+    });
+    expect(over10.ruleApplied).toBe("ndt_10yr_1m");
+    expect(over10.expiryDate).toBe("2026-10-01");
+    expect(evaluateExpiryStatus(over10.expiryDate, "2026-11-26")).toBe("expired");
+    expect(over10.note).toContain("10년 이상 장비");
+
+    // Unknown equipment year -> default 1 year + reminder note about 10yr+ rule
+    const unknownYear = resolveNdtEffectiveExpiry({
+      issueDate: "2026-06-01",
+      expiryDate: null,
+      equipmentYear: null,
+      todayKst: "2026-11-26",
+    });
+    expect(unknownYear.ruleApplied).toBe("ndt_1yr");
+    expect(unknownYear.expiryDate).toBe("2027-06-01");
+    expect(unknownYear.note).toContain("10년 이상 장비는 반입 1개월 이내");
   });
 });

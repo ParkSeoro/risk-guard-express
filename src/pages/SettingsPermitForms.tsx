@@ -223,10 +223,18 @@ export default function SettingsPermitForms() {
     if (globalStd) {
       q = q.is('company_id', null).is('project_id', null);
     } else if (globalProj) {
+      if (cid === PROJECT_ALL_COMPANIES_KEY) {
+        setLoading(false);
+        return;
+      }
       q = q.is('project_id', null).eq('company_id', cid);
     } else if (projAll) {
       q = q.eq('project_id', projKey).is('company_id', null);
     } else {
+      if (cid === GLOBAL_STANDARD_COMPANY_KEY) {
+        setLoading(false);
+        return;
+      }
       q = q.eq('project_id', projKey).eq('company_id', cid);
     }
 
@@ -252,10 +260,18 @@ export default function SettingsPermitForms() {
     if (isMaster) void loadProjectsAndGlobalStandards();
   }, [isMaster]);
 
+  const handleProjectChange = (nextProjId: string) => {
+    setSelectedProjectId(nextProjId);
+    setCompanyId(
+      nextProjId === GLOBAL_PROJECT_KEY
+        ? GLOBAL_STANDARD_COMPANY_KEY
+        : PROJECT_ALL_COMPANIES_KEY,
+    );
+  };
+
   useEffect(() => {
     if (!isMaster) return;
     void loadCompanies(selectedProjectId);
-    setCompanyId(selectedProjectId === GLOBAL_PROJECT_KEY ? GLOBAL_STANDARD_COMPANY_KEY : PROJECT_ALL_COMPANIES_KEY);
   }, [isMaster, selectedProjectId]);
 
   useEffect(() => {
@@ -508,7 +524,7 @@ export default function SettingsPermitForms() {
         <CardContent className="p-4 flex flex-wrap items-end gap-3">
           <div className="space-y-1 min-w-[240px]">
             <Label>1. 프로젝트 (현장별 독립 격리)</Label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <Select value={selectedProjectId} onValueChange={handleProjectChange}>
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="프로젝트 선택" />
               </SelectTrigger>

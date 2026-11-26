@@ -1161,6 +1161,10 @@ const ProjectDetail = () => {
               projectId={projectId}
               companies={companies}
               isMaster={isMaster}
+              canManage={canManage}
+              canEditSafetyRules={canManage || projectRole === 'safety_manager'}
+              initialWeatherStopRules={(project as any)?.weather_stop_rules}
+              onWeatherRulesSaved={() => void fetchAll()}
             />
           )}
         </TabsContent>

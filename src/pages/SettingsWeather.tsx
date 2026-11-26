@@ -164,8 +164,11 @@ const SettingsWeather = () => {
                 <div className="flex gap-2">
                   <Input
                     id={key}
+                    name={key}
                     type={show[key] ? 'text' : 'password'}
-                    autoComplete="off"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     placeholder={hints[key] ? '새 키로 교체하려면 입력' : 'API 키 입력'}
                     value={drafts[key]}
                     onChange={(e) => setDrafts((p) => ({ ...p, [key]: e.target.value }))}

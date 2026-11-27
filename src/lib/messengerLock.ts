@@ -14,6 +14,7 @@ export interface MessengerLockState {
 
 const STORAGE_PREFIX = "safenex_messenger_lock_v1:";
 const CHANNEL_NAME = "safenex_messenger_lock_sync";
+const SAME_TAB_EVENT = "safenex:messenger-lock-change";
 
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
@@ -73,6 +74,11 @@ function broadcastLockState(userId: string, state: MessengerLockState): void {
       ch.postMessage({ userId, state });
       ch.close();
     }
+  } catch {
+    /* ignore */
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(SAME_TAB_EVENT, { detail: { userId, state } }));
   } catch {
     /* ignore */
   }
@@ -151,8 +157,17 @@ export function subscribeMessengerLockSync(
     /* ignore */
   }
 
+  const onSameTab = (e: Event) => {
+    const detail = (e as CustomEvent<{ userId?: string; state?: MessengerLockState }>).detail;
+    if (detail?.userId === userId && detail?.state) {
+      onChange(detail.state);
+    }
+  };
+  window.addEventListener(SAME_TAB_EVENT, onSameTab);
+
   return () => {
     window.removeEventListener("storage", onStorage);
+    window.removeEventListener(SAME_TAB_EVENT, onSameTab);
     try {
       ch?.close();
     } catch {

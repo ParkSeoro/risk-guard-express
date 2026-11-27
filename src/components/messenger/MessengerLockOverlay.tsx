@@ -97,10 +97,12 @@ export function MessengerLockScreen({
 
   return (
     <div
-      className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-xl text-white p-6 select-none"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-xl text-white p-6 select-none pointer-events-auto"
       role="dialog"
       aria-modal="true"
       aria-label="메신저 잠금 화면"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="w-full max-w-[300px] flex flex-col items-center text-center">
         <div className="h-14 w-14 rounded-2xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center mb-4 shadow-lg">

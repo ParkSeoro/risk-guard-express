@@ -107,7 +107,9 @@ export default function WorkPermitWorkersDialog({
       setWorkers(merged);
 
       const ids = new Set((wpw || []).map((r: any) => r.worker_id as string));
-      setAssigned(ids);
+      const allowedOnLoad = new Set(merged.map((w) => w.id));
+      // Only show active/eligible workers as checked; inactive/deleted ghosts are dropped on save
+      setAssigned(new Set([...ids].filter((id) => allowedOnLoad.has(id))));
       setInitialAssigned(new Set(ids));
       const site = new Set<string>();
       const scopedIds = new Set(merged.map((w) => w.id));
@@ -142,8 +144,9 @@ export default function WorkPermitWorkersDialog({
     if (!permit) return;
     setSaving(true);
     const allowed = new Set(workers.map((w) => w.id));
-    const safeAssigned = new Set([...assigned].filter((id) => allowed.has(id) || initialAssigned.has(id)));
-    const toAdd = [...safeAssigned].filter((id) => !initialAssigned.has(id) && allowed.has(id));
+    // Never retain inactive/deleted ghost workers that are no longer in the active roster
+    const safeAssigned = new Set([...assigned].filter((id) => allowed.has(id)));
+    const toAdd = [...safeAssigned].filter((id) => !initialAssigned.has(id));
     const toRemove = [...initialAssigned].filter((id) => !safeAssigned.has(id));
 
     const managerIds = [...safeAssigned].filter((id) => workers.some((w) => w.id === id && w.isManager));

@@ -51,4 +51,16 @@ describe("permit crew no-show notice", () => {
     expect(rosterDialog).toContain("exclude_from_tbm: managerIds.includes(worker_id)");
     expect(rosterDialog).toContain("exclude_from_tbm: true");
   });
+
+  it("excludes inactive/deleted workers from no-show alerts, attendance exceptions, and permit roster dialog", () => {
+    const excludeSql = readFileSync(
+      "supabase/migrations/20261127023000_exclude_inactive_workers_from_permit_no_show.sql",
+      "utf8",
+    );
+    expect((excludeSql.match(/COALESCE\(w\.is_active, true\) = true/g) || []).length).toBeGreaterThanOrEqual(5);
+    expect(rosterDialog).not.toContain("allowed.has(id) || initialAssigned.has(id)");
+
+    const mgrLoader = readFileSync("src/lib/permitRosterManagers.ts", "utf8");
+    expect(mgrLoader).toContain("is_active === false");
+  });
 });

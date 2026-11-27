@@ -56,15 +56,14 @@ export function workStopDisplayName(
   return name || "근로자";
 }
 
-/** 프로젝트 관리자·마스터·발주처 PM만 익명 신고자의 실명을 본다. 소속 관리자 알림은 익명 유지. */
+/** 발주처 안전관리자(OWNER_SM)·마스터만 익명 신고자의 실명을 본다. OWNER_CM·시공사/협력사 관리자는 익명 유지. */
 export function canRevealAnonymousWorkStopReporter(opts: {
   isMaster?: boolean;
   role?: string | null;
   position?: string | null;
 }): boolean {
   if (opts.isMaster) return true;
-  if ((opts.role || "") === "project_admin") return true;
-  return (opts.position || "") === "OWNER_PM";
+  return (opts.position || "") === "OWNER_SM";
 }
 
 export function applyRevealedWorkStopName(preview: string, legalName: string | null | undefined): string {

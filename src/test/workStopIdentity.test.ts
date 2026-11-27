@@ -74,7 +74,7 @@ describe("work-stop identity", () => {
     ).toBe(`[SCK 인천 3P N2] ${ANONYMOUS_REPORTER_LABEL} · 지하 2층 — 가스 냄새`);
   });
 
-  it("reveals the legal name only when PM+ supplied it", () => {
+  it("reveals the legal name only to OWNER_SM and master", () => {
     expect(
       workStopDisplayName(
         { is_anonymous: true, reporter_name: "홍길동" },
@@ -83,9 +83,11 @@ describe("work-stop identity", () => {
     ).toBe("홍길동 (익명 신고)");
     expect(canRevealAnonymousWorkStopReporter({ role: "safety_manager" })).toBe(false);
     expect(canRevealAnonymousWorkStopReporter({ role: "site_supervisor" })).toBe(false);
-    expect(canRevealAnonymousWorkStopReporter({ role: "project_admin" })).toBe(true);
+    expect(canRevealAnonymousWorkStopReporter({ role: "project_admin", position: "OWNER_CM" })).toBe(false);
+    expect(canRevealAnonymousWorkStopReporter({ position: "OWNER_PM" })).toBe(false);
+    expect(canRevealAnonymousWorkStopReporter({ position: "OWNER_SM" })).toBe(true);
+    expect(canRevealAnonymousWorkStopReporter({ role: "project_admin", position: "OWNER_SM" })).toBe(true);
     expect(canRevealAnonymousWorkStopReporter({ isMaster: true })).toBe(true);
-    expect(canRevealAnonymousWorkStopReporter({ position: "OWNER_PM" })).toBe(true);
     expect(
       applyRevealedWorkStopName("익명 근로자 · 출입구 — 개방", "김근로"),
     ).toBe("김근로 (익명 신고) · 출입구 — 개방");

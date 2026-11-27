@@ -130,7 +130,7 @@ export default function WorkStopRequests() {
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><OctagonAlert className="text-destructive" /> 작업중지권 관리</h1>
-          <p className="text-sm text-muted-foreground">{WORK_STOP_LEGAL_CITE} — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다. 익명 신고는 소속 관리자 알림에는 이름이 가려지고, 프로젝트 관리자 이상만 포상 등을 위해 실명을 봅니다.</p>
+          <p className="text-sm text-muted-foreground">{WORK_STOP_LEGAL_CITE} — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다. 익명 신고는 발주처 안전관리자(SM)·마스터만 포상 등을 위해 실명을 보며, 그 외 관리자에게는 익명으로 표시됩니다.</p>
         </div>
         <Button variant="outline" size="sm" asChild>
           <a href="/app/worker/work-stop" target="_blank" rel="noreferrer"><Smartphone className="size-4 mr-1"/> 모바일 신고 페이지</a>

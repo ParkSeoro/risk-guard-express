@@ -112,14 +112,15 @@ export async function loadPermitCompanyManagerCandidates(opts: {
         .select("id, name, phone, company_id, company_name, job_type")
         .single();
       if (iErr) {
-        // Race: another row with same phone — reload
+        // Race: another row with same phone — reload (skip if soft-deleted/inactive)
         const { data: again } = await supabase
           .from("workers")
-          .select("id, name, phone, company_id, company_name, job_type")
+          .select("id, name, phone, company_id, company_name, job_type, is_active")
           .eq("project_id", projectId)
           .eq("phone", digits)
           .maybeSingle();
         if (!again) return { ok: false, error: iErr.message };
+        if ((again as any).is_active === false) continue;
         worker = again;
       } else {
         worker = inserted;

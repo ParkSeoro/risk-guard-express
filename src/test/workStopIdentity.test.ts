@@ -182,37 +182,63 @@ describe("work-stop home layout", () => {
 
 describe("work-stop notify recipients", () => {
   const company = "co-1";
-  it("notifies same-company managers and 발주처, not workers", () => {
+  const parentGc = "gc-parent";
+  it("notifies same-company managers, parent GC, and project 발주처 — never unrelated GCs/contractors or workers", () => {
     expect(
       isWorkStopNotifyRecipient(
-        { user_id: "u-co-sm", role_new: "safety_manager", company_id: company },
+        { user_id: "u-co-sm", role_new: "safety_manager", company_id: company, company_type: "contractor" },
         company,
+        { reporterParentCompanyId: parentGc },
       ),
     ).toBe(true);
     expect(
       isWorkStopNotifyRecipient(
-        { user_id: "u-co-w", role_new: "worker", company_id: company },
+        { user_id: "u-co-w", role_new: "worker", company_id: company, company_type: "contractor" },
         company,
+        { reporterParentCompanyId: parentGc },
       ),
     ).toBe(false);
     expect(
       isWorkStopNotifyRecipient(
-        { user_id: "u-owner", role_new: "project_admin", position_new: "OWNER_SM", company_id: "client" },
+        { user_id: "u-owner", role_new: "project_admin", position_new: "OWNER_SM", company_id: "client", company_type: "client" },
         company,
+        { reporterParentCompanyId: parentGc },
       ),
     ).toBe(true);
     expect(
       isWorkStopNotifyRecipient(
-        { user_id: "u-other-co", role_new: "site_supervisor", company_id: "co-2" },
+        { user_id: "u-parent-gc", role_new: "site_manager", position_new: "SITE_MANAGER", company_id: parentGc, company_type: "gc" },
         company,
+        { reporterParentCompanyId: parentGc },
+      ),
+    ).toBe(true);
+    expect(
+      isWorkStopNotifyRecipient(
+        { user_id: "u-other-gc-sm", role_new: "safety_manager", position_new: "HSE_MANAGER", company_id: "gc-other", company_type: "gc" },
+        company,
+        { reporterParentCompanyId: parentGc },
       ),
     ).toBe(false);
     expect(
       isWorkStopNotifyRecipient(
-        { user_id: "u-gc", role_new: "site_manager", company_id: "gc" },
+        { user_id: "u-other-gc-site", role_new: "site_manager", position_new: "SITE_MANAGER", company_id: "gc-other", company_type: "gc" },
         company,
+        { reporterParentCompanyId: parentGc },
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      isWorkStopNotifyRecipient(
+        { user_id: "u-other-co", role_new: "site_supervisor", company_id: "co-2", company_type: "contractor" },
+        company,
+        { reporterParentCompanyId: parentGc },
+      ),
+    ).toBe(false);
+    expect(
+      isWorkStopNotifyRecipient(
+        { user_id: "u-other-gc-unknown-reporter", role_new: "safety_manager", company_id: "gc-other", company_type: "gc" },
+        null,
+      ),
+    ).toBe(false);
   });
 });
 

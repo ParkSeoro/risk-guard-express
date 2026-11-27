@@ -155,25 +155,47 @@ export function isWorkStopOpenStatus(status: string | null | undefined): boolean
   return WORK_STOP_OPEN_STATUSES.includes((status || "") as (typeof WORK_STOP_OPEN_STATUSES)[number]);
 }
 
-/** Recipients: same-company managers + project safety + 발주처 OWNER_* (no workers/viewers). */
-export function isWorkStopNotifyRecipient(member: {
-  role_new?: string | null;
-  position_new?: string | null;
-  company_id?: string | null;
-  user_id?: string | null;
-}, reporterCompanyId: string | null): boolean {
+/**
+ * Recipients (project-scoped):
+ * - Same-company managers (excluding worker/viewer)
+ * - Parent GC managers (when reporter belongs to a subcontractor)
+ * - Project client (발주처) managers & OWNER_* / project_admin
+ * Excludes unrelated peer GCs and unrelated subcontractors.
+ */
+export function isWorkStopNotifyRecipient(
+  member: {
+    role_new?: string | null;
+    position_new?: string | null;
+    company_id?: string | null;
+    company_type?: string | null;
+    user_id?: string | null;
+  },
+  reporterCompanyId: string | null,
+  opts?: { reporterParentCompanyId?: string | null },
+): boolean {
   if (!member.user_id) return false;
   const role = member.role_new || "";
   if (role === "worker" || role === "viewer") return false;
   const pos = member.position_new || "";
+  const companyType = (member.company_type || "").trim().toLowerCase();
+
   if (reporterCompanyId && member.company_id === reporterCompanyId) return true;
-  if (role === "project_admin" || role === "safety_manager" || role === "site_manager") return true;
-  return (
+  const parentCompanyId = opts?.reporterParentCompanyId || null;
+  if (parentCompanyId && member.company_id === parentCompanyId) return true;
+
+  if (
     pos === "OWNER_HSE" ||
     pos === "OWNER_SM" ||
     pos === "OWNER_PM" ||
-    pos === "OWNER_CM" ||
-    pos === "SITE_MANAGER" ||
-    pos === "HSE_MANAGER"
-  );
+    pos === "OWNER_CM"
+  ) {
+    return true;
+  }
+  if (companyType === "client" || companyType === "발주처" || companyType === "owner") {
+    return true;
+  }
+  if (role === "project_admin" && companyType !== "gc" && companyType !== "contractor") {
+    return true;
+  }
+  return false;
 }

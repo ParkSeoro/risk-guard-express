@@ -10,6 +10,8 @@ import { adminBackTarget } from "@/lib/adminBack";
 import { resolveAdminApprovalsReturnPath } from "@/lib/approvalInboxPreview";
 import { NotificationBell } from "@/components/NotificationBell";
 import { MessengerButton } from "@/components/messenger/MessengerButton";
+import { MessengerLockScreen } from "@/components/messenger/MessengerLockOverlay";
+import { useMessengerLock } from "@/hooks/useMessengerLock";
 import { HelpButton } from "@/components/HelpButton";
 import { TutorialOverlay } from "@/components/TutorialOverlay";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
@@ -43,7 +45,8 @@ export const useGlobalProjectAccess = () => {
 export const useGlobalProjectAccessOptional = () => useContext(ProjectAccessContext);
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile, signOut, roles } = useAuth();
+  const { user, profile, signOut, roles } = useAuth();
+  const { lockState, unlock } = useMessengerLock(user?.id);
   const projectAccess = useProjectAccess();
   const showBackToMobile = isForceDesktop() && isLikelyPhoneDevice();
   const location = useLocation();
@@ -231,6 +234,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <AppErrorBoundary resetKey={location.pathname}>{children}</AppErrorBoundary>
             </main>
           </div>
+          {lockState.locked && user?.id && (
+            <MessengerLockScreen
+              userId={user.id}
+              userName={profile?.display_name}
+              onUnlocked={unlock}
+            />
+          )}
         </RemoteSupportHost>
       </ProjectAccessContext.Provider>
     );
@@ -338,6 +348,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </SidebarProvider>
+      {lockState.locked && user?.id && (
+        <MessengerLockScreen
+          userId={user.id}
+          userName={profile?.display_name}
+          onUnlocked={unlock}
+        />
+      )}
       </RemoteSupportHost>
     </ProjectAccessContext.Provider>
   );

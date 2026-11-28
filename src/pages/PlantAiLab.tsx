@@ -14,9 +14,11 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   Download,
+  FileDiff,
   FileSpreadsheet,
   FileText,
   FlaskConical,
@@ -26,6 +28,8 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
+import { GasPlantSimulatorPanel } from '@/components/plant/GasPlantSimulatorPanel';
+import { PlantDocAnalyzerPanel } from '@/components/plant/PlantDocAnalyzerPanel';
 import {
   SAMPLE_ISO_LOX,
   SAMPLE_VENDOR_BOQ_LOX,
@@ -105,7 +109,7 @@ export default function PlantAiLab() {
   const isMaster = hasRole('master');
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'iso' | 'boq' | 'safety'>('iso');
+  const [activeTab, setActiveTab] = useState<'iso' | 'boq' | 'safety' | 'sim' | 'docs'>('iso');
   const [gasHint, setGasHint] = useState('auto');
   const [analyzing, setAnalyzing] = useState(false);
   const [isoFileName, setIsoFileName] = useState<string>('');
@@ -201,11 +205,11 @@ export default function PlantAiLab() {
               <Lock className="h-3 w-3" /> 마스터 단독 비공개
             </Badge>
             <Badge variant="secondary" className="text-[10px]">
-              🔜 2단계: 가스 플랜트 운전 시뮬레이터 · 3D 모델링
+              🔜 3단계: 3D 모델링(IFC/GLB) · 팀별 워크스페이스
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            에어리퀴드 산업가스(H2·O2·N2·Ar·LCO2·특수가스) 배관 ISO 자동 판독 · 시공사 물량표(BOQ) 1:1 교차검증 · KGS/API 520·521 PSV 안전설계 검토
+            에어리퀴드 산업가스(H2·O2·N2·Ar·LCO2) 배관 ISO 판독 · 물량표 교차검증 · PSV 안전설계 · 실시간 가스 운전 시뮬레이터 · 통합 문서(Excel/Word/PPT/PDF) AI 비교
           </p>
         </div>
 
@@ -243,87 +247,97 @@ export default function PlantAiLab() {
         </div>
       </div>
 
-      {/* Empty State */}
-      {!isoResult ? (
-        <Card>
-          <CardContent className="py-14 text-center space-y-3">
-            <FlaskConical className="h-10 w-10 text-primary/40 mx-auto" />
-            <h2 className="text-base font-bold">아이소(ISO) 도면을 올려 AI 분석을 시작하세요</h2>
-            <p className="text-xs text-muted-foreground max-w-lg mx-auto leading-relaxed">
-              PDF 또는 이미지 형태의 Piping ISO를 업로드하면 표제란(라인번호·유체·압력·온도·재질), BOM 물량표, 용접 포인트, 그리고 KGS·API 520/521·EIGA 기준 PSV·탈지·방폭 안전설계 검토까지 자동으로 수행합니다.
-            </p>
-            <div className="flex justify-center gap-2 pt-2">
-              <Button size="sm" onClick={() => document.getElementById('iso-file-input')?.click()}>
-                <Upload className="h-3.5 w-3.5 mr-1.5" /> ISO 도면 업로드
-              </Button>
-              <Button size="sm" variant="outline" onClick={loadDemo}>
-                <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary" /> 에어리퀴드 LOX 샘플 바로 보기
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          {/* KPI Strip */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card>
-              <CardContent className="p-3.5">
-                <div className="text-[11px] text-muted-foreground">도면 / 라인번호</div>
-                <div className="text-sm font-bold truncate mt-1">{isoResult.title_block.line_no || isoFileName}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  유체: <strong>{isoResult.title_block.fluid_gas || '미확인'}</strong> · {isoResult.title_block.design_pressure_bar ?? '—'} bar / {isoResult.title_block.design_temp_c ?? '—'}°C
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3.5">
-                <div className="text-[11px] text-muted-foreground">추출 BOM / 용접 포인트</div>
-                <div className="text-xl font-bold mt-0.5">{isoResult.bom.length}<span className="text-xs font-normal text-muted-foreground ml-1">품목</span></div>
-                <div className="text-[11px] text-muted-foreground">
-                  Shop {isoResult.welds.shop_weld_count} · Field {isoResult.welds.field_weld_count} (총 {isoResult.welds.shop_weld_count + isoResult.welds.field_weld_count}포인트)
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3.5">
-                <div className="text-[11px] text-muted-foreground">가스 안전설계(PSV/KGS) 지적</div>
-                <div className={`text-xl font-bold mt-0.5 ${criticalCount > 0 ? 'text-destructive' : 'text-success'}`}>
-                  {criticalCount > 0 ? `치명 ${criticalCount}건` : '적정'}
-                </div>
-                <div className="text-[11px] text-muted-foreground">전체 검토 {allFindings.length}건 · 인허가 {permitChecks.length}건</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3.5">
-                <div className="text-[11px] text-muted-foreground">시공사 물량표 교차검증</div>
-                <div className={`text-xl font-bold mt-0.5 ${overclaimCount > 0 ? 'text-destructive' : 'text-foreground'}`}>
-                  {vendorBoq.length === 0 ? '미업로드' : overclaimCount > 0 ? `이상 ${overclaimCount}건` : '전항목 일치'}
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {totalOverclaimKrw > 0 ? `과다청구 추정 ₩${totalOverclaimKrw.toLocaleString()}` : boqFileName || '엑셀 업로드로 대조'}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+      {/* KPI Strip (shown when ISO is loaded) */}
+      {isoResult && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="p-3.5">
+              <div className="text-[11px] text-muted-foreground">도면 / 라인번호</div>
+              <div className="text-sm font-bold truncate mt-1">{isoResult.title_block.line_no || isoFileName}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                유체: <strong>{isoResult.title_block.fluid_gas || '미확인'}</strong> · {isoResult.title_block.design_pressure_bar ?? '—'} bar / {isoResult.title_block.design_temp_c ?? '—'}°C
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-3.5">
+              <div className="text-[11px] text-muted-foreground">추출 BOM / 용접 포인트</div>
+              <div className="text-xl font-bold mt-0.5">{isoResult.bom.length}<span className="text-xs font-normal text-muted-foreground ml-1">품목</span></div>
+              <div className="text-[11px] text-muted-foreground">
+                Shop {isoResult.welds.shop_weld_count} · Field {isoResult.welds.field_weld_count} (총 {isoResult.welds.shop_weld_count + isoResult.welds.field_weld_count}포인트)
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-3.5">
+              <div className="text-[11px] text-muted-foreground">가스 안전설계(PSV/KGS) 지적</div>
+              <div className={`text-xl font-bold mt-0.5 ${criticalCount > 0 ? 'text-destructive' : 'text-success'}`}>
+                {criticalCount > 0 ? `치명 ${criticalCount}건` : '적정'}
+              </div>
+              <div className="text-[11px] text-muted-foreground">전체 검토 {allFindings.length}건 · 인허가 {permitChecks.length}건</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-3.5">
+              <div className="text-[11px] text-muted-foreground">시공사 물량표 교차검증</div>
+              <div className={`text-xl font-bold mt-0.5 ${overclaimCount > 0 ? 'text-destructive' : 'text-foreground'}`}>
+                {vendorBoq.length === 0 ? '미업로드' : overclaimCount > 0 ? `이상 ${overclaimCount}건` : '전항목 일치'}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {totalOverclaimKrw > 0 ? `과다청구 추정 ₩${totalOverclaimKrw.toLocaleString()}` : boqFileName || '엑셀 업로드로 대조'}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-          {/* 3-Tab Master Lab Workspace */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'iso' | 'boq' | 'safety')} className="space-y-3">
-            <TabsList className="w-full justify-start h-auto p-1 bg-muted/60 rounded-xl">
-              <TabsTrigger value="iso" className="text-xs gap-1.5 rounded-lg">
-                ① ISO 표제란 · BOM 추출 <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{isoResult.bom.length}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="boq" className="text-xs gap-1.5 rounded-lg">
-                ② 시공사 물량표(Excel) 교차검증
-                {overclaimCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">{overclaimCount}</Badge>}
-              </TabsTrigger>
-              <TabsTrigger value="safety" className="text-xs gap-1.5 rounded-lg">
-                ③ 가스 안전설계 (PSV · KGS · 인허가)
-                {criticalCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">치명 {criticalCount}</Badge>}
-              </TabsTrigger>
-            </TabsList>
+      {/* 5-Tab Master Lab Workspace */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'iso' | 'boq' | 'safety' | 'sim' | 'docs')} className="space-y-3">
+        <TabsList className="w-full justify-start flex-wrap h-auto p-1 bg-muted/60 rounded-xl gap-1">
+          <TabsTrigger value="iso" className="text-xs gap-1.5 rounded-lg">
+            ① ISO 표제란 · BOM {isoResult && <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{isoResult.bom.length}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="boq" className="text-xs gap-1.5 rounded-lg">
+            ② 시공사 물량표 교차검증
+            {overclaimCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">{overclaimCount}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="safety" className="text-xs gap-1.5 rounded-lg">
+            ③ 가스 안전설계 · 인허가
+            {criticalCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">치명 {criticalCount}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="sim" className="text-xs gap-1.5 rounded-lg">
+            <Activity className="h-3.5 w-3.5 text-primary" /> ④ 가스 플랜트 운전 시뮬레이터
+          </TabsTrigger>
+          <TabsTrigger value="docs" className="text-xs gap-1.5 rounded-lg">
+            <FileDiff className="h-3.5 w-3.5 text-primary" /> ⑤ 통합 문서 AI 분석·비교
+          </TabsTrigger>
+        </TabsList>
 
-            {/* Tab 1: ISO Title Block & BOM */}
-            <TabsContent value="iso" className="space-y-3 mt-0">
+        {/* Tab 1: ISO Title Block & BOM */}
+        <TabsContent value="iso" className="space-y-3 mt-0">
+          {!isoResult ? (
+            <Card>
+              <CardContent className="py-14 text-center space-y-3">
+                <FlaskConical className="h-10 w-10 text-primary/40 mx-auto" />
+                <h2 className="text-base font-bold">아이소(ISO) 도면을 올려 AI 분석을 시작하세요</h2>
+                <p className="text-xs text-muted-foreground max-w-lg mx-auto leading-relaxed">
+                  PDF 또는 이미지 형태의 Piping ISO를 업로드하면 표제란(라인번호·유체·압력·온도·재질), BOM 물량표, 용접 포인트, 그리고 KGS·API 520/521·EIGA 기준 PSV·탈지·방폭 안전설계 검토까지 자동으로 수행합니다.
+                </p>
+                <div className="flex justify-center gap-2 pt-2 flex-wrap">
+                  <Button size="sm" onClick={() => document.getElementById('iso-file-input')?.click()}>
+                    <Upload className="h-3.5 w-3.5 mr-1.5" /> ISO 도면 업로드
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={loadDemo}>
+                    <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary" /> 에어리퀴드 LOX 샘플 바로 보기
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => setActiveTab('sim')}>
+                    <Activity className="h-3.5 w-3.5 mr-1.5" /> 가스 운전 시뮬레이터 바로 체험
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
@@ -372,7 +386,9 @@ export default function PlantAiLab() {
                   </table>
                 </div>
               </Card>
-            </TabsContent>
+            </>
+          )}
+        </TabsContent>
 
             {/* Tab 2: Vendor BOQ Cross-Check */}
             <TabsContent value="boq" className="space-y-3 mt-0">
@@ -385,7 +401,7 @@ export default function PlantAiLab() {
                   <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => document.getElementById('boq-excel-input')?.click()}>
                     <FileSpreadsheet className="h-3.5 w-3.5" /> 시공사 물량표 업로드 (.xlsx)
                   </Button>
-                  {boqDiff.length > 0 && (
+                  {boqDiff.length > 0 && isoResult && (
                     <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => downloadBoqCrossCheckExcel(isoResult.title_block.line_no || 'ISO', boqDiff)}>
                       <Download className="h-3.5 w-3.5" /> 검증 리포트 엑셀 다운로드
                     </Button>
@@ -520,9 +536,16 @@ export default function PlantAiLab() {
                 </Card>
               </div>
             </TabsContent>
+            {/* Tab 4: Interactive Gas Plant Operational Simulator */}
+            <TabsContent value="sim" className="mt-0">
+              <GasPlantSimulatorPanel isoResult={isoResult} />
+            </TabsContent>
+
+            {/* Tab 5: Universal Office/PDF Document AI Analyzer & Diff */}
+            <TabsContent value="docs" className="mt-0">
+              <PlantDocAnalyzerPanel />
+            </TabsContent>
           </Tabs>
-        </>
-      )}
     </div>
   );
 }

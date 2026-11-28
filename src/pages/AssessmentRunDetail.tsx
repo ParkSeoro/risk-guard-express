@@ -19,6 +19,8 @@ import {
   ExcelUploadDialog,
   ExcludeItemDialog,
 } from '@/components/assessment/AssessmentRunDetailDialogs';
+import { RiskItemInspectorPanel } from '@/components/assessment/RiskItemInspectorPanel';
+import { AssessmentReadinessPopover } from '@/components/assessment/AssessmentReadinessPopover';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,7 +32,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -42,7 +43,7 @@ import { ToastAction } from '@/components/ui/toast';
 import {
   Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, ShieldCheck, Send,
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
-  Edit3, Archive, Clock, Pencil, Ban, Camera, Loader2, MoreHorizontal, ChevronDown, ChevronRight,
+  Edit3, Archive, Clock, Pencil, Ban, Camera, Loader2, MoreHorizontal, ArrowLeft, Sparkles,
 } from 'lucide-react';
 import { calculateRiskGrade, derivedResidualFields, getGradeClassName, GRADES, isFlattenedResidualPlaceholder, deriveResidualGrades } from '@/lib/riskGrade';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
@@ -238,7 +239,8 @@ const AssessmentRunDetail = () => {
   });
   const approvalLineRef = useRef<ApprovalLineManagerHandle>(null);
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'compact' | 'excel'>('compact');
+  const [selectedInspectorId, setSelectedInspectorId] = useState<string | null>(null);
   const [showResidualCols, setShowResidualCols] = useState(false);
   const [showCloneRun, setShowCloneRun] = useState(false);
   const [showEditRun, setShowEditRun] = useState(false);
@@ -287,19 +289,20 @@ const AssessmentRunDetail = () => {
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [showBatchApply, setShowBatchApply] = useState(false);
   
-  // Feedback / Active tab
-  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'execution' | 'forecast'>(() =>
-    searchParams.get('tab') === 'feedback' || searchParams.get('tab') === 'execution'
-      ? 'execution'
-      : searchParams.get('tab') === 'forecast'
-        ? 'forecast'
-        : 'assessment',
-  );
+  // Active workspace tab (4 clean tabs, zero accordions)
+  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'participation' | 'approval' | 'execution'>(() => {
+    const t = searchParams.get('tab');
+    if (t === 'feedback' || t === 'execution' || t === 'forecast') return 'execution';
+    if (t === 'participation') return 'participation';
+    if (t === 'approval') return 'approval';
+    return 'assessment';
+  });
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'feedback' || tab === 'execution') setActiveMainTab('execution');
-    else if (tab === 'forecast') setActiveMainTab('forecast');
+    if (tab === 'feedback' || tab === 'execution' || tab === 'forecast') setActiveMainTab('execution');
+    else if (tab === 'participation') setActiveMainTab('participation');
+    else if (tab === 'approval') setActiveMainTab('approval');
   }, [searchParams]);
   const [previousFeedback, setPreviousFeedback] = useState<any[]>([]);
   const [previousFeedbackTotal, setPreviousFeedbackTotal] = useState(0);
@@ -1675,8 +1678,9 @@ const AssessmentRunDetail = () => {
   const jumpFromPreflight = (jump?: 'items' | 'participation' | 'approval' | 'run') => {
     if (!jump) return;
     setShowApproval(false);
-    setActiveMainTab('assessment');
-    if (jump === 'participation') setEvidenceOpen(true);
+    if (jump === 'participation') setActiveMainTab('participation');
+    else if (jump === 'approval' || jump === 'run') setActiveMainTab('approval');
+    else setActiveMainTab('assessment');
     window.setTimeout(() => {
       const id =
         jump === 'participation' ? 'ra-worker-participation'
@@ -2469,233 +2473,24 @@ const AssessmentRunDetail = () => {
     : isApproved ? '최종 승인 완료. 잠금 상태입니다.'
     : '';
 
-  return (
-    <div className="space-y-4 animate-fade-in print:space-y-2 print-a4-landscape">
-      {(autoGenLoading || (autoGenJob.status === 'running' && autoGenJob.runId === runId)) && (
-        <div className="print:hidden sticky top-0 z-30 rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 shadow-sm backdrop-blur-sm">
-          <div className="flex items-start gap-3">
-            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent mt-0.5" />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <p className="text-sm font-semibold">
-                위험성평가 AI {autoGenJob.phase === 'filling' ? '채움' : '초안'} 생성 중
-                {autoGenJob.phase === 'draft' ? ' · 1단계 세부작업·위험요인' : ''}
-                {autoGenJob.phase === 'filling' ? ' · 2단계 대책·법적근거' : ''}
-                {autoGenJob.processTotal > 0
-                  ? ` · 공종 ${autoGenJob.processIndex || 1}/${autoGenJob.processTotal}`
-                  : ''}
-                {autoGenJob.elapsedSec > 0 ? ` · ${autoGenJob.elapsedSec}초` : ''}
-              </p>
-              <p className="text-xs text-muted-foreground break-words">
-                {autoGenJob.phase === 'draft'
-                  ? (autoGenJob.message || '초안 생성 중… 보통 수 초~20초, 모델 전환 시 더 걸릴 수 있습니다.')
-                  : (autoGenJob.message || autoGenPhaseLabel || '생성 대기 중…')}
-              </p>
-              {(() => {
-                const total = Math.max(autoGenJob.insertedTotal || 0, 1);
-                const filled = autoGenJob.filledTotal || 0;
-                const pct = autoGenJob.phase === 'draft'
-                  ? Math.min(90, 8 + Math.round((autoGenJob.elapsedSec || 0) * 2.2))
-                  : Math.min(100, Math.round((filled / total) * 100));
-                return (
-                  <div className="space-y-1">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-accent transition-all duration-500"
-                        style={{ width: `${Math.max(pct, 4)}%` }}
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      초안 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
-                      {autoGenJob.pendingIds?.length ? ` · 대기 ${autoGenJob.pendingIds.length}` : ''}
-                      {' · '}이 탭을 닫지 마세요. 초안은 보통 수 초~20초입니다.
-                    </p>
-                  </div>
-                );
-              })()}
-              {(autoGenJob.elapsedSec || 0) >= 45 && (
-                <div className="pt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => {
-                      cancelRiskAutoGenJob('응답이 길어 중단했습니다. 공종을 하나만 넣고 다시 시도하세요.');
-                      toast({
-                        title: '생성을 중단했습니다.',
-                        description: '공종을 하나만 넣고 [초안 생성]을 다시 눌러주세요.',
-                      });
-                    }}
-                  >
-                    중단하고 다시 시도
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+  const selectedInspectorItem =
+    filteredItems.find((it) => it.id === selectedInspectorId) || filteredItems[0] || null;
+  const selectedInspectorIndex = selectedInspectorItem
+    ? filteredItems.findIndex((it) => it.id === selectedInspectorItem.id)
+    : -1;
+  const fillableCount = items.filter((it) => isFillableRiskItem(it)).length;
+  const aiIsRunning = autoGenLoading || (autoGenJob.status === 'running' && autoGenJob.runId === runId);
 
-      {run && !isApproved && !isArchived && autoGenJob.status === 'awaiting_review' && autoGenJob.runId === runId && (
-        <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 space-y-0.5">
-              <p className="text-sm font-semibold">초안 검수 중 · {autoGenJob.insertedTotal}행</p>
-              <p className="text-xs text-muted-foreground">
-                필요 없는 행을 지운 뒤 대책·등급·보호구·법적근거를 채우세요. 라이브러리·재사용 행의 빈칸도 대상입니다.
-              </p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                size="sm"
-                onClick={() => {
-                  const ok = continueRiskAutoGenFill(runId);
-                  if (!ok) {
-                    toast({
-                      title: '채움을 시작할 수 없습니다.',
-                      description: '다른 생성이 진행 중이거나 세션 정보가 없습니다. 페이지를 새로고침 후 다시 시도하세요.',
-                      variant: 'destructive',
-                    });
-                    return;
-                  }
-                  toast({ title: '나머지 채우기를 시작했습니다.', description: '보호구·법적근거는 바로 채우고, 빈 대책만 AI로 채웁니다.' });
-                }}
-                disabled={isRiskAutoGenRunning()}
-              >
-                <Wand2 className="h-3.5 w-3.5 mr-1" /> 나머지 채우기
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => dismissRiskAutoGenReview()}>
-                나중에
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {autoGenJob.status !== 'awaiting_review' && autoGenJob.status !== 'running' && !isApproved && !isArchived && items.some((it) => isFillableRiskItem(it)) && (canEdit || canForceEdit) && (
-        <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm">빈 보호구·법적근거는 기준 데이터로 바로 채우고, 개선대책이 비어 있을 때만 AI를 씁니다. (품질 점검 자동보완은 쓰지 마세요)</p>
-            <Button
-              size="sm"
-              onClick={() => {
-                const ok = continueRiskAutoGenFill(runId);
-                if (!ok) {
-                  toast({ title: '채움을 시작할 수 없습니다.', variant: 'destructive' });
-                  return;
-                }
-                toast({ title: '나머지 채우기를 시작했습니다.' });
-              }}
-              disabled={isRiskAutoGenRunning()}
-            >
-              <Wand2 className="h-3.5 w-3.5 mr-1" /> 나머지 채우기
-            </Button>
-          </div>
-        </div>
-      )}
-      {canSubmitApproval && (
-        <div className="print:hidden sticky top-0 z-20 rounded-md border bg-background/95 px-3 py-2 text-xs backdrop-blur-sm flex items-center gap-2">
-          {submitPreflight.ready
-            ? <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-            : <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0" />}
-          <span className="min-w-0 truncate">
-            {submitPreflight.ready
-              ? `상신 준비됨 · 의견 ${participationCounts.opinions} · 보건 ${participationCounts.healths}`
-              : submitBlockedReason || '상신 전 점검을 완료하세요'}
-          </span>
-          <span className="ml-auto text-muted-foreground shrink-0">의견 {participationCounts.opinions} · 보건 {participationCounts.healths}</span>
-        </div>
-      )}
-      {(!hasAssessmentLegalAuthor(run.author_user_id) || (canAssistAssessmentWrite(userRole, false) && !userCanSubmit)) && (
-        <div className="print:hidden rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs space-y-2">
-          <p className="font-medium">
-            {hasAssessmentLegalAuthor(run.author_user_id)
-              ? `보좌 입력 — 작성 주체: ${authorDisplayName || '관리감독자'}. 상신은 관리감독자만 가능합니다.`
-              : canPrintAssessmentRun({ status: run.status, authorUserId: run.author_user_id, createdBy: run.created_by })
-                ? '과거 문서로 작성 주체(관리감독자)가 미지정 상태입니다. 인쇄·PDF는 기존 작성자 기준으로 출력됩니다.'
-                : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
-          </p>
-          {canAssignAuthor && (
-            <AssessmentAuthorPicker
-              projectId={run.project_id}
-              value={run.author_user_id || ''}
-              onChange={async (id) => {
-                const { error } = await supabase.from('assessment_runs').update({ author_user_id: id } as any).eq('id', runId);
-                if (error) {
-                  toast({ title: '작성 주체 저장 실패', description: error.message, variant: 'destructive' });
-                  return;
-                }
-                setRun((prev: any) => (prev ? { ...prev, author_user_id: id } : prev));
-                toast({ title: '작성 주체(관리감독자)를 지정했습니다.' });
-              }}
-              required
-            />
-          )}
-        </div>
-      )}
-      {/* Company Form Header - 회사 양식 */}
-      <div className="print:hidden space-y-2">
-        <AssessmentWritingGuide
-          hidden={!!profile?.ra_guide_hidden}
-          text={nextAssessmentGuide({
-            approved: isApproved,
-            runType: run.type,
-            occasionalReason: run.occasional_reason,
-            itemCount: activeItems.length,
-            participantCount: participants.length,
-            opinionCount: participationCounts.opinions,
-            photoCount: (run.worker_participation_images || []).length,
-            repRequested: !!run.rep_participation_requested,
-            repGap: repConsultGap({
-              requested: !!run.rep_participation_requested,
-              schedule: run.rep_schedule,
-              scope: run.rep_scope,
-              method: run.rep_method,
-            }),
-            hasRepresentative: !!companyRepName,
-            trivialExclusionCount,
-            emptyExclusionCount,
-          }).text}
-          onOpen={() => jumpFromPreflight(nextAssessmentGuide({
-            approved: isApproved,
-            runType: run.type,
-            occasionalReason: run.occasional_reason,
-            itemCount: activeItems.length,
-            participantCount: participants.length,
-            opinionCount: participationCounts.opinions,
-            photoCount: (run.worker_participation_images || []).length,
-            repRequested: !!run.rep_participation_requested,
-            repGap: repConsultGap({
-              requested: !!run.rep_participation_requested,
-              schedule: run.rep_schedule,
-              scope: run.rep_scope,
-              method: run.rep_method,
-            }),
-            hasRepresentative: !!companyRepName,
-            trivialExclusionCount,
-            emptyExclusionCount,
-          }).jump || undefined)}
-          onToggle={() => {
-            if (!user) return;
-            const next = !profile?.ra_guide_hidden;
-            void supabase.from('profiles').update({ ra_guide_hidden: next }).eq('user_id', user.id).then(({ error }) => {
-              if (error) {
-                toast({ title: '가이드 설정을 저장하지 못했습니다', variant: 'destructive' });
-                return;
-              }
-              applyProfilePatch({ ra_guide_hidden: next });
-            });
-          }}
-        />
-      </div>
-      <Card id="ra-run-kind" className="print:border-2 print:border-foreground scroll-mt-20">
+  return (
+    <div className="space-y-3 animate-fade-in print:space-y-2 print-a4-landscape">
+      {/* Print-only Paper Header (kept 100% intact for browser print/PDF) */}
+      <Card className="hidden print:block print:border-2 print:border-foreground">
         <CardContent className="py-4 space-y-3">
-          <div className="text-center border-b pb-2 print:pb-3">
-            <h1 className="text-lg font-bold print:text-xl">위험성평가표</h1>
+          <div className="text-center border-b pb-3">
+            <h1 className="text-xl font-bold">위험성평가표</h1>
             <p className="text-sm text-muted-foreground">[{run.type === '정기' || run.type === '상시' ? '정기(상시)' : run.type}] {run.period_label || '(기간 미지정)'}</p>
-            {run.type === '수시' && (
-              <p className="text-[11px] text-muted-foreground">상시평가는 정기평가만 갈음합니다. 수시평가는 따로 합니다.</p>
-            )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
+          <div className="grid grid-cols-4 gap-x-6 gap-y-1 text-xs">
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">프로젝트:</span><span>{project?.name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{docCompanies.clientCompanyName}</span></div>
@@ -2704,558 +2499,512 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 회사:</span><span>{docCompanies.authorCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
-            <div className="flex gap-1 items-center flex-wrap"><span className="font-medium text-muted-foreground">상태:</span>
-              <Badge variant="outline" className={`text-[9px] ${statusInfo.color}`}>
-                위평 {run.status} {isApproved && <Lock className="h-3 w-3 ml-0.5 inline" />}
-              </Badge>
-              {executionApproved && feedbackStatusBadge(executionFeedbackStatus) && (
-                <Badge variant="outline" className="text-[9px]">
-                  {feedbackStatusBadge(executionFeedbackStatus)}
-                </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 1. Slim 1-Line Workspace Header */}
+      <div className="print:hidden rounded-xl border bg-card px-4 py-3 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground gap-1" onClick={() => navigate('/risk-assessment')}>
+            <ArrowLeft className="h-3.5 w-3.5" /> 목록
+          </Button>
+          <Badge variant="secondary" className="text-[11px] font-medium shrink-0">
+            {run.type === '정기' || run.type === '상시' ? '정기(상시)' : run.type}
+          </Badge>
+          <h1 className="text-sm sm:text-base font-bold truncate">
+            {run.period_label || '(기간 미지정)'}
+            {docCompanies.authorCompanyName && docCompanies.authorCompanyName !== '(미지정)' ? ` · ${docCompanies.authorCompanyName}` : ''}
+          </h1>
+          <Badge variant="outline" className={`text-[10px] shrink-0 ${statusInfo.color}`}>
+            {run.status} {isApproved && <Lock className="h-3 w-3 ml-0.5 inline" />}
+          </Badge>
+          {(isMasterOrCreator || (canEdit && (
+            (user && run?.author_user_id === user.id)
+            || userRole === 'safety_manager'
+            || userRole === 'site_supervisor'
+            || userRole === 'project_admin'
+          ))) && (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="회차 정보 수정" onClick={() => setShowEditRun(true)}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {canSubmitApproval && (
+            <AssessmentReadinessPopover
+              ready={submitPreflight.ready}
+              items={submitPreflight.items}
+              onJump={jumpFromPreflight}
+            />
+          )}
+          {canSubmitApproval && userCanSubmit && (
+            <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setShowApproval(true)}>
+              <Send className="h-3.5 w-3.5" /> {isReturned ? '재상신' : '결재 상신'}
+            </Button>
+          )}
+          {isInApproval && isMyApprovalPending && (
+            <div className="flex gap-1.5">
+              <Button size="sm" className="h-8 gap-1 text-xs bg-success text-success-foreground hover:bg-success/90" onClick={() => setShowApproveConfirm(true)}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> 승인
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-destructive border-destructive/40" onClick={() => setRejectCommentDialog(true)}>
+                <XCircle className="h-3.5 w-3.5" /> 반려
+              </Button>
+            </div>
+          )}
+          {isApproved && (isMaster || isMasterOrCreator) && (
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => setShowCloneRun(true)}>
+              <Copy className="h-3.5 w-3.5" /> 개정 회차 생성
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={handlePrint}>
+            <Printer className="h-3.5 w-3.5" /> PDF
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-8 w-8" title="더보기">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {canEdit && (
+                <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
+                  <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={handleExportXLSX}>
+                <Download className="h-3.5 w-3.5 mr-2" /> XLSX 다운로드
+              </DropdownMenuItem>
+              {isClientSm && canValidate && (
+                <DropdownMenuItem onClick={handleValidate}>
+                  <ShieldCheck className="h-3.5 w-3.5 mr-2" /> {validationReport ? '품질 재점검' : '품질 점검'}
+                </DropdownMenuItem>
+              )}
+              {isClientSm && canAutoRemediate && fillableCount === 0 && (
+                <DropdownMenuItem onClick={handleOpenRemediationWizard} disabled={remediationLoading}>
+                  <Wand2 className="h-3.5 w-3.5 mr-2" /> {remediationLoading ? '분석 중...' : 'AI 자동 보완'}
+                </DropdownMenuItem>
+              )}
+              {isClientSm && validationReport && (
+                <DropdownMenuItem onClick={() => setShowValidation(true)}>
+                  <FileWarning className="h-3.5 w-3.5 mr-2" /> 점검 결과 보기
+                </DropdownMenuItem>
+              )}
+              {canCancelApproval && (
+                <DropdownMenuItem className="text-destructive" onClick={handleCancelApproval}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-2" /> 상신 취소
+                </DropdownMenuItem>
+              )}
+              {isApproved && isMaster && (
+                <>
+                  <DropdownMenuItem className="text-warning" onClick={() => setShowForceEdit(true)}>
+                    <Edit3 className="h-3.5 w-3.5 mr-2" /> 강제 수정
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive" onClick={() => setShowArchive(true)}>
+                    <Archive className="h-3.5 w-3.5 mr-2" /> 폐기
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* 2. Single Slim AI Co-pilot Bar (consolidates all AI/review/status strips into 1 clean bar) */}
+      {!isArchived && (aiIsRunning || (!isApproved && (canEdit || canForceEdit || isClientSm)) || isReturned) && (
+        <div className="print:hidden rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          {aiIsRunning ? (
+            <div className="flex items-center gap-3 w-full">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold">
+                    AI {autoGenJob.phase === 'filling' ? '대책·법령 채움' : '초안 생성'} 중
+                    {autoGenJob.processTotal > 0 ? ` · 공종 ${autoGenJob.processIndex || 1}/${autoGenJob.processTotal}` : ''}
+                    {autoGenJob.elapsedSec > 0 ? ` · ${autoGenJob.elapsedSec}초` : ''}
+                  </span>
+                  <span className="text-muted-foreground">초안 {autoGenJob.insertedTotal || 0}행 · 채움 {autoGenJob.filledTotal || 0}행</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-500"
+                    style={{
+                      width: `${Math.max(
+                        autoGenJob.phase === 'draft'
+                          ? Math.min(90, 8 + Math.round((autoGenJob.elapsedSec || 0) * 2.2))
+                          : Math.min(100, Math.round(((autoGenJob.filledTotal || 0) / Math.max(autoGenJob.insertedTotal || 1, 1)) * 100)),
+                        6,
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              {(autoGenJob.elapsedSec || 0) >= 45 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs shrink-0"
+                  onClick={() => {
+                    cancelRiskAutoGenJob('응답이 길어 중단했습니다. 공종을 하나만 넣고 다시 시도하세요.');
+                    toast({ title: '생성을 중단했습니다.' });
+                  }}
+                >
+                  중단
+                </Button>
               )}
             </div>
-            {run.validation_score != null && (
-              <div className="flex gap-1"><span className="font-medium text-muted-foreground">검증:</span><span>{run.validation_verdict} ({run.validation_score}점)</span></div>
-            )}
-            {improvementPlanDateLabel(run.improvement_plan_completed_on) && (
-              <div className="col-span-2">{improvementPlanDateLabel(run.improvement_plan_completed_on)}</div>
-            )}
-            {run.library_promoted_count != null && (
-              <div className="col-span-2">
-                {run.library_promoted_count > 0
-                  ? `공종 라이브러리에 ${run.library_promoted_count}건을 넣었습니다.`
-                  : '상황·대책이 짧아 넣지 않았습니다.'}
+          ) : autoGenJob.status === 'awaiting_review' && autoGenJob.runId === runId ? (
+            <>
+              <div className="flex items-center gap-2 text-xs min-w-0">
+                <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                <span className="font-semibold">AI 초안 {autoGenJob.insertedTotal}행 검수 중</span>
+                <span className="text-muted-foreground hidden sm:inline">· 불필요한 행을 지운 뒤 대책·보호구·법적근거를 한 번에 채우세요.</span>
               </div>
-            )}
-          </div>
-          {run.type === '수시' && (
-            <div className="text-xs space-y-1 print:hidden">
-              <Label className="text-xs">수시 사유</Label>
-              <Input
-                value={run.occasional_reason || ''}
-                disabled={isApproved || isArchived}
-                placeholder="설비 변경, 사고, 작업 변경 등"
-                onChange={(e) => setRun((prev: any) => prev ? { ...prev, occasional_reason: e.target.value } : prev)}
-                onBlur={(e) => {
-                  void supabase.from('assessment_runs').update({ occasional_reason: e.target.value || null }).eq('id', runId!);
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  disabled={isRiskAutoGenRunning()}
+                  onClick={() => {
+                    const ok = continueRiskAutoGenFill(runId);
+                    if (!ok) { toast({ title: '채움을 시작할 수 없습니다.', variant: 'destructive' }); return; }
+                    toast({ title: '나머지 채우기를 시작했습니다.' });
+                  }}
+                >
+                  <Wand2 className="h-3.5 w-3.5" /> AI 나머지 채우기
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => dismissRiskAutoGenReview()}>나중에</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-xs min-w-0">
+                <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                <div className="min-w-0 truncate">
+                  {isReturned ? (
+                    <span className="text-warning font-medium">반려·보완 필요 — 수정 후 상단 [재상신]을 누르세요.</span>
+                  ) : fillableCount > 0 && (canEdit || canForceEdit) ? (
+                    <span><strong className="text-primary">AI 코파일럿</strong> · 빈 대책·보호구·법적근거 <strong>{fillableCount}건</strong>을 라이브러리 + AI로 자동 채울 수 있습니다.</span>
+                  ) : (
+                    <span><strong className="text-primary">AI 코파일럿</strong> · 공종만 입력하면 공종 라이브러리 + AI가 초안·대책·법적근거를 자동 작성합니다.</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
+                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => { clearTradePreview(); setShowAutoGen(true); }}>
+                    <Wand2 className="h-3.5 w-3.5" /> AI 공종 채우기
+                  </Button>
+                )}
+                {fillableCount > 0 && (canEdit || canForceEdit) && !isApproved && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 bg-background"
+                    disabled={isRiskAutoGenRunning()}
+                    onClick={() => {
+                      const ok = continueRiskAutoGenFill(runId);
+                      if (!ok) { toast({ title: '채움을 시작할 수 없습니다.', variant: 'destructive' }); return; }
+                      toast({ title: '나머지 채우기를 시작했습니다.' });
+                    }}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" /> 빈칸 채우기 ({fillableCount})
+                  </Button>
+                )}
+                {isClientSm && canValidate && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1 bg-background" onClick={handleValidate}>
+                    <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? `품질 재점검 (${run.validation_score ?? ''}점)` : '품질 점검'}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Author-missing inline gate (only when missing or assisting) */}
+      {(!hasAssessmentLegalAuthor(run.author_user_id) || (canSubmitApproval && !userCanSubmit && authorGateMessage) || (isInApproval && stuckOnSubmitterStep)) && (
+        <div className="print:hidden rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
+          <span className="font-medium">
+            {isInApproval && stuckOnSubmitterStep
+              ? '담당자(시공) 상신 단계가 멈춰 있습니다. [더보기 → 상신 취소] 후 결재선 작성자를 본인으로 저장하고 재상신하세요.'
+              : !hasAssessmentLegalAuthor(run.author_user_id)
+                ? '작성 주체(관리감독자)가 미지정 상태입니다. 지정 후 상신·인쇄할 수 있습니다.'
+                : authorGateMessage || `보좌 입력 — 작성 주체: ${authorDisplayName || '관리감독자'}`}
+          </span>
+          {!hasAssessmentLegalAuthor(run.author_user_id) && canAssignAuthor && (
+            <div className="w-60">
+              <AssessmentAuthorPicker
+                projectId={run.project_id}
+                value={run.author_user_id || ''}
+                onChange={async (id) => {
+                  const { error } = await supabase.from('assessment_runs').update({ author_user_id: id } as any).eq('id', runId);
+                  if (error) { toast({ title: '작성 주체 저장 실패', description: error.message, variant: 'destructive' }); return; }
+                  setRun((prev: any) => (prev ? { ...prev, author_user_id: id } : prev));
+                  toast({ title: '작성 주체(관리감독자)를 지정했습니다.' });
                 }}
+                required
               />
             </div>
           )}
-          {/* Participants summary */}
-          {participants.length > 0 && (
-            <div className="flex items-center gap-3 text-[10px] border-t pt-2 flex-wrap">
-              {['작성자','검토자','승인자','안전관리자','협력사 담당자'].map(role => {
-                const ps = participants.filter(p => p.role === role);
-                if (ps.length === 0) return null;
-                return (
-                  <span key={role} className="text-muted-foreground">
-                    <span className="font-medium">{role}:</span> {ps.map(p => p.user_name).join(', ')}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Header - action bar (print hidden) */}
-      <div className="flex items-center justify-between print:hidden">
-        <div>
-          <div className="flex items-center gap-2">
-            {(isMasterOrCreator || (canEdit && (
-              (user && run?.author_user_id === user.id)
-              || userRole === 'safety_manager'
-              || userRole === 'site_supervisor'
-              || userRole === 'project_admin'
-            ))) && (
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowEditRun(true)}><Pencil className="h-3.5 w-3.5" /></Button>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            상 {stats.high} · 중 {stats.med} · 하 {stats.low}
-            {stats.highRemain > 0 && <span className="text-destructive ml-2">· 개선후 상 잔존 {stats.highRemain}</span>}
-            {stats.highRemain === 0 && stats.total >= 10 && (
-              <span className="text-amber-600 ml-2">· 개선후 상 0건 (확인 권장)</span>
-            )}
-            {stats.excluded > 0 && <span className="text-muted-foreground ml-2">· 제외 {stats.excluded}</span>}
-          </p>
-        </div>
-      </div>
-
-      {/* Approval Status Display (SSOT) */}
-      {latestApprovals.length > 0 && (() => {
-        const activeApprovals = sortApprovalRows(
-          latestApprovals.filter((a) => a.status !== '취소'),
-        );
-        const version = Math.max(
-          0,
-          ...latestApprovals.map((a) => Number(a.approval_version) || 1),
-        );
-        return (
-        <div className="space-y-2 print:hidden">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
-            {activeApprovals.map((a: any) => {
-                const displayStatus = sequentialDisplayStatus(activeApprovals, a);
-                const submitter = isSubmitterApprovalStep(a);
-                return (
-                <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
-                  displayStatus === '승인' ? 'bg-success/10 text-success border-success/30' :
-                  displayStatus === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
-                  displayStatus === '진행중' ? 'bg-primary/10 text-primary border-primary/30' :
-                  'bg-muted text-muted-foreground'
-                }`}>
-                  {displayStatus === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
-                   displayStatus === '반려' ? <XCircle className="h-3 w-3" /> :
-                   <Clock className="h-3 w-3" />}
-                  {a.step}: {a.approver_name || '미지정'}
-                  {affiliationOf(a) ? ` (${affiliationOf(a)})` : ''}
-                  {displayStatus === '승인' && submitter ? ' [상신완료]'
-                    : displayStatus === '진행중' ? ' [결재중]'
-                    : displayStatus === '대기' ? ' [순번대기]'
-                    : displayStatus !== '대기' ? ` [${displayStatus}]` : ''}
-                </Badge>
-                );
-              })}
-            {version > 1 && (
-              <Badge variant="outline" className="text-[9px]">재상신 {version}차</Badge>
-            )}
-          </div>
-          {/* Signature Table - 서명란 (auto-populated from approval data) */}
-          {activeApprovals.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[10px] border-collapse">
-                <thead>
-                  <tr className="bg-muted/50">
-                    <th className="border px-2 py-1 text-left font-medium">구분</th>
-                    <th className="border px-2 py-1 text-left font-medium">성명</th>
-                    <th className="border px-2 py-1 text-left font-medium">소속</th>
-                    <th className="border px-2 py-1 text-left font-medium">직책</th>
-                    <th className="border px-2 py-1 text-left font-medium">서명/일자</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeApprovals.map((a: any) => {
-                      const displayStatus = sequentialDisplayStatus(activeApprovals, a);
-                      const submitter = isSubmitterApprovalStep(a);
-                      return (
-                        <tr key={a.id} className={displayStatus === '진행중' ? 'bg-primary/5' : undefined}>
-                          <td className="border px-2 py-1 font-medium">{a.step}</td>
-                          <td className="border px-2 py-1">{localizePersonName(a.approver_name) || '—'}</td>
-                          <td className="border px-2 py-1">{affiliationOf(a) || '—'}</td>
-                          <td className="border px-2 py-1">{jobTitleLabel(a.position) || '—'}</td>
-                          <td className="border px-2 py-1">
-                            {displayStatus === '승인' && a.approved_at
-                              ? (
-                                <span>
-                                  {new Date(a.approved_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                  {submitter ? <span className="text-muted-foreground"> · 상신</span> : null}
-                                </span>
-                              )
-              : displayStatus === '반려' ? (
-                <span className="text-destructive">
-                  반려
-                  {String(a.comment || '').trim() ? (
-                    <span className="block text-[10px] font-normal mt-0.5 whitespace-pre-wrap">{a.comment}</span>
-                  ) : null}
-                </span>
-              )
-              : displayStatus === '진행중' ? <span className="text-primary font-medium">결재중</span>
-                              : <span className="text-muted-foreground">순번대기</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {(() => {
-            const rejectRow = activeApprovals.find(
-              (a) => a.status === '반려' && String(a.comment || '').trim(),
-            );
-            if (!rejectRow) return null;
-            return (
-              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-                <div className="font-semibold text-destructive">반려 사유</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {rejectRow.approver_name || '결재자'} · {rejectRow.step}
-                </div>
-                <div className="mt-1 whitespace-pre-wrap">{rejectRow.comment}</div>
-              </div>
-            );
-          })()}
-          {activeApprovals.length > 0
-            && !activeApprovals.some((a) => {
-              const p = (a.position || '').toLowerCase();
-              return p === 'owner_cm' || p === 'owner_sm';
-            }) && (
-            <p className="text-[10px] text-warning">
-              이 상신({version > 1 ? `${version}차` : '1차'}) 결재 기록에는 발주처 SM/CM이 없습니다.
-              결재선에 담당자(SM)을 넣고 [저장]한 뒤, 회수 또는 반려 후 다시 상신해야 반영됩니다.
-              (지금 보이는 표는 저장된 결재선이 아니라 이미 올라간 상신 버전입니다)
-            </p>
-          )}
-        </div>
-        );
-      })()}
-
-      {latestApprovals.length === 0 && approvalLines.length > 0 && (
-        <div className="space-y-2 print:hidden">
-          <span className="text-xs text-muted-foreground font-medium">서명란 (결재선)</span>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[10px] border-collapse">
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="border px-2 py-1 text-left font-medium">구분</th>
-                  <th className="border px-2 py-1 text-left font-medium">성명</th>
-                  <th className="border px-2 py-1 text-left font-medium">소속</th>
-                  <th className="border px-2 py-1 text-left font-medium">직책</th>
-                  <th className="border px-2 py-1 text-left font-medium">서명/일자</th>
-                </tr>
-              </thead>
-              <tbody>
-                {buildAssessmentSignatureRows({
-                  draftSteps: approvalLines.map((l) => ({
-                    label: l.step_label,
-                    position: l.position,
-                    user_id: l.user_id,
-                    user_name: l.user_name,
-                    company_id: l.company_id,
-                    company_name: approverAffiliationLabel(l.company_id, projectCompanies, l.company_name),
-                  })),
-                }).map((row, i) => (
-                  <tr key={`${row.position}-${i}`}>
-                    <td className="border px-2 py-1 font-medium">{row.step || '—'}</td>
-                    <td className="border px-2 py-1">{row.approver_name || '—'}</td>
-                    <td className="border px-2 py-1">{row.company_name || '—'}</td>
-                    <td className="border px-2 py-1">{row.position_label || '—'}</td>
-                    <td className="border px-2 py-1 text-muted-foreground">미상신</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
 
-      {isApproved && (
-        <div className="space-y-2">
-          <span className="text-xs text-muted-foreground font-medium">근로자 참여 및 공유 서명</span>
-          <p className="text-[10px] text-muted-foreground">
-            결재 서명란과 별개입니다. 승인된 그 회차에, 승인 당일 앱 확인·출근 서명이 1회만 표기됩니다.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[10px] border-collapse">
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="border px-2 py-1 text-left font-medium">소속</th>
-                  <th className="border px-2 py-1 text-left font-medium">성명</th>
-                  <th className="border px-2 py-1 text-left font-medium">서명</th>
-                  <th className="border px-2 py-1 text-left font-medium">확인일시</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shareAcks.length === 0 ? (
-                  <tr>
-                    <td className="border px-2 py-2 text-muted-foreground text-center" colSpan={4}>
-                      아직 공유 확인 서명이 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  shareAcks.map((a) => (
-                    <tr key={a.id}>
-                      <td className="border px-2 py-1">{a.company_name || "—"}</td>
-                      <td className="border px-2 py-1">{a.worker_name || "—"}</td>
-                      <td className="border px-2 py-1">
-                        {isSafeSignatureDataUrl(a.signature_data) ? (
-                          <img
-                            src={a.signature_data || ""}
-                            alt={`${a.worker_name || "서명"}`}
-                            className="h-8 max-w-[7rem] object-contain"
-                          />
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="border px-2 py-1">
-                        {a.signed_at
-                          ? new Date(a.signed_at).toLocaleString("ko-KR", {
-                              timeZone: "Asia/Seoul",
-                              hour12: false,
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons — strict state machine */}
-      <div className="flex items-center gap-2 print:hidden flex-wrap">
-        {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
-          <>
-            <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => { clearTradePreview(); setShowAutoGen(true); }}>
-              <Wand2 className="h-3.5 w-3.5" /> 이 공종 채우기
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={handleAddNew}>
-              <Plus className="h-3.5 w-3.5" /> 행 추가
-            </Button>
-            {selectedRowIds.size > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
-                onClick={() => void handleBulkDeleteSelected()}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> 선택 삭제
-                <Badge variant="secondary" className="ml-1 text-[9px] h-4 px-1">{selectedRowIds.size}건</Badge>
-              </Button>
-            )}
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
-              setBatchAssigneeUserId('');
-              setBatchScope(selectedRowIds.size > 0 ? 'selected' : 'empty');
-              setBatchOverrideManual(false);
-              setShowBatchApply(true);
-            }}>
-              <Users className="h-3.5 w-3.5" /> 담당자 일괄 지정
-              {selectedRowIds.size > 0 && <Badge variant="secondary" className="ml-1 text-[9px] h-4 px-1">{selectedRowIds.size}건</Badge>}
-            </Button>
-          </>
-        )}
-        {canSubmitApproval && userCanSubmit && (
-          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-            <Send className="h-3.5 w-3.5" /> {isReturned ? '재상신' : '결재 상신'}
-          </Button>
-        )}
-        {canSubmitApproval && !userCanSubmit && authorGateMessage && (
-          <span className="text-[11px] text-muted-foreground max-w-[220px] leading-snug">{authorGateMessage}</span>
-        )}
-        {canCancelApproval && (
-          <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>
-            <RotateCcw className="h-3.5 w-3.5" /> 상신 취소
-          </Button>
-        )}
-        {isInApproval && isMyApprovalPending && (
-          <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="gap-1 text-success" onClick={() => setShowApproveConfirm(true)}>
-              <CheckCircle2 className="h-3.5 w-3.5" /> 승인
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={() => setRejectCommentDialog(true)}>
-              <XCircle className="h-3.5 w-3.5" /> 반려
-            </Button>
-          </div>
-        )}
-        {isInApproval && stuckOnSubmitterStep && (
-          <span className="text-[11px] text-amber-700 max-w-[260px] leading-snug">
-            담당자(시공) 상신 단계가 멈춰 있습니다. [상신 취소] 후 결재선의 담당자(시공)를 작성자 본인으로 저장하고 재상신하세요.
-          </span>
-        )}
-        {isApproved && isMaster && (
-          <>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowCloneRun(true)}>
-              <Copy className="h-3.5 w-3.5" /> 개정 회차 생성
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 text-warning" onClick={() => setShowForceEdit(true)}>
-              <Edit3 className="h-3.5 w-3.5" /> 강제 수정
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={() => setShowArchive(true)}>
-              <Archive className="h-3.5 w-3.5" /> 폐기
-            </Button>
-          </>
-        )}
-        {isApproved && isMasterOrCreator && !isMaster && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowCloneRun(true)}>
-            <Copy className="h-3.5 w-3.5" /> 개정 회차 생성
-          </Button>
-        )}
-        {isClientSm && (
-          <>
-            {canValidate && (
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={handleValidate}>
-                <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? '재점검' : '품질 점검'}
-              </Button>
-            )}
-            {canAutoRemediate && !items.some((it) => isFillableRiskItem(it)) && (
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={handleOpenRemediationWizard} disabled={remediationLoading}>
-                <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완'}
-              </Button>
-            )}
-            {validationReport && (
-              <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => setShowValidation(true)}>
-                <FileWarning className="h-3.5 w-3.5" /> 점검 결과
-              </Button>
-            )}
-          </>
-        )}
-        <div className="flex-1" />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <MoreHorizontal className="h-3.5 w-3.5" /> 더보기
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {canEdit && (
-              <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
-                <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onClick={handlePrint}>
-              <Printer className="h-3.5 w-3.5 mr-2" /> 인쇄 / PDF
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleExportXLSX}>
-              <Download className="h-3.5 w-3.5 mr-2" /> XLSX
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Status guide */}
-      {statusGuide && (
-        <p className="text-xs text-muted-foreground print:hidden pl-1">
-          💡 {statusGuide}
-        </p>
-      )}
-      {/* Remediation guide for first-time users */}
-      {canAutoRemediate && !items.some((it) => isFillableRiskItem(it)) && (
-        <p className="text-xs text-muted-foreground print:hidden pl-1">
-          💡 형식 점검 결과 부적정이면 <strong>[자동 보완]</strong>으로 라이브러리 매칭만 검토하세요. 빈 개선대책은 <strong>[나머지 채우기]</strong>를 씁니다.
-        </p>
-      )}
-
-      {/* Status notices */}
-      {isReturned && (
-        <Card className="border-warning print:hidden">
-          <CardContent className="py-3">
-            <div className="flex items-center gap-2 text-sm text-warning">
-              <AlertTriangle className="h-4 w-4" />
-              <span className="font-medium">반려·보완 필요:</span>
-              <span>수정한 뒤 [재상신]하세요. (상신 취소가 아닙니다)</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {isApproved && (
-        <Card className="border-success print:hidden">
-          <CardContent className="py-3">
-            <div className="flex items-center gap-2 text-sm text-success">
-              <Lock className="h-4 w-4" />
-              <span className="font-medium">승인완료:</span>
-              <span>이 회차는 최종 승인되어 잠금 상태입니다.</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {isArchived && (
-        <Card className="border-muted print:hidden">
-          <CardContent className="py-3">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Archive className="h-4 w-4" />
-              <span>이 회차는 폐기되었습니다.</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Main Tabs: 위평 | 금주 이행 | 차주 관리대상 */}
-      <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'assessment' | 'execution' | 'forecast')} className="print:hidden">
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="assessment">위험성평가</TabsTrigger>
-          <TabsTrigger value="execution">
-            금주 이행 확인
-            {executionTabCount > 0 && (
-              <Badge variant="outline" className="ml-1 text-[9px]">{executionTabCount}</Badge>
+      {/* 3. Clean 4-Tab Workspace (Zero Collapsibles) */}
+      <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'assessment' | 'participation' | 'approval' | 'execution')} className="space-y-3">
+        <TabsList className="print:hidden w-full justify-start h-auto p-1 bg-muted/60 rounded-xl overflow-x-auto flex-nowrap">
+          <TabsTrigger value="assessment" className="text-xs gap-1.5 rounded-lg">
+            ① 위험요인 평가
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{stats.total}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="participation" className="text-xs gap-1.5 rounded-lg">
+            ② 근로자 참여 · 증빙
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+              의견 {participationCounts.opinions} · 사진 {(run.worker_participation_images || []).length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="approval" className="text-xs gap-1.5 rounded-lg">
+            ③ 결재 · 공유
+            {latestApprovals.length > 0 ? (
+              <Badge variant="outline" className="text-[10px] h-4 px-1.5">{run.status}</Badge>
+            ) : approvalDraftInfo.stepCount > 0 ? (
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{approvalDraftInfo.stepCount}단계</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-warning border-warning/50">미설정</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="forecast">
-            차주 관리대상
-            {forecastItems.length > 0 && (
-              <Badge variant="outline" className="ml-1 text-[9px]">{forecastItems.length}</Badge>
+          <TabsTrigger value="execution" className="text-xs gap-1.5 rounded-lg">
+            ④ 이행 · 차주 추적
+            {(executionTabCount > 0 || forecastItems.length > 0) && (
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                금주 {executionTabCount} · 차주 {forecastItems.length}
+              </Badge>
             )}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="assessment" className="space-y-4 mt-4">
-      {previousRun && (
-        <Card className="border-primary/30 print:hidden">
-          <CardContent className="py-3 space-y-2">
-            {renderPreviousPicker()}
-            <div className="flex items-start justify-between gap-2 flex-wrap">
-              <div className="text-sm">
-                <span className="font-medium">전회차 = 금주 작업분</span>
-                <span className="text-muted-foreground">
-                  {' '}「{previousRun.period_label || '승인 회차'}」
-                  {previousRun.start_date && previousRun.end_date
-                    ? ` (${previousRun.start_date} ~ ${previousRun.end_date})`
-                    : ''}
-                </span>
-              </div>
-              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setActiveMainTab('execution')}>
-                금주 이행 확인
-              </Button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              전회차 이행 {previousFeedbackTotal}건 · 미조치 {previousFeedback.length}건 · 당시 관리대상 {previousManagedCount}건.
-              조치 전후 사진은 전회차에 저장되며 이 회차 위험 행과 섞이지 않습니다.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-      {!previousRun && (
-        <Card className="print:hidden">
-          <CardContent className="py-3 space-y-2">
-            {renderPreviousPicker()}
-            {!isApproved && previousRunCandidates.length === 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                이 소속회사의 이전 기간이 없습니다.
-              </p>
-            )}
-            {!isApproved && previousRunCandidates.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                자동으로 붙일 이전 기간이 없으면 목록에서 이 소속회사가 쓴 회차를 고르세요.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      {/* Filters */}
-      <Card className="print:hidden">
-        <CardContent className="py-3">
-          <div className="flex items-center gap-3">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <Select value={filterRiskGrade} onValueChange={setFilterRiskGrade}>
-              <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">위험도 전체</SelectItem>
-                <SelectItem value="상">상</SelectItem>
-                <SelectItem value="중">중</SelectItem>
-                <SelectItem value="하">하</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex-1 relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="검색..." className="h-8 pl-8 text-xs" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-            </div>
-            <span className="text-xs text-muted-foreground">{filteredItems.length}건</span>
-            <Button size="sm" variant="ghost" className="h-8 text-[11px]" onClick={() => setShowResidualCols(v => !v)}>
-              {showResidualCols ? '잔여위험 숨김' : '잔여위험 보기'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Risk Table */}
-      <Card id="ra-risk-items" className="scroll-mt-20">
+        {/* ==================== TAB 1: 위험요인 평가 ==================== */}
+        <TabsContent value="assessment" className="space-y-3 mt-0">
+          {/* Compact 1-Line Filter + Actions + View Mode Bar */}
+          <div className="print:hidden rounded-xl border bg-card px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[240px]">
+              <div className="relative w-44 sm:w-56">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input placeholder="공정, 위험요인, 대책 검색..." className="h-8 pl-8 text-xs" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              </div>
+              <div className="flex items-center gap-1">
+                {(['all', '상', '중', '하'] as const).map((g) => (
+                  <Button
+                    key={g}
+                    size="sm"
+                    variant={filterRiskGrade === g ? 'default' : 'outline'}
+                    className="h-7 px-2.5 text-[11px]"
+                    onClick={() => setFilterRiskGrade(g)}
+                  >
+                    {g === 'all' ? `전체 ${stats.total}` : g === '상' ? `상 ${stats.high}` : g === '중' ? `중 ${stats.med}` : `하 ${stats.low}`}
+                  </Button>
+                ))}
+              </div>
+              {stats.highRemain > 0 && (
+                <Badge variant="outline" className="text-[10px] text-destructive border-destructive/40">잔여 상 {stats.highRemain}</Badge>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
+                <>
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleAddNew}>
+                    <Plus className="h-3.5 w-3.5" /> 행 추가
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => {
+                    setBatchAssigneeUserId('');
+                    setBatchScope(selectedRowIds.size > 0 ? 'selected' : 'empty');
+                    setBatchOverrideManual(false);
+                    setShowBatchApply(true);
+                  }}>
+                    <Users className="h-3.5 w-3.5" /> 담당자 일괄
+                    {selectedRowIds.size > 0 && <Badge variant="secondary" className="ml-0.5 text-[9px] h-4 px-1">{selectedRowIds.size}</Badge>}
+                  </Button>
+                  {selectedRowIds.size > 0 && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-destructive border-destructive/40" onClick={() => void handleBulkDeleteSelected()}>
+                      <Trash2 className="h-3.5 w-3.5" /> 삭제 ({selectedRowIds.size})
+                    </Button>
+                  )}
+                </>
+              )}
+              {viewMode === 'excel' && (
+                <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setShowResidualCols(v => !v)}>
+                  {showResidualCols ? '잔여위험 숨김' : '잔여위험 보기'}
+                </Button>
+              )}
+              <div className="inline-flex rounded-lg border bg-muted/60 p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('compact')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition ${viewMode === 'compact' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  간편 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('excel')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition ${viewMode === 'excel' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  엑셀 전체표
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Compact Split View: 6-Col Scan Table + Right Inspector (Default) */}
+          {viewMode === 'compact' && (
+            <Card id="ra-risk-items" className="print:hidden overflow-hidden scroll-mt-20">
+              <div className="grid grid-cols-1 lg:grid-cols-12">
+                <div className="lg:col-span-7 border-b lg:border-b-0 lg:border-r max-h-[68vh] overflow-y-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="sticky top-0 z-10 bg-muted/60 border-b text-muted-foreground">
+                      <tr>
+                        {(canEdit || canForceEdit) && (
+                          <th className="w-8 py-2.5 px-2 text-center">
+                            <Checkbox
+                              checked={filteredItems.length > 0 && filteredItems.every(i => selectedRowIds.has(i.id))}
+                              onCheckedChange={(checked) => {
+                                if (checked) setSelectedRowIds(new Set(filteredItems.map(i => i.id)));
+                                else setSelectedRowIds(new Set());
+                              }}
+                            />
+                          </th>
+                        )}
+                        <th className="w-8 py-2.5 px-2 text-center">#</th>
+                        <th className="py-2.5 px-2.5 font-medium">공정 · 세부작업</th>
+                        <th className="py-2.5 px-2.5 font-medium">위험요인 &amp; 핵심 개선대책</th>
+                        <th className="py-2.5 px-2 font-medium text-center w-24">전 → 후</th>
+                        <th className="py-2.5 px-2 font-medium w-20">담당</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-12 text-muted-foreground">
+                            {aiIsRunning ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                <div className="font-medium text-foreground">AI가 초안을 만들고 있습니다…</div>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <div>등록된 위험성평가 항목이 없습니다.</div>
+                                {canEdit && (
+                                  <div className="flex justify-center gap-2">
+                                    <Button size="sm" onClick={() => { clearTradePreview(); setShowAutoGen(true); }}>
+                                      <Wand2 className="h-3.5 w-3.5 mr-1" /> AI 공종 채우기
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={handleAddNew}>수동 추가</Button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ) : filteredItems.map((item, idx) => {
+                        const isSelected = selectedInspectorItem?.id === item.id;
+                        const pending = isAiPendingRiskItem(item) || (autoGenJob.status === 'running' && autoGenJob.phase === 'filling' && (autoGenJob.pendingIds || []).includes(item.id));
+                        const fillable = !pending && isFillableRiskItem(item);
+                        return (
+                          <tr
+                            key={item.id}
+                            onClick={() => setSelectedInspectorId(item.id)}
+                            className={`border-b cursor-pointer transition-colors ${
+                              isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
+                            } ${pending ? 'opacity-70' : ''}`}
+                          >
+                            {(canEdit || canForceEdit) && (
+                              <td className="py-2.5 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedRowIds.has(item.id)}
+                                  onCheckedChange={(checked) => {
+                                    setSelectedRowIds(prev => {
+                                      const next = new Set(prev);
+                                      if (checked) next.add(item.id); else next.delete(item.id);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </td>
+                            )}
+                            <td className="py-2.5 px-2 text-center text-muted-foreground">{idx + 1}</td>
+                            <td className="py-2.5 px-2.5 align-top">
+                              <div className="font-semibold text-foreground">{(item.process || '').trim() || '(미분류)'}</div>
+                              <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{item.sub_task || '—'}</div>
+                            </td>
+                            <td className="py-2.5 px-2.5 align-top">
+                              {pending ? (
+                                <div className="flex items-center gap-1.5 text-muted-foreground">
+                                  <Loader2 className="h-3 w-3 animate-spin text-primary" /> AI 채우는 중…
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-medium text-foreground line-clamp-1">{item.hazard || '(위험요인 미입력)'}</span>
+                                    {fillable && (canEdit || canForceEdit) && (
+                                      <Badge variant="outline" className="text-[9px] h-4 px-1 text-primary border-primary/40">AI 채움</Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
+                                    {item.improvement_measure || '개선대책 미입력'}
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-2 text-center whitespace-nowrap align-top">
+                              <span className={`inline-flex items-center justify-center w-6 h-5 rounded text-[10px] font-bold ${getGradeClassName(item.risk_grade || '중')}`}>
+                                {item.risk_grade || '중'}
+                              </span>
+                              <span className="mx-0.5 text-muted-foreground">→</span>
+                              <span className={`inline-flex items-center justify-center w-6 h-5 rounded text-[10px] font-bold ${getGradeClassName(item.improved_risk_grade || '하')}`}>
+                                {item.improved_risk_grade || '하'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-[11px] text-muted-foreground truncate max-w-[80px] align-top">
+                              {item.assignee || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Right Slide-Over Inspector */}
+                <div className="lg:col-span-5 max-h-[68vh] overflow-y-auto">
+                  <RiskItemInspectorPanel
+                    item={selectedInspectorItem}
+                    index={selectedInspectorIndex}
+                    canEdit={!!(canEdit || canForceEdit) && !isApproved && !isArchived}
+                    projectMembers={projectMembers}
+                    itemIssues={selectedInspectorItem ? validationReport?.itemVerdicts?.[selectedInspectorItem.id]?.issues || [] : []}
+                    onEditField={handleCellEdit}
+                    onChangeAssignee={handleAssigneeChange}
+                    onDuplicate={handleDuplicate}
+                    onDelete={handleDelete}
+                    onExclude={(id) => { setExcludeDialogItem(id); setExcludeReason(''); }}
+                    onRetryAi={handleRetryFailedRow}
+                    onFillAi={() => {
+                      const ok = continueRiskAutoGenFill(runId);
+                      if (!ok) { toast({ title: '채움을 시작할 수 없습니다.', variant: 'destructive' }); return; }
+                      toast({ title: 'AI 채우기를 시작했습니다.' });
+                    }}
+                    aiRunning={isRiskAutoGenRunning()}
+                  />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Full Excel Table (shown when viewMode === 'excel' OR when printing) */}
+          <Card id={viewMode === 'excel' ? 'ra-risk-items' : undefined} className={`scroll-mt-20 ${viewMode === 'compact' ? 'hidden print:block' : ''}`}>
         <CardContent className="p-0">
           <div className="overflow-x-auto overflow-y-auto scrollbar-thin max-h-[70vh] print:overflow-visible print:max-h-none" style={{ WebkitOverflowScrolling: 'touch' }}>
             <table className="data-table text-xs print:min-w-0" style={{ minWidth: '1600px', tableLayout: 'auto' }}>
@@ -3503,219 +3252,369 @@ const AssessmentRunDetail = () => {
         </Card>
       )}
 
-      <Collapsible open={evidenceOpen} onOpenChange={setEvidenceOpen} className="print:hidden">
-        <div id="ra-worker-participation" className="scroll-mt-20 rounded-lg border">
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="w-full justify-between h-10 text-sm">
-              <span>현장 위험요인 찾기 · 근로자 참여 (의견 {participationCounts.opinions} · 보건 {participationCounts.healths})</span>
-              {evidenceOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="px-3 pb-3 space-y-3">
-            <div className="rounded-md border p-3 space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="font-medium">근로자 대표와 일정·방법 상의</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {companyRepName
-                      ? `이 회사 근로자대표: ${companyRepName}. 요구가 없으면 이 칸은 비워 둡니다. 이미 만든 회차는 이 칸이 없어도 유효합니다.`
-                      : '없어도 다음으로 갑니다. 지정은 근로자 관리에 있습니다.'}
-                  </p>
-                </div>
-                <Switch
-                  checked={!!run.rep_participation_requested}
-                  disabled={isApproved || isArchived}
-                  onCheckedChange={(on) => {
-                    if (on && !companyRepName) {
-                      toast({
-                        title: '이 회사의 근로자대표가 없습니다. 평가는 저장됩니다. 참여 요구는 근로자 관리에서 대표를 지정한 뒤에 켤 수 있습니다.',
-                      });
-                      return;
-                    }
-                    setRun((prev: any) => prev ? { ...prev, rep_participation_requested: on } : prev);
-                    void supabase.from('assessment_runs').update({ rep_participation_requested: on }).eq('id', runId!);
-                    log('참여 요구', 'assessment_run', runId!, run.project_id, { requested: on });
-                  }}
-                />
-              </div>
-              {run.rep_participation_requested && (
-                <div className="grid gap-2 md:grid-cols-3">
-                  {([
-                    ['rep_schedule', '일정', run.rep_schedule],
-                    ['rep_scope', '범위', run.rep_scope],
-                    ['rep_method', '방법', run.rep_method],
-                  ] as const).map(([key, label, value]) => (
-                    <div key={key} className="space-y-1">
-                      <Label className="text-xs">{label}</Label>
-                      <Input
-                        value={value || ''}
-                        disabled={isApproved || isArchived}
-                        onChange={(e) => setRun((prev: any) => prev ? { ...prev, [key]: e.target.value } : prev)}
-                        onBlur={(e) => {
-                          void supabase.from('assessment_runs').update({ [key]: e.target.value } as any).eq('id', runId!);
-                        }}
-                      />
+        </TabsContent>
+
+        {/* ==================== TAB 2: 근로자 참여 · 증빙 (Zero Collapsibles, 2-Col Clean Grid) ==================== */}
+        <TabsContent value="participation" className="mt-0 print:hidden">
+          <div id="ra-worker-participation" className="grid grid-cols-1 lg:grid-cols-2 gap-4 scroll-mt-20">
+            <div className="space-y-4">
+              <WorkerParticipationPanel
+                runId={runId!}
+                projectId={run.project_id}
+                userId={user?.id}
+                canEdit={!!(canEdit || canForceEdit)}
+                onChanged={refreshParticipation}
+                riskItems={items as any}
+                opinionRequired={run?.opinion_required ?? true}
+                healthRequired={run?.health_required ?? true}
+              />
+
+              <Card>
+                <CardContent className="py-3.5 space-y-2.5 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-xs">근로자 대표와 일정·방법 상의</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {companyRepName
+                          ? `이 회사 근로자대표: ${companyRepName}. 요구가 없으면 비워 둡니다.`
+                          : '지정은 근로자 관리에 있습니다.'}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-              {companyRepName && (canEdit || canForceEdit) && !isApproved && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    void supabase.from('assessment_run_participants').insert([{
-                      run_id: runId!,
-                      role: '참여자',
-                      user_name: companyRepName,
-                      company: docCompanies.authorCompanyName,
-                    }]).select().single().then(({ data, error }) => {
-                      if (error) {
-                        toast({ title: error.message, variant: 'destructive' });
-                        return;
-                      }
-                      if (data) setParticipants((prev) => [...prev, data]);
-                      toast({ title: `${companyRepName}을 참여자로 올렸습니다. 어느 단계에 있었는지는 직접 적습니다.` });
-                    });
-                  }}
-                >
-                  대표를 참여자로 올리기
-                </Button>
-              )}
-            </div>
-            <WorkerParticipationPanel
-              runId={runId!}
-              projectId={run.project_id}
-              userId={user?.id}
-              canEdit={!!(canEdit || canForceEdit)}
-              onChanged={refreshParticipation}
-              riskItems={items as any}
-              opinionRequired={run?.opinion_required ?? true}
-              healthRequired={run?.health_required ?? true}
-            />
-            <Card>
-              <CardContent className="py-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold flex items-center gap-1.5">
-                    <Camera className="h-3.5 w-3.5" /> 근로자 참여 사진
-                    {(run.worker_participation_images || []).length > 0 && (
-                      <Badge variant="secondary" className="text-[9px] h-4 px-1">{(run.worker_participation_images || []).length}건</Badge>
-                    )}
-                  </h3>
-                  {(canEdit || canForceEdit || isApproved) && (
-                    <label className="cursor-pointer">
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleWorkerPhotoUpload} disabled={workerPhotoUploading} />
-                      <Button size="sm" variant="outline" className="gap-1.5 text-xs" asChild disabled={workerPhotoUploading}>
-                        <span><Upload className="h-3 w-3" /> {workerPhotoUploading ? '업로드 중...' : '사진 추가'}</span>
-                      </Button>
-                    </label>
+                    <Switch
+                      checked={!!run.rep_participation_requested}
+                      disabled={isApproved || isArchived}
+                      onCheckedChange={(on) => {
+                        if (on && !companyRepName) {
+                          toast({ title: '이 회사의 근로자대표가 없습니다. 근로자 관리에서 대표를 지정한 뒤에 켤 수 있습니다.' });
+                          return;
+                        }
+                        setRun((prev: any) => prev ? { ...prev, rep_participation_requested: on } : prev);
+                        void supabase.from('assessment_runs').update({ rep_participation_requested: on }).eq('id', runId!);
+                        log('참여 요구', 'assessment_run', runId!, run.project_id, { requested: on });
+                      }}
+                    />
+                  </div>
+                  {run.rep_participation_requested && (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      {([
+                        ['rep_schedule', '일정', run.rep_schedule],
+                        ['rep_scope', '범위', run.rep_scope],
+                        ['rep_method', '방법', run.rep_method],
+                      ] as const).map(([key, label, value]) => (
+                        <div key={key} className="space-y-1">
+                          <Label className="text-xs">{label}</Label>
+                          <Input
+                            className="h-8 text-xs"
+                            value={value || ''}
+                            disabled={isApproved || isArchived}
+                            onChange={(e) => setRun((prev: any) => prev ? { ...prev, [key]: e.target.value } : prev)}
+                            onBlur={(e) => {
+                              void supabase.from('assessment_runs').update({ [key]: e.target.value } as any).eq('id', runId!);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
-                {(run.worker_participation_images || []).length > 0 ? (
-                  <div className="flex gap-2 flex-wrap">
-                    {(run.worker_participation_images || []).map((url: string, i: number) => (
-                      <div key={i} className="relative">
-                        <img src={url} alt={`참여사진${i + 1}`} className="w-20 h-20 rounded object-cover border cursor-pointer" onClick={() => openArchivedUrl(url)} />
+                  {companyRepName && (canEdit || canForceEdit) && !isApproved && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        void supabase.from('assessment_run_participants').insert([{
+                          run_id: runId!,
+                          role: '참여자',
+                          user_name: companyRepName,
+                          company: docCompanies.authorCompanyName,
+                        }]).select().single().then(({ data, error }) => {
+                          if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
+                          if (data) setParticipants((prev) => [...prev, data]);
+                          toast({ title: `${companyRepName}을 참여자로 올렸습니다.` });
+                        });
+                      }}
+                    >
+                      대표를 참여자로 올리기
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <Card>
+                <CardContent className="py-3.5">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <h3 className="text-xs font-semibold flex items-center gap-1.5">
+                      <Camera className="h-3.5 w-3.5" /> 근로자 참여 사진
+                      {(run.worker_participation_images || []).length > 0 && (
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{(run.worker_participation_images || []).length}건</Badge>
+                      )}
+                    </h3>
+                    {(canEdit || canForceEdit || isApproved) && (
+                      <label className="cursor-pointer">
+                        <input type="file" accept="image/*" multiple className="hidden" onChange={handleWorkerPhotoUpload} disabled={workerPhotoUploading} />
+                        <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" asChild disabled={workerPhotoUploading}>
+                          <span><Upload className="h-3 w-3" /> {workerPhotoUploading ? '업로드 중...' : '사진 추가'}</span>
+                        </Button>
+                      </label>
+                    )}
+                  </div>
+                  {(run.worker_participation_images || []).length > 0 ? (
+                    <div className="flex gap-2 flex-wrap">
+                      {(run.worker_participation_images || []).map((url: string, i: number) => (
+                        <div key={i} className="relative">
+                          <img src={url} alt={`참여사진${i + 1}`} className="w-24 h-24 rounded-lg object-cover border cursor-pointer" onClick={() => openArchivedUrl(url)} />
+                          {(canEdit || canForceEdit) && (
+                            <button
+                              type="button"
+                              aria-label="참여 사진 삭제"
+                              className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
+                              onClick={() => handleRemoveWorkerPhoto(i)}
+                            >×</button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-lg">
+                      결재 상신 전 근로자 참여 사진을 업로드하세요.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs font-semibold">회차 참여자 명단 ({participants.length}명)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="space-y-1.5">
+                    {participants.map(p => (
+                      <div key={p.id} className="flex items-center justify-between px-2.5 py-1.5 bg-muted/50 rounded-md text-xs">
+                        <div><Badge variant="outline" className="text-[10px] mr-2">{p.role}</Badge>{p.user_name} {p.company && <span className="text-muted-foreground">({p.company})</span>}</div>
                         {(canEdit || canForceEdit) && (
-                          <button
-                            type="button"
-                            aria-label="참여 사진 삭제"
-                            className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-[10px] flex items-center justify-center"
-                            onClick={() => handleRemoveWorkerPhoto(i)}
-                          >×</button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDeleteParticipant(p.id)}><Trash2 className="h-3 w-3" /></Button>
                         )}
                       </div>
                     ))}
-                  </div>
-                ) : (
-                  <p className="text-[10px] text-muted-foreground">결재 상신 전 근로자 참여 사진을 업로드하세요.</p>
-                )}
-              </CardContent>
-            </Card>
-          </CollapsibleContent>
-        </div>
-      </Collapsible>
-
-      {runId && run?.project_id && !isApproved && uiStatus !== '폐기' && (
-        <div id="ra-approval-line" className="print:hidden space-y-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">참여자</CardTitle>
-              <p className="text-[10px] text-muted-foreground font-normal">서명란은 위 결재 기록을 사용합니다. 여기에는 회차 참여자만 적습니다.</p>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-0">
-              <div className="space-y-2">
-                {participants.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm">
-                    <div><Badge variant="outline" className="text-[10px] mr-2">{p.role}</Badge>{p.user_name} {p.company && `(${p.company})`}</div>
-                    {(canEdit || canForceEdit) && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDeleteParticipant(p.id)}><Trash2 className="h-3 w-3" /></Button>
+                    {participants.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">참여자를 추가하세요.</p>
                     )}
                   </div>
-                ))}
-                {participants.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-2">참여자를 추가하세요.</p>
-                )}
-              </div>
-              {(canEdit || canForceEdit) && (
-                <div className="border-t pt-3 space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Select value={newParticipant.role} onValueChange={v => setNewParticipant(p => ({ ...p, role: v }))}>
-                      <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {['작성자','검토자','승인자','협력사 담당자','안전관리자'].map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <div className="relative col-span-2">
-                      <Input className="text-xs" placeholder="이름 검색..." value={participantSearch}
-                        onChange={e => { setParticipantSearch(e.target.value); setShowUserSuggestions(true); }}
-                        onFocus={() => setShowUserSuggestions(true)}
-                      />
-                      {showUserSuggestions && participantSearch.length > 0 && (
-                        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                          {userDirectory.filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase())).slice(0, 8).map(u => (
-                            <div key={u.user_id} className="px-3 py-2 text-xs cursor-pointer hover:bg-accent/20 flex items-center justify-between"
-                              onClick={() => { setNewParticipant(p => ({ ...p, user_name: u.display_name, company: u.company || '' })); setParticipantSearch(u.display_name); setShowUserSuggestions(false); }}>
-                              <span className="font-medium">{u.display_name}</span>
-                              <span className="text-muted-foreground">{u.company || ''}</span>
+                  {(canEdit || canForceEdit) && (
+                    <div className="border-t pt-3 space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <Select value={newParticipant.role} onValueChange={v => setNewParticipant(p => ({ ...p, role: v }))}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {['작성자','검토자','승인자','협력사 담당자','안전관리자'].map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <div className="relative col-span-2">
+                          <Input className="h-8 text-xs" placeholder="이름 검색..." value={participantSearch}
+                            onChange={e => { setParticipantSearch(e.target.value); setShowUserSuggestions(true); }}
+                            onFocus={() => setShowUserSuggestions(true)}
+                          />
+                          {showUserSuggestions && participantSearch.length > 0 && (
+                            <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                              {userDirectory.filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase())).slice(0, 8).map(u => (
+                                <div key={u.user_id} className="px-3 py-2 text-xs cursor-pointer hover:bg-accent/20 flex items-center justify-between"
+                                  onClick={() => { setNewParticipant(p => ({ ...p, user_name: u.display_name, company: u.company || '' })); setParticipantSearch(u.display_name); setShowUserSuggestions(false); }}>
+                                  <span className="font-medium">{u.display_name}</span>
+                                  <span className="text-muted-foreground">{u.company || ''}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => { if (!profile) return; setNewParticipant({ role: '작성자', user_name: profile.display_name, company: profile.company || '' }); setParticipantSearch(profile.display_name); }}>현재 사용자</Button>
+                        <Button size="sm" className="flex-1 h-7 text-xs" onClick={() => { const name = newParticipant.user_name || participantSearch; if (!name) return; handleAddParticipant(); setParticipantSearch(''); }} disabled={!newParticipant.user_name && !participantSearch}>추가</Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ==================== TAB 3: 결재 · 공유 (2-Col Clean Grid) ==================== */}
+        <TabsContent value="approval" className="mt-0 print:hidden">
+          <div id="ra-approval-line" className="grid grid-cols-1 lg:grid-cols-2 gap-4 scroll-mt-20">
+            <div className="space-y-4">
+              {runId && run?.project_id && !isApproved && uiStatus !== '폐기' && (
+                <ApprovalLineManager
+                  ref={approvalLineRef}
+                  projectId={run.project_id}
+                  projectMembers={approvalLineMembers}
+                  companies={projectCompanies}
+                  submitterCompanyId={userCompanyId || null}
+                  projectGcCompanyId={(project as any)?.gc_company_id || null}
+                  readOnly={isInApproval && !hasRejectedApproval}
+                  authorUserId={run.author_user_id || null}
+                  authorName={authorDisplayName || null}
+                  documentDraft={{
+                    entityType: 'assessment_run',
+                    entityId: runId,
+                    companyId: userCompanyId || null,
+                  }}
+                  onLinesChanged={handleApprovalLinesChanged}
+                  onDraftStatusChange={setApprovalDraftInfo}
+                />
+              )}
+
+              {latestApprovals.length > 0 && (() => {
+                const activeApprovals = sortApprovalRows(latestApprovals.filter((a) => a.status !== '취소'));
+                const version = Math.max(0, ...latestApprovals.map((a) => Number(a.approval_version) || 1));
+                const rejectRow = activeApprovals.find((a) => a.status === '반려' && String(a.comment || '').trim());
+                return (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-xs font-semibold">결재 진행 및 서명란</CardTitle>
+                        {version > 1 && <Badge variant="outline" className="text-[10px]">재상신 {version}차</Badge>}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 pt-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="bg-muted/50">
+                              <th className="border px-2 py-1.5 text-left font-medium">구분</th>
+                              <th className="border px-2 py-1.5 text-left font-medium">성명</th>
+                              <th className="border px-2 py-1.5 text-left font-medium">소속</th>
+                              <th className="border px-2 py-1.5 text-left font-medium">상태/일시</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeApprovals.map((a: any) => {
+                              const displayStatus = sequentialDisplayStatus(activeApprovals, a);
+                              const submitter = isSubmitterApprovalStep(a);
+                              return (
+                                <tr key={a.id} className={displayStatus === '진행중' ? 'bg-primary/5' : undefined}>
+                                  <td className="border px-2 py-1.5 font-medium">{a.step}</td>
+                                  <td className="border px-2 py-1.5">{localizePersonName(a.approver_name) || '—'}</td>
+                                  <td className="border px-2 py-1.5">{affiliationOf(a) || '—'}</td>
+                                  <td className="border px-2 py-1.5">
+                                    {displayStatus === '승인' && a.approved_at
+                                      ? `${new Date(a.approved_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}${submitter ? ' · 상신' : ''}`
+                                      : displayStatus === '반려' ? <span className="text-destructive font-medium">반려</span>
+                                      : displayStatus === '진행중' ? <span className="text-primary font-medium">결재중</span>
+                                      : <span className="text-muted-foreground">순번대기</span>}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {rejectRow && (
+                        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs">
+                          <div className="font-semibold text-destructive">반려 사유 ({rejectRow.approver_name} · {rejectRow.step})</div>
+                          <div className="mt-1 whitespace-pre-wrap">{rejectRow.comment}</div>
                         </div>
                       )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="flex-1" onClick={() => { if (!profile) return; setNewParticipant({ role: '작성자', user_name: profile.display_name, company: profile.company || '' }); setParticipantSearch(profile.display_name); }}>현재 사용자</Button>
-                    <Button size="sm" className="flex-1" onClick={() => { const name = newParticipant.user_name || participantSearch; if (!name) return; handleAddParticipant(); setParticipantSearch(''); }} disabled={!newParticipant.user_name && !participantSearch}>추가</Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <ApprovalLineManager
-            ref={approvalLineRef}
-            projectId={run.project_id}
-            projectMembers={approvalLineMembers}
-            companies={projectCompanies}
-            submitterCompanyId={userCompanyId || null}
-            projectGcCompanyId={(project as any)?.gc_company_id || null}
-            readOnly={isInApproval && !hasRejectedApproval}
-            authorUserId={run.author_user_id || null}
-            authorName={authorDisplayName || null}
-            documentDraft={{
-              entityType: 'assessment_run',
-              entityId: runId,
-              companyId: userCompanyId || null,
-            }}
-            onLinesChanged={handleApprovalLinesChanged}
-            onDraftStatusChange={setApprovalDraftInfo}
-          />
-        </div>
-      )}
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+            </div>
 
+            <div className="space-y-4">
+              <Card id="ra-run-kind" className="scroll-mt-20">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs font-semibold">문서 기본 정보</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2.5 pt-0 text-xs">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <div><span className="text-muted-foreground">프로젝트:</span> {project?.name || '—'}</div>
+                    <div><span className="text-muted-foreground">현장명:</span> {project?.site_name || '—'}</div>
+                    <div><span className="text-muted-foreground">발주처:</span> {docCompanies.clientCompanyName}</div>
+                    <div><span className="text-muted-foreground">시공사:</span> {docCompanies.gcCompanyName}</div>
+                    <div><span className="text-muted-foreground">작성 관리감독자:</span> {authorDisplayName || '미지정'}</div>
+                    <div><span className="text-muted-foreground">작성 회사:</span> {docCompanies.authorCompanyName}</div>
+                    <div className="col-span-2"><span className="text-muted-foreground">기간:</span> {run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</div>
+                    {run.validation_score != null && (
+                      <div className="col-span-2"><span className="text-muted-foreground">품질 검증:</span> {run.validation_verdict} ({run.validation_score}점)</div>
+                    )}
+                    {run.library_promoted_count != null && (
+                      <div className="col-span-2 text-primary font-medium">
+                        {run.library_promoted_count > 0
+                          ? `✦ 공종 라이브러리에 ${run.library_promoted_count}건 자동 반영됨`
+                          : '라이브러리 승격 조건 미충족 (상황·대책 보강 필요)'}
+                      </div>
+                    )}
+                  </div>
+                  {run.type === '수시' && (
+                    <div className="pt-2 border-t space-y-1">
+                      <Label className="text-xs">수시 사유</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        value={run.occasional_reason || ''}
+                        disabled={isApproved || isArchived}
+                        placeholder="설비 변경, 사고, 작업 변경 등"
+                        onChange={(e) => setRun((prev: any) => prev ? { ...prev, occasional_reason: e.target.value } : prev)}
+                        onBlur={(e) => {
+                          void supabase.from('assessment_runs').update({ occasional_reason: e.target.value || null }).eq('id', runId!);
+                        }}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs font-semibold">근로자 공유 확인 서명 ({shareAcks.length}명)</CardTitle>
+                  <p className="text-[11px] text-muted-foreground font-normal">승인 완료 후 근로자가 앱·TBM에서 확인 서명하면 자동 기록됩니다.</p>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {shareAcks.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
+                      {isApproved ? '아직 공유 확인 서명이 없습니다.' : '최종 승인 완료 후 공유 확인 서명이 집계됩니다.'}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr className="bg-muted/50">
+                            <th className="border px-2 py-1 text-left font-medium">소속</th>
+                            <th className="border px-2 py-1 text-left font-medium">성명</th>
+                            <th className="border px-2 py-1 text-left font-medium">서명</th>
+                            <th className="border px-2 py-1 text-left font-medium">확인일시</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {shareAcks.map((a) => (
+                            <tr key={a.id}>
+                              <td className="border px-2 py-1">{a.company_name || '—'}</td>
+                              <td className="border px-2 py-1">{a.worker_name || '—'}</td>
+                              <td className="border px-2 py-1">
+                                {isSafeSignatureDataUrl(a.signature_data) ? (
+                                  <img src={a.signature_data || ''} alt={`${a.worker_name || '서명'}`} className="h-7 max-w-[6rem] object-contain" />
+                                ) : '—'}
+                              </td>
+                              <td className="border px-2 py-1">
+                                {a.signed_at ? new Date(a.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
-        <TabsContent value="execution" className="mt-4 space-y-3">
+
+        {/* ==================== TAB 4: 이행 · 차주 추적 ==================== */}
+        <TabsContent value="execution" className="mt-0 space-y-4 print:hidden">
           <Card>
             <CardContent className="py-3">
               {renderPreviousPicker()}
@@ -3734,7 +3633,7 @@ const AssessmentRunDetail = () => {
                 ? `금주 이행 확인 · 전회차 ${previousRun?.period_label || ''}`
                 : '금주 이행 확인'}
               helperText={executionIsPrevious
-                ? '※ 이 화면의 차주 회차가 아니라, 전회차(금주 작업분)에 조치 전후 사진이 저장됩니다. 아래 관리대상은 전회차에서 불러온 항목입니다.'
+                ? '※ 이 화면의 차주 회차가 아니라, 전회차(금주 작업분)에 조치 전후 사진이 저장됩니다.'
                 : '※ 이 회차가 금주 작업분입니다. 다음 회차 작성 시 전회차로 연결됩니다.'}
               feedbackStatus={executionFeedbackStatus || 'none'}
               submitterCompanyId={userCompanyId}
@@ -3748,38 +3647,35 @@ const AssessmentRunDetail = () => {
             />
           ) : (
             <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                이 소속회사의 이전 회차를 고르면 그 회차의 이행 확인이 여기 나옵니다.
+              <CardContent className="py-8 text-center text-xs text-muted-foreground">
+                이 소속회사의 이전 회차를 고르면 금주 이행 확인이 여기에 표시됩니다.
               </CardContent>
             </Card>
           )}
-        </TabsContent>
-        <TabsContent value="forecast" className="mt-4">
+
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">차주 고위험 관리대상 (조치 사진 없음)</CardTitle>
+              <CardTitle className="text-xs font-semibold">차주 고위험 관리대상 (이번 회차 잔여 '상' {forecastItems.length}건)</CardTitle>
               <p className="text-[11px] text-muted-foreground font-normal">
-                이번 회차 위험성평가에서 개선 후에도 위험도가 &apos;상&apos;인 항목입니다.
-                다음 회차의 금주 이행 확인 대상이 됩니다. 조치 전후 사진은 금주 이행 확인 탭에만 있습니다.
+                개선 후에도 위험도가 &apos;상&apos;인 항목입니다. 다음 회차의 금주 이행 확인 대상이 됩니다.
               </p>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-2 pt-0">
               {forecastItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-6">
-                  이번 회차에 개선 후 위험도 &apos;상&apos; 항목이 없습니다. 초기 위험도가 상이어도 개선 후가 중·하면 차주 관리대상에 넣지 않습니다.
+                  이번 회차에 개선 후 위험도 &apos;상&apos; 항목이 없습니다.
                 </p>
               ) : (
                 forecastItems.map((item, idx) => (
-                  <div key={item.id} className="rounded border p-2 text-xs space-y-0.5">
+                  <div key={item.id} className="rounded-lg border p-2.5 text-xs space-y-0.5">
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">{idx + 1}.</span>
-                      <Badge variant="outline" className="text-[9px] text-destructive">상</Badge>
-                      <span className="font-medium">{item.process}</span>
+                      <Badge variant="outline" className="text-[10px] text-destructive border-destructive/40">잔여 상</Badge>
+                      <span className="font-semibold">{item.process}</span>
+                      <span className="text-muted-foreground">{item.sub_task || ''}</span>
                     </div>
-                    <p className="text-muted-foreground">{item.sub_task || ''} {item.hazard ? `· ${item.hazard}` : ''}</p>
-                    {item.improvement_measure && (
-                      <p>개선대책: {item.improvement_measure}</p>
-                    )}
+                    {item.hazard && <p className="text-muted-foreground">{item.hazard}</p>}
+                    {item.improvement_measure && <p>개선대책: {item.improvement_measure}</p>}
                   </div>
                 ))
               )}

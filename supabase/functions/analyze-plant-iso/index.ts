@@ -2,7 +2,12 @@
 // Extracts Title Block, BOM table, Weld counts, PSV/Valve topology hints, and safety design findings.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveGeminiApiKey } from "../_shared/geminiNative.ts";
+import {
+  geminiGenerateContentUrl,
+  geminiRequestHeaders,
+  resolveGeminiApiKey,
+  resolveGeminiVisionModel,
+} from "../_shared/geminiNative.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -137,8 +142,9 @@ Deno.serve(async (req) => {
       return json({ error: "이미지 용량이 너무 큽니다. 1~2페이지로 나누어 시도하세요." }, 413);
     }
 
-    const apiKey = await resolveGeminiApiKey(adminClient);
+    const apiKey = await resolveGeminiApiKey();
     if (!apiKey) return json({ error: "GEMINI_API_KEY가 설정되지 않았습니다." }, 500);
+    const model = resolveGeminiVisionModel();
 
     const prompt = buildIsoPrompt({ fileName, gasHint, extractedTextHint });
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
@@ -155,23 +161,20 @@ Deno.serve(async (req) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), VISION_TIMEOUT_MS);
     try {
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            contents: [{ role: "user", parts }],
-            generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 4096,
-              responseMimeType: "application/json",
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          }),
-        },
-      );
+      const resp = await fetch(geminiGenerateContentUrl(model), {
+        method: "POST",
+        headers: geminiRequestHeaders(apiKey),
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 4096,
+            responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      });
       if (!resp.ok) {
         const errText = await resp.text();
         return json({ error: `Gemini API 오류 (${resp.status})`, detail: errText.slice(0, 300) }, 502);
@@ -180,7 +183,7 @@ Deno.serve(async (req) => {
       const text = raw?.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
       const parsed = JSON.parse(cleaned);
-      return json({ ok: true, model: "gemini-2.5-flash", result: parsed });
+      return json({ ok: true, model, result: parsed });
     } finally {
       clearTimeout(timer);
     }

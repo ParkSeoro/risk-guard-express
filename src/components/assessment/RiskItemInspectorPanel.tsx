@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Ban, Copy, RotateCcw, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import { GRADES, getGradeClassName } from '@/lib/riskGrade';
-import { isAiFailedRiskItem, isFillableRiskItem } from '@/lib/riskFillComplete';
+import { isAiFailedRiskItem, isFillableRiskItem } from '@/lib/riskAutoGenAI';
 
 export interface InspectorMember {
   user_id: string;

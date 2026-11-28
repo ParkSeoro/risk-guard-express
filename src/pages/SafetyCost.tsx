@@ -283,15 +283,15 @@ const SafetyCost = () => {
   useEffect(() => { refreshPpeSignedCount(selectedReportId); }, [selectedReportId]);
 
   async function fetchAll() {
-    if (!access.selectedProject) return;
+    if (!access.selectedProject || access.scopeStatus !== 'ready') return;
     setLoading(true);
     try {
       const [companyRows, constructionRes, reportRes, itemRes, evidenceRes] = await Promise.all([
         (await import('@/lib/projectCompanies')).fetchProjectCompanies(access.selectedProject),
-        supabase.from('safety_cost_constructions' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
-        supabase.from('safety_cost_monthly_reports' as any).select('*').eq('project_id', access.selectedProject).eq('is_deleted', false).order('report_month', { ascending: false }),
-        supabase.from('safety_cost_items' as any).select('*').eq('project_id', access.selectedProject).eq('is_deleted', false).order('sort_order'),
-        supabase.from('safety_cost_evidence_files' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
+        access.applyCompanyFilter(supabase.from('safety_cost_constructions' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false })),
+        access.applyCompanyFilter(supabase.from('safety_cost_monthly_reports' as any).select('*').eq('project_id', access.selectedProject).eq('is_deleted', false).order('report_month', { ascending: false })),
+        access.applyCompanyFilter(supabase.from('safety_cost_items' as any).select('*').eq('project_id', access.selectedProject).eq('is_deleted', false).order('sort_order')),
+        access.applyCompanyFilter(supabase.from('safety_cost_evidence_files' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false })),
       ]);
       setCompanies(companyRows as any[]);
       setConstructions((constructionRes.data || []) as any[]);

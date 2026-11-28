@@ -51,7 +51,7 @@ function reportBadge(appointed_at: string, reported_to_authority_at: string | nu
 }
 
 export default function SafetyAppointments() {
-  const { selectedProject: projectId, canEdit, canDelete } = useGlobalProjectAccess();
+  const { selectedProject: projectId, canEdit, canDelete, applyCompanyFilter, accessibleCompanyIds, seesAllCompanies, scopeStatus } = useGlobalProjectAccess();
   const { user } = useAuth();
   const { log } = useAuditLog();
   const [rows, setRows] = useState<Row[]>([]);
@@ -68,10 +68,12 @@ export default function SafetyAppointments() {
   });
 
   async function load() {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
-    const { data, error } = await supabase.from("safety_appointments").select("*")
-      .eq("project_id", projectId).eq("is_deleted", false).order("appointed_at", { ascending: false });
+    const { data, error } = await applyCompanyFilter(
+      supabase.from("safety_appointments").select("*")
+        .eq("project_id", projectId).eq("is_deleted", false).order("appointed_at", { ascending: false }),
+    );
     if (error) toast.error(error.message);
     setRows((data as Row[]) || []);
     const { data: links } = await (supabase as any)
@@ -86,7 +88,7 @@ export default function SafetyAppointments() {
         type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
         deleted: l.companies.is_deleted === true,
       } : null)
-      .filter((c: any) => c && !c.deleted && c.type !== "client");
+      .filter((c: any) => c && !c.deleted && c.type !== "client" && (seesAllCompanies || !accessibleCompanyIds || accessibleCompanyIds.includes(c.id)));
     const ids = companies.map((c: any) => c.id);
     const infoByCompany = new Map<string, any>();
     if (ids.length > 0) {
@@ -111,7 +113,7 @@ export default function SafetyAppointments() {
     }));
     setLoading(false);
   }
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, scopeStatus, accessibleCompanyIds]);
 
   function openCreate() {
     setEditing(null);

@@ -32,7 +32,7 @@ function daysUntil(d?: string | null) {
 
 export default function HealthCheckups() {
   const handle = useToastError();
-  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
@@ -49,7 +49,7 @@ export default function HealthCheckups() {
   const [search, setSearch] = useState("");
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
     try {
       let hcQ = supabase.from("health_checkups").select("*").eq("project_id", projectId).eq("is_deleted", false).order("scheduled_date", { ascending: false }).limit(500);
@@ -62,7 +62,7 @@ export default function HealthCheckups() {
     } catch (e) { handle(e, "건강진단 목록"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId, userCompanyId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId, scopeStatus, accessibleCompanyIds]);
 
   useEffect(() => {
     if (!projectId) return;

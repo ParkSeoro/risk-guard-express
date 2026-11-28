@@ -45,7 +45,7 @@ export default function HealthDashboard() {
               .eq("project_id", projectId)
               .eq("is_deleted", false),
           );
-        // work_env_measurements / hazard_surveys: project-scoped tables (no company_id)
+        // work_env_measurements / hazard_surveys: company-scoped
         const [
           { count: w },
           { count: notC },
@@ -61,18 +61,22 @@ export default function HealthDashboard() {
           workersBase().lt("next_checkup_due", new Date().toISOString().slice(0, 10)),
           chemBase(),
           chemBase().eq("is_carcinogen", true),
-          supabase
-            .from("work_env_measurements")
-            .select("id", { count: "exact", head: true })
-            .eq("project_id", projectId)
-            .eq("is_exceeded", true)
-            .eq("is_deleted", false),
-          supabase
-            .from("hazard_surveys")
-            .select("id", { count: "exact", head: true })
-            .eq("project_id", projectId)
-            .eq("is_active", true)
-            .eq("is_deleted", false),
+          applyCompanyFilter(
+            supabase
+              .from("work_env_measurements")
+              .select("id", { count: "exact", head: true })
+              .eq("project_id", projectId)
+              .eq("is_exceeded", true)
+              .eq("is_deleted", false),
+          ),
+          applyCompanyFilter(
+            supabase
+              .from("hazard_surveys")
+              .select("id", { count: "exact", head: true })
+              .eq("project_id", projectId)
+              .eq("is_active", true)
+              .eq("is_deleted", false),
+          ),
           applyCompanyFilter(
             supabase
               .from("health_education_logs")

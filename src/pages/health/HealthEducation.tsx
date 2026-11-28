@@ -19,7 +19,7 @@ const TYPES = ["정기", "특별", "관리감독자", "MSDS", "신규채용", "�
 
 export default function HealthEducation() {
   const handle = useToastError();
-  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
@@ -32,7 +32,7 @@ export default function HealthEducation() {
   const openedPreset = useRef(false);
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
     try {
       let lQ = supabase.from("health_education_logs").select("*").eq("project_id", projectId).eq("is_deleted", false).order("conducted_at", { ascending: false }).limit(300);
@@ -50,7 +50,7 @@ export default function HealthEducation() {
     } catch (e) { handle(e, "보건교육 조회"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId, userCompanyId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId, scopeStatus, accessibleCompanyIds]);
 
   const openCreate = () => {
     setEditingRow(null);

@@ -18,7 +18,7 @@ const TYPES = ["근골격계", "뇌심혈관", "직무스트레스", "감정노�
 
 export default function HazardSurveys() {
   const handle = useToastError();
-  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
@@ -27,7 +27,7 @@ export default function HazardSurveys() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
     try {
       let q = supabase.from("hazard_surveys").select("*").eq("project_id", projectId).eq("is_deleted", false).order("survey_date", { ascending: false });
@@ -37,7 +37,7 @@ export default function HazardSurveys() {
     } catch (e) { handle(e, "유해요인조사 조회"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId, userCompanyId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId, scopeStatus, accessibleCompanyIds]);
 
   const openCreate = () => {
     setEditingRow(null);
@@ -80,6 +80,7 @@ export default function HazardSurveys() {
         const token = crypto.randomUUID().replace(/-/g, "");
         const { error } = await supabase.from("hazard_surveys").insert({
           project_id: projectId,
+          company_id: userCompanyId || null,
           type: form.type,
           title: form.title,
           survey_date: form.survey_date,

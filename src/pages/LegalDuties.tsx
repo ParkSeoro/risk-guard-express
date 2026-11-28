@@ -56,8 +56,8 @@ const LegalDuties = () => {
   const [form, setForm] = useState({ duty_name: '', description: '', duty_category: 'daily', frequency: 'daily', legal_basis: '' });
 
   useEffect(() => {
-    if (access.selectedProject) loadDuties();
-  }, [access.selectedProject, access.userCompanyId]);
+    if (access.selectedProject && access.scopeStatus === 'ready') loadDuties();
+  }, [access.selectedProject, access.userCompanyId, access.scopeStatus, access.accessibleCompanyIds]);
 
   const loadDuties = async () => {
     let query = supabase

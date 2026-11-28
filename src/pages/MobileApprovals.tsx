@@ -70,8 +70,11 @@ export default function MobileApprovals() {
       if (pendingErr) toast.error("결재 목록 로드 실패: " + pendingErr.message);
       if (historyErr) toast.error("결재 이력 로드 실패: " + historyErr.message);
 
-      // Desktop parity: 상신(기안) 단계는 승인/반려 UI에 노출하지 않음
-      setPendingRows(((pending as any[]) || []).filter((r) => !isSubmitterApprovalStep(r)));
+      // Desktop parity: 상신(기안) 단계는 승인/반려 UI에 노출하지 않음 + 선택 프로젝트 필터
+      const filteredPending = ((pending as any[]) || []).filter(
+        (r) => !isSubmitterApprovalStep(r) && (!projectId || !r.project_id || r.project_id === projectId),
+      );
+      setPendingRows(filteredPending);
       const historyList = (history as any[]) || [];
       setHistoryRows(historyList);
       try {

@@ -82,9 +82,10 @@ export function SiteSafetyRiskControlHub({
   companyId,
   companyType,
   seesAllCompanies = true,
+  accessibleCompanyIds,
   refreshKey = 0,
   section = "all",
-}: SiteSafetyRiskControlHubProps) {
+}: SiteSafetyRiskControlHubProps & { accessibleCompanyIds?: string[] | null }) {
   const [selectedQuadrant, setSelectedQuadrant] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -183,9 +184,15 @@ export function SiteSafetyRiskControlHub({
         const todayCandidatePermits = rawPermits.filter(p => {
           if (p.is_deleted || p.status === '작업취소' || (p as any).voided_at) return false;
 
-          if (!isClient && companyId) {
-            const matchesId = p.company_id === companyId;
-            const matchesName = companyMap[companyId] && p.contractor_company === companyMap[companyId];
+          if (!isClient) {
+            const allowedIds = new Set(
+              (accessibleCompanyIds && accessibleCompanyIds.length > 0)
+                ? accessibleCompanyIds
+                : (companyId ? [companyId] : []),
+            );
+            if (allowedIds.size === 0) return false;
+            const matchesId = !!(p.company_id && allowedIds.has(p.company_id));
+            const matchesName = [...allowedIds].some((id) => companyMap[id] && p.contractor_company === companyMap[id]);
             if (!matchesId && !matchesName) return false;
           }
 
@@ -304,14 +311,9 @@ export function SiteSafetyRiskControlHub({
         });
 
         // 2) 만약 오늘 날짜로 지정된 회차가 아직 등록되어 있지 않다면,
-        // 현장의 최신 승인 회차(가장 최근 완료된 상시/정기 평가)를 fallback으로 사용하여 관제 매트릭스가 비지 않도록 지원
+        // 소속 범위 내 최신 승인 회차(allRuns[0])만 fallback으로 사용 (타 시공사 회차 노출 절대 금지)
         if (validRuns.length === 0 && allRuns.length > 0) {
           validRuns = [allRuns[0]];
-        }
-
-        // 3) 만약 승인된 회차가 아직 없더라도, 프로젝트에 등록된 최신 회차를 fallback으로 사용하여 위험요소 매트릭스 시각화
-        if (validRuns.length === 0 && (runs || []).length > 0) {
-          validRuns = [(runs as any[])[0]];
         }
 
         const runIds = validRuns.map(r => r.id);

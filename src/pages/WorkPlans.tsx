@@ -81,12 +81,21 @@ const WorkPlans = () => {
   const loadRuns = async () => {
     if (!access.selectedProject) return;
     const { data } = await supabase.from('assessment_runs')
-      .select('id, period_label, type, status, created_by, author_user_id')
+      .select('id, period_label, type, status, created_by, author_user_id, target_company_ids')
       .eq('project_id', access.selectedProject)
       .eq('is_deleted', false)
       .eq('status', '승인완료')
       .order('updated_at', { ascending: false }).limit(50);
-    const rows = (data || []) as any[];
+    let rows = (data || []) as any[];
+    if (!access.seesAllCompanies && rows.length > 0) {
+      const { authorCompanyIdsForRuns, filterRunsByCompanyScope } = await import('@/lib/companyDocScope');
+      const authorCompanyMap = await authorCompanyIdsForRuns(supabase, access.selectedProject, rows);
+      rows = filterRunsByCompanyScope(rows, {
+        seesAllCompanies: access.seesAllCompanies,
+        accessibleCompanyIds: access.accessibleCompanyIds,
+        authorCompanyMap,
+      });
+    }
     const authorIds = [...new Set(rows.flatMap((r) => [r.author_user_id, r.created_by]).filter(Boolean))];
     let nameByUser: Record<string, string> = {};
     if (authorIds.length > 0) {
@@ -165,7 +174,7 @@ const WorkPlans = () => {
       .eq('user_id', authorUserId)
       .maybeSingle();
     sections = prefillOverviewSupervisor(sections, authorProf?.display_name || '');
-    const companyId = access.userCompanyId || selectedCompany || null;
+    const companyId = selectedCompany || access.userCompanyId || null;
 
     const { data, error } = await supabase.from('work_plans').insert({
       project_id: access.selectedProject,

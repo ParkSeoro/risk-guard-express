@@ -44,7 +44,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function EmergencyDrills() {
-  const { selectedProject: projectId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, userCompanyId, applyCompanyFilter, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,27 +68,29 @@ export default function EmergencyDrills() {
   });
 
   async function load() {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("emergency_drills")
-      .select("*")
-      .eq("project_id", projectId)
-      .eq("is_deleted", false)
-      .order("scheduled_date", { ascending: false, nullsFirst: false });
+    const { data, error } = await applyCompanyFilter(
+      supabase
+        .from("emergency_drills")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("is_deleted", false)
+        .order("scheduled_date", { ascending: false, nullsFirst: false }),
+    );
     if (error) toast.error(error.message);
     setRows((data as Drill[]) || []);
     setLoading(false);
   }
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     load();
     const ch = supabase
       .channel(`emergency_drills:${projectId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "emergency_drills", filter: `project_id=eq.${projectId}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [projectId]);
+  }, [projectId, scopeStatus, accessibleCompanyIds]);
 
   function nextDueLabel(iso: string | null): { text: string; tone: "ok" | "warn" | "danger" } | null {
     if (!iso) return null;
@@ -147,6 +149,7 @@ export default function EmergencyDrills() {
     if (!form.title.trim()) { toast.error("훈련명을 입력하세요"); return; }
     const payload: any = {
       project_id: projectId,
+      company_id: editing ? (editing as any).company_id : (userCompanyId || null),
       drill_type: form.drill_type,
       title: form.title.trim(),
       scenario: form.scenario,

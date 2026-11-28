@@ -117,8 +117,9 @@ export default function Trash() {
       if (!seesAllCompanies && accessibleCompanyIds) {
         const allow = new Set(accessibleCompanyIds);
         next = next.filter((row: any) => {
-          if (row.company_id == null || row.company_id === undefined) return true;
-          return allow.has(row.company_id);
+          const cid = table === 'companies' ? row.id : row.company_id;
+          if (cid == null || cid === undefined) return true;
+          return allow.has(cid);
         });
       }
       setRows(next);
@@ -128,7 +129,7 @@ export default function Trash() {
 
   useEffect(() => {
     if (canAccess) fetchDeleted(activeTable);
-  }, [activeTable, selectedProject, canAccess]);
+  }, [activeTable, selectedProject, canAccess, seesAllCompanies, accessibleCompanyIds]);
 
   const handleRestore = async (row: DeletedRow) => {
     const r = await restore(activeTable, row.id, {

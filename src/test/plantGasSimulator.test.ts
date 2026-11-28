@@ -77,7 +77,7 @@ describe('Air Liquide Gas Plant Operational Simulator', () => {
   it('auto-builds a live simulation circuit from an analyzed ISO and reproduces missing PSV hazard', () => {
     const circuit = buildCircuitFromIso(SAMPLE_ISO_LOX);
     expect(circuit.gas).toBe('LOX');
-    expect(circuit.designPressureBar).toBe(16);
+    expect(circuit.designPressureBar).toBe(SAMPLE_ISO_LOX.title_block.design_pressure_bar);
 
     const trapped = runGasPlantSimulation(circuit, {
       inletPressureBar: 11.5,

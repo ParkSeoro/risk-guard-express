@@ -116,8 +116,9 @@ function AdminAppRoutesInner() {
             <Route path="master-data" element={<RoleGuard><P.LazyMasterData /></RoleGuard>} />
             <Route path="risk-library" element={<RoleGuard masterOnly><P.LazyGlobalRiskLibrary /></RoleGuard>} />
             <Route path="admin/risk-library" element={<RoleGuard masterOnly><P.LazyGlobalRiskLibrary /></RoleGuard>} />
-            <Route path="plant-ai-lab" element={<RoleGuard masterOnly><P.LazyPlantAiLab /></RoleGuard>} />
-            <Route path="admin/plant-ai-lab" element={<RoleGuard masterOnly><P.LazyPlantAiLab /></RoleGuard>} />
+            <Route path="plant-ai-lab" element={<Navigate to="/app/admin/plant-ai-lab/iso" replace />} />
+            <Route path="plant-ai-lab/:section" element={<RoleGuard masterOnly><P.LazyPlantAiLab /></RoleGuard>} />
+            <Route path="admin/plant-ai-lab" element={<Navigate to="/app/admin/plant-ai-lab/iso" replace />} />
             <Route path="approvals" element={<P.LazyApprovals />} />
             <Route path="audit-logs" element={<RoleGuard><P.LazyAuditLogs /></RoleGuard>} />
             <Route path="user-management" element={<Navigate to="/app/admin/settings/permissions" replace />} />

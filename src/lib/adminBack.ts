@@ -19,6 +19,8 @@ export const ADMIN_BACK_PARENTS: Record<string, string | null> = {
   "master-data": "/",
   "risk-library": "/",
   "admin/risk-library": "/",
+  "plant-ai-lab": "/",
+  "admin/plant-ai-lab": "/",
   approvals: "/",
   "audit-logs": "/",
   "user-management": "/",

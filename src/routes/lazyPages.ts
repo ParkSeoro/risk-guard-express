@@ -56,6 +56,7 @@ export const LazyAssessmentRuns = L(() => import("@/pages/AssessmentRuns"));
 export const LazyAssessmentRunDetail = L(() => import("@/pages/AssessmentRunDetail"));
 export const LazyMasterData = L(() => import("@/pages/MasterData"));
 export const LazyGlobalRiskLibrary = L(() => import("@/pages/GlobalRiskLibrary"));
+export const LazyPlantAiLab = L(() => import("@/pages/PlantAiLab"));
 export const LazyApprovals = L(() => import("@/pages/Approvals"));
 export const LazyVerificationCenter = L(() => import("@/pages/VerificationCenter"));
 export const LazyScheduleUpload = L(() => import("@/pages/ScheduleUpload"));

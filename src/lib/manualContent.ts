@@ -488,6 +488,7 @@ export const MANUAL_SIDEBAR_EXCEPTIONS: string[] = [
   "감사 로그",
   "권한 점검",
   "위평 라이브러리",
+  "플랜트 AI 랩 (비공개)",
   "데이터 정합성 (단일 기준)",
   "시스템 테스트 엔진",
   "휴지통",

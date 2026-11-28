@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,7 @@ const TYPE_META: Record<MeetingType, { label: string; legal: string }> = {
 
 export function SafetyCouncilPanel({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
   const { user, profile } = useAuth();
+  const { applyCompanyFilter, userCompanyId, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const [rows, setRows] = useState<CouncilRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -60,19 +62,21 @@ export function SafetyCouncilPanel({ projectId, canEdit }: { projectId: string; 
   });
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
-    const { data } = await (supabase as any)
-      .from("safety_council_records")
-      .select("*")
-      .eq("project_id", projectId)
-      .eq("is_deleted", false)
-      .order("held_at", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const { data } = await applyCompanyFilter(
+      (supabase as any)
+        .from("safety_council_records")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("is_deleted", false)
+        .order("held_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(50),
+    );
     setRows((data as CouncilRecord[]) || []);
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, applyCompanyFilter, scopeStatus, accessibleCompanyIds]);
 
   useEffect(() => {
     load();
@@ -83,9 +87,9 @@ export function SafetyCouncilPanel({ projectId, canEdit }: { projectId: string; 
     setAiDrafting(true);
     try {
       const [{ count: raCount }, { count: inspCount }, { count: accCount }, { count: wsCount }] = await Promise.all([
-        (supabase as any).from("risk_assessment_runs").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-        supabase.from("safety_inspections").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_deleted", false),
-        (supabase as any).from("accident_reports").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+        applyCompanyFilter(supabase.from("assessment_runs").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_deleted", false)),
+        applyCompanyFilter(supabase.from("safety_inspections").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_deleted", false)),
+        applyCompanyFilter(supabase.from("incident_reports").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_deleted", false)),
         supabase.from("work_stop_requests").select("id", { count: "exact", head: true }).eq("project_id", projectId),
       ]);
       const meta = TYPE_META[form.meeting_type];
@@ -121,6 +125,7 @@ export function SafetyCouncilPanel({ projectId, canEdit }: { projectId: string; 
     const { error } = await (supabase as any).from("safety_council_records").insert([
       {
         project_id: projectId,
+        company_id: userCompanyId || null,
         meeting_type: form.meeting_type,
         held_at: form.held_at,
         title: form.title.trim(),

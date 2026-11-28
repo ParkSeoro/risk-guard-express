@@ -27,7 +27,7 @@ function daysUntil(d?: string | null) {
 
 export default function EnvMeasurements() {
   const handle = useToastError();
-  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [factors, setFactors] = useState<any[]>([]);
@@ -41,7 +41,7 @@ export default function EnvMeasurements() {
   const [search, setSearch] = useState("");
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
     try {
       let mQ = supabase.from("work_env_measurements").select("*").eq("project_id", projectId).eq("is_deleted", false).order("measure_date", { ascending: false });
@@ -54,7 +54,7 @@ export default function EnvMeasurements() {
     } catch (e) { handle(e, "측정 자료 조회"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId, userCompanyId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId, scopeStatus, accessibleCompanyIds]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -158,6 +158,7 @@ export default function EnvMeasurements() {
       } else {
         const { error } = await supabase.from("work_env_measurements").insert({
           project_id: projectId,
+          company_id: userCompanyId || null,
           ...payload,
         });
         if (error) throw error;

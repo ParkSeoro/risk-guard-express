@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ const ACTION_LABELS: Record<ActionStatus, string> = {
 
 export function DailyHealthAbnormalPanel({ projectId }: { projectId: string }) {
   const { user, profile } = useAuth();
+  const { applyCompanyFilter, seesAllCompanies, accessibleCompanyIds, scopeStatus } = useGlobalProjectAccess();
   const [logs, setLogs] = useState<AbnormalLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [draftStatus, setDraftStatus] = useState<Record<string, ActionStatus>>({});
@@ -46,10 +48,22 @@ export function DailyHealthAbnormalPanel({ projectId }: { projectId: string }) {
   const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
+    let allowedWorkerIds: string[] | null = null;
+    if (!seesAllCompanies) {
+      const { data: ws } = await applyCompanyFilter(
+        supabase.from("workers").select("id").eq("project_id", projectId),
+      );
+      allowedWorkerIds = ((ws as Array<{ id: string }> | null) || []).map((w) => w.id);
+      if (allowedWorkerIds.length === 0) {
+        setLogs([]);
+        setLoading(false);
+        return;
+      }
+    }
     const since = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
-    const { data, error } = await (supabase as any)
+    let q = (supabase as any)
       .from("worker_daily_health_logs")
       .select("id, worker_id, log_date, body_temp, bp_systolic, bp_diastolic, symptoms, fit_to_work, note, action_status, action_note, action_taken_at, action_taken_by_name, workers(name, company_name, trade)")
       .eq("project_id", projectId)
@@ -58,6 +72,8 @@ export function DailyHealthAbnormalPanel({ projectId }: { projectId: string }) {
       .order("log_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(50);
+    if (allowedWorkerIds) q = q.in("worker_id", allowedWorkerIds);
+    const { data, error } = await q;
 
     if (!error && data) {
       const abnormal = (data as AbnormalLog[]).filter(
@@ -78,7 +94,7 @@ export function DailyHealthAbnormalPanel({ projectId }: { projectId: string }) {
       setDraftNote(nextNote);
     }
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, applyCompanyFilter, seesAllCompanies, accessibleCompanyIds, scopeStatus]);
 
   useEffect(() => {
     load();

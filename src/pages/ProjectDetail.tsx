@@ -394,9 +394,11 @@ const ProjectDetail = () => {
   };
 
   const handleChangePosition = async (memberId: string, newPosition: string | null) => {
+    const target = members.find((m) => m.id === memberId);
     const updateData = syncMembershipRolePosition({
       field: 'position_new',
       value: newPosition,
+      currentRole: target?.role_new || null,
     });
     const { error } = await supabase
       .from('project_members')

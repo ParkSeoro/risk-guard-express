@@ -17,7 +17,7 @@ describe("role ↔ position SSOT", () => {
     expect(defaultPositionForRole("supervisor")).toBe("SUPERVISOR");
   });
 
-  it("syncs position when role changes to site_supervisor unless keeping job title", () => {
+  it("fills default position only when current position is empty or WORKER promotion", () => {
     expect(
       syncMembershipRolePosition({ field: "role_new", value: "site_supervisor" }),
     ).toEqual({ role_new: "site_supervisor", position_new: "SITE_SUPERVISOR" });
@@ -25,15 +25,17 @@ describe("role ↔ position SSOT", () => {
       syncMembershipRolePosition({
         field: "role_new",
         value: "site_supervisor",
-        currentPosition: "SITE_MANAGER",
+        currentPosition: "WORKER",
       }),
     ).toEqual({ role_new: "site_supervisor", position_new: "SITE_SUPERVISOR" });
     for (const currentPosition of [
+      "SITE_MANAGER",
       "CONSTRUCTION_MGR",
       "FIELD_ENGINEER",
       "FOREMAN",
       "CEO",
       "EXECUTIVE",
+      "OWNER_SM",
     ] as const) {
       expect(
         syncMembershipRolePosition({
@@ -45,10 +47,52 @@ describe("role ↔ position SSOT", () => {
     }
   });
 
-  it("syncs role when position changes to SITE_SUPERVISOR", () => {
+  it("allows independent role and position for client project_admin + OWNER_SM/PM/CM", () => {
+    expect(defaultPositionForRole("project_admin", "client")).toBeNull();
+    expect(
+      syncMembershipRolePosition({
+        field: "role_new",
+        value: "project_admin",
+        companyType: "client",
+        currentPosition: null,
+      }),
+    ).toEqual({ role_new: "project_admin" });
+    expect(
+      syncMembershipRolePosition({
+        field: "role_new",
+        value: "project_admin",
+        companyType: "client",
+        currentPosition: "OWNER_SM",
+      }),
+    ).toEqual({ role_new: "project_admin" });
+    expect(
+      syncMembershipRolePosition({
+        field: "position_new",
+        value: "OWNER_SM",
+        companyType: "client",
+        currentRole: "project_admin",
+      }),
+    ).toEqual({ position_new: "OWNER_SM" });
+  });
+
+  it("syncs role on position change only when currentRole is empty or viewer", () => {
     expect(
       syncMembershipRolePosition({ field: "position_new", value: "SITE_SUPERVISOR" }),
     ).toEqual({ position_new: "SITE_SUPERVISOR", role_new: "site_supervisor" });
+    expect(
+      syncMembershipRolePosition({
+        field: "position_new",
+        value: "OWNER_SM",
+        currentRole: "viewer",
+      }),
+    ).toEqual({ position_new: "OWNER_SM", role_new: "safety_manager" });
+    expect(
+      syncMembershipRolePosition({
+        field: "position_new",
+        value: "SITE_SUPERVISOR",
+        currentRole: "project_admin",
+      }),
+    ).toEqual({ position_new: "SITE_SUPERVISOR" });
   });
 
   it("keeps the current role when the job title is 공사부장·공사담당·조장", () => {

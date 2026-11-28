@@ -11,7 +11,7 @@ type Finding = { key: string; label: string; ok: boolean; detail: string };
 
 export default function InspectionMode() {
   const { toast } = useToast();
-  const { selectedProject: projectId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, scopeStatus } = useGlobalProjectAccess();
   const [findings, setFindings] = useState<Finding[]>([]);
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
@@ -26,15 +26,16 @@ export default function InspectionMode() {
 
   const run = async () => {
     if (!projectId) return toast({ title: '프로젝트를 선택하세요.', variant: 'destructive' });
+    if (scopeStatus !== 'ready') return;
     setRunning(true);
     const f: Finding[] = [];
 
     const [{ data: runs }, { data: tbms }, { data: permits }, { count: costs }, { data: duties }] = await Promise.all([
-      supabase.from('assessment_runs').select('id, status').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('tbm_sessions' as any).select('id').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('safety_cost_items' as any).select('id', { count: 'exact', head: true }).eq('project_id', projectId).eq('is_deleted', false).limit(1),
-      supabase.from('legal_duties' as any).select('id, is_active').eq('project_id', projectId),
+      applyCompanyFilter(supabase.from('assessment_runs').select('id, status').eq('project_id', projectId).eq('is_deleted', false)),
+      applyCompanyFilter(supabase.from('tbm_sessions' as any).select('id').eq('project_id', projectId).eq('is_deleted', false)),
+      applyCompanyFilter(supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false)),
+      applyCompanyFilter(supabase.from('safety_cost_items' as any).select('id', { count: 'exact', head: true }).eq('project_id', projectId).eq('is_deleted', false).limit(1)),
+      applyCompanyFilter(supabase.from('legal_duties' as any).select('id, is_active').eq('project_id', projectId).eq('is_deleted', false).eq('is_active', true)),
     ]);
     const tbmIds = (tbms || []).map((t: any) => t.id).filter(Boolean);
     const { count: tbmParts } = tbmIds.length > 0
@@ -56,11 +57,15 @@ export default function InspectionMode() {
 
   const save = async () => {
     if (findings.length === 0) return;
-    await supabase.from('inspection_responses' as any).insert({
+    const { error } = await supabase.from('inspection_responses' as any).insert({
       project_id: projectId,
       findings: findings as any,
       status: 'completed',
     });
+    if (error) {
+      toast({ title: '점검 결과 저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
     toast({ title: '점검 결과가 저장되었습니다.' });
     loadHistory();
   };

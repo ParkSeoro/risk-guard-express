@@ -135,7 +135,7 @@ export default function SafetyInspections() {
   const { profile, hasRole } = useAuth();
   const isMaster = hasRole('master');
   const { toast } = useToast();
-  const { selectedProject, userCompanyId, userRole, userPosition, projects } = useGlobalProjectAccess();
+  const { selectedProject, userCompanyId, userRole, userPosition, projects, applyCompanyFilter, scopeStatus, accessibleCompanyIds, seesAllCompanies } = useGlobalProjectAccess();
   const [searchParams] = useSearchParams();
   const deepId = searchParams.get('id');
   const projectId = selectedProject;
@@ -208,16 +208,20 @@ export default function SafetyInspections() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
     setListLoading(true);
-    const { data: insps } = await supabase
-      .from('safety_inspections' as any)
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('is_deleted', false)
-      .order('inspected_at', { ascending: false })
-      .limit(200);
-    setInspections((insps as any) || []);
+    const { data: insps } = await applyCompanyFilter(
+      supabase
+        .from('safety_inspections' as any)
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('is_deleted', false)
+        .order('inspected_at', { ascending: false })
+        .limit(200),
+    );
+    const scopedInsps = ((insps as any) || []) as Inspection[];
+    setInspections(scopedInsps);
+    const visibleInspIds = new Set(scopedInsps.map((i) => i.id));
 
     const { data: acts } = await supabase
       .from('safety_inspection_actions' as any)
@@ -226,10 +230,12 @@ export default function SafetyInspections() {
       .order('created_at', { ascending: false })
       .limit(200);
     // 삭제된·권한상 안 보이는 점검에 속한 조치(유령) 제외
-    setActions(filterVisibleInspectionActions(((acts as any) || []) as any));
+    const visibleActs = filterVisibleInspectionActions(((acts as any) || []) as any)
+      .filter((a: any) => seesAllCompanies || !a.inspection_id || visibleInspIds.has(a.inspection_id));
+    setActions(visibleActs);
     setListLoading(false);
   };
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, scopeStatus, accessibleCompanyIds]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -394,13 +400,17 @@ export default function SafetyInspections() {
   };
 
   useEffect(() => {
-    if (!deepId || !projectId) return;
+    if (!deepId || !projectId || scopeStatus !== 'ready') return;
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from('safety_inspections' as any).select('*').eq('id', deepId).maybeSingle();
       if (cancelled) return;
       if (!data) {
         toast({ title: '점검을 찾을 수 없습니다.', variant: 'destructive' });
+        return;
+      }
+      if (!seesAllCompanies && (data as any).company_id && !accessibleCompanyIds?.includes((data as any).company_id)) {
+        toast({ title: '접근 권한이 없습니다.', variant: 'destructive' });
         return;
       }
       if ((data as Inspection).is_deleted) {
@@ -414,7 +424,7 @@ export default function SafetyInspections() {
       await openDetail(data as Inspection);
     })();
     return () => { cancelled = true; };
-  }, [deepId, projectId]);
+  }, [deepId, projectId, scopeStatus, seesAllCompanies, accessibleCompanyIds]);
 
   const cloneInspection = async (src: Inspection, e?: React.MouseEvent) => {
     e?.stopPropagation();

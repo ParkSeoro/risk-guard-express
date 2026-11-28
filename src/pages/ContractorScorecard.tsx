@@ -27,23 +27,25 @@ function scoreOf(r: Row): { score: number; grade: string; color: string } {
 }
 
 export default function ContractorScorecard() {
-  const { selectedProject: projectId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      if (!projectId) return;
+      if (!projectId || scopeStatus !== "ready") return;
       setLoading(true);
-      const { data, error } = await supabase
-        .from("v_contractor_safety_scorecard" as any)
-        .select("*")
-        .eq("project_id", projectId);
+      const { data, error } = await applyCompanyFilter(
+        supabase
+          .from("v_contractor_safety_scorecard" as any)
+          .select("*")
+          .eq("project_id", projectId),
+      );
       if (error) toast.error(error.message);
       setRows(((data as unknown) as Row[]) || []);
       setLoading(false);
     })();
-  }, [projectId]);
+  }, [projectId, scopeStatus, accessibleCompanyIds]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4">

@@ -53,8 +53,8 @@ const TodoDashboard = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
-    if (access.selectedProject && user) { loadTodos(); loadDuties(); }
-  }, [access.selectedProject, user, access.userCompanyId]);
+    if (access.selectedProject && user && access.scopeStatus === 'ready') { loadTodos(); loadDuties(); }
+  }, [access.selectedProject, user, access.userCompanyId, access.scopeStatus, access.accessibleCompanyIds]);
 
   const loadTodos = async () => {
     if (!user) return;
@@ -141,7 +141,8 @@ const TodoDashboard = () => {
     const update: any = { status: newStatus };
     if (newStatus === '완료') { update.completed_at = new Date().toISOString(); update.completed_by = user?.id; }
     else { update.completed_at = null; update.completed_by = null; }
-    await supabase.from('todo_items').update(update).eq('id', id);
+    const { error } = await supabase.from('todo_items').update(update).eq('id', id);
+    if (error) { toast({ title: '상태 변경 실패', description: error.message, variant: 'destructive' }); return; }
     setTodos(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   };
 
@@ -169,9 +170,10 @@ const TodoDashboard = () => {
 
   const handleEditSave = async () => {
     if (!editTodo) return;
-    await supabase.from('todo_items').update({
+    const { error } = await supabase.from('todo_items').update({
       title: editForm.title, description: editForm.description, due_date: editForm.due_date,
     }).eq('id', editTodo.id);
+    if (error) { toast({ title: '수정 실패', description: error.message, variant: 'destructive' }); return; }
     setTodos(prev => prev.map(t => t.id === editTodo.id ? { ...t, ...editForm } : t));
     setEditTodo(null);
     toast({ title: '수정되었습니다.' });

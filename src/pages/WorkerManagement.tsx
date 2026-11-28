@@ -149,7 +149,10 @@ export default function WorkerManagement() {
     setCompaniesReady(false);
     import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
       fetchProjectCompanies(projectId).then((rows) => {
-        setCompanies(rows.map(c => ({ id: c.id, name: c.name })));
+        const scoped = !access || access.seesAllCompanies
+          ? rows
+          : rows.filter((c) => !access.accessibleCompanyIds || access.accessibleCompanyIds.includes(c.id));
+        setCompanies(scoped.map(c => ({ id: c.id, name: c.name })));
         setCompaniesReady(true);
       })
     );
@@ -165,13 +168,16 @@ export default function WorkerManagement() {
         .maybeSingle();
       if (pm?.company_id) {
         setCompanyId(pm.company_id);
-        if (pm.role_new && RESTRICTED_ROLES.has(pm.role_new as string)) {
+        if (
+          (pm.role_new && RESTRICTED_ROLES.has(pm.role_new as string)) ||
+          (access && !access.seesAllCompanies && (access.accessibleCompanyIds?.length ?? 0) <= 1)
+        ) {
           setCompanyLocked(true);
         }
       }
     })();
-    load();
-  }, [projectId]);
+    if (!access || access.scopeStatus === "ready") load();
+  }, [projectId, access?.scopeStatus, access?.accessibleCompanyIds, access?.userCompanyId]);
 
   const load = async () => {
     setLoading(true);
@@ -273,7 +279,11 @@ export default function WorkerManagement() {
       ownName = (cRow as { name?: string } | null)?.name || null;
     }
     setWorkers(
-      workerList.filter((w: any) => isClaimableOrphanWorker(w, ownCompanyId, ownName)),
+      workerList.filter(
+        (w: any) =>
+          (w.company_id && access?.accessibleCompanyIds?.includes(w.company_id)) ||
+          isClaimableOrphanWorker(w, ownCompanyId, ownName),
+      ),
     );
   };
 

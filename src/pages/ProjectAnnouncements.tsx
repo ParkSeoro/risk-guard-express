@@ -101,9 +101,11 @@ export default function ProjectAnnouncements() {
   };
 
   const load = async () => {
-    if (!projectId) {
-      setRows([]);
-      setLoading(false);
+    if (!projectId || access.scopeStatus !== "ready") {
+      if (!projectId) {
+        setRows([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -113,7 +115,16 @@ export default function ProjectAnnouncements() {
       .eq("project_id", projectId)
       .order("published_at", { ascending: false });
     if (error) toast({ title: "공지 조회 실패", description: error.message, variant: "destructive" });
-    const list = (data || []) as Row[];
+    let list = (data || []) as Row[];
+    if (!error && !access.seesAllCompanies && user?.id && list.length > 0) {
+      const { data: recRows } = await (supabase as any)
+        .from("project_announcement_recipients")
+        .select("announcement_id")
+        .eq("user_id", user.id)
+        .in("announcement_id", list.map((r) => r.id));
+      const allowedAnnIds = new Set(((recRows as Array<{ announcement_id: string }> | null) || []).map((r) => r.announcement_id));
+      list = list.filter((r) => r.created_by === user.id || allowedAnnIds.has(r.id));
+    }
     setRows(list);
     if (!error && list.length) void markAnnouncementNotificationsRead(list.map((row) => row.id));
     if (list.length) {
@@ -135,7 +146,7 @@ export default function ProjectAnnouncements() {
 
   useEffect(() => {
     void load();
-  }, [projectId]);
+  }, [projectId, access.scopeStatus, access.seesAllCompanies, access.accessibleCompanyIds]);
 
   useEffect(() => {
     if (!projectId) return;

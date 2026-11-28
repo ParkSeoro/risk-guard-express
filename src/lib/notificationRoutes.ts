@@ -253,7 +253,7 @@ export function toMobileShellPath(path: string): string {
 
 /** Map worker/mobile paths into admin equivalents when on desktop/admin shell. */
 export function toAdminShellPath(path: string): string {
-  if (!path) return `${ADMIN}/dashboard`;
+  if (!path) return ADMIN;
   let p = path;
   if (p.startsWith(WORKER)) p = p.slice(WORKER.length) || "/";
 
@@ -276,7 +276,7 @@ export function toAdminShellPath(path: string): string {
   }
   if (p.startsWith("/account") || p.startsWith("/settings")) return `${ADMIN}/settings`;
 
-  return `${ADMIN}/dashboard`;
+  return ADMIN;
 }
 
 /** Normalize legacy /m and bare admin paths into canonical shells. */

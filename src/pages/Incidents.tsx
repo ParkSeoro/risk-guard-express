@@ -46,7 +46,7 @@ function deadlineLabel(iso: string | null): { text: string; tone: "ok" | "warn" 
 }
 
 export default function Incidents() {
-  const { selectedProject: projectId, applyCompanyFilter } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -64,7 +64,7 @@ export default function Incidents() {
   });
 
   async function load() {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     setLoading(true);
     let q: any = supabase
       .from("incident_reports")
@@ -79,14 +79,14 @@ export default function Incidents() {
     setLoading(false);
   }
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") return;
     load();
     const ch = supabase
       .channel(`incident_reports:${projectId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "incident_reports", filter: `project_id=eq.${projectId}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [projectId]);
+  }, [projectId, scopeStatus, accessibleCompanyIds]);
 
 
   const stats = useMemo(() => {
@@ -117,6 +117,7 @@ export default function Incidents() {
     const isMajor = form.incident_type === "major" || form.severity === "high";
     const { error } = await supabase.from("incident_reports").insert({
       project_id: projectId,
+      company_id: userCompanyId || null,
       reporter_name: form.reporter_name.trim(),
       incident_type: form.incident_type,
       severity: form.severity,

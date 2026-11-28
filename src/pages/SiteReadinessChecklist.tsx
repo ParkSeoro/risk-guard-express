@@ -12,21 +12,21 @@ type Item = { key: string; label: string; ok: boolean; detail: string };
 type Group = { title: string; items: Item[] };
 
 export default function SiteReadinessChecklist() {
-  const { selectedProject: projectId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, scopeStatus, accessibleCompanyIds } = useGlobalProjectAccess();
   const [groups, setGroups] = useState<Record<string, Group>>({ admin: { title: '관리자', items: [] }, worker: { title: '근로자', items: [] }, client: { title: '발주처', items: [] } });
   const [loading, setLoading] = useState(false);
 
   const today = new Date().toISOString().slice(0, 10);
 
   const run = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
     setLoading(true);
     try {
     const [{ data: runs }, { data: tbms }, { data: permits }, { data: costs }, { data: insp }, { data: accidents }] = await Promise.all([
-      supabase.from('assessment_runs').select('id, status, start_date, end_date').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
-      supabase.from('safety_cost_items' as any).select('id').eq('project_id', projectId).eq('is_deleted', false).limit(1),
+      applyCompanyFilter(supabase.from('assessment_runs').select('id, status, start_date, end_date').eq('project_id', projectId).eq('is_deleted', false)),
+      applyCompanyFilter(supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId).eq('is_deleted', false)),
+      applyCompanyFilter(supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false)),
+      applyCompanyFilter(supabase.from('safety_cost_items' as any).select('id').eq('project_id', projectId).eq('is_deleted', false).limit(1)),
       supabase.from('inspection_responses' as any).select('id').eq('project_id', projectId),
       supabase.from('assessment_accidents').select('id').eq('project_id', projectId),
     ]);
@@ -84,7 +84,7 @@ export default function SiteReadinessChecklist() {
     }
   };
 
-  useEffect(() => { run(); }, [projectId]);
+  useEffect(() => { run(); }, [projectId, scopeStatus, accessibleCompanyIds]);
 
   const renderGroup = (g: Group) => {
     const total = g.items.length;

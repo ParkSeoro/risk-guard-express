@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -8,25 +9,64 @@ import { Search, History } from 'lucide-react';
 import { format } from 'date-fns';
 
 const AuditLogs = () => {
+  const access = useGlobalProjectAccess();
   const [logs, setLogs] = useState<any[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState('all');
+  const [selectedProject, setSelectedProject] = useState(() => (access.isMaster ? 'all' : access.selectedProject || ''));
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('projects').select('id, name').eq('is_deleted', false).then(({ data }) => setProjects(data || []));
-  }, []);
+    if (!access.isMaster && access.selectedProject) {
+      setSelectedProject(access.selectedProject);
+    }
+  }, [access.isMaster, access.selectedProject]);
 
   useEffect(() => {
-    setLoading(true);
-    let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
-    if (selectedProject !== 'all') query = query.eq('project_id', selectedProject);
-    query.then(({ data }) => {
-      setLogs(data || []);
+    if (access.isMaster) {
+      supabase.from('projects').select('id, name').eq('is_deleted', false).then(({ data }) => setProjects(data || []));
+    } else {
+      setProjects(access.projects.map((p) => ({ id: p.id, name: p.name })));
+    }
+  }, [access.isMaster, access.projects]);
+
+  useEffect(() => {
+    if (!access.isMaster && access.scopeStatus !== 'ready') return;
+    const effectiveProject = access.isMaster ? selectedProject : (access.selectedProject || '');
+    if (!access.isMaster && !effectiveProject) {
+      setLogs([]);
       setLoading(false);
-    });
-  }, [selectedProject]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      let allowedUserIds: string[] | null = null;
+      if (!access.isMaster && !access.seesAllCompanies && effectiveProject) {
+        let pmQ: any = supabase.from('project_members').select('user_id').eq('project_id', effectiveProject);
+        if (access.accessibleCompanyIds && access.accessibleCompanyIds.length > 0) {
+          pmQ = pmQ.in('company_id', access.accessibleCompanyIds);
+        } else if (access.userCompanyId) {
+          pmQ = pmQ.eq('company_id', access.userCompanyId);
+        }
+        const { data: pmRows } = await pmQ;
+        allowedUserIds = Array.from(new Set(((pmRows as Array<{ user_id: string }> | null) || []).map((r) => r.user_id).filter(Boolean)));
+        if (allowedUserIds.length === 0) {
+          if (!cancelled) { setLogs([]); setLoading(false); }
+          return;
+        }
+      }
+      let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
+      if (effectiveProject && effectiveProject !== 'all') query = query.eq('project_id', effectiveProject);
+      if (allowedUserIds) query = query.in('user_id', allowedUserIds);
+      const { data } = await query;
+      if (!cancelled) {
+        setLogs(data || []);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedProject, access.isMaster, access.selectedProject, access.scopeStatus, access.seesAllCompanies, access.accessibleCompanyIds, access.userCompanyId]);
 
   const filtered = logs.filter(log => {
     if (!searchTerm) return true;

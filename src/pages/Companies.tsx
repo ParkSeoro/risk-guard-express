@@ -11,6 +11,7 @@ import { Building2, Users, ChevronRight, Search, Network, HardHat, AlertCircle }
 import { COMPANY_TYPE_LABELS, resolveProjectCompanyType } from '@/lib/companyTypes';
 import { formatKRW } from '@/lib/safetyCost';
 import { isRelationSubcontractorType, safetyScaleHint } from '@/lib/safetyScaleHint';
+import { toAdminUrl } from '@/lib/adminNav';
 
 interface CompanyRow {
   id: string;
@@ -38,14 +39,14 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export default function Companies() {
-  const { selectedProject } = useGlobalProjectAccess();
+  const { selectedProject, seesAllCompanies, accessibleCompanyIds, scopeStatus } = useGlobalProjectAccess();
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
 
   const fetchAll = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || scopeStatus !== 'ready') return;
     setLoading(true);
     // Read via project_companies (SSOT) so global companies linked to this project appear once.
     const { data: links } = await (supabase as any)
@@ -55,7 +56,7 @@ export default function Companies() {
       .eq('is_deleted', false);
     const list = (links || [])
       .map((l: any) => l.companies ? { ...l.companies, type: resolveProjectCompanyType(l.role_in_project, l.companies.type) } : null)
-      .filter((c: any) => c && c.is_deleted === false)
+      .filter((c: any) => c && c.is_deleted === false && (seesAllCompanies || !accessibleCompanyIds || accessibleCompanyIds.includes(c.id)))
       .sort((a: any, b: any) => (a.type || '').localeCompare(b.type || '') || (a.name || '').localeCompare(b.name || ''));
 
     const ids = list.map(c => c.id);
@@ -99,7 +100,7 @@ export default function Companies() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); /* eslint-disable-next-line */ }, [selectedProject]);
+  useEffect(() => { fetchAll(); /* eslint-disable-next-line */ }, [selectedProject, scopeStatus, accessibleCompanyIds]);
 
   // Realtime: companies / managers / departments
   useEffect(() => {
@@ -232,7 +233,7 @@ export default function Companies() {
               ? `${c.construction_period_start || '미정'} ~ ${c.construction_period_end || '미정'}`
               : '';
             return (
-              <Link key={c.id} to={`/companies/${c.id}`} className="block">
+              <Link key={c.id} to={toAdminUrl(`/companies/${c.id}`)} className="block">
                 <Card className={`hover:border-primary/50 transition-colors h-full ${needsInfo ? 'border-destructive/40' : ''}`}>
                   <CardHeader className="pb-2 flex-row items-start justify-between space-y-0">
                     <div>

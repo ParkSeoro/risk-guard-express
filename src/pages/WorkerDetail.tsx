@@ -119,6 +119,16 @@ export default function WorkerDetail() {
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">로딩 중...</div>;
   if (!w) return <div className="p-8 text-center">근로자 정보를 찾을 수 없습니다.</div>;
+  if (
+    access &&
+    access.scopeStatus === "ready" &&
+    !access.seesAllCompanies &&
+    w.company_id &&
+    access.accessibleCompanyIds &&
+    !access.accessibleCompanyIds.includes(w.company_id)
+  ) {
+    return <div className="p-8 text-center text-destructive">접근 권한이 없습니다.</div>;
+  }
 
   const pending = (data?.requiredItems || []).filter((r) => r.status !== "done");
   const overdue = pending.filter((r) => r.status === "overdue");

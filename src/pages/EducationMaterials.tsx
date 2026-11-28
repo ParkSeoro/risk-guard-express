@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, FileText, Presentation, Sparkles, Plus, Trash2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveProject } from "@/hooks/useActiveProject";
-import { useGlobalProjectAccess } from "@/components/AppLayout";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import pptxgen from "pptxgenjs";
 
@@ -42,7 +42,7 @@ const empty = (project_id: string): Material => ({
 export default function EducationMaterials() {
   const [params] = useSearchParams();
   const { projectId, setProjectId } = useActiveProject();
-  const access = useGlobalProjectAccess();
+  const access = useGlobalProjectAccessOptional();
   const { softDelete } = useSoftDelete();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [list, setList] = useState<Material[]>([]);
@@ -62,28 +62,26 @@ export default function EducationMaterials() {
   }, []);
 
   useEffect(() => {
-    if (!projectId || access.scopeStatus !== "ready") return;
+    if (!projectId || (access && access.scopeStatus !== "ready")) return;
     loadMaterials();
-    access.applyCompanyFilter(
-      supabase.from("assessment_runs")
-        .select("id,period_label")
-        .eq("project_id", projectId)
-        .eq("status", "승인완료")
-        .eq("is_deleted", false)
-        .order("created_at", { ascending: false }),
-    ).then(({ data }: any) => setRuns(data || []));
-  }, [projectId, access.scopeStatus, access.accessibleCompanyIds]);
+    const runsQ = supabase.from("assessment_runs")
+      .select("id,period_label")
+      .eq("project_id", projectId)
+      .eq("status", "승인완료")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false });
+    (access ? access.applyCompanyFilter(runsQ) : runsQ).then(({ data }: any) => setRuns(data || []));
+  }, [projectId, access?.scopeStatus, access?.accessibleCompanyIds]);
 
   const loadMaterials = async () => {
-    if (!projectId || access.scopeStatus !== "ready") return;
-    const { data, error } = await access.applyCompanyFilter(
-      supabase
-        .from("safety_education_materials")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("is_deleted", false)
-        .order("created_at", { ascending: false }),
-    );
+    if (!projectId || (access && access.scopeStatus !== "ready")) return;
+    const matQ = supabase
+      .from("safety_education_materials")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false });
+    const { data, error } = await (access ? access.applyCompanyFilter(matQ) : matQ);
     if (error) { toast.error("불러오기 실패: " + error.message); return; }
     setList(data as any || []);
   };
@@ -124,7 +122,7 @@ export default function EducationMaterials() {
         if (error) throw error;
       } else {
         const { error } = await supabase.from("safety_education_materials")
-          .insert([{ ...payload, company_id: payload.company_id ?? access.userCompanyId ?? null }]);
+          .insert([{ ...payload, company_id: payload.company_id ?? access?.userCompanyId ?? null }]);
         if (error) throw error;
       }
       toast.success("저장 완료");

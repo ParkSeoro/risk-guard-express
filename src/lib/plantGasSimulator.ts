@@ -703,3 +703,165 @@ export function runGasPlantSimulation(
     deliveryFlowPct,
   };
 }
+
+export interface AiPidDesignAudit {
+  overall_verdict: '적정' | '보완 필요' | '설계 결함(위험)';
+  summary: string;
+  correct_items: { tag: string; title: string; detail: string }[];
+  defect_items: {
+    severity: 'critical' | 'warning' | 'info';
+    tag: string;
+    title: string;
+    detail: string;
+    rule_ref: string;
+    how_to_fix: string;
+  }[];
+  remediation_steps: string[];
+}
+
+/**
+ * Normalizes an AI-extracted P&ID/ISO circuit into clean, non-overlapping SVG coordinates
+ * so any uploaded real-world drawing renders cleanly as an executable simulator.
+ */
+export function normalizeAiPidCircuit(raw: any, fileName: string): SimCircuitDefinition {
+  const gas = normalizeSimGas(raw?.gas);
+  const mawp = Math.max(5, Number(raw?.designPressureBar) || 16);
+  const temp = Number.isFinite(Number(raw?.designTempC)) ? Number(raw.designTempC) : GAS_BASE_TEMP[gas];
+  const defaultInlet = Math.max(2, Number(raw?.defaultInletPressureBar) || Math.round(mawp * 0.72 * 10) / 10);
+  const defaultHeat = Math.max(10, Math.min(100, Number(raw?.defaultAmbientHeatPct) || 55));
+
+  const validKinds: SimNodeKind[] = ['source', 'valve', 'check_valve', 'equipment', 'psv', 'consumer'];
+  const rawNodes: any[] = Array.isArray(raw?.nodes) ? raw.nodes : [];
+  const mainRaw = rawNodes.filter((n) => n && n.kind !== 'psv');
+  const psvRaw = rawNodes.filter((n) => n && n.kind === 'psv');
+
+  // Auto-layout main-line nodes evenly from x=75 to x=845, y=185
+  const count = Math.max(mainRaw.length, 2);
+  const mainNodes: SimNode[] = mainRaw.map((n, idx) => {
+    const x = count === 1 ? 450 : Math.round(75 + (idx / (count - 1)) * 770);
+    const kind: SimNodeKind = validKinds.includes(n.kind) ? n.kind : 'equipment';
+    return {
+      id: String(n.id || `n${idx + 1}`),
+      label: String(n.label || n.tag || `노드 ${idx + 1}`),
+      tag: String(n.tag || `TAG-${idx + 1}`),
+      kind,
+      x,
+      y: 185,
+      isOpen: kind === 'valve' ? (typeof n.isOpen === 'boolean' ? n.isOpen : true) : undefined,
+      checkHealthy: kind === 'check_valve' ? (typeof n.checkHealthy === 'boolean' ? n.checkHealthy : true) : undefined,
+      equipmentType: kind === 'equipment' ? (n.equipmentType || 'vaporizer') : undefined,
+    };
+  });
+
+  const mainIdSet = new Set(mainNodes.map((n) => n.id));
+  const rawSegs: any[] = Array.isArray(raw?.segments) ? raw.segments : [];
+  let segments: SimSegment[] = rawSegs
+    .filter((s) => s && mainIdSet.has(String(s.fromNodeId)) && mainIdSet.has(String(s.toNodeId)))
+    .map((s, idx) => ({
+      id: String(s.id || `seg${idx + 1}`),
+      label: String(s.label || `구간 ${idx + 1}`),
+      fromNodeId: String(s.fromNodeId),
+      toNodeId: String(s.toNodeId),
+      sizeLabel: String(s.sizeLabel || '2"'),
+      mawpBar: Math.max(5, Number(s.mawpBar) || mawp),
+      isCryoLiquidSection: Boolean(s.isCryoLiquidSection),
+      isDischargeSection: Boolean(s.isDischargeSection),
+    }));
+
+  // Fallback: chain mainNodes sequentially if AI omitted valid segment edges
+  if (segments.length === 0 && mainNodes.length >= 2) {
+    const cryo = isCryoGas(gas) || temp <= -40;
+    segments = mainNodes.slice(0, -1).map((n, idx) => ({
+      id: `seg${idx + 1}`,
+      label: `${n.tag} → ${mainNodes[idx + 1].tag}`,
+      fromNodeId: n.id,
+      toNodeId: mainNodes[idx + 1].id,
+      sizeLabel: '2"',
+      mawpBar: mawp,
+      isCryoLiquidSection: cryo && idx < 2,
+      isDischargeSection: !cryo && idx < 2,
+    }));
+  }
+
+  const nodeById = new Map(mainNodes.map((n) => [n.id, n]));
+  const psvNodes: SimNode[] = psvRaw.map((p, idx) => {
+    const targetSeg =
+      segments.find((s) => s.id === String(p.protectsSegmentId)) ||
+      segments[Math.min(idx, Math.max(0, segments.length - 1))];
+    const from = targetSeg ? nodeById.get(targetSeg.fromNodeId) : undefined;
+    const to = targetSeg ? nodeById.get(targetSeg.toNodeId) : undefined;
+    const x = from && to ? Math.round((from.x + to.x) / 2) : Math.round(280 + idx * 180);
+    return {
+      id: String(p.id || `psv${idx + 1}`),
+      label: String(p.label || '안전밸브'),
+      tag: String(p.tag || `PSV-${idx + 1}`),
+      kind: 'psv',
+      x,
+      y: 78,
+      psvInstalled: typeof p.psvInstalled === 'boolean' ? p.psvInstalled : true,
+      psvSetBar: Math.max(5, Number(p.psvSetBar) || mawp),
+      protectsSegmentId: targetSeg?.id,
+    };
+  });
+
+  const nodes = [...mainNodes, ...psvNodes];
+
+  const rawScenarios: SimScenarioPreset[] = Array.isArray(raw?.scenarios)
+    ? raw.scenarios
+        .filter((sc: any) => sc && sc.name)
+        .map((sc: any, idx: number) => ({
+          id: String(sc.id || `ai_sc_${idx + 1}`),
+          name: String(sc.name),
+          description: String(sc.description || ''),
+          inletPressureBar: Number(sc.inletPressureBar) || defaultInlet,
+          ambientHeatPct: Number(sc.ambientHeatPct) || defaultHeat,
+          valveStates: sc.valveStates && typeof sc.valveStates === 'object' ? sc.valveStates : {},
+          psvStates: sc.psvStates && typeof sc.psvStates === 'object' ? sc.psvStates : undefined,
+          checkValveStates: sc.checkValveStates && typeof sc.checkValveStates === 'object' ? sc.checkValveStates : undefined,
+          downstreamBackpressureBar: Number(sc.downstreamBackpressureBar) || 0,
+        }))
+    : [];
+
+  if (rawScenarios.length === 0) {
+    const allOpen: Record<string, boolean> = {};
+    const allClosed: Record<string, boolean> = {};
+    for (const n of mainNodes) {
+      if (n.kind === 'valve') {
+        allOpen[n.id] = true;
+        allClosed[n.id] = false;
+      }
+    }
+    rawScenarios.push(
+      {
+        id: 'ai_normal',
+        name: '도면 기준 정상 운전',
+        description: '업로드된 도면 원안 조건으로 정상 통가스 테스트',
+        inletPressureBar: defaultInlet,
+        ambientHeatPct: defaultHeat,
+        valveStates: allOpen,
+      },
+      {
+        id: 'ai_block',
+        name: '긴급 차단 / 이상 운전 검증',
+        description: '차단밸브 폐쇄 시 과압·액봉 및 PSV 작동 여부 검증',
+        inletPressureBar: defaultInlet,
+        ambientHeatPct: 80,
+        valveStates: allClosed,
+      },
+    );
+  }
+
+  return {
+    id: `ai_pid_${Date.now()}`,
+    name: String(raw?.name || `[AI 도면 추출] ${fileName}`),
+    subtitle: String(raw?.subtitle || `업로드 도면(${fileName})에서 AI가 자동 생성한 실행 회로`),
+    gas,
+    designPressureBar: mawp,
+    designTempC: temp,
+    defaultInletPressureBar: defaultInlet,
+    defaultAmbientHeatPct: defaultHeat,
+    nodes,
+    segments,
+    scenarios: rawScenarios,
+  };
+}

@@ -514,12 +514,29 @@ const Approvals = () => {
       toast({ title: '처리 실패', description: msg, variant: 'destructive' });
       return;
     }
+    const createsTbm =
+      action === '승인' &&
+      (ap.entity_type === 'work_permit' || ap.entity_type === 'permit') &&
+      permitIssueApprovalCreatesTbm(res);
     toast({
       title: action === '승인'
         ? (res?.action === 'forwarded' ? `${ap.step} 승인 완료 → 다음 단계로 이관` : '최종 승인 완료')
         : '반려되었습니다.',
+      description: createsTbm ? 'TBM 일지 자동 생성 중' : undefined,
       variant: action === '반려' ? 'destructive' : undefined,
     });
+    if (createsTbm) {
+      void import('@/lib/tbmLifecycle')
+        .then(({ ensureTbmAfterPermitIssued }) =>
+          ensureTbmAfterPermitIssued({
+            rpcResult: res,
+            entityType: ap.entity_type,
+            entityId: ap.entity_id || ap.run_id,
+            projectId: ap.project_id || selectedProject,
+          }),
+        )
+        .catch((e) => console.warn('ensureTbmAfterPermitIssued', e));
+    }
 
     log(action, 'approval', approvalId, selectedProject);
     setRejectingId(null);

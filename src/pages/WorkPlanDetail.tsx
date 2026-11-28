@@ -264,7 +264,11 @@ const WorkPlanDetail = () => {
         getAttachmentProgress(planId).then((p) => { if (!cancelled) setAttProgress(p); }).catch(() => {});
       }
       if (data.project_id) {
-        fetchLatestApprovedRun(data.project_id).then((r) => { if (!cancelled) setLatestApprovedRun(r); }).catch(() => {});
+        fetchLatestApprovedRun(data.project_id, {
+          linkedRunId: (data as any).assessment_run_id || null,
+          seesAllCompanies: access.seesAllCompanies,
+          accessibleCompanyIds: access.accessibleCompanyIds,
+        }).then((r) => { if (!cancelled) setLatestApprovedRun(r); }).catch(() => {});
       }
       if (['승인완료', '승인', '완료'].includes(data.status) && planId) {
         setTbmNoticeLoading(true);
@@ -957,7 +961,7 @@ const WorkPlanDetail = () => {
             const { data, error } = await supabase.rpc('derive_permit_from_work_plan', { _work_plan_id: planId });
             if (error) { toast({ title: '작업허가서 생성 실패', description: error.message, variant: 'destructive' }); return; }
             const d: any = data;
-            if (d?.permit_id) { toast({ title: d.reused ? '기존 허가서로 이동' : '작업허가서가 생성되었습니다.' }); navigate(`/work-permits`); }
+            if (d?.permit_id) { toast({ title: d.reused ? '기존 허가서로 이동' : '작업허가서가 생성되었습니다.' }); navigate(`/app/admin/work-permits/${d.permit_id}`); }
           }}>
             <FileText className="h-3.5 w-3.5" /> 작업허가서 자동생성
           </Button>
@@ -1010,14 +1014,14 @@ const WorkPlanDetail = () => {
                     const st = await fetchWorkPlanTbmNoticeStatus(planId);
                     setTbmNotice(st);
                     toast({ title: d.reused ? '기존 TBM이 있습니다' : 'TBM이 생성되었습니다' });
-                    navigate('/app/admin/tbm-logs');
+                    navigate(`/app/admin/tbm-logs?session=${d.tbm_id}`);
                   }
                 }}
               >
                 TBM 만들어 주지하기
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => navigate('/app/admin/tbm-logs')}>
+              <Button size="sm" variant="outline" onClick={() => navigate(`/app/admin/tbm-logs?session=${tbmNotice.tbmSessionId}`)}>
                 TBM 보기
               </Button>
             )}

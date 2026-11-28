@@ -113,11 +113,14 @@ const Dashboard = () => {
   // Ops-wide tiles = project-wide company visibility only (발주처 PA·SM / master)
   const showOpsWide = seesAllCompanies;
   const [refreshKey, setRefreshKey] = useState(0);
+  const cacheKey = selectedProject
+    ? `${selectedProject}:${user?.id || ''}:${seesAllCompanies ? 'all' : (accessibleCompanyIds || []).join(',')}`
+    : '';
   const [data, setData] = useState<DashboardData>(() => {
-    return (selectedProject && dashboardCache.get(selectedProject)?.data) || EMPTY;
+    return (cacheKey && dashboardCache.get(cacheKey)?.data) || EMPTY;
   });
   const [loading, setLoading] = useState(() => {
-    return !selectedProject || !dashboardCache.has(selectedProject);
+    return !cacheKey || !dashboardCache.has(cacheKey);
   });
 
   const fetchDashboard = useCallback(async (force = false) => {
@@ -127,7 +130,7 @@ const Dashboard = () => {
       setRefreshKey((k) => k + 1);
     }
 
-    const cached = dashboardCache.get(selectedProject);
+    const cached = cacheKey ? dashboardCache.get(cacheKey) : undefined;
     const isCacheFresh = cached && (Date.now() - cached.timestamp < DASHBOARD_CACHE_TTL_MS);
     if (!force && isCacheFresh) {
       setData(cached.data);
@@ -180,7 +183,7 @@ const Dashboard = () => {
 
       const actP = supabase
         .from("safety_inspection_actions" as any)
-        .select("id, status")
+        .select("id, status, inspection_id")
         .eq("project_id", selectedProject);
 
       const runsP = supabase
@@ -306,8 +309,11 @@ const Dashboard = () => {
         }
       }
 
-      const rawInsps = (inspRes.data || []) as Array<{ status?: string }>;
-      const rawActs = (actRes.data || []) as Array<{ status?: string }>;
+      const rawInsps = (inspRes.data || []) as Array<{ id?: string; status?: string }>;
+      const allowedInspIds = new Set(rawInsps.map((i) => i.id).filter(Boolean));
+      const rawActs = ((actRes.data || []) as Array<{ status?: string; inspection_id?: string | null }>).filter((a) =>
+        seesAllCompanies || !a.inspection_id || allowedInspIds.has(a.inspection_id),
+      );
       const openActions = rawActs.filter((a) => isOpenInspectionAction(a.status)).length;
       const completedInsps = rawInsps.filter((i) => i.status === 'completed' || i.status === '완료').length;
       const inProgressInsps = rawInsps.length - completedInsps;
@@ -358,12 +364,12 @@ const Dashboard = () => {
         inspectionSum,
       };
 
-      dashboardCache.set(selectedProject, { data: nextData, timestamp: Date.now() });
+      if (cacheKey) dashboardCache.set(cacheKey, { data: nextData, timestamp: Date.now() });
       setData(nextData);
     } finally {
       setLoading(false);
     }
-  }, [selectedProject, applyCompanyFilter, showOpsWide, user?.id, accessibleCompanyIds, seesAllCompanies, scopeStatus]);
+  }, [selectedProject, cacheKey, applyCompanyFilter, showOpsWide, user?.id, accessibleCompanyIds, seesAllCompanies, scopeStatus]);
 
   useEffect(() => {
     if (accessLoading || scopeStatus !== "ready") return;
@@ -380,13 +386,14 @@ const Dashboard = () => {
       }, 3000);
     };
 
-    // 긴급작업·허가서·TBM 등 신규 변동이 생기면 백그라운드에서 실시간 동기화
+    // 긴급작업·허가서·TBM 등 신규 변동이 생기면 백그라운드에서 실시간 동기화 (프로젝트 단위 필터)
+    const projFilter = `project_id=eq.${selectedProject}`;
     const channel = supabase
       .channel(`dashboard-ops-${selectedProject}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "work_permits" }, debouncedFetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tbm_sessions" }, debouncedFetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "todo_items" }, debouncedFetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "assessment_runs" }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "work_permits", filter: projFilter }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tbm_sessions", filter: projFilter }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "todo_items", filter: projFilter }, debouncedFetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "assessment_runs", filter: projFilter }, debouncedFetch)
       .subscribe();
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -523,7 +530,8 @@ const Dashboard = () => {
         onNavigate={navigate}
         companyId={userCompanyId || profile?.company_id}
         companyType={userCompanyType}
-        seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
+        seesAllCompanies={seesAllCompanies}
+        accessibleCompanyIds={accessibleCompanyIds}
         refreshKey={refreshKey}
         section="permits"
       />
@@ -684,7 +692,8 @@ const Dashboard = () => {
         onNavigate={navigate}
         companyId={userCompanyId || profile?.company_id}
         companyType={userCompanyType}
-        seesAllCompanies={seesAllCompanies || userCompanyType === 'client'}
+        seesAllCompanies={seesAllCompanies}
+        accessibleCompanyIds={accessibleCompanyIds}
         refreshKey={refreshKey}
         section="matrix"
       />

@@ -363,17 +363,52 @@ export interface LatestApprovedRun {
   approved_at?: string | null;
 }
 
-/** 프로젝트의 최신 승인완료 위험성평가 회차 1건 조회 */
-export async function fetchLatestApprovedRun(projectId: string): Promise<LatestApprovedRun | null> {
+/** 프로젝트의 최신 승인완료 위험성평가 회차 1건 조회 (멀티 시공사 격리 적용) */
+export async function fetchLatestApprovedRun(
+  projectId: string,
+  opts?: {
+    linkedRunId?: string | null;
+    seesAllCompanies?: boolean;
+    accessibleCompanyIds?: string[] | null;
+  },
+): Promise<LatestApprovedRun | null> {
+  if (opts?.linkedRunId) {
+    const { data: linked } = await supabase
+      .from('assessment_runs')
+      .select('id, period_label, start_date, end_date, updated_at, status, is_deleted')
+      .eq('id', opts.linkedRunId)
+      .eq('is_deleted', false)
+      .maybeSingle();
+    if (linked) {
+      return {
+        id: (linked as any).id,
+        period_label: (linked as any).period_label,
+        start_date: (linked as any).start_date,
+        end_date: (linked as any).end_date,
+        approved_at: (linked as any).updated_at,
+      };
+    }
+  }
+
   const { data } = await supabase
     .from('assessment_runs')
-    .select('id, period_label, start_date, end_date, updated_at, status, is_deleted')
+    .select('id, period_label, start_date, end_date, updated_at, status, is_deleted, created_by, author_user_id, target_company_ids')
     .eq('project_id', projectId)
     .eq('is_deleted', false)
     .in('status', ['approved', '승인완료', '승인'])
     .order('updated_at', { ascending: false })
-    .limit(1);
-  const r = (data || [])[0] as any;
+    .limit(30);
+  let rows = (data || []) as any[];
+  if (opts && opts.seesAllCompanies === false && rows.length > 0) {
+    const { authorCompanyIdsForRuns, filterRunsByCompanyScope } = await import('@/lib/companyDocScope');
+    const authorCompanyMap = await authorCompanyIdsForRuns(supabase, projectId, rows);
+    rows = filterRunsByCompanyScope(rows, {
+      seesAllCompanies: false,
+      accessibleCompanyIds: opts.accessibleCompanyIds || [],
+      authorCompanyMap,
+    });
+  }
+  const r = rows[0] as any;
   if (!r) return null;
   return {
     id: r.id,

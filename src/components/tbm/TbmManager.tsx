@@ -198,7 +198,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     if (requestId !== loadSeq.current) return;
     const cs = await fetchProjectCompanies(projectId);
     if (requestId !== loadSeq.current) return;
-    setCompanies(cs.map(c => ({ id: c.id, name: c.name, type: c.type })));
+    const allowedIds = access && !access.seesAllCompanies ? new Set(access.accessibleCompanyIds || []) : null;
+    const scopedCs = allowedIds ? cs.filter((c) => allowedIds.has(c.id)) : cs;
+    setCompanies(scopedCs.map(c => ({ id: c.id, name: c.name, type: c.type })));
     setLoading(false);
   };
 
@@ -254,7 +256,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const openCopyDialog = async () => {
     let q = supabase.from('tbm_sessions' as any)
-      .select('*').eq('project_id', projectId)
+      .select('*').eq('project_id', projectId).eq('is_deleted', false)
       .order('tbm_date', { ascending: false }).limit(20);
     if (processCategory) q = q.eq('process_category', processCategory);
     if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);

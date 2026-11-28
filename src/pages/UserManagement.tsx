@@ -477,6 +477,7 @@ const UserManagement = () => {
             value,
             companyType,
             currentPosition: mem?.position_new || null,
+            currentRole: mem?.role_new || null,
           })
         : { [field]: value };
 
@@ -509,8 +510,7 @@ const UserManagement = () => {
     setAssignSaving(true);
     try {
       const companyName = assignCompanyId ? projectCompanies.find(c => c.id === assignCompanyId)?.name || '' : '';
-      const mappedRole = assignPosition ? defaultRoleForPosition(assignPosition) : null;
-      const roleToSave = mappedRole || assignRole;
+      const roleToSave = assignRole;
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
@@ -964,7 +964,7 @@ const UserManagement = () => {
                       onValueChange={(v) => {
                         const pos = v === '_none' ? '' : v;
                         setAssignPosition(pos);
-                        if (pos) {
+                        if (pos && (!assignRole || assignRole === 'viewer')) {
                           const mapped = defaultRoleForPosition(pos);
                           if (mapped) setAssignRole(mapped);
                         }

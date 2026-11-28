@@ -123,42 +123,41 @@ export function defaultPositionForRole(
       return 'SITE_MANAGER';
     case 'worker':
       return 'WORKER';
-    case 'project_admin': {
-      const t = normalizeCompanyType(companyType);
-      if (t === 'client') return 'OWNER_CM';
-      return null; // keep existing position for GC/contractor admins
-    }
+    case 'project_admin':
+      // 발주처(PM/CM/SM)·시공사/협력사 모두 직책이 다양하므로 강제 기본 직책을 덮어쓰지 않음
+      return null;
     default:
       return null;
   }
 }
 
-const KEEP_POSITION_WHEN_SITE_SUPERVISOR = new Set([
-  'CONSTRUCTION_MGR',
-  'FIELD_ENGINEER',
-  'FOREMAN',
-  'CEO',
-  'EXECUTIVE',
-]);
-
-/** Patch object to keep role_new ↔ position_new in sync on membership edits. */
+/**
+ * Patch object for membership edits.
+ * - 권한(role_new)과 직책(position_new)은 독립적으로 조합할 수 있어야 함
+ *   (예: project_admin + OWNER_SM / OWNER_PM / OWNER_CM).
+ * - 반대쪽 값이 이미 지정되어 있으면 강제로 덮어쓰지 않고,
+ *   비어 있거나 초기값(viewer / WORKER 승격)일 때만 기본 추천값을 채워줌.
+ */
 export function syncMembershipRolePosition(opts: {
   field: 'role_new' | 'position_new' | string;
   value: string | null;
   companyType?: string | null;
   currentPosition?: string | null;
+  currentRole?: string | null;
 }): Record<string, string | null> {
   const out: Record<string, string | null> = { [opts.field]: opts.value };
   if (opts.field === 'position_new' && opts.value) {
-    const role = defaultRoleForPosition(opts.value);
-    if (role) out.role_new = role;
+    const curRole = (opts.currentRole || '').trim().toLowerCase();
+    if (!curRole || curRole === 'viewer') {
+      const role = defaultRoleForPosition(opts.value);
+      if (role) out.role_new = role;
+    }
   } else if (opts.field === 'role_new' && opts.value) {
-    if (opts.value.toLowerCase() === 'site_supervisor') {
-      const cur = (opts.currentPosition || '').toUpperCase();
-      if (!cur || !KEEP_POSITION_WHEN_SITE_SUPERVISOR.has(cur)) {
-        out.position_new = 'SITE_SUPERVISOR';
-      }
-    } else {
+    const nextRole = opts.value.toLowerCase();
+    const curPos = (opts.currentPosition || '').trim().toUpperCase();
+    const shouldAutoFillPosition =
+      !curPos || (curPos === 'WORKER' && nextRole !== 'worker' && nextRole !== 'viewer');
+    if (shouldAutoFillPosition) {
       const pos = defaultPositionForRole(opts.value, opts.companyType);
       if (pos) out.position_new = pos;
     }

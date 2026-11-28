@@ -212,6 +212,7 @@ export default function ProjectMemberMultiPickerDialog({
         const synced = syncMembershipRolePosition({
           field: 'position_new',
           value: patch.position_new,
+          currentRole: cur.role_new || null,
         });
         if (synced.role_new) next.role_new = synced.role_new;
         next.position_new = synced.position_new ?? patch.position_new;

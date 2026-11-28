@@ -4,6 +4,7 @@ import {
   PRESET_LCO2_SUPPLY,
   PRESET_LOX_CRYO,
   buildCircuitFromIso,
+  normalizeAiPidCircuit,
   runGasPlantSimulation,
 } from '@/lib/plantGasSimulator';
 import { SAMPLE_ISO_LOX } from '@/lib/plantIsoEngine';
@@ -88,5 +89,29 @@ describe('Air Liquide Gas Plant Operational Simulator', () => {
     });
     expect(trapped.overallStatus).toBe('critical');
     expect(trapped.alarms.some((a) => a.code === 'THERMAL_TRAPPING_OVERPRESSURE')).toBe(true);
+  });
+
+  it('normalizes an AI-extracted P&ID circuit into clean non-overlapping SVG coordinates', () => {
+    const circuit = normalizeAiPidCircuit(
+      {
+        name: 'AI 추출 LOX P&ID',
+        gas: 'LOX',
+        designPressureBar: 20,
+        designTempC: -183,
+        nodes: [
+          { id: 'n1', tag: 'TK-1', label: 'LOX 탱크', kind: 'source' },
+          { id: 'n2', tag: 'XV-1', label: '차단밸브1', kind: 'valve', isOpen: true },
+          { id: 'n3', tag: 'XV-2', label: '차단밸브2', kind: 'valve', isOpen: true },
+          { id: 'n4', tag: 'HDR-1', label: '공급처', kind: 'consumer' },
+          { id: 'p1', tag: 'PSV-1', label: 'Thermal PSV', kind: 'psv', psvInstalled: false, psvSetBar: 20, protectsSegmentId: 'seg2' },
+        ],
+      },
+      'PID-LOX-01.pdf',
+    );
+    expect(circuit.nodes.length).toBe(5);
+    expect(circuit.segments.length).toBe(3);
+    const psv = circuit.nodes.find((n) => n.kind === 'psv');
+    expect(psv?.y).toBe(78);
+    expect(psv?.psvInstalled).toBe(false);
   });
 });

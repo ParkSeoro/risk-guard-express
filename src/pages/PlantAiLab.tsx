@@ -16,7 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Activity,
   AlertTriangle,
+  Box,
   CheckCircle2,
+  ClipboardCheck,
   Download,
   FileDiff,
   FileSpreadsheet,
@@ -30,6 +32,8 @@ import {
 } from 'lucide-react';
 import { GasPlantSimulatorPanel } from '@/components/plant/GasPlantSimulatorPanel';
 import { PlantDocAnalyzerPanel } from '@/components/plant/PlantDocAnalyzerPanel';
+import { Plant3dViewerPanel } from '@/components/plant/Plant3dViewerPanel';
+import { PlantPmisPanel } from '@/components/plant/PlantPmisPanel';
 import {
   SAMPLE_ISO_LOX,
   SAMPLE_VENDOR_BOQ_LOX,
@@ -109,7 +113,7 @@ export default function PlantAiLab() {
   const isMaster = hasRole('master');
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'iso' | 'boq' | 'safety' | 'sim' | 'docs'>('iso');
+  const [activeTab, setActiveTab] = useState<'iso' | 'boq' | 'safety' | 'sim' | 'docs' | 'model3d' | 'pmis'>('iso');
   const [gasHint, setGasHint] = useState('auto');
   const [analyzing, setAnalyzing] = useState(false);
   const [isoFileName, setIsoFileName] = useState<string>('');
@@ -205,7 +209,7 @@ export default function PlantAiLab() {
               <Lock className="h-3 w-3" /> 마스터 단독 비공개
             </Badge>
             <Badge variant="secondary" className="text-[10px]">
-              🔜 3단계: 3D 모델링(IFC/GLB) · 팀별 워크스페이스
+              AI 풀스택 (ISO · BOQ · PSV · AI P&amp;ID 시뮬레이터 · 문서비교 · 3D · 시공PMIS)
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -291,14 +295,14 @@ export default function PlantAiLab() {
         </div>
       )}
 
-      {/* 5-Tab Master Lab Workspace */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'iso' | 'boq' | 'safety' | 'sim' | 'docs')} className="space-y-3">
+      {/* 7-Tab Master Lab Workspace */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'iso' | 'boq' | 'safety' | 'sim' | 'docs' | 'model3d' | 'pmis')} className="space-y-3">
         <TabsList className="w-full justify-start flex-wrap h-auto p-1 bg-muted/60 rounded-xl gap-1">
           <TabsTrigger value="iso" className="text-xs gap-1.5 rounded-lg">
             ① ISO 표제란 · BOM {isoResult && <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{isoResult.bom.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="boq" className="text-xs gap-1.5 rounded-lg">
-            ② 시공사 물량표 교차검증
+            ② 물량표 교차검증
             {overclaimCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">{overclaimCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="safety" className="text-xs gap-1.5 rounded-lg">
@@ -306,10 +310,16 @@ export default function PlantAiLab() {
             {criticalCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">치명 {criticalCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="sim" className="text-xs gap-1.5 rounded-lg">
-            <Activity className="h-3.5 w-3.5 text-primary" /> ④ 가스 플랜트 운전 시뮬레이터
+            <Activity className="h-3.5 w-3.5 text-primary" /> ④ AI 도면 시뮬레이터
           </TabsTrigger>
           <TabsTrigger value="docs" className="text-xs gap-1.5 rounded-lg">
-            <FileDiff className="h-3.5 w-3.5 text-primary" /> ⑤ 통합 문서 AI 분석·비교
+            <FileDiff className="h-3.5 w-3.5 text-primary" /> ⑤ 통합 문서 AI 비교
+          </TabsTrigger>
+          <TabsTrigger value="model3d" className="text-xs gap-1.5 rounded-lg">
+            <Box className="h-3.5 w-3.5 text-primary" /> ⑥ 3D 모델링 AI 뷰어
+          </TabsTrigger>
+          <TabsTrigger value="pmis" className="text-xs gap-1.5 rounded-lg">
+            <ClipboardCheck className="h-3.5 w-3.5 text-primary" /> ⑦ 시공 PMIS (인원·기성)
           </TabsTrigger>
         </TabsList>
 
@@ -544,6 +554,16 @@ export default function PlantAiLab() {
             {/* Tab 5: Universal Office/PDF Document AI Analyzer & Diff */}
             <TabsContent value="docs" className="mt-0">
               <PlantDocAnalyzerPanel />
+            </TabsContent>
+
+            {/* Tab 6: 3D Plant Model Viewer (IFC/OBJ/STL/GLB) + AI Clash & Operability Review */}
+            <TabsContent value="model3d" className="mt-0">
+              <Plant3dViewerPanel />
+            </TabsContent>
+
+            {/* Tab 7: Construction PMIS (Manpower Daily Report & Progress Claim AI Review) */}
+            <TabsContent value="pmis" className="mt-0">
+              <PlantPmisPanel />
             </TabsContent>
           </Tabs>
     </div>

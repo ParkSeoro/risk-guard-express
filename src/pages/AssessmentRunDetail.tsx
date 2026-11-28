@@ -3442,8 +3442,8 @@ const AssessmentRunDetail = () => {
           </div>
         </TabsContent>
 
-        {/* ==================== TAB 3: 결재 · 공유 (2-Col Clean Grid) ==================== */}
-        <TabsContent value="approval" className="mt-0 print:hidden">
+        {/* ==================== TAB 3: 결재 · 공유 (2-Col Clean Grid, forceMount keeps approvalDraftInfo live across all tabs) ==================== */}
+        <TabsContent value="approval" forceMount className="mt-0 print:hidden data-[state=inactive]:hidden">
           <div id="ra-approval-line" className="grid grid-cols-1 lg:grid-cols-2 gap-4 scroll-mt-20">
             <div className="space-y-4">
               {runId && run?.project_id && !isApproved && uiStatus !== '폐기' && (

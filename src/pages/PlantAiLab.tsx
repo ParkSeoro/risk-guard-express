@@ -4,7 +4,7 @@
  * Phase 1: Piping ISO AI Analysis + Vendor BOQ 1:1 Cross-Check + PSV/KGS/API 520-521 Safety Design Review.
  */
 import { useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -109,11 +109,13 @@ async function fileToBase64Image(file: File): Promise<{ base64: string; mimeType
 }
 
 export default function PlantAiLab() {
+  const { section } = useParams<{ section?: string }>();
+  const currentSection = (section || 'iso') as 'iso' | 'simulator' | 'documents' | 'model-3d' | 'pmis';
   const { hasRole } = useAuth();
   const isMaster = hasRole('master');
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'iso' | 'boq' | 'safety' | 'sim' | 'docs' | 'model3d' | 'pmis'>('iso');
+  const [activeIsoTab, setActiveIsoTab] = useState<'iso' | 'boq' | 'safety'>('iso');
   const [gasHint, setGasHint] = useState('auto');
   const [analyzing, setAnalyzing] = useState(false);
   const [isoFileName, setIsoFileName] = useState<string>('');
@@ -178,7 +180,7 @@ export default function PlantAiLab() {
       }
       setVendorBoq(parsed);
       setBoqFileName(file.name);
-      setActiveTab('boq');
+      setActiveIsoTab('boq');
       toast({ title: `시공사 물량표 ${parsed.length}개 항목 로드 완료` });
     } catch (e: any) {
       toast({ title: '엑셀 읽기 실패', description: e?.message, variant: 'destructive' });
@@ -197,24 +199,79 @@ export default function PlantAiLab() {
   const overclaimCount = boqDiff.filter((d) => d.status === 'overclaimed' || d.status === 'not_in_drawing').length;
   const totalOverclaimKrw = boqDiff.reduce((sum, r) => sum + (r.estimated_overclaim_krw || 0), 0);
 
+  const SECTION_META: Record<string, { title: string; subtitle: string; targetTeam: string }> = {
+    iso: {
+      title: 'ISO 도면 · 물량표 교차검증 · PSV 안전설계',
+      subtitle: '에어리퀴드 산업가스(H2·O2·N2·Ar·LCO2) 배관 ISO AI 판독 · 시공사 물량표 1:1 교차검증 · KGS/API 520·521 PSV 검토',
+      targetTeam: '배관 · 시공팀 배포 예정',
+    },
+    simulator: {
+      title: 'AI 도면 기반 가스 플랜트 운전 시뮬레이터',
+      subtitle: '실제 P&ID/ISO 도면과 운전조건을 AI가 판독해 회로를 자동 생성하고 As-Is vs To-Be 설계 적정성을 검증합니다',
+      targetTeam: '공정 · 엔지니어링팀 배포 예정',
+    },
+    documents: {
+      title: '통합 문서 AI 분석 · Rev.0 vs Rev.1 비교',
+      subtitle: 'Excel · Word · PPT · PDF 문서를 AI로 분석하고 시방서·내역서의 스펙 하향·비용 증액 함정을 자동 적발합니다',
+      targetTeam: '공무 · 계약 · PM팀 배포 예정',
+    },
+    'model-3d': {
+      title: '3D 플랜트 모델링 AI 뷰어 (IFC / OBJ / STL / GLB)',
+      subtitle: '3D 배관·설비 모델을 브라우저에서 360° 회전·입면 검토하고 AI로 간섭(Clash)·밸브 조작높이를 진단합니다',
+      targetTeam: '설계 · BIM팀 배포 예정',
+    },
+    pmis: {
+      title: '시공 PMIS · AI 인원보고 & 기성청구 교차검증',
+      subtitle: '출역일보·TBM·NDT 품질성적서·기성청구서를 AI로 교차 대조해 과다청구와 감액 권고액을 산출합니다',
+      targetTeam: '현장관리 · 공사팀 배포 예정',
+    },
+  };
+  const meta = SECTION_META[currentSection] || SECTION_META.iso;
+
+  // Standalone non-ISO modular routes (each independently movable to a team workspace)
+  if (currentSection !== 'iso') {
+    return (
+      <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+        <div className="rounded-xl border bg-card px-5 py-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <FlaskConical className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-bold">{meta.title}</h1>
+              <Badge variant="outline" className="text-[10px] gap-1 border-primary/40 text-primary bg-primary/5">
+                <Lock className="h-3 w-3" /> 마스터 단독 비공개
+              </Badge>
+              <Badge variant="secondary" className="text-[10px]">
+                {meta.targetTeam}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">{meta.subtitle}</p>
+          </div>
+        </div>
+
+        {currentSection === 'simulator' && <GasPlantSimulatorPanel isoResult={isoResult} />}
+        {currentSection === 'documents' && <PlantDocAnalyzerPanel />}
+        {currentSection === 'model-3d' && <Plant3dViewerPanel />}
+        {currentSection === 'pmis' && <PlantPmisPanel />}
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
-      {/* Master-Only Private Lab Header */}
+      {/* Master-Only Private Lab Header (ISO Module) */}
       <div className="rounded-xl border bg-card px-5 py-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <FlaskConical className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-bold">플랜트 AI 랩 · 아이소(ISO) &amp; 가스 안전설계</h1>
+            <h1 className="text-lg font-bold">{meta.title}</h1>
             <Badge variant="outline" className="text-[10px] gap-1 border-primary/40 text-primary bg-primary/5">
               <Lock className="h-3 w-3" /> 마스터 단독 비공개
             </Badge>
             <Badge variant="secondary" className="text-[10px]">
-              AI 풀스택 (ISO · BOQ · PSV · AI P&amp;ID 시뮬레이터 · 문서비교 · 3D · 시공PMIS)
+              {meta.targetTeam}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground">
-            에어리퀴드 산업가스(H2·O2·N2·Ar·LCO2) 배관 ISO 판독 · 물량표 교차검증 · PSV 안전설계 · 실시간 가스 운전 시뮬레이터 · 통합 문서(Excel/Word/PPT/PDF) AI 비교
-          </p>
+          <p className="text-xs text-muted-foreground">{meta.subtitle}</p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -295,31 +352,19 @@ export default function PlantAiLab() {
         </div>
       )}
 
-      {/* 7-Tab Master Lab Workspace */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'iso' | 'boq' | 'safety' | 'sim' | 'docs' | 'model3d' | 'pmis')} className="space-y-3">
+      {/* 3-Tab ISO Module Workspace */}
+      <Tabs value={activeIsoTab} onValueChange={(v) => setActiveIsoTab(v as 'iso' | 'boq' | 'safety')} className="space-y-3">
         <TabsList className="w-full justify-start flex-wrap h-auto p-1 bg-muted/60 rounded-xl gap-1">
           <TabsTrigger value="iso" className="text-xs gap-1.5 rounded-lg">
             ① ISO 표제란 · BOM {isoResult && <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{isoResult.bom.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="boq" className="text-xs gap-1.5 rounded-lg">
-            ② 물량표 교차검증
+            ② 시공사 물량표 교차검증
             {overclaimCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">{overclaimCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="safety" className="text-xs gap-1.5 rounded-lg">
-            ③ 가스 안전설계 · 인허가
+            ③ 가스 안전설계 (PSV · KGS · 인허가)
             {criticalCount > 0 && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">치명 {criticalCount}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="sim" className="text-xs gap-1.5 rounded-lg">
-            <Activity className="h-3.5 w-3.5 text-primary" /> ④ AI 도면 시뮬레이터
-          </TabsTrigger>
-          <TabsTrigger value="docs" className="text-xs gap-1.5 rounded-lg">
-            <FileDiff className="h-3.5 w-3.5 text-primary" /> ⑤ 통합 문서 AI 비교
-          </TabsTrigger>
-          <TabsTrigger value="model3d" className="text-xs gap-1.5 rounded-lg">
-            <Box className="h-3.5 w-3.5 text-primary" /> ⑥ 3D 모델링 AI 뷰어
-          </TabsTrigger>
-          <TabsTrigger value="pmis" className="text-xs gap-1.5 rounded-lg">
-            <ClipboardCheck className="h-3.5 w-3.5 text-primary" /> ⑦ 시공 PMIS (인원·기성)
           </TabsTrigger>
         </TabsList>
 
@@ -339,9 +384,6 @@ export default function PlantAiLab() {
                   </Button>
                   <Button size="sm" variant="outline" onClick={loadDemo}>
                     <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary" /> 에어리퀴드 LOX 샘플 바로 보기
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setActiveTab('sim')}>
-                    <Activity className="h-3.5 w-3.5 mr-1.5" /> 가스 운전 시뮬레이터 바로 체험
                   </Button>
                 </div>
               </CardContent>
@@ -545,25 +587,6 @@ export default function PlantAiLab() {
                   </CardContent>
                 </Card>
               </div>
-            </TabsContent>
-            {/* Tab 4: Interactive Gas Plant Operational Simulator */}
-            <TabsContent value="sim" className="mt-0">
-              <GasPlantSimulatorPanel isoResult={isoResult} />
-            </TabsContent>
-
-            {/* Tab 5: Universal Office/PDF Document AI Analyzer & Diff */}
-            <TabsContent value="docs" className="mt-0">
-              <PlantDocAnalyzerPanel />
-            </TabsContent>
-
-            {/* Tab 6: 3D Plant Model Viewer (IFC/OBJ/STL/GLB) + AI Clash & Operability Review */}
-            <TabsContent value="model3d" className="mt-0">
-              <Plant3dViewerPanel />
-            </TabsContent>
-
-            {/* Tab 7: Construction PMIS (Manpower Daily Report & Progress Claim AI Review) */}
-            <TabsContent value="pmis" className="mt-0">
-              <PlantPmisPanel />
             </TabsContent>
           </Tabs>
     </div>

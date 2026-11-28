@@ -2,7 +2,7 @@ import { Bell, LayoutDashboard, FolderKanban, ShieldAlert, Database,
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, ShieldCheck, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
+  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2, Box,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
   Building2, FolderOpen, Video, MessageSquare, Search, X, Monitor, Download,
 } from "lucide-react";
@@ -128,8 +128,20 @@ const adminItems: Item[] = [
   { title: "설정", url: "/settings", icon: Settings },
 ];
 
+/**
+ * Master-only private incubation group: Plant AI Lab.
+ * Each capability is an independent route/menu so it can later be moved
+ * individually to its target team/department workspace once approved.
+ */
+const plantLabItems: Item[] = [
+  { title: "ISO 도면 · 물량 · PSV", url: "/plant-ai-lab/iso", icon: FlaskConical },
+  { title: "AI 도면 운전 시뮬레이터", url: "/plant-ai-lab/simulator", icon: Activity },
+  { title: "통합 문서 AI 분석·비교", url: "/plant-ai-lab/documents", icon: FileText },
+  { title: "3D 모델링 AI 뷰어", url: "/plant-ai-lab/model-3d", icon: Box },
+  { title: "시공 PMIS (인원·기성)", url: "/plant-ai-lab/pmis", icon: ClipboardCheck },
+];
+
 const masterOnlyItems: Item[] = [
-  { title: "플랜트 AI 랩 (비공개)", url: "/plant-ai-lab", icon: FlaskConical },
   { title: "위평 라이브러리", url: "/risk-library", icon: Database },
   { title: "데이터 정합성 (단일 기준)", url: "/admin/data-audit", icon: Database },
   { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
@@ -140,6 +152,7 @@ const masterOnlyItems: Item[] = [
 export function sidebarMenuTitles(): string[] {
   return [
     ...groups.flatMap((g) => groupItems(g).map((i) => i.title)),
+    ...plantLabItems.map((i) => i.title),
     ...adminItems.map((i) => i.title),
     ...masterOnlyItems.map((i) => i.title),
   ];
@@ -237,6 +250,7 @@ export function AppSidebar() {
     location: false,
     health: false,
     ops: false,
+    plant_lab: true,
     admin: false,
   };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -280,6 +294,10 @@ export function AppSidebar() {
         }))
         .filter((g) => g.items.length > 0 || (g.subgroups?.length ?? 0) > 0)
     : visibleGroups;
+  const plantLabMatches = !normalizedQuery
+    ? plantLabItems
+    : plantLabItems.filter((i) => matchesQuery(i.title, "플랜트 AI 랩 (비공개)"));
+  const showPlantLabSection = !restrictToContractorUI && isMaster && plantLabMatches.length > 0;
   const adminMatches = !normalizedQuery
     ? adminFinal
     : adminFinal.filter((i) => matchesQuery(i.title, "시스템"));
@@ -430,6 +448,30 @@ export function AppSidebar() {
             )}
           </SidebarGroup>
         ))}
+
+        {showPlantLabSection && (
+          <SidebarGroup className="pb-1.5">
+            {!collapsed ? (
+              <Collapsible open={normalizedQuery ? true : (openGroups['plant_lab'] ?? true)} onOpenChange={() => toggleGroup('plant_lab')}>
+                <CollapsibleTrigger className="w-full">
+                  <SidebarGroupLabel className="text-sidebar-primary text-[11px] font-bold tracking-wide flex items-center justify-between cursor-pointer py-1.5 h-auto">
+                    <span>🔬 플랜트 AI 랩 (비공개)</span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${(normalizedQuery ? false : openGroups['plant_lab'] === false) ? '-rotate-90' : ''}`} />
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>{plantLabMatches.map(renderItem)}</SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </Collapsible>
+            ) : (
+              <SidebarGroupContent>
+                <SidebarMenu>{plantLabItems.map(renderItem)}</SidebarMenu>
+              </SidebarGroupContent>
+            )}
+          </SidebarGroup>
+        )}
 
         {showAdminSection && (
           <SidebarGroup className="pb-1.5">

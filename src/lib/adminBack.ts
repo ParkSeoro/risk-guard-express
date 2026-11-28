@@ -20,6 +20,7 @@ export const ADMIN_BACK_PARENTS: Record<string, string | null> = {
   "risk-library": "/",
   "admin/risk-library": "/",
   "plant-ai-lab": "/",
+  "plant-ai-lab/:section": "/",
   "admin/plant-ai-lab": "/",
   approvals: "/",
   "audit-logs": "/",
